@@ -1,0 +1,4447 @@
+Machine learning density functionals from the
+
+random-phase approximation
+
+Stefan Riemelmoser,∗,†,‡ Carla Verdi,†,¶ Merzuk Kaltak,§ and Georg Kresse†,§
+
+†University of Vienna, Faculty of Physics and Center for Computational Materials Science,
+
+Kolingasse 14-16, A-1090 Vienna, Austria
+
+‡University of Vienna, Vienna Doctoral School in Physics, Boltzmanngasse 5, A-1090
+
+Vienna, Austria
+
+¶School of Physics, The University of Sydney, Sydney, NSW 2006, Australia
+
+§VASP Software GmbH, Sensengasse 8/12, A-1090 Vienna, Austria
+
+E-mail: stefan.riemelmoser@univie.ac.at
+
+Abstract
+
+Kohn-Sham density functional theory (DFT) is the standard method for first-principles
+
+calculations in computational chemistry and materials science. More accurate theories
+
+such as the random-phase approximation (RPA) are limited in application due to their
+
+large computational cost. Here, we construct a DFT substitute functional for the RPA
+
+using supervised and unsupervised machine learning (ML) techniques. Our ML-RPA
+
+model can be interpreted as a non-local extension to the standard gradient approxima-
+
+tion. We train an ML-RPA functional for diamond surfaces and liquid water and show
+
+that ML-RPA can outperform the standard gradient functionals in terms of accuracy.
+
+Our work demonstrates how ML-RPA can extend the applicability of the RPA to larger
+
+system sizes, time scales and chemical spaces.
+
+1
+
+arXiv:2308.00665v1  [cond-mat.mtrl-sci]  1 Aug 2023
+
+
+1
+Introduction
+
+For over half a century, generations of researchers have been looking to find ever better ap-
+
+proximations for the elusive exchange-correlation (xc) functional of Kohn-Sham density func-
+
+tional theory (DFT).1,2 The Hohenberg-Kohn theorems guarantee this exchange-correlation
+
+functional to be a universal functional of the electronic density n, in other words, there ex-
+
+ists a map n �→ Exc[n].3 However, the exact functional is of complex non-local form and in
+
+general unknown. Common approximations for the exchange-correlation energy are built on
+
+the principle of near-sightedness:4 in the local density approximation (LDA),5 the exchange-
+
+correlation energy density is approximated to be locally that of a homogeneous electron gas
+
+with the same density.
+
+To improve the accuracy of the approximation, one can add more non-local information by
+
+climbing up Jacob’s ladder of DFT.6 Next to the local density, one includes its gradient |∇n|
+
+as ingredient to the exchange-correlation functional (generalized gradient approximation or
+
+GGA). Going beyond the GGA, more non-local information is added in the form of the
+
+kinetic energy density (meta-GGA), and fractions of exact exchange (hybrids). However,
+
+strictly speaking, most meta-GGA and hybrid functional approaches deviate from “pure”
+
+Kohn-Sham DFT, as the ingredients go beyond the electronic density alone.7 A different
+
+route beyond GGA are non-local van der Waals (vdW) functionals,8,9 which account for
+
+pair-wise dispersion interactions between densities n(r) and n(r′). As the ingredients are
+
+only the electronic density and its gradient at points r and r′, the non-local vdW method
+
+stays within pure KS-DFT.
+
+Given ingredients X for the exchange-correlation functional, one still has to find the ac-
+
+tual functional form, that is the map X �→ Exc[X]. In the analytical approach developed by
+
+Perdew and others,10–12 those maps are found by satisfying exact constraints. The empirical
+
+approach pursued by Becke and others13–16 optimizes a small number of adjustable parame-
+
+ters to experimental data or higher level theory. Broadly speaking, the analytical functionals
+
+are more universally applicable, whereas the empirical approach can achieve higher accuracy
+
+2
+
+
+for systems similar to the ones represented in their respective training sets.2 This comes at
+
+the cost of worse performance for systems not represented by these training sets. For exam-
+
+ple, the widely used B3LYP functional,17 whose parameters have been optimized for small
+
+main group molecules, performs well for main group chemistry but struggles when applied
+
+to extended systems18 and transition metal chemistry.19
+
+Recently, machine learning (ML) techniques have been taking the empirical approach to
+
+its extreme.20–23 Not limited by human parametrizations, machine learning approaches can
+
+optimize the maps X �→ Exc[X] using complicated non-linear functional forms. The first
+
+attempt of creating an ML density functional goes back to Tozer et al.,24 an effort which
+
+culminated in the development of the HTCH functional (Hamprecht-Tozer-Cohen-Handy, a
+
+popular GGA functional).25 The full potential of ML approaches has been demonstrated in
+
+pioneering work by Burke and coworkers, who showed that orbital-free density functionals
+
+can be learned from the full non-local density.26,27 Their approach was later applied to
+
+standard Kohn-Sham DFT, enabling molecular dynamics simulations of single molecules
+
+with chemical accuracy.21,28,29 Though this is very impressive, these ML-DFT functionals
+
+are tailor-made for this specific purpose and have to be retrained for every new molecule. A
+
+different approach was taken by Nagai et al.,20 who complemented meta-GGA ingredients by
+
+a non-local density descriptor, achieving remarkable accuracy for a large molecular test set
+
+with training data from only three molecules. For a broader discussion of different ML-DFT
+
+approaches, we refer also to the review of Schmidt et al.30
+
+In the current work, we propose an approach to construct machine learned density func-
+
+tionals from the random-phase approximation (RPA, a high-level functional from the top
+
+of Jacob’s ladder6). We adapt the power spectrum representation of atomic environments
+
+used for machine-learned force fields31,32 (MLFF) to construct ingredients for ML-DFT.
+
+We show that these ingredients can be considered to be a non-local extension of GGA. In
+
+MLFF, data efficiency can be improved by training not only on energies alone but rather
+
+also on atomic forces.33 Analogously, derivative information in DFT can be supplied via the
+
+3
+
+
+exchange-correlation potentials,
+
+vxc(r) = δExc/δn(r).
+(1)
+
+However, obtaining accurate exchange-correlation potentials from beyond GGA function-
+
+als is generally difficult, and aside from the early work of Tozer et al., this approach has
+
+only been applied to simple model systems.34–36 Here, we supply such derivative information
+
+by using our recent implementation of the optimized effective potential method to obtain
+
+exchange-correlation potentials from the RPA.37 We demonstrate our method by fitting ML-
+
+RPA to diamond and liquid water and show that it enables larger scale RPA calculations.
+
+ML-RPA achieves its speed-up via bypassing the optimized effective potential equation, sub-
+
+stituting the complicated RPA exchange-correlation functional with pure KS-DFT. Further,
+
+our efficient plane-wave implementation brings the system size scaling of ML-RPA down to
+
+that of standard DFT. Finally, our approach enables self-consistent calculations, force and
+
+stress predictions, and even molecular dynamics simulations for molecules, solids and their
+
+surfaces. The rest of this paper is organized as follows. Sec. 2 introduces the ML-RPA for-
+
+malism. In Sec. 3, we briefly discuss the optimized effective potential method and comment
+
+on the issue of electronic self-consistency. Results are presented in Sec. 4 and discussed in
+
+Sec. 5. Conclusion are drawn in Sec. 6.
+
+2
+ML-RPA formalism
+
+2.1
+Representation of the electronic density
+
+We adapt the power spectrum representation of atomic environments31 to electronic densities
+
+as follows. The electronic density around each real-space grid point r is expanded into radial
+
+4
+
+
+basis functions ϕnl (described in Supplementary Sec. S1) times real spherical harmonics Y m
+l
+
+n(r + r′)fcut(r′) =
+�
+
+nlm
+cnlm(r)ϕnl(r′)Y m
+l (�r′).
+(2)
+
+The cutoff function fcut puts emphasis on nearby densities (r′ ≤ Rcut), following Kohn’s
+
+principle of nearsightedness.4,38 Here, we use a cutoff radius of Rcut = 1.5 Å.
+
+The expansion coefficients cn00 are the equivalents of rotationally invariant two-body de-
+
+scriptors used in MLFF, thus we write X(2)
+n
+= cn00. In the limit of small cutoffs Rcut, the
+
+X(2)
+n
+reduce to the local density
+
+X(2)
+n (r) ∝ n(r) + O(R2
+cut)
+for Rcut → 0,
+(3)
+
+as shown in Supplementary Sec. S1. It is interesting that the well-known weighted density
+
+approximation39 can be viewed as the special case where only a single two-body descriptor
+
+is taken, compare also the non-local density descriptor introduced by Nagai et al.20
+
+Further, angular information is accounted for by forming rotationally invariant combi-
+
+nations of the l = 1 expansion coefficients to construct additional density descriptors X(3)
+n ,
+
+similar to the three-body descriptors in MLFF,
+
+X(3)
+n
+= σ(3)
+
+Rcut
+
+�
+
+c2
+n1x + c2
+n1y + c2
+n1z.
+(4)
+
+Here, σ(3) is an ML hyperparameter that weighs the X(3)
+n
+relative to the X(2)
+n .40 For small
+
+cutoffs, the X(3)
+n
+reduce to the local gradient
+
+X(3)
+n (r) ∝ |∇n(r)| + O(R2
+cut)
+for Rcut → 0,
+(5)
+
+as demonstrated in Supplementary Sec. S1. In summary, an exchange-correlation functional
+
+with X(2)
+n
+and X(3)
+n
+as its ingredients can be considered as a non-local extension of the
+
+5
+
+
+generalized gradient approximation. Here, we use 4 radial basis functions, thus in total we
+
+have 4 + 4 = 8 density descriptors. A representation based on non-local convolutions of the
+
+electronic density has been previously suggested by Lei and Medford,41 who also showed how
+
+the representation can be systematically completed by adding higher body-order descriptors.
+
+Likewise, representations of atomic environments for MLFF can be completed via moment
+
+tensor potentials42 or the atomic cluster expansion.43 Next to density convolutions proposed
+
+by Lei and Medford,41 descriptors similar to ours have been used also in several other recent
+
+works, see Refs. 44–47. A key distinction is that some of these works use density fitting to
+
+construct descriptors for the electronic density. As pointed out by Chen et al.,48 the explicit
+
+dependence on chemical species makes those ML-DFT functionals less universal.
+
+2.2
+Machine learning scheme
+
+The exchange-correlation energy for any GGA functional can be written as
+
+EGGA
+xc
+=
+�
+dr n(r)εx,HEG[n(r)]Fxc[n(r), |∇n(r)|],
+(6)
+
+where εx,HEG is the exchange energy density for the homogeneous electron gas of uniform
+
+density n, and Fxc is the enhancement factor. We use the same form as an ansatz for our
+
+ML-RPA model,
+
+EML−RPA
+xc
+=
+�
+dr n(r)εx,HEG[n(r)]F ML−RPA
+xc
+[X(r)],
+(7)
+
+where X is a supervector containing the two- and three-body descriptors. The map X(r) �→
+
+F ML−RPA
+xc
+(r) is found by kernel regression using a Gaussian kernel,
+
+F ML−RPA
+xc
+[X(r)] =
+�
+
+iB
+wiB exp
+�
+−[X(r) − XiB]2
+
+2σ2
+
+�
+.
+(8)
+
+6
+
+
+Figure 1: Data sparsification scheme for a training set consisting of three molecules, depicted
+in column (a). First, using the electronic density as input, we calculate the two-body de-
+scriptors X(2)
+n (r) and three-body descriptors X(3)
+n (r) at each real-space grid point [black dots
+in column (b)]. A single radial basis function is used here for visualization purposes. Next,
+a metric is introduced via the Gaussian kernel and representative density environments (red
+crosses) are chosen via k-means clustering for each training structure separately. The chosen
+points are concatenated and a second k-means layer selects the kernel control points XiB
+
+used in Eq. (8) [blue squares in column (c)]. For more details, see Supplementary Sec. S3.
+
+Here, the kernel width σ is an ML hyperparameter, and the XiB are representative kernel
+
+control points chosen from the training data. The corresponding weights wiB are found by
+
+solving a linear regression problem. That is, the ML-RPA exchange-correlation energies and
+
+ML-RPA exchange-correlation potentials have to agree with exact RPA reference data in a
+
+least square sense. The ML-RPA exchange-correlation potentials are obtained by inserting
+
+the ansatz (7) into Eq. (1) and applying the chain rule, see Supplementary Sec. S2.
+
+The exchange-correlation potentials provide derivative information for the ML fit as
+
+atomic forces do in MLFF, thus improving data efficiency. That is, instead of a single data
+
+point per structure for ERPA
+xc
+, we have additional data for vRPA
+xc
+(r) on typically O(105)−O(106)
+
+7
+
+
+grid points r. As this large amount of data cannot be handled by kernel methods, we have
+
+to employ data sparsification tools.
+Without loss of accuracy, the training data can be
+
+compressed dramatically by combining k-means clustering49 with the metric induced by the
+
+Gaussian kernels (see Supplementary Sec. S3). This is illustrated in Fig. 1 using a single
+
+radial basis function, such that the descriptors can be easily visualized in 2D. Once training
+
+is complete, the computational cost of evaluating ML-RPA depends linearly on the num-
+
+ber of kernel control points used. Further, efficient evaluation of the ML-RPA functional is
+
+achieved by extensive use of fast Fourier transforms. We find that ML-RPA is slower than
+
+standard GGA functionals by some prefactor for typical applications, but ML-RPA scales as
+
+O(N log N) with system size N like GGA does.50 In comparison, non-local vdW functionals
+
+can have the same system size scaling and similar computational cost as ML-RPA,51 whereas
+
+exact RPA is several orders of magnitude slower and has at least O(N 3) scaling.52,53
+
+3
+Methods
+
+3.1
+Random-phase approximation
+
+As the RPA includes information from unoccupied orbitals as ingredients, it sits on the fifth
+
+(highest) rung of Jacob’s ladder. In the last two decades, the RPA has been successfully
+
+employed for a multitude of problems, see Refs. 54 and 55 for reviews. In particular, the
+
+RPA is considered a “gold standard” for first-principles surface studies56–58 due to its seamless
+
+inclusion of vdW interactions next to the good description of covalent and metallic bonds.
+
+Combining exact exchange and a good description of dispersion interactions makes the RPA
+
+also suitable for water and ice.59,60 The usual expression for the RPA exchange-correlation
+
+energy reads61
+
+ERPA
+xc
+= Tr[ln(1 − χ0V )],
+(9)
+
+8
+
+
+where χ0 is the Kohn-Sham response function, V is the Coulomb kernel, and we have used
+
+a symbolic notation for sake of brevity. As in standard Kohn-Sham DFT, one can obtain
+
+the exchange-correlation potential corresponding to the RPA exchange-correlation energy by
+
+taking the functional derivative with respect to the electronic density,
+
+vRPA
+xc
+(r) = δERPA
+xc
+/δn(r).
+(10)
+
+Plugging in Eq. (9) and using the chain rule, one can derive the so-called optimized effective
+
+potential (OEP) equation,62–65 symbolically
+
+χ0vxc = G0ΣG0W0
+xc
+G0,
+(11)
+
+where G0 is the non-interacting (Kohn-Sham) Greens-function and ΣG0W0
+xc
+is the self-energy
+
+in the G0W0 approximation. For more details on the implementations of the RPA exchange-
+
+correlation energies and the RPA-OEP method, we refer to Refs. 53 and 37, respectively.
+
+3.2
+Electronic self-consistency
+
+Even tough the RPA-OEP method allows in principle to perform RPA calculations self-
+
+consistently,37 this procedure is seldom carried out due to the large computational overhead.
+
+A more common approach is to evaluate the RPA using orbitals from a semi-local DFT
+
+base functional (“RPA on-top of DFT”, RPA@DFT).67 Here, we calculate all RPA reference
+
+data using PBE as base functional (Perdew-Burke-Ernzerhof, a popular GGA functional10).
+
+That is, RPA@PBE is the ground truth for ML-RPA, and we denote this ground truth
+
+in the following as “exact RPA”. Unless stated otherwise, all RPA calculations and ML-
+
+RPA calculations are thus performed non-self-consistently on-top of PBE orbitals. A ML
+
+substitute functional that reproduces only RPA@PBE would already be very useful, we
+
+reiterate that RPA@PBE is standard practice.
+
+For the calculation of atomic forces, however, it is convenient to perform self-consistent
+
+9
+
+
+4.5
+5
+5.5
+6
+6.5
+7
+7.5
+
+volume per atom (Å
+3)
+
+-22
+
+-21.9
+
+-21.8
+
+-21.7
+
+-21.6
+
+total energy per atom (eV)
+
+exact RPA
+ML-RPA
+experiment
+
+PBE orbitals
+
+electronic
+self-consistency
+
+Figure 2:
+Energy-volume curves of bulk diamond obtained using exact RPA and ML-
+RPA. Full lines indicate calculations on-top of PBE orbitals, and dashed lines indicate
+self-consistent calculations. Self-consistent RPA reference energies are obtained using the
+RPA-OEP method.
+The dotted vertical line indicates the experimental equilibrium vol-
+ume.66
+
+calculations to avoid tedious non-Hellman-Feynman terms. Wherever exact RPA reference
+
+forces are required, for instance for phonon calculations, we calculate such non-Hellman-
+
+Feynman terms explicitly.68 In contrast, ML-RPA can be simply run self-consistently like
+
+any semi-local density functional since the exchange-correlation potential is readily available.
+
+As a validation, we used the computationally demanding RPA-OEP method to calculate the
+
+equilibrium volume of bulk diamond self-consistently. Fig. 2 shows that ML-RPA reproduces
+
+the RPA@PBE ground truth well (solid lines). Further, ML-RPA correctly predicts a small
+
+downward shift due to electronic self-consistency (dashed lines).
+
+10
+
+
+We would like to emphasize that this result is not obvious, as the training set covers
+
+only PBE densities. To this point, Snyder et al. 26 have reported early on that electronic
+
+self-consistency can grossly deteriorate the performance of ML-DFT functionals, as self-
+
+consistency leads the functional away from its training manifold. Likewise, we observed that
+
+earlier versions of ML-RPA became inaccurate when applied self-consistently. However, we
+
+find that the current ML-RPA is very stable and reliably converges to a tight energy threshold
+
+of 10−8 eV. Key hyperparameters in this regard are the cutoff radius (Rcut = 1.5 Å) and the
+
+Tikhonov regularization parameter (tSVD = 1.0 × 10−9, see Supplementary Sec. S2). Even
+
+atomic densities can be used as starting points, tough preconverging with PBE typically
+
+speeds up the ML-RPA self-consistency cycle. Lastly, the ML-RPA stress tensor has also
+
+been implemented via finite differences, which is useful for example for volume relaxations
+
+and the training of machine learned force fields (see Supplementary Sec. S5).
+
+3.3
+Computational details
+
+We use the PAW code VASP (Vienna Ab Initio Simulation Package),69 adopting the C_GW,
+
+H_GW and O_GW pseudo-potentials. All DFT and RPA calculations are performed spin-
+
+non-polarized. An energy cutoff of 600 eV is used for the plane-wave orbital basis set (ENCUT
+
+in VASP). For RPA calculations, a reduced cutoff of 400 eV is used to expand the response
+
+function χ0 (ENCUTGW in VASP), using a cosine window to smoothen the cutoff of the Coulomb
+
+kernel.67,70 Basis set incompleteness errors are discussed in Supplementary Sec. S4. The one-
+
+center PAW contributions to the RPA exchange-correlation energy are treated on the level
+
+of Hartree-Fock, consistently for RPA and ML-RPA calculations. The good agreement of
+
+total energies in Fig. 2, rather than relative energies only, demonstrates the consistency of
+
+the ML-RPA implementation. Similar agreement is observed for all materials, with fit errors
+
+around 1 meV/electron.
+
+11
+
+
+4
+Results
+
+4.1
+Bulk diamond
+
+We apply our ML scheme to create an RPA substitute functional for diamond and liquid
+
+water. Following a common MLFF practice,38 bulk diamond training data are iteratively
+
+added from molecular dynamics (MD) simulations, using prior versions of the ML-RPA
+
+functional to create the MD trajectories. We pick 10 MD snapshots from the 8 atom supercell
+
+and 5 snapshots from the 16 atom supercell. The full ML-RPA training set is further detailed
+
+in Supplementary Sec. S4. The equilibrium lattice constant obtained by ML-RPA (3.582 Å)
+
+agrees well with the exact RPA value (3.581 Å).
+
+Next, we calculate phonon dispersions using the finite displacement method.71,72 Converged
+
+results are obtained in the large supercell limit, which is hard to achieve with exact RPA
+
+due to its unfavorable scaling behavior. Fig. 3 compares the ML-RPA phonon dispersions
+
+for different supercell sizes to exact RPA results. For contrast, phonon dispersions obtained
+
+using PBE are shown as well. For the 16 atom supercell [panel (a)], where training data are
+
+available, the ML-RPA phonon dispersion is generally in good agreement with exact RPA,
+
+though high-frequency modes are slightly underestimated. Exact RPA calculations for the
+
+larger 128 atom supercells validates the extrapolation ability of ML-RPA, as no training
+
+data are included for this supercell size. A prominent finite size effect is the closing of the
+
+gap near the K-point with respect to the smaller 16 atom cell. Further, the overbending
+
+of the LO modes reduces with increasing supercell size, which is most notable along ∆ (Γ-
+
+X). These characteristic features are well reproduced with ML-RPA. The phonon dispersions
+
+obtained using exact RPA are overall in good agreement with experimental data,66,73 whereas
+
+ML-RPA and PBE slightly underestimate the high-frequency modes.
+
+12
+
+
+Γ
+X
+U,K
+Γ
+L
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+Frequency (THz)
+
+PBE
+ML-RPA
+exact RPA
+
+(a)
+
+ 16 atoms
+
+LO
+
+TO
+
+LA
+
+TA
+
+Γ
+X
+U,K
+Γ
+L
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+Frequency (THz)
+
+PBE
+ML-RPA
+exact RPA
+
+(b)
+
+128 atoms
+
+LO
+
+TO
+
+LA
+
+TA
+
+Figure 3: Phonon dispersion of diamond, calculated at the respective equilibrium lattice
+constants, using supercells containing (a) 16 atoms, (b) 128 atoms. Phonons obtained using
+exact RPA are represented as solid black lines, blue dashed lines represent ML-RPA. PBE
+calculations are also shown for comparison (red dotted lines). ML-RPA has training data
+only for the smaller supercell size [16 atoms, panel (a)]. Black and green symbols indicate
+experimental data from Refs. 66 and 73, respectively.
+
+13
+
+
+Figure 4: Side view of crystallographic diamond surfaces.74 The 2 × 1 simulation cells are
+indicated by black vertical lines, and bulk regions are indicated by faded atoms. From top
+to bottom: (a) clean surfaces, (b) reconstructed surfaces, (c) hydrogenated surfaces (1 ML),
+(d) oxygenated surfaces (1 ML). Bold edges indicate the most stable orientation for a given
+surface termination as predicted by exact RPA. Whereas the (111)-1db surface derecon-
+structs upon the chemisorption of hydrogen and oxygen,75 the (100) surface dereconstructs
+only upon the chemisorption of oxygen.76 The (111)-3db surface retains the 2 × 1 geometry
+throughout,77 and the (110) surface shows no 2 × 1 reconstruction at all.78
+
+4.2
+Diamond surfaces
+
+The advent of chemical vapor deposition (CVD) has encouraged detailed first-principles
+
+simulations of diamond surfaces. Specifically, the characterization of ideal crystallographic
+
+surfaces has proven useful for the theoretical understanding of CVD grown diamond.79 When
+
+a diamond surface is cut, the outer surface layers can rearrange to partially eliminate the
+
+exposed dangling bonds, see Fig. 4. These reconstructions significantly change the properties
+
+of the surfaces.
+Further, important material properties such as electron affinity can be
+
+modified via chemisorption processes in a controlled fashion, the most important surface
+
+adsorbates being H and O.
+
+The (100) surface is the most relevant crystallographic surface and has been thoroughly
+
+studied.76,80 While the (111) surface has also received a lot of attention,75,81 most studies
+
+14
+
+
+neglect that there are two possible ways to cut this surface.77,82 Namely, via the so-called
+
+glide and shuffle planes, one can expose (111) diamond surfaces with one dangling bond (1db)
+
+or three dangling bonds (3db) per surface atom, respectively. Even though the clean 1db
+
+surface is clearly more stable, 3db surfaces naturally occur in growth and etching processes.
+
+Finally, the (110) surface, which is difficult to prepare experimentally, has only recently been
+
+fully characterized.83
+
+In the following, we calculate diamond surface energies of formation via
+
+Esurf = (E − Edia/Ndia − EH2/NH − EO/NO)/Nsurf,
+(12)
+
+where E is the total energy of the surface, Edia and EH2 are the energies of bulk diamond
+
+and the H2 molecule, and EO is calculated using the water monomer as reference
+
+EO = EH2O − EH2.
+(13)
+
+Vibrational contributions to the formation energies due to zero-point motion are neglected.
+
+Diamond surface calculations are performed in 2×1 supercells using symmetric slabs. We use
+
+18 surface layers for the (111)-1db surface and 16 layers for the rest. This assures convergence
+
+of the surface formation energies to better than 10 meV accuracy.78,81 The surface geometries
+
+were obtained using the PBE functional, further details are given in Supplementary Sec. S4.
+
+RPA formation energies of diamond surfaces are collected in Table 1.
+(100) and (111)-
+
+1db surfaces were included in training, whereas (110) and (111)-3db surfaces are left as
+
+independent tests for ML-RPA. For all surface terminations studied, ML-RPA correctly
+
+predicts the most stable surface orientation (underlined values). For example, of the clean
+
+surfaces (as cut), both RPA and ML-RPA predict the order (110) < (111)-1db < (100) <
+
+(111)-3db, which can be qualitatively understood via coordination of the surface atoms.81
+
+Note that the (111)-3db surface becomes increasingly competitive with the (111)-1db surface
+
+as more dangling bonds are eliminated via reconstruction (-1 db) and chemisorption (-2 db
+
+15
+
+
+for H, -3 db for O).
+
+Including calculations of metastable surfaces (see Supplementary Sec. S4), we have as-
+
+sembled a database of 28 RPA surface formation energies in total. It is interesting to use
+
+these data as benchmark for other exchange-correlation functionals. Table 2 shows that all
+
+functionals including ML-RPA tend to predict smaller formation energies than exact RPA
+
+(negative mean relative errors). In terms of accuracy, ML-RPA performs very well, with a
+
+mean absolute error of 70 meV per surface atom. Surface energies predicted by the meta-
+
+GGA functional SCAN as well as the vdW functionals PBE+TS and SCAN+rVV10 are also
+
+in very good agreement with exact RPA, with mean absolute errors slightly larger than ML-
+
+RPA. Finally, we comment again on the stability of electronic self-consistancy. Going from
+
+ML-RPA@PBE to self-consistent ML-RPA, individual surface energies change by 60 meV
+
+per surface atom or less, and the mean absolute error of self-consistent ML-RPA (compared
+
+to exact RPA@PBE) is only 80 meV per surface atom. Thus, the accuracy of ML-RPA is
+
+not significantly diminished by electronic self-consistency.
+
+Table 1: RPA energies of formation for diamond surfaces, calculated via Eq. (12) (in eV
+per surface atom). The most stable surface orientation for a given surface termination is
+underlined, and surfaces included in the ML-RPA training set are marked by asterisks.
+Surface calculations are performed in 2 × 1 supercells, with geometries illustrated in Fig. 4.
+
+(100)∗
+(110)
+(111)-1db∗
+(111)-3db
+
+exact
+ML
+exact
+ML
+exact
+ML
+exact
+ML
+
+clean
+3.66
+3.57
+2.09
+1.95
+2.69
+2.52
+4.37
+4.37
+reconstructed
+2.08
+2.03
+1.70
+1.59
+1.41
+1.34
+2.70
+2.56
++H (1 ML)
+0.20
+0.11
+-0.11
+-0.12
+-0.19
+-0.24
+0.17
+0.11
++O (1 ML)
+1.99
+1.91
+3.23
+3.21
+2.99
+2.94
+2.90
+2.79
+
+∗included in the ML-RPA training set
+
+4.3
+Liquid water
+
+Water with its many anomalies is both an important and challenging system for first-
+
+principles molecular dynamics simulations.84 The role of the exchange-correlation functional
+
+16
+
+
+Table 2: Surface formation energies from different exchange-correlation functionals compared
+to values from exact RPA. Mean signed error (MSE), mean absolute error (MAE) and
+maximum absolute error (MAX) are given in eV per surface atom. Averages are over 28
+diamond surfaces of which 16 are in the ML-RPA training set, see Supplementary Section
+D.
+
+MSE
+MAE
+MAX
+
+LDA
+-0.06
+0.14
+0.34
+PBEsol
+-0.10
+0.12
+0.33
+PBE
+-0.19
+0.19
+0.39
+RPBE
+-0.23
+0.24
+0.44
+
+PBE+TS
+-0.01
+0.08
+0.25
+RPBE+D3(BJ)
+-0.09
+0.12
+0.48
+optB88-vdW
+-0.19
+0.19
+0.62
+rev-vdW-DF2
+-0.13
+0.14
+0.52
+rVV10
+-0.18
+0.18
+0.57
+
+SCAN
+-0.08
+0.11
+0.25
+SCAN+rVV10
+-0.03
+0.10
+0.24
+
+ML-RPA
+-0.07
+0.07
+0.18
+
+for the description of liquid water and ice has been studied extensively.59,85–87 This has made
+
+water an interesting target for several recent MLFF60,88,89 and ML-DFT22,45 approaches.
+
+In particular, Yao and Kanai 60 used MLFF to perform RPA-level calculations for liquid
+
+water with the inclusion of nuclear quantum effects. They showed that the RPA can well
+
+reproduce experimental data for numerous water properties at different temperatures. Due
+
+to the small mass of the hydrogen atom, the oxygen-hydrogen radial distribution function
+
+(RDF) and especially the hydrogen-hydrogen RDF are significantly altered by nuclear quan-
+
+tum effects. Namely, classical MD predicts an oxygen-hydrogen RDF that is overstructured
+
+compared to experimental data, and even more so for the hydrogen-hydrogen RDF. In con-
+
+trast, the oxygen-oxygen RDF is far less affected, especially for higher temperatures.
+
+To perform calculations on liquid water, we add 32 liquid water structures containing 8
+
+water molecules to the ML-RPA training set, as well as 39 structures using larger supercells
+
+(31 or 32 water molecules). The structures are again sampled from MD trajectories created
+
+by earlier ML-RPA versions. In addition, the ML-RPA training set contains 6 structures
+
+17
+
+
+sampling the water monomer.
+
+Accurate determination of the water RDFs require long MD simulations that are compu-
+
+tationally expensive even without nuclear quantum corrections. Thus, we perform classical
+
+MDs using 64 water molecules and speed them up by combining ML-RPA with MLFF.
+
+That is, we train a machine learning force field “on-the-fly” 32,90 using the energies and forces
+
+predicted by ML-RPA. In order to obtain an RPA reference for the radial distribution func-
+
+tion, we also train an MLFF directly on exact RPA energies and forces (RPA-MLFF). The
+
+RPA-MLFF training set contains all water structures from the ML-RPA training set plus
+
+30 additional structures containing 32 molecules. To validate our machine learning force
+
+fields, we also trained on-the-fly MLFFs for the vdW functionals RPBE+D3(BJ)91,92 and
+
+PBE+TS.93 Further details of the MLFF setups are given in Supplementary Sec. S5.
+
+Fig 5 shows the oxygen-oxygen RDF, gOO, and oxygen-hydrogen RDF, gOH, at ambient
+
+conditions. First, we note that the RDFs obtained from PBE+TS and RPBE+D3(BJ) are
+
+in good agreement with respective literature results96,97 (for PBE+TS, we compared the
+
+RDF at T = 330 K, not shown). The PBE+TS RDF is clearly overstructured compared to
+
+experimental data. The water structure is “too tetragonal”, even more so when the TS vdW
+
+correction is not included, see Ref. 96. The RPBE+D3(BJ) RDF is in better agreement
+
+with experiment, but is still somewhat overstructured. This is a specific effect of the Becke-
+
+Johnson (BJ) damping, that is, the RPBE+D3(0) RDF (using zero damping) is closer to
+
+experiment (see Ref. 97). Next, the RDFs predicted by RPA-MLFF are less structured than
+
+the RPA references of Yao and Kanai, compare the first peaks and minima of both gOO and
+
+gOH. This discrepancy is possibly due to technical convergence of either RPA calculation, in
+
+particular, basis set incompleteness errors. The fact that RPA-MLFF closely reproduces the
+
+first experimental peak height of gOO is arguably accidental, since nuclear quantum effects
+
+are not included. For gOH, however, the result of Yao and Kanai is still more structured than
+
+experiment even with nuclear quantum effects included (see Fig. 1 in Ref. 60), indicating
+
+that our RPA reference is potentially more accurate.
+
+18
+
+
+That said, overall both RPA reference results agree well with experimental data. Turning
+
+to the water structure predicted by ML-RPA, there are some clear discrepancies from both
+
+RPA references. The first peak of gOO is smaller in height, and the second peak is completely
+
+missing. The gOH predicted by ML-RPA is also somewhat less structured than the RPA
+
+references, but the overall agreement is better than for gOO. Importantly, the discrepancies
+
+are mainly due to the actual ML-RPA density functional, since the on-the-fly MLFF is very
+
+accurate (see Supplementary Sec. S5). Specifically, atomic forces for all MLFFs trained
+
+here exhibit an root mean square error of roughly 30 meV Å
+−1, whereas the respective force
+
+errors for liquid water due to ML-RPA are roughly 90 meV Å
+−1. It is also important to
+
+point out that the RPA-MLFF is a single-purpose force field, trained specifically to simulate
+
+liquid water in the bulk (and the water monomer). In contrast, the ML-RPA functional is
+
+not limited in this way as will be demonstrated in the following section.
+
+19
+
+
+2
+3
+4
+5
+6
+
+rOO (Å)
+
+0
+
+1
+
+2
+
+3
+
+4
+
+gOO (rOO)
+
+PBE+TS
+RPBE+D3(BJ)
+RPA-MLFF
+ML-RPA 
+RPA Yao
+experiment Skinner
+experiment Soper
+
+(a)
+
+1
+2
+3
+4
+
+rOH (Å)
+
+0
+
+0.5
+
+1
+
+1.5
+
+2
+
+2.5
+
+3
+
+3.5
+
+gOH (rOH)
+
+PBE+TS
+RPBE+D3(BJ)
+ML-RPA
+RPA Yao
+RPA-MLFF 
+experiment Soper
+
+(b)
+
+Figure 5: Partial radial distribution functions of liquid water at ambient conditions (T =
+300 K, ρ = 1 g/cm3), details of the MD simulations are given in Supplementary Sec. S5. (a)
+oxygen-oxygen radial distribution function, (b) oxygen-hydrogen radial distribution function.
+RPA results from Yao and Kanai are extracted from Ref. 60, experimental data are taken
+from Refs. 94,95. See text for a discussion of nuclear quantum effects.
+
+20
+
+
+4.4
+Smaller water clusters
+
+Table 3: Ground state properties of the H2O dimer.
+Dimer binding energies, Edim
+b
+=
+−E[(H2O)2] + 2E[H2O], are given in eV. Equilibrium bond lengths ddim
+OO and ddim
+OH are given
+in Å. All calculations are performed fully self-consistently.
+
+Edim
+b
+ddim
+OO
+ddim
+OH
+
+LDA
+0.39
+2.72
+1.73
+PBEsol
+0.27
+2.80
+1.82
+PBE
+0.23
+2.88
+1.91
+RPBE
+0.17
+3.02
+2.04
+
+PBE+TS
+0.24
+2.89
+1.92
+RPBE+D3(BJ)
+0.21
+2.94
+1.97
+optB88-vdW
+0.22
+2.90
+1.93
+rev-vdW-DF2
+0.23
+2.89
+1.92
+rVV10
+0.25
+2.88
+1.90
+
+SCAN
+0.25
+2.84
+1.88
+SCAN+rVV10
+0.26
+2.84
+1.88
+
+ML-RPA
+0.18
+3.07
+2.10
+RPA-MLFF
+0.21
+3.28
+2.30
+
+CCSD(T)98
+0.22
+2.91
+1.96
+
+An important H2O benchmark is the performance for smaller water clusters.86 Already
+
+the simple H2O dimer gives a predictive measure of the strength of a hydrogen bond in liquid
+
+water. Table 3 shows that ML-RPA predicts a somewhat underbound dimer, consistent
+
+with the understructured liquid. Going to larger clusters, the water hexamers present a
+
+difficult challenge for DFT, as three-dimensional structures (“prism”,”cage”,”bag”) compete
+
+energetically with two-dimensional ones (“book”,”chair”,”boat”). Fig. 6 shows that ML-RPA
+
+erroneously predicts two-dimensional structures to be most stable, as do all GGA functionals
+
+(see also Supplementary Sec. S6). LDA and the SCAN meta-GGA functional perform well
+
+in this regard, but overbind the dimer, compare Table 3. All vdW functionals tested give
+
+excellent results for both the dimer as well as the hexamers. This confirms the critical role
+
+that vdW interactions play for the structure of water.86,88 Further, RPA-MLFF clearly fails
+
+for water clusters, but we reiterate that it has been trained only for liquid water in the bulk.
+
+21
+
+
+prism
+
+cage
+
+book1
+
+book2
+
+bag
+
+cyclic-chair
+
+cyclic-boat1
+
+cyclic-boat2
+
+-0.2
+
+-0.1
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+isomer energy differences (eV)
+
+PBE
+PBE+TS
+RPBE
+RPBE+D3(BJ)
+ML-RPA
+RPA-MLFF
+CCSD(T) reference
+
+Figure 6: Binding energy differences of eight H2O hexamers. Geometries and CCSD(T)
+reference data are taken from Ref. 99. The vdW functionals PS+TS and RPBE+D3(BJ)
+largely correct the errors of their respective GGA base functionals, see also Supplementary
+Sec. S6. Lines drawn are only guides to the eye.
+
+The fact that RPA-MLFF extrapolates is substantiated by large Bayesian error predictions:
+
+compared to typical bulk water configurations, the maximum force Bayesian error is three
+
+times as large for the hexamers and five times as large for the dimer.
+
+Finally, we investigated cubic ice, specifically, the Ic(a) proton-ordered ice phase as de-
+
+scribed in Ref. 59. The equilibrium volume predicted by RPA-MLFF is 32.3 Å
+3 per H2O, in
+
+good agreement with the 32.6 Å
+3 per H2O obtained using exact RPA. The ML-RPA equi-
+
+librium volume is somewhat smaller (31.2 Å
+3 per H2O). For comparison, the equilibrium
+
+volumes predicted by PBE and PBE+TS are 30.2 Å
+3 per H2O and 30.0 Å
+3 per H2O, respec-
+
+tively. In summation, ML-RPA provides a consistent but somewhat inaccurate description
+
+22
+
+
+of water and ice.
+The fact that ML-RPA misses the second gOO maximum, underbinds
+
+the water dimer, and provides a PBE-like description of the water hexamers and cubic ice
+
+strongly indicates that the current ML-RPA misses some crucial non-local interactions. This
+
+is likely connected to the rather small cutoff radius used here for ML-RPA (Rcut = 1.5 Å).
+
+However, increasing the cutoff is not beneficial for the current ML-RPA, our tests indicate
+
+that this diminishes ML-RPA accuracy (not shown).
+
+4.5
+Homogeneous electron gas
+
+2
+4
+6
+8
+10
+
+Wigner-Seitz radius (aB)
+
+-0.5
+
+-0.4
+
+-0.3
+
+-0.2
+
+-0.1
+
+0
+
+exchange-correlation energy per electron (Ha)
+
+x only
+ML-RPA
+exact RPA
+
+Figure 7: Application of ML-RPA to the homogeneous electron gas. Exact RPA results were
+taken from Ref. 70, the exchange only approximation εx,HEG is also shown for comparison.
+No HEG data were added to the ML-RPA training set.
+
+To challenge the extrapolation abilities of our ML-RPA functional, we apply it to the ho-
+
+mogeneous electron gas (HEG). The HEG constitutes an “appropriate norm”, that is an
+
+23
+
+
+important theoretical limit that density functionals should fulfill. Due to symmetry, the
+
+HEG is completely characterized by the electron density n, or equivalently the Wigner-Seitz
+
+radius rs = (3/4πn)1/3. Starting with LDA, many successful exchange-correlation function-
+
+als are designed such that they describe the HEG exactly, but this is not the case for the
+
+present ML-RPA functional. It is important to point out that the ground truth here is the
+
+exchange-correlation energy per electron as given by exact RPA. As the RPA is itself an
+
+approximation, εRPA
+xc,HEG differs from the usual LDA which is based on exact numerical data
+
+from Quantum Monte Carlo calculations.100 Figure 7 shows that ML-RPA for intermediate
+
+densities (rs ∼ 2 − 5) closely follows the exact RPA reference. Since this is the range of
+
+physical densities, ML-RPA seems to have learned the HEG indirectly from diamond and
+
+water data. Still, this excellent agreement comes somewhat surprising considering that no
+
+HEG data were explicitly added to the ML-RPA training set. Furthermore, for small den-
+
+sities (rs ≳ 5), ML-RPA is slightly less accurate but still well behaved. Finally, for large
+
+densities (rs ≲ 2), ML-RPA develops an unphysical kink. This indicates the presence of an
+
+“extrapolation hole”, that is, the complete lack of training data can cause erratic behavior.
+
+5
+Discussion
+
+The LDA and different GGA functionals differ in the strength of their respective enhancement
+
+factors. This results, for example, in the following trend for cohesive energies of solids
+
+LDA > PBEsol > PBE > RPBE.
+(14)
+
+The same trend is also manifest for surface formation energies and molecular adsorption
+
+energies.56 As different enhancement strengths fit better for different physical properties,
+
+this leads to a well-known trade-off for GGA functionals. This trade-off is visible also in
+
+the current study: LDA and PBEsol give better diamond surface energies (Table 2). PBE
+
+and RPBE perform better for the water dimer (Table 3), but the trend is reversed for the
+
+24
+
+
+hexamer puzzle (Supplementary Sec. S6). This means that no GGA functional can give
+
+a completely satisfactory description of liquid water and ice, see also Ref. 86 for a more
+
+in-depth discussion. We have demonstrated that the non-local gradient approximation used
+
+in our ML-RPA model can overcome the GGA trade-off to some extend. While ML-RPA
+
+does not exceed a GGA-level description of liquid water, it clearly outperforms all GGA
+
+functionals for the diamond surface benchmark.
+
+Traditional routes beyond GGA are metaGGA and hybrid functionals on the one hand,
+
+and vdW functionals on the other hand. The RPA itself can be considered as the “gold
+
+standard” of vdW functionals.101 Different vdW functionals tested here generally outperform
+
+their respective semi-local DFT base functionals, though the improvement is not always
+
+consistent. For example, the rVV10 vdW correction slightly increases the surface energies
+
+of the pristine SCAN functional, achieving good agreement with exact RPA (Table 2, Ref.
+
+57).
+On the other hand, SCAN already slightly overbinds the water dimer and gives a
+
+somewhat overstructured liquid. Thus, it is plausible that additional binding in the form
+
+of rVV10 can only deteriorate the performance of SCAN for water (Supplementary Sec.
+
+S6, Ref. 102). We reason that the rather small cutoff radius adapted here for ML-RPA
+
+is not sufficient to capture the full non-locality that is required for a complete description
+
+of liquid water (ML-RPA uses a cutoff radius of 1.5 Å, whereas RPA-MLFF uses a larger
+
+cutoff of 6.0 Å). However, simply increasing the cutoff radius is not an option with the
+
+current implementation and training database. We repeat that our tests show that a larger
+
+cutoff would diminish fit accuracy. Future work could instead focus on the construction
+
+of explicitly long-range descriptors as present in non-local vdW functionals or in recent
+
+extensions of MLFF frameworks.103
+
+Finally, a common problem of ML techniques is extrapolation, that is, one can only
+
+expect good performance if applications are similar enough to the respective training sets.
+
+Here, this point was demonstrated by the poor performance of RPA-MLFF for water clusters
+
+(RPA-MLFF has been trained only for bulk water and the water monomer). In contrast,
+
+25
+
+
+ML-RPA gives consistent if inaccurate predictions, though it has less water training data.
+
+We speculate that this is due to ML-RPA descriptors being much more compact, which
+
+makes extrapolation more manageable. Specifically, here we used 8 density descriptors for
+
+ML-RPA versus 408 atomic descriptors for RPA-MLFF (204 for both O and H). It is worth
+
+pointing out that this difference will be exacerbated when more chemical species have to be
+
+described at the same time. That is, the number of descriptors in MLFF schemes generally
+
+scales unfavorably with the number of chemical species, whereas the density descriptors used
+
+for ML-RPA do not depend explicitly on atom type. On the other side, RPA-MLFF is in
+
+the present implementation undeniable superior in terms of raw fit accuracy. ML-RPA and
+
+RPA-MLFF thus strike different balances between model flexibility and universality.
+
+When pushed even further outside of its training set, however, ML-RPA eventually ex-
+
+trapolates as well as demonstrated for the homogeneous electron gas. The obvious but costly
+
+solution to the extrapolation problem is the construction of ever larger training databases.
+
+A more elegant alternative would be to enforce ML-RPA to obey known exact constraints.
+
+Exact constraints have been used in the past to construct successful functionals such as
+
+the SCAN functional (“Strongly constrained and appropriately normed”).12 Recently, there
+
+have been some promising efforts to incorporate exact constraints also into machine learned
+
+density functionals.22,47,104,105
+
+6
+Conclusion and Outlook
+
+In this work we have machine learned a substitute density functional based on the random-
+
+phase approximation. The ingredients of ML-RPA are density descriptors constructed anal-
+
+ogously to the two- and three-body descriptors used for machine learned force fields. These
+
+ingredients can be considered as non-local extensions of the local density and its gradient.
+
+As a first application, we have constructed an ML-RPA functional for diamond and liquid
+
+water. We have demonstrated how such a functional can be used to enable RPA calculations
+
+26
+
+
+at a larger scale. For a data set of 28 diamond surfaces, ML-RPA surpasses all tested GGA
+
+functionals in terms of accuracy and reaches the level of state-of-the-art vdW functionals.
+
+For liquid water, ML-RPA is less accurate and falls back to a GGA-level description, which
+
+we traced back to an insufficient description of non-local interactions.
+
+Our ML-RPA scheme was demonstrated to learn fairly quickly from small amounts of
+
+exact RPA data, with the entire data base consisting of less than 200 structures. We credit
+
+this data efficiency to the inclusion of derivative information in the form of RPA exchange-
+
+correlation potentials, which are obtained via the optimized effective potential method. This
+
+is in close analogy to fitting atomic forces in MLFF. Generally, the tasks of machine learning
+
+atomic force fields and machine learning density functionals are closely related. We hope to
+
+see continued exchange of concepts and techniques, as we believe that both fields can benefit
+
+immensely from such a “cross-fertilization” of ideas.
+
+Finally, our machine learning method using optimized effective potentials is general and
+
+not limited to the random-phase approximation. For example, beyond RPA theories can
+
+be constructed by including vertex correction to the screened Coulomb interaction and/or
+
+self energy. One can also envision to extract high accuracy exchange-correlation potentials
+
+from accurate coupled-cluster densities via Kohn-Sham inversion. Our method can also be
+
+applied to learn hybrid functionals, where large databases can be obtained more easily, thus
+
+facilitating large-scale hybrid functional simulations.
+
+Acknowledgement
+
+Computation time at the Vienna Scientific Cluster (VSC) is gratefully acknowledged. The
+
+authors thank K. Burke as well as K. Bystrom and B. Kozinsky for fruitful discussions.
+
+27
+
+
+Author declarations
+
+Conflict of interest
+
+The authors declare no competing interests.
+
+Data availability
+
+The ML-RPA training data is freely available at https://doi.org/10.25365/phaidra.418.
+
+Supporting Information Available
+
+Analytical proof of Eqs. (3) and (5) (S1), analytical expressions for the ML-RPA exchange-
+
+correlation potentials (S2), details of our data sparsification scheme (S3), training details for
+
+ML-RPA (S4) and RPA-MLFF (S5), water hexamer benchmark for more DFT functionals
+
+(S6).
+
+References
+
+(1) Burke, K. Perspective on density functional theory. The Journal of Chemical Physics
+
+2012, 136, 150901.
+
+(2) Medvedev, M. G.; Bushmarinov, I. S.; Sun, J.; Perdew, J. P.; Lyssenko, K. A. Density
+
+functional theory is straying from the path toward the exact functional. Science 2017,
+
+355, 49–52.
+
+(3) Hohenberg, P.; Kohn, W. Inhomogeneous Electron Gas. Phys. Rev. 1964, 136, B864–
+
+B871.
+
+(4) Kohn, W. Nobel Lecture: Electronic structure of matter—wave functions and density
+
+functionals. Reviews of Modern Physics 1999, 71, 1253–1266.
+
+28
+
+
+(5) Kohn, W.; Sham, L. J. Self-Consistent Equations Including Exchange and Correlation
+
+Effects. Phys. Rev. 1965, 140, A1133–A1138.
+
+(6) Perdew, J. P.; Schmidt, K. Jacob’s ladder of density functional approximations for the
+
+exchange-correlation energy. AIP Conference Proceedings 2001, 577, 1–20.
+
+(7) Seidl, A.; Görling, A.; Vogl, P.; Majewski, J. A.; Levy, M. Generalized Kohn-Sham
+
+schemes and the band-gap problem. Physical Review B 1996, 53, 3764–3774.
+
+(8) (a) Dion, M.; Rydberg, H.; Schröder, E.; Langreth, D. C.; Lundqvist, B. I. Van der
+
+Waals Density Functional for General Geometries. Physical Review Letters 2004, 92,
+
+246401; (b) Dion, M.; Rydberg, H.; Schröder, E.; Langreth, D. C.; Lundqvist, B. I.
+
+Erratum: Van der Waals Density Functional for General Geometries [Phys. Rev. Lett.
+
+92, 246401 (2004)]. Physical Review Letters 2005, 95, 109902.
+
+(9) Berland, K.; Cooper, V. R.; Lee, K.; Schröder, E.; Thonhauser, T.; Hyldgaard, P.;
+
+Lundqvist, B. I. van der Waals forces in density functional theory: a review of the
+
+vdW-DF method. Reports on Progress in Physics 2015, 78, 066501.
+
+(10) (a) Perdew, J. P.; Burke, K.; Ernzerhof, M. Generalized Gradient Approximation
+
+Made Simple. Phys. Rev. Lett. 1996, 77, 3865–3868; (b) Perdew, J. P.; Burke, K.;
+
+Ernzerhof, M. Generalized Gradient Approximation Made Simple [Phys. Rev. Lett.
+
+77, 3865 (1996)]. Phys. Rev. Lett. 1997, 78, 1396–1396.
+
+(11) Perdew, J. P.; Ernzerhof, M.; Burke, K. Rationale for mixing exact exchange with
+
+density functional approximations. The Journal of Chemical Physics 1996, 105, 9982–
+
+9985.
+
+(12) Sun, J.; Ruzsinszky, A.; Perdew, J. P. Strongly Constrained and Appropriately
+
+Normed Semilocal Density Functional. Phys. Rev. Lett. 2015, 115, 036402.
+
+29
+
+
+(13) Becke, A. D. Density-functional exchange-energy approximation with correct asymp-
+
+totic behavior. Physical Review A 1988, 38, 3098–3100.
+
+(14) Lee, C.; Yang, W.; Parr, R. G. Development of the Colle-Salvetti correlation-energy
+
+formula into a functional of the electron density. Physical Review B 1988, 37, 785–789.
+
+(15) Becke, A. D. Density-functional thermochemistry. III. The role of exact exchange. The
+
+Journal of Chemical Physics 1993, 98, 5648–5652.
+
+(16) Zhao, Y.; Truhlar, D. G. The M06 suite of density functionals for main group ther-
+
+mochemistry, thermochemical kinetics, noncovalent interactions, excited states, and
+
+transition elements: two new functionals and systematic testing of four M06-class
+
+functionals and 12 other functionals. Theoretical Chemistry Accounts 2007, 120, 215–
+
+241.
+
+(17) Stephens, P. J.; Devlin, F. J.; Chabalowski, C. F.; Frisch, M. J. Ab Initio Calculation
+
+of Vibrational Absorption and Circular Dichroism Spectra Using Density Functional
+
+Force Fields. The Journal of Physical Chemistry 1994, 98, 11623–11627.
+
+(18) Paier, J.; Marsman, M.; Kresse, G. Why does the B3LYP hybrid functional fail for
+
+metals? The Journal of Chemical Physics 2007, 127, 024103.
+
+(19) Cramer, C. J.; Truhlar, D. G. Density functional theory for transition metals and
+
+transition metal chemistry. Physical Chemistry Chemical Physics 2009, 11, 10757.
+
+(20) Nagai, R.; Akashi, R.; Sugino, O. Completing density functional theory by machine
+
+learning hidden messages from molecules. npj Computational Materials 2020, 6, 1–8.
+
+(21) Bogojeski, M.; Vogt-Maranto, L.; Tuckerman, M. E.; Müller, K.-R.; Burke, K. Quan-
+
+tum chemical accuracy from density functional approximations via machine learning.
+
+Nature Communications 2020, 11, 1–11.
+
+30
+
+
+(22) Dick, S.; Fernandez-Serra, M. Highly accurate and constrained density functional ob-
+
+tained with differentiable programming. Physical Review B 2021, 104, l161109.
+
+(23) Kirkpatrick, J.; McMorrow, B.; Turban, D. H. P.; Gaunt, A. L.; Spencer, J. S.;
+
+Matthews, A. G. D. G.; Obika, A.; Thiry, L.; Fortunato, M.; Pfau, D.; Castel-
+
+lanos, L. R.; Petersen, S.; Nelson, A. W. R.; Kohli, P.; Mori-Sánchez, P.; Hassabis, D.;
+
+Cohen, A. J. Pushing the frontiers of density functionals by solving the fractional
+
+electron problem. Science 2021, 374, 1385–1389.
+
+(24) Tozer, D. J.; Ingamells, V. E.; Handy, N. C. Exchange-correlation potentials. The
+
+Journal of Chemical Physics 1996, 105, 9200–9213.
+
+(25) Hamprecht, F. A.; Cohen, A. J.; Tozer, D. J.; Handy, N. C. Development and assess-
+
+ment of new exchange-correlation functionals. The Journal of Chemical Physics 1998,
+
+109, 6264–6271.
+
+(26) Snyder, J. C.; Rupp, M.; Hansen, K.; Müller, K.-R.; Burke, K. Finding Density Func-
+
+tionals with Machine Learning. Phys. Rev. Lett. 2012, 108, 253002.
+
+(27) Li, L.; Snyder, J. C.; Pelaschier, I. M.; Huang, J.; Niranjan, U.-N.; Duncan, P.;
+
+Rupp, M.; Müller, K.-R.; Burke, K. Understanding machine-learned density func-
+
+tionals. International Journal of Quantum Chemistry 2015, 116, 819–833.
+
+(28) Brockherde, F.; Vogt, L.; Li, L.; Tuckerman, M. E.; Burke, K.; Müller, K.-R. Bypassing
+
+the Kohn-Sham equations with machine learning. Nature Communications 2017, 8,
+
+1–10.
+
+(29) Kalita, B.; Li, L.; McCarty, R. J.; Burke, K. Learning to Approximate Density Func-
+
+tionals. Accounts of Chemical Research 2021, 54, 818–826.
+
+(30) Schmidt, J.; Marques, M. R. G.; Botti, S.; Marques, M. A. L. Recent advances and
+
+31
+
+
+applications of machine learning in solid-state materials science. npj Computational
+
+Materials 2019, 5, 1–36.
+
+(31) (a) Bartók, A. P.; Kondor, R.; Csányi, G. On representing chemical environments.
+
+Physical Review B 2013, 87, 184115; (b) Bartók, A. P.; Kondor, R.; Csányi, G.
+
+Publisher’s Note: On representing chemical environments [Phys. Rev. B 87, 184115
+
+(2013)]. Physical Review B 2013, 87, 219902; (c) Bartók, A. P.; Kondor, R.; Csányi, G.
+
+Erratum: On representing chemical environments [Phys. Rev. B 87, 184115 (2013)].
+
+Physical Review B 2017, 96, 019902.
+
+(32) Jinnouchi, R.; Karsai, F.; Kresse, G. On-the-fly machine learning force field generation:
+
+Application to melting points. Physical Review B 2019, 100, 014105.
+
+(33) Chmiela, S.; Tkatchenko, A.; Sauceda, H. E.; Poltavsky, I.; Schütt, K. T.; Müller, K.-
+
+R. Machine learning of accurate energy-conserving molecular force fields. Science Ad-
+
+vances 2017, 3, e1603015.
+
+(34) Nagai, R.; Akashi, R.; Sasaki, S.; Tsuneyuki, S. Neural-network Kohn-Sham exchange-
+
+correlation potential and its out-of-training transferability. The Journal of Chemical
+
+Physics 2018, 148, 241737.
+
+(35) Zhou, Y.; Wu, J.; Chen, S.; Chen, G. Toward the Exact Exchange–Correlation Poten-
+
+tial: A Three-Dimensional Convolutional Neural Network Construct. The Journal of
+
+Physical Chemistry Letters 2019, 10, 7264–7269.
+
+(36) Schmidt, J.; Benavides-Riveros, C. L.; Marques, M. A. L. Machine Learning the Phys-
+
+ical Nonlocal Exchange–Correlation Functional of Density-Functional Theory. The
+
+Journal of Physical Chemistry Letters 2019, 10, 6425–6431.
+
+(37) Riemelmoser, S.; Kaltak, M.; Kresse, G. Optimized effective potentials from the
+
+random-phase approximation: Accuracy of the quasiparticle approximation. The Jour-
+
+nal of Chemical Physics 2021, 154, 154103.
+
+32
+
+
+(38) Behler, J.;
+Parrinello, M. Generalized Neural-Network Representation of High-
+
+Dimensional Potential-Energy Surfaces. Physical Review Letters 2007, 98, 146401.
+
+(39) Gunnarsson, O.; Jonson, M.; Lundqvist, B. I. Descriptions of exchange and correlation
+
+effects in inhomogeneous electron systems. Physical Review B 1979, 20, 3136–3164.
+
+(40) Jinnouchi, R.; Karsai, F.; Verdi, C.; Asahi, R.; Kresse, G. Descriptors representing
+
+two- and three-body atomic distributions and their effects on the accuracy of machine-
+
+learned inter-atomic potentials. The Journal of Chemical Physics 2020, 152, 234102.
+
+(41) Lei, X.; Medford, A. J. Design and analysis of machine learning exchange-correlation
+
+functionals via rotationally invariant convolutional descriptors. Physical Review Ma-
+
+terials 2019, 3, 063801.
+
+(42) Shapeev, A. V. Moment Tensor Potentials: A Class of Systematically Improvable
+
+Interatomic Potentials. Multiscale Modeling & Simulation 2016, 14, 1153–1173.
+
+(43) (a) Drautz, R. Atomic cluster expansion for accurate and transferable interatomic
+
+potentials. Physical Review B 2019, 99, 014104; (b) Drautz, R. Erratum: Atomic
+
+cluster expansion for accurate and transferable interatomic potentials [Phys. Rev. B
+
+99, 014104 (2019)]. Physical Review B 2019, 100, 249901.
+
+(44) Grisafi, A.; Fabrizio, A.; Meyer, B.; Wilkins, D. M.; Corminboeuf, C.; Ceriotti, M.
+
+Transferable Machine-Learning Model of the Electron Density. ACS Central Science
+
+2018, 5, 57–64.
+
+(45) Margraf, J. T.; Reuter, K. Pure non-local machine-learned density functional theory
+
+for electron correlation. Nature Communications 2021, 12, 1–7.
+
+(46) Dick, S.; Fernandez-Serra, M. Machine learning accurate exchange and correlation
+
+functionals of the electronic density. Nature Communications 2020, 11, 1–10.
+
+33
+
+
+(47) Bystrom, K.; Kozinsky, B. CIDER: An Expressive, Nonlocal Feature Set for Machine
+
+Learning Density Functionals with Exact Constraints. Journal of Chemical Theory
+
+and Computation 2022, 18, 2180–2192.
+
+(48) Chen, Y.; Zhang, L.; Wang, H.; E, W. DeePKS: A Comprehensive Data-Driven Ap-
+
+proach toward Chemically Accurate Density Functional Theory. Journal of Chemical
+
+Theory and Computation 2020, 17, 170–181.
+
+(49) Arthur, D.; Vassilvitskii, S. k-means++: The Advantages of Careful Seeding; Technical
+
+Report 2006-13, 2006.
+
+(50) White, J. A.; Bird, D. M. Implementation of gradient-corrected exchange-correlation
+
+potentials in Car-Parrinello total-energy calculations. Phys. Rev. B 1994, 50, 4954–
+
+4957.
+
+(51) Román-Pérez, G.; Soler, J. M. Efficient Implementation of a van der Waals Density
+
+Functional: Application to Double-Wall Carbon Nanotubes. Physical Review Letters
+
+2009, 103, 096102.
+
+(52) Rojas, H. N.; Godby, R. W.; Needs, R. J. Space-Time Method for Ab Initio Calcu-
+
+lations of Self-Energies and Dielectric Response Functions of Solids. Phys. Rev. Lett.
+
+1995, 74, 1827–1830.
+
+(53) Kaltak, M.; Klimeš, J.; Kresse, G. Low Scaling Algorithms for the Random Phase
+
+Approximation: Imaginary Time and Laplace Transformations. Journal of Chemical
+
+Theory and Computation 2014, 10, 2498–2507.
+
+(54) Ren, X.; Rinke, P.; Joas, C.; Scheffler, M. Random-phase approximation and its appli-
+
+cations in computational chemistry and materials science. Journal of Materials Science
+
+2012, 47, 7447–7471.
+
+34
+
+
+(55) Eshuis, H.; Bates, J. E.; Furche, F. Electron correlation methods based on the random
+
+phase approximation. Theoretical Chemistry Accounts 2012, 131, 1–18.
+
+(56) Schimka, L.; Harl, J.; Stroppa, A.; Grüneis, A.; Marsman, M.; Mittendorfer, F.;
+
+Kresse, G. Accurate surface and adsorption energies from many-body perturbation
+
+theory. Nature Materials 2010, 9, 741–744.
+
+(57) Patra, A.; Bates, J. E.; Sun, J.; Perdew, J. P. Properties of real metallic surfaces:
+
+Effects of density functional semilocality and van der Waals nonlocality. Proceedings
+
+of the National Academy of Sciences 2017, 114, E9188–E9196.
+
+(58) Brandenburg, J. G.; Zen, A.; Fitzner, M.; Ramberger, B.; Kresse, G.; Tsatsoulis, T.;
+
+Grüneis, A.; Michaelides, A.; Alfè, D. Physisorption of Water on Graphene: Subchem-
+
+ical Accuracy from Many-Body Electronic Structure Methods. The Journal of Physical
+
+Chemistry Letters 2019, 10, 358–368.
+
+(59) Macher, M.; Klimeš, J.; Franchini, C.; Kresse, G. The random phase approximation
+
+applied to ice. The Journal of Chemical Physics 2014, 140, 084502.
+
+(60) Yao, Y.; Kanai, Y. Nuclear Quantum Effect and Its Temperature Dependence in Liquid
+
+Water from Random Phase Approximation via Artificial Neural Network. The Journal
+
+of Physical Chemistry Letters 2021, 12, 6354–6362.
+
+(61) Langreth, D. C.; Perdew, J. P. Exchange-correlation energy of a metallic surface:
+
+Wave-vector analysis. Phys. Rev. B 1977, 15, 2884–2901.
+
+(62) Sham, L. J.; Schlüter, M. Density-Functional Theory of the Energy Gap. Phys. Rev.
+
+Lett. 1983, 51, 1888–1891.
+
+(63) Sham, L. J. Exchange and correlation in density-functional theory. Phys. Rev. B 1985,
+
+32, 3876–3882.
+
+35
+
+
+(64) Görling, A.; Levy, M. Exact Kohn-Sham scheme based on perturbation theory. Phys-
+
+ical Review A 1994, 50, 196–204.
+
+(65) Niquet, Y. M.; Fuchs, M.; Gonze, X. Exchange-correlation potentials in the adiabatic
+
+connection fluctuation-dissipation framework. Phys. Rev. A 2003, 68, 032507.
+
+(66) Warren, J. L.; Yarnell, J. L.; Dolling, G.; Cowley, R. A. Lattice Dynamics of Diamond.
+
+Physical Review 1967, 158, 805–808.
+
+(67) Harl, J.; Schimka, L.; Kresse, G. Assessing the quality of the random phase approx-
+
+imation for lattice constants and atomization energies of solids. Phys. Rev. B 2010,
+
+81, 115126.
+
+(68) Ramberger, B.; Schäfer, T.; Kresse, G. Analytic Interatomic Forces in the Random
+
+Phase Approximation. Physical Review Letters 2017, 118, 106403.
+
+(69) Kresse, G.; Furthmüller, J. Efficient iterative schemes for ab initio total-energy calcu-
+
+lations using a plane-wave basis set. Phys. Rev. B 1996, 54, 11169–11186.
+
+(70) Riemelmoser, S.; Kaltak, M.; Kresse, G. Plane wave basis set correction methods for
+
+RPA correlation energies. The Journal of Chemical Physics 2020, 152, 134103.
+
+(71) Kresse, G.; Furthmüller, J.; Hafner, J. Ab initio Force Constant Approach to Phonon
+
+Dispersion Relations of Diamond and Graphite. Europhysics Letters (EPL) 1995, 32,
+
+729–734.
+
+(72) Engel, M.; Marsman, M.; Franchini, C.; Kresse, G. Electron-phonon interactions using
+
+the projector augmented-wave method and Wannier functions. Physical Review B
+
+2020, 101, 184302.
+
+(73) Kulda, J.; Kainzmaier, H.; Strauch, D.; Dorner, B.; Lorenzen, M.; Krisch, M. Over-
+
+bending of the longitudinal optical phonon branch in diamond as evidenced by inelastic
+
+neutron and x-ray scattering. Physical Review B 2002, 66, 241202.
+
+36
+
+
+(74) Momma, K.; Izumi, F. VESTA3 for three-dimensional visualization of crystal, volu-
+
+metric and morphology data. Journal of Applied Crystallography 2011, 44, 1272–1276.
+
+(75) Loh, K. P.; Xie, X. N.; Yang, S. W.; Zheng, J. C. Oxygen Adsorption on (111)-Oriented
+
+Diamond:
+A Study with Ultraviolet Photoelectron Spectroscopy, Temperature-
+
+Programmed Desorption, and Periodic Density Functional Theory. The Journal of
+
+Physical Chemistry B 2002, 106, 5230–5240.
+
+(76) Sque, S. J.; Jones, R.; Briddon, P. R. Structure, electronics, and interaction of hydro-
+
+gen and oxygen on diamond surfaces. Physical Review B 2006, 73, 085313.
+
+(77) Kern, G.; Hafner, J.; Kresse, G. Atomic and electronic structure of diamond (111)
+
+surfaces II. (2 × 1) and (
+√
+
+3 ×
+√
+
+3) reconstructions of the clean and hydrogen-covered
+
+three dangling-bond surfaces. Surface Science 1996, 366, 464–482.
+
+(78) Kern, G.; Hafner, J. Ab initio calculations of the atomic and electronic structure of
+
+clean and hydrogenated diamond (110) surfaces. Physical Review B 1997, 56, 4203–
+
+4210.
+
+(79) Ristein, J. Surface science of diamond: Familiar and amazing. Surface Science 2006,
+
+600, 3677–3689.
+
+(80) Furthmüller, J.; Hafner, J.; Kresse, G. Dimer reconstruction and electronic surface
+
+states on clean and hydrogenated diamond (100) surfaces. Physical Review B 1996,
+
+53, 7334–7351.
+
+(81) Kern, G.; Hafner, J.; Kresse, G. Atomic and electronic structure of diamond (111) sur-
+
+faces I. Reconstruction and hydrogen-induced de-reconstruction of the one dangling-
+
+bond surface. Surface Science 1996, 366, 445–463.
+
+(82) Zheng, X.; Smith, P. The stable configurations for oxygen chemisorption on the dia-
+
+mond (100) and (111) surfaces. Surface Science 1992, 262, 219–234.
+
+37
+
+
+(83) Chaudhuri, S.; Hall, S. J.; Klein, B. P.; Walker, M.; Logsdail, A. J.; Macpherson, J. V.;
+
+Maurer, R. J. Coexistence of carbonyl and ether groups on oxygen-terminated (110)-
+
+oriented diamond surfaces. Communications Materials 2022, 3, 1–9.
+
+(84) Brini, E.; Fennell, C. J.; Fernandez-Serra, M.; Hribar-Lee, B.; Lukšič, M.; Dill, K. A.
+
+How Water’s Properties Are Encoded in Its Molecular Structure and Energies. Chem-
+
+ical Reviews 2017, 117, 12385–12414.
+
+(85) Del Ben, M.; Hutter, J.; VandeVondele, J. Probing the structural and dynamical
+
+properties of liquid water with models including non-local electron correlation. The
+
+Journal of Chemical Physics 2015, 143, 054506.
+
+(86) Gillan, M. J.; Alfè, D.; Michaelides, A. Perspective: How good is DFT for water? The
+
+Journal of Chemical Physics 2016, 144, 130901.
+
+(87) Chen, M.; Ko, H.-Y.; Remsing, R. C.; Andrade, M. F. C.; Santra, B.; Sun, Z.; Sell-
+
+oni, A.; Car, R.; Klein, M. L.; Perdew, J. P.; Wu, X. Ab initio theory and modeling
+
+of water. Proceedings of the National Academy of Sciences 2017, 114, 10846–10851.
+
+(88) Morawietz, T.; Singraber, A.; Dellago, C.; Behler, J. How van der Waals interactions
+
+determine the unique properties of water. Proceedings of the National Academy of
+
+Sciences 2016, 113, 8368–8373.
+
+(89) Dasgupta, S.; Lambros, E.; Perdew, J. P.; Paesani, F. Elevating density functional
+
+theory to chemical accuracy for water simulations through a density-corrected many-
+
+body formalism. Nature Communications 2021, 12, 1–12.
+
+(90) Jinnouchi, R.; Lahnsteiner, J.; Karsai, F.; Kresse, G.; Bokdam, M. Phase Transitions
+
+of Hybrid Perovskites Simulated by Machine-Learning Force Fields Trained on the Fly
+
+with Bayesian Inference. Physical Review Letters 2019, 122, 225701.
+
+38
+
+
+(91) Grimme, S.; Antony, J.; Ehrlich, S.; Krieg, H. A consistent and accurate ab initio
+
+parametrization of density functional dispersion correction (DFT-D) for the 94 ele-
+
+ments H-Pu. J. Chem. Phys. 2010, 132, 154104.
+
+(92) Grimme, S.; Ehrlich, S.; Goerigk, L. Effect of the damping function in dispersion
+
+corrected density functional theory. J. Comput. Chem. 2011, 32, 1456–1465.
+
+(93) Tkatchenko, A.; Scheffler, M. Accurate Molecular Van Der Waals Interactions from
+
+Ground-State Electron Density and Free-Atom Reference Data. Phys. Rev. Lett. 2009,
+
+102, 073005.
+
+(94) Skinner, L. B.; Huang, C.; Schlesinger, D.; Pettersson, L. G. M.; Nilsson, A.; Ben-
+
+more, C. J. Benchmark oxygen-oxygen pair-distribution function of ambient water
+
+from x-ray diffraction measurements with a wide Q-range. The Journal of Chemical
+
+Physics 2013, 138, 074506.
+
+(95) Soper, A. K. The Radial Distribution Functions of Water as Derived from Radia-
+
+tion Total Scattering Experiments: Is There Anything We Can Say for Sure? ISRN
+
+Physical Chemistry 2013, 2013, 1–67.
+
+(96) Zheng, L.; Chen, M.; Sun, Z.; Ko, H.-Y.; Santra, B.; Dhuvad, P.; Wu, X. Structural,
+
+electronic, and dynamical properties of liquid water by ab initio molecular dynamics
+
+based on SCAN functional within the canonical ensemble. J. Chem. Phys. 2018, 148.
+
+(97) Sakong, S.; Forster-Tonigold, K.; Groß, A. The structure of water at a Pt(111) elec-
+
+trode and the potential of zero charge studied from first principles. The Journal of
+
+Chemical Physics 2016, 144, 194701.
+
+(98) Lane, J. R. CCSDTQ Optimized Geometry of Water Dimer. Journal of Chemical
+
+Theory and Computation 2012, 9, 316–323.
+
+39
+
+
+(99) Reddy, S. K.; Straight, S. C.; Bajaj, P.; Pham, C. H.; Riera, M.; Moberg, D. R.;
+
+Morales, M. A.; Knight, C.; Götz, A. W.; Paesani, F. On the accuracy of the MB-
+
+pol many-body potential for water: Interaction energies, vibrational frequencies, and
+
+classical thermodynamic and dynamical properties from clusters to liquid water and
+
+ice. The Journal of Chemical Physics 2016, 145, 194504.
+
+(100) Ceperley, D. M.; Alder, B. J. Ground State of the Electron Gas by a Stochastic
+
+Method. Physical Review Letters 1980, 45, 566–569.
+
+(101) Klimeš, J.; Michaelides, A. Perspective: Advances and challenges in treating van der
+
+Waals dispersion forces in density functional theory. The Journal of Chemical Physics
+
+2012, 137, 120901.
+
+(102) Wiktor, J.; Ambrosio, F.; Pasquarello, A. Note: Assessment of the SCAN+rVV10
+
+functional for the structure of liquid water. The Journal of Chemical Physics 2017,
+
+147, 216101.
+
+(103) Grisafi, A.; Ceriotti, M. Incorporating long-range physics in atomic-scale machine
+
+learning. J. Chem. Phys. 2019, 151.
+
+(104) Hollingsworth, J.; Baker, T. E.; Burke, K. Can exact conditions improve machine-
+
+learned density functionals? The Journal of Chemical Physics 2018, 148, 241743.
+
+(105) Nagai, R.; Akashi, R.; Sugino, O. Machine-learning-based exchange correlation func-
+
+tional with physical asymptotic constraints. Physical Review Research 2022, 4,
+
+013106.
+
+40
+
+
+TOC Graphic
+
+41
+
+
+Supporting Information:
+
+Machine learning density functionals from the
+
+random-phase approximation
+
+Stefan Riemelmoser,∗,†,‡ Carla Verdi,†,¶ Merzuk Kaltak,§ and Georg Kresse†,§
+
+†University of Vienna, Faculty of Physics and Center for Computational Materials Science,
+
+Kolingasse 14-16, A-1090 Vienna, Austria
+
+‡University of Vienna, Vienna Doctoral School in Physics, Boltzmanngasse 5, A-1090
+
+Vienna, Austria
+
+¶School of Physics, The University of Sydney, Sydney, NSW 2006, Australia
+
+§VASP Software GmbH, Sensengasse 8/12, A-1090 Vienna, Austria
+
+E-mail: stefan.riemelmoser@univie.ac.at
+
+S1
+Non-local density descriptors
+
+In the following, we describe our density descriptors in more detail and comment on how
+
+they can be evaluated efficiently via the use of fast Fourier transforms (FFTs). We begin by
+
+expanding the electronic density around each grid point r [Eq. (2) in the main text]
+
+n(r + r′)fcut(r′) =
+�
+
+nlm
+cnlm(r)ϕnl(r′)Y m
+l (�r′).
+(S1)
+
+S-1
+
+arXiv:2308.00665v1  [cond-mat.mtrl-sci]  1 Aug 2023
+
+
+For the cutoff function fcut, we use the cosine cutoff proposed by Behler and Parrinello,S1
+
+f(r′) =
+
+
+
+
+
+
+
+
+
+
+1
+2
+�
+1 + cos
+�
+πr′
+Rcut
+
+��
+0 ≤ r′ ≤ Rcut
+
+0
+r ≥ Rcut.
+(S2)
+
+For radial basis functions ϕnl, we use spherical Bessel functions as in Ref. S2,
+
+ϕnl(r′) = jl(qnlr′),
+(S3)
+
+where the qnl are chosen such that the basis functions vanish at r′ = Rcut. Such spheri-
+
+cal Bessel functions form a complete basis on the interval [0, Rcut] and fulfill orthogonality
+
+relations of the kind
+� Rcut
+
+0
+dr r2jl(qnlr)jl(qn′lr) = δnn′Anl.
+(S4)
+
+For example, in the case of l = 0 one obtains
+
+ϕn0(r′) = j0(qn0r′) = sin(qn0r′)
+
+qn0r′
+,
+(S5)
+
+and demanding that sin(qn0Rcut) = 0 yields the simple expressions
+
+qn0 = nπ
+
+Rcut
+
+An0 = R3
+cut
+
+2n2π2
+n = 1, 2, ...
+(S6)
+
+Next, we calculate the expansion coefficients cnlm using the orthogonality relations (S4), as
+
+well as those for the Y m
+l ,
+�
+dΩ Y m
+l (ˆr)Y m′
+l′ (ˆr) = δll′δmm′,
+(S7)
+
+S-2
+
+
+yielding
+
+cnlm(r) =
+� Rcut
+
+0
+dr′r′2ϕnl(r′)fcut(r′)
+
+Anl
+
+�
+dΩ′Y m
+l (�r′)n(r + r′)
+
+=
+� Rcut
+
+0
+dr′r′2 ˜ϕnl(r′)
+�
+dΩ′Y m
+l (�r′)n(r + r′),
+(S8)
+
+where we have absorbed the coefficients Anl and the cutoff function fcut to define modified
+
+basis functions ˜ϕnl,
+
+˜ϕnl(r′) = ϕnl(r′)fcut(r′)
+
+Anl
+.
+(S9)
+
+Next, we combine the Fourier representation of the density
+
+n(r + r′) =
+�
+dq
+
+(2π)3 eiq(r+r′)n(q),
+(S10)
+
+and the plane-wave expansion,S3
+
+eiqr′ = 4π
+�
+
+lm
+iljl(qr′)Y m
+l (�q)Y m
+l (�r′),
+(S11)
+
+to rewrite Eq. (S8) as
+
+cnlm(r) = 4π
+� Rcut
+
+0
+dr′r′2 ˜ϕnl(r′)
+�
+dΩ′Y m
+l (�r′)
+�
+dq
+
+(2π)3eiqrn(q)
+�
+
+l′m′
+il′jl′(qr′)Y m′
+l′ (�q)Y m′
+l′ (�r′).
+
+(S12)
+
+To simplify the equation above, we use the orthogonality relations of the Y m
+l
+[Eq. (S7)] and
+
+define the spherical Bessel transform,
+
+˜ϕnl(q) = 4π
+� Rcut
+
+0
+dr r′2jl(qr′)˜ϕln(r′)
+
+↔ ˜ϕnl(r′) =
+1
+2π2
+
+�
+dq q2jl(qr′)˜ϕnl(q),
+(S13)
+
+to finally arrive at the concise expression
+
+cnlm(r) = il
+�
+dq
+
+(2π)3eiqrn(q)˜ϕnl(q)Y m
+l (�q).
+(S14)
+
+S-3
+
+
+This equation is evaluated numerically on an real-space grid,
+
+cnlm(r) = il �
+
+q
+eiqrn(q)˜ϕnl(q)Y m
+l (�q).
+(S15)
+
+Thus, the coefficients cnlm(r) can be calculated simultaneously for all real-space gridpoints
+
+via Fourier transform, and FFT achieves NFFT ln NFFT scaling with respect to the number
+
+of real-space grid points NFFT.
+
+To form descriptors for ML, one seeks rotationally invariant combinations of the coef-
+
+ficients cnlm, as discussed by Bartok et al.S4 The cn00 are already rotationally invariant,
+
+following from the fact that Y 0
+0 = 1/
+√
+
+4π is scalar. This gives us the two-body descriptors,
+
+X(2)
+n
+= cn00. Further rotational invariants can be formed as followsS2,S4
+
+pnn′l =
+
+�
+
+8π2
+
+2l + 1
+
+�
+
+m
+cnlmcn′lm.
+(S16)
+
+For l = 1, these rotational invariants can be understood as all possible dot products between
+
+vectors cn = {cn1x, cn1y, cn1z}. That the cn are vectors follows from the vector property of
+
+Y1 = {Y x
+1 , Y y
+1 , Y z
+1 } (we use the real spherical harmonics, where this vector property is clearly
+
+manifest)
+
+Y x
+1 =
+
+�
+
+3
+4π
+x
+�
+
+x2 + y2 + z2
+
+Y y
+1 =
+
+�
+
+3
+4π
+y
+�
+
+x2 + y2 + z2
+
+Y z
+1 =
+
+�
+
+3
+4π
+z
+�
+
+x2 + y2 + z2.
+
+(S17)
+
+To form three-body descriptors that have the same dimension as the X(2)
+n , we first form
+
+descriptors X(3)
+nn′l,
+
+X(3)
+nn′l = σ(3)
+
+Rcut
+
+�
+
+m cnlmcn′lm
+
+(�
+
+m c2
+nlm)1/4(�
+
+m c2
+n′lm)1/4.
+(S18)
+
+Next, we limit the X(3)
+nn′l to l = 1 and neglect off-diagonal elements n ̸= n′, obtaining the
+
+S-4
+
+
+three-body descriptors X(3)
+n
+[compare Eq. (4) in the main text]
+
+X(3)
+n
+= X(3)
+nn′lδnn′δl1
+
+= σ(3)
+
+Rcut
+
+�
+
+c2
+n1x + c2
+n1y + c2
+n1z.
+(S19)
+
+We have verified that this last approximation works well for the application to diamond and
+
+liquid water. Generally, however, the validity of the approximation depends on the concrete
+
+training set as well as on the radial basis functions used.S4 Here, we use four radial basis
+
+functions for both l = 0 and l = 1, thus we have in total 4 + 4 = 8 density descriptors. Note
+
+that we use the weight factor σ(3)/Rcut in Eq. (S18), rather than (8π2/3)1/4 which would
+
+correspond to √pnn1. The possibility of using different weight factors for the three-body
+
+descriptors was also discussed in detail by Jinnouchi et al. S5
+
+S1.1
+Approaching GGA in the small cutoff limit
+
+In Eqs. (3) and (5) in the main text, we have stated that in the limit of small cutoffs, the
+
+two-and three-body descriptors reduce to the local density and its gradient, respectively. A
+
+detailed proof of these limits is given in the following. For a small enough cutoff radius Rcut,
+
+the density inside the cutoff sphere varies little, assuming that the density is smooth enough.
+
+That means one can perform the gradient expansion of the densityS6 around r
+
+n(r + r′) ≈ n(r) + r′
+α∇αn(r) + 1
+
+2r′
+αr′
+β∇α∇βn(r) + 1
+
+6r′
+αr′
+βr′
+γ∇α∇β∇γn(r) + ...,
+(S20)
+
+where α, β and γ are Cartesian indices and we use the Einstein sum convention. The same
+
+limit can also be obtained for fixed cutoff radius by considering artificial weakly varying
+
+densities (∇n → 0, in the extreme case, one obtains the homogeneous electron gas). In
+
+other words, the dimensionless expansion parameter is r′∇n, and that can be small when
+
+either r′ or ∇n is fixed and the other one goes to zero.
+
+We insert the gradient expansion (S20) into the expression for the coefficients cnlm, Eq.
+
+S-5
+
+
+(S8), yielding
+
+cnlm(r) ≈
+� Rcut
+
+0
+dr′ r′2 ˜ϕnl(r′)
+�
+dΩ′ Y m
+l (�r′)
+
+×
+�
+n(r) + r′
+α∇αn(r) + 1
+
+2r′
+αr′
+β∇α∇βn(r) + 1
+
+6r′
+αr′
+βr′
+γ∇α∇β∇γn(r) + ...
+�
+.
+(S21)
+
+When evaluating the integral above, the first order term in the gradient expansion vanishes
+
+for l = 0. This is due to the anti-symmetry of the integrand. Likewise, the zeroth and second
+
+order terms vanish for l = 1. Thus, for the cn00 (two-body descriptors), Eq. (S21) simplifies
+
+to
+
+cn00(r) ≈
+√
+
+4π
+� Rcut
+
+0
+dr′ r′2 ˜ϕn0(r′)n(r) +
+
+√
+
+4π
+6
+
+� Rcut
+
+0
+dr′ r′4 ˜ϕn0(r′)∇2n(r) + ...,
+(S22)
+
+where we have used
+�
+dΩ′ r′
+αr′
+β = 4π
+
+3 r′2δαβ.
+(S23)
+
+Further, the radial integrals give numerical constants, the first being independent of Rcut, and
+
+the second being proportional to R2
+cut (this can be seen by performing a variable transform
+
+x = r′/Rcut).
+The two-body descriptors in the limit of small cutoffs therefore have the
+
+expansion [compare Eq. (3) in the main text]
+
+X(2)
+n (r) ∝ n(r) + const × R2
+cut∇2n(r) + ...
+(S24)
+
+Next, we use Eq. (S21) to approximate the l = 1 coefficients cn1α,
+
+cn1α(r) ≈
+� Rcut
+
+0
+dr′ r′2 ˜ϕn1(r′)
+�
+dΩ′ Y α
+1 (�r′)
+�
+r′
+β∇βn(r) + 1
+
+6r′
+βr′
+γr′
+δ∇β∇γ∇δn(r) + ...
+�
+
+=
+
+�
+
+3
+4π
+
+� Rcut
+
+0
+dr′ r′ ˜ϕn1(r′)
+�
+dΩ′ r′
+α
+
+�
+r′
+β∇βn(r) + 1
+
+6r′
+βr′
+γr′
+δ∇β∇γ∇δn(r) + ...
+�
+,
+
+(S25)
+
+where in the second line we have plugged in Eq. (S17) for the Y α
+1 . To simplify this expression,
+
+S-6
+
+
+we use Eq. (S23) for leading order term and the identity
+
+�
+dΩ′r′
+αr′
+βr′
+γr′
+δ = 4π
+
+15 r′4 (δαβδγδ + δαγδβδ + δαδδβγ)
+(S26)
+
+for next-to-leading order term, yielding
+
+cn1α(r) ≈
+�
+
+3
+4π
+
+� �� Rcut
+
+0
+dr′ r′3 ˜ϕn1(r′)
+�
+∇αn(r) + 1
+
+10
+
+�� Rcut
+
+0
+dr′ r′5 ˜ϕn1(r′)
+�
+∇α∇β∇βn(r) + ...
+�
+
+∝ Rcut∇αn(r) + const × R3
+cut∇α∇β∇βn(r) + ...
+(S27)
+
+Next, we form the scalar products cn1αcn′1α needed for the three-body descriptors.
+The
+
+leading order term in the expansion of these scalar products is proportional to the scalar
+
+product ∇αn(r)∇αn(r) = |∇n(r)|2, and the next-to-leading order term involves products of
+
+terms proportional to ∇αn(r)∇α∇β∇βn(r) = ∇n(r) · ∇∇2n(r), thus
+
+cn1α(r)cn′1α(r) ∝ R2
+cut|∇n(r)|2 + const × R4
+cut∇n(r) · ∇∇2n(r) + ...
+(S28)
+
+Inserting this result in the definition (S18), we finally obtain
+
+X(3)
+nn′1(r) ∝ |∇n(r)| + O(R2
+cut)
+for Rcut → 0.
+(S29)
+
+As the three-body descriptors are simply the diagonal elements (n = n′) of the Xnn′1, this
+
+concludes the proof of the limit stated in Eq. (5) in the main text. Note that this limit
+
+extends also to the more general case of off-diagonal descriptors (n ̸= n′).
+
+S-7
+
+
+S2
+Machine learning DFT via optimized effective poten-
+
+tials
+
+In the following, we describe our ML scheme in more detail and discuss some challenges
+
+inherent to the use of optimized effective potentials (OEP). Further, we will derive analytic
+
+expression for the machine learned exchange-correlation potentials vML−RPA
+xc
+and show how
+
+they can be efficiently evaluated using FFTs.
+
+We begin by briefly motivating our ML scheme via analogy to MLFF. The starting point
+
+for MLFF schemes is the atomic density,
+
+natom(r) =
+
+atoms
+�
+
+i
+δ(r − Ri).
+(S30)
+
+This atomic density is usually smoothed by replacing the delta function above by a Gaussian.
+
+The central assumption in MLFF is that the total energy can by decomposed into a sum
+
+of atomic energies εi, which depend on two- and three-body descriptors (collected in a
+
+supervector Xatom),
+
+E =
+
+atoms
+�
+
+i
+εi[Xatom(Ri)].
+(S31)
+
+In DFT, the central quantity is the electronic density n. We do not apply smearing to n,
+
+as the electronic density is already a smooth object. Analogously to Eq. (S31), one can
+
+formulate the assumption that the exchange-correlation energy can be written as an integral
+
+of energy densities depending on two- and three-body descriptors (supervector X),
+
+Exc =
+�
+dr n(r)εxc[X(r)].
+(S32)
+
+We further pull out a factor εx,HEG(r), such that the enhancement factor Fxc is approximated
+
+rather than εxc. In other words, we use the LDA exchange as a baseline for ML-RPA, yielding
+
+S-8
+
+
+the ansatz [Eq. (7) in the main text]
+
+EML−RPA
+xc
+=
+�
+dr n(r)εx,HEG[n(r)]F ML−RPA
+xc
+[X(r)].
+(S33)
+
+For the functional form of F ML−RPA
+xc
+, we use a Gaussian kernel [Eq. (8) in the main text]
+
+F ML−RPA
+xc
+[X(r)] =
+�
+
+iB
+wiB exp
+�
+−[X(r) − XiB]2
+
+2σ2
+
+�
+,
+(S34)
+
+where the kernel width σ is an ML hyperparameter, the XiB are representative control points
+
+and the wiB the corresponding weights. Combing Eqs. (S33) and (S34), we obtain
+
+EML−RPA
+xc
+=
+�
+dr n(r)εx,HEG[n(r)]
+�
+
+iB
+wiB exp
+�
+−[X(r) − XiB]2
+
+2σ2
+
+�
+.
+(S35)
+
+Evaluating the functional derivative, vML−RPA
+xc
+= δEML−RPA
+xc
+/δn(r), yields a local term from
+
+the derivative of n(r)εx,HEG(r) and a non-local term which stems from the dependence of the
+
+descriptors X(r′) on the density n(r)
+
+vML−RPA
+xc
+(r) =
+�
+dr′
+δ
+
+δn(r) {n(r′)εx,HEG[n(r′)]} F ML−RPA
+xc
+(r′)
+
++
+�
+dr′n(r′)εx,HEG[n(r′)]
+δ
+
+δn(r)
+�
+F ML−RPA
+xc
+[X(r′)]
+�
+
+= vML−RPA
+xc,loc
+(r) + vML−RPA
+xc,nl
+.
+
+(S36)
+
+The local term is easily evaluated using δn(r′)/δn(r) = δ(r − r′), yielding
+
+vML−RPA
+xc,loc
+(r) = 4
+
+3εx,HEG[n(r)]F ML−RPA
+xc
+[X(r)]
+
+= 4
+
+3εx,HEG[n(r)]
+�
+
+iB
+wiB exp
+�
+−[X(r) − XiB]2
+
+2σ2
+
+�
+.
+(S37)
+
+The non-local term is more complicated, but we will show in the following that FFT can
+
+be employed once again for its efficient evaluation. Using Eq. (S34) and applying the chain
+
+S-9
+
+
+rule, we obtain
+
+vML−RPA
+xc,nl
+(r) =
+�
+dr′n(r′)εx,HEG[n(r′)]
+
+×
+�
+
+iB
+wiB exp
+�
+−[X(r′) − XiB]2
+
+2σ2
+
+� Ndes
+�
+
+i
+
+−[Xi(r′) − XiB]
+
+σ2
+�
+
+nml
+
+∂Xi(r′)
+∂cnlm(r′)
+δcnlm(r′)
+
+δn(r) .
+
+(S38)
+
+As the descriptors Xi(r′) depend on the expansion coefficients cnlm(r′) in a simple alge-
+
+braic fashion, the complicated non-locality is thus due to the last term only. Inserting the
+
+expressions (S13) and (S10) yields
+
+δcnlm(r′)
+
+δn(r)
+=
+δ
+
+δn(r)il
+�
+dq
+
+(2π)3eiqr′ ��
+dr′′ e−iqr′′n(r′′)
+�
+˜ϕnl(q)Y m
+l (�q)
+
+= il
+�
+dq
+
+(2π)3
+
+�
+dr′′ eiq(r′−r′′)δ(r − r′′)˜ϕnl(q)Y m
+l (�q)
+
+= il
+�
+dq
+
+(2π)3eiq(r−r′) ˜ϕnl(q)Y m
+l (−�q),
+
+(S39)
+
+where in the last line we have substituted q �→ −q.
+Next, we define the intermediate
+
+quantities ηnlm, which we evaluate numerically via FFT,
+
+ηnlm(q) =
+1
+
+NFFT
+
+�
+
+r′
+e−iqr′n(r′)εx,HEG[n(r′)]
+
+×
+�
+
+iB
+wiB exp
+�−[X(r′) − XiB]2
+
+2σ2
+
+� Ndes
+�
+
+i
+
+−[Xi(r′) − XiB]
+
+σ2
+∂Xi(r′)
+∂cnlm(r′).
+(S40)
+
+With the help of the ηnlm, we can rewrite Eq. (S38) in the compact form
+
+vML−RPA
+xc,nl
+(r) = il �
+
+q
+eiqr �
+
+nlm
+ηnlm(q)˜ϕnl(q)Y m
+l (−�q),
+(S41)
+
+which can be directly evaluated via FFT as well. In summary, Eqs. (S40) and (S41) allow
+
+us to evaluate the ML-RPA exchange-correlation potential on all real-space grid points r
+
+using a small number of FFTs. Thus, we have avoided the evaluation of double integrals by
+
+applying FFT throughout. Therefore, the overall computational cost of evaluating vML−RPA
+xc
+
+S-10
+
+
+scales only as O(NFFT ln NFFT) rather than (N 2
+FFT) with respect to the number of real-space
+
+grid points NFFT.
+
+A potential pitfall in using the OEP method for ML applications is the fact that vRPA
+xc
+(r)
+
+is in practice determined only up to a constant shift. Inspired by the work of Nagai et al.,S7
+
+we circumvent this problem by defining auxiliary exchange-correlation potentials ˜vRPA
+xc
+,
+
+˜vRPA
+xc
+(r) = vRPA
+xc
+(r) + ERPA
+xc
+−
+�
+dr′n(r′)vRPA
+xc
+(r′)
+�
+dr′n(r′)
+.
+(S42)
+
+Thus, the ˜vRPA
+xc
+are shifted with respect to the vRPA
+xc
+such that they integrate to ERPA
+xc
+,
+
+�
+dr n(r)˜vRPA
+xc
+(r)
+!= ERPA
+xc
+.
+(S43)
+
+In fitting, we equate the auxiliary potentials with their ML-RPA analogs, ˜vML−RPA
+xc
+,
+
+˜vML−RPA
+xc
+(r) = vML−RPA
+xc
+(r) + EML−RPA
+xc
+−
+�
+dr′ n(r′)vML−RPA
+xc
+(r′)
+�
+dr′ n(r′)
+.
+(S44)
+
+Thus, any information regarding absolute values of the OEP potentials is circumvented.
+
+Similar shifted exchange-correlation potentials occur also in the ML scheme of Tozer et al.,S8
+
+the Becke-Johnson methodS9 and the Levy-Zahariev formulation of DFT.S10 Here, however,
+
+the auxiliary potentials are used only as intermediate quantities for fitting, and once an
+
+ML-RPA functional has been learned, standard exchange-correlation potentials vML−RPA
+xc
+are
+
+extracted for applications.
+
+To find the weights wiB, we fit to exchange-correlation energies and shifted exchange-
+
+correlation potentials at selected points rk for all structures α contained in the training set.
+
+We demand that ML-RPA reproduces the reference data in a least square sense and apply
+
+S-11
+
+
+appropriate weights, yielding the loss function
+
+L2 =
+1
+
+Nstruct
+
+Nstruct
+�
+
+α
+cELα
+2,E + (1 − cE)Lα
+2,v
+
+Lα
+2,E = 1
+
+2
+1
+N α
+e
+
+�
+EML−RPA
+xc
+− ERPA
+xc
+�2
+
+Lα
+2,v = 1
+
+2
+1
+N α
+e
+
+Ωα
+
+Nspars
+
+Nspars
+�
+
+k
+n(rk)
+�
+˜vML−RPA
+xc
+(rk) − ˜vRPA
+xc
+(rk)
+�2 .
+
+(S45)
+
+Here we have introduced a dimensionless weight factor cE, which allows us to balance
+
+exchange-correlation energies and potentials. Further, we normalize the loss with respect
+
+to system size via dividing by the number of electrons N α
+e . Likewise, a factor Ωα/N α
+spars
+
+is included for the exchange-correlation potentials, where Ωα is the volume of structure α.
+
+From Eq. (S42) it is clear that the shifted exchange-correlation potentials depend linearly
+
+on the wiB just as the unshifted ones do. Thus, we can solve a system of linear equations
+
+that is obtained via minimization of the loss function (S45) with respect to the wiB,
+
+∂L2/∂wiB
+!= 0 →
+�
+
+iB
+ϕα
+j,iBwiB = yα
+j .
+(S46)
+
+Following Verdi et al.,S11 we regularize the solution of this linear problem via pseudo inverse
+
+of the design matrix ϕ, smoothly cutting off smaller singular values σi,
+
+σ−1
+i
+�→
+σi
+
+σ2
+i + (tSVDσmax)2,
+(S47)
+
+where we multiply the Tikhonov parameter tSVD by the largest singular value σmax. Thus,
+
+tSVD is dimensionless and we can more easily compare numerical values of tSVD for different
+
+databases. Finally, all ML-RPA hyperparameters are summarized in Table S1.
+
+S-12
+
+
+Table S1: Table of ML-RPA hyperparameters.
+
+parameter
+description
+value
+
+Rcut
+cutoff radius
+1.5 Å
+Nrad
+number of radial basis functions
+4
+Ndes
+number of density descriptors
+4+4=8
+σ
+width of Gaussian kernel
+3.0 eÅ
+−3
+
+σ(3)
+weight for three-body descriptors
+1.0 Å
+cE
+fit weight for xc-energies
+0.999
+tSVD
+Tikhonov regularization
+1.0 × 10−9
+
+S3
+Data sparsification
+
+To reduce computational cost, the exchange-correlation potential is fitted not on the entire
+
+real-space grid but rather at selected representative points rk. These points are represented
+
+as red crosses in Fig. 1 in the main text. For each individual structure α, we choose Nspars
+
+points via k-means sparsification. The k-means algorithm uses a metric that quantifies the
+
+similarity between density descriptors at points r and r′. It is convenient to use the metric
+
+d[X(r), X(r′)] that is induced by the Gaussian kernel, k[X(r), X(r′)],
+
+d[X(r), X(r′)] = k[X(r), X(r)] + k[X(r′), X(r′)] − 2k[X(r), X(r′)]
+
+= 2 − exp
+�
+−[X(r) − X(r′)]2
+
+2σ2
+
+�
+.
+(S48)
+
+The k-means centers are initialized via farthest point sampling similar to Ref. S12. In further
+
+iterations, the centers are updated as averages over all points belonging to their respective
+
+clusters as in the standard k-means algorithm. Those points are assigned to the clusters
+
+based again on the kernel induced metric.
+
+Next, we combine the selected points from all structures and apply the sparsification
+
+again to choose the kernel control points XiB, compare blue squares in Fig. 1 in the main
+
+text. An interesting technical detail is that the rk are chosen as actual real-space points
+
+closest to k-means centers, where vRPA
+xc
+(r) is available. For the selection of the XiB, however,
+
+we find it beneficial to use the k-means centers themselves. That is, the chosen kernel control
+
+S-13
+
+
+points correspond not to descriptors at actual real-space grid points, but rather optimized
+
+artificial ones. Integrals are evaluated on the entire real-space grid throughout.
+
+In the following, we demonstrate numerically the efficiency of our sparsification scheme.
+
+First, we split the ML-RPA training set randomly (50:50) into a reduced training set and
+
+a validation set. Keeping one sparsification layer fixed and varying the number of k-means
+
+clusters in the other, we monitor the loss
+
+L1
+′ =
+1
+
+Nstruct
+
+Nstruct
+�
+
+α
+cELα
+1,E + (1 − cE)Lα
+1,v
+′
+
+Lα
+1,E =
+1
+N α
+e
+|EML−RPA
+xc
+− ERPA
+xc
+|
+
+Lα
+1,v
+′ =
+1
+N α
+e
+
+�
+dr n(r)|˜vML−RPA
+xc
+(r) − ˜vRPA
+xc
+(r)|
+
+(S49)
+
+for structures in the reduced training and validation sets. Note that the loss Lα
+1,v
+′ includes the
+
+exchange-correlation potential at all real-space grid points, thus some amount of interpolation
+
+is required to minimize Lα
+1,v
+′ even for structures α on which ML-RPA has been trained on.
+
+This means that L1,v
+′ is less prone to overfitting and statistical error. Likewise, atomic forces
+
+in MLFF are known to be less prone to overfitting and statistical errors than energies. Fig.
+
+S1 shows that in the first layer, we can downsample the number of real-space grid points per
+
+training structure (Nspars) from O(105) − O(106) to a mere 100 without loosing significant
+
+fit accuracy. The second k-means layer inputs the combined Nstruct × Nspars points from the
+
+first layer. Fig. S2 shows that the number of kernel control points can be reduced by an
+
+additional factor of 4 without loss of accuracy. The other ML-RPA hyperparameters listed in
+
+Table S1 were optimized in a similar fashion, minimizing validation set losses and monitoring
+
+the stability of electronic self-consistency.
+
+S-14
+
+
+8
+16
+32
+64
+128
+256
+# of sparse points per training structure
+
+0.5
+
+1
+
+2
+
+4
+
+8
+
+16
+
+average losses (meV per electron)
+
+reduced training set
+validation set
+cutoff for current work
+
+Figure S1: Convergence of the ML-RPA fit with respect to Nspars, that is the number of
+sparse points kept by the first sparsification layer (second layer fixed). Note the log-log
+scale. Solid lines indicate losses for exchange-correlation energies [cELE in Eq. (S49)], and
+dashed lines indicate losses for exchange-correlation potentials [(1 − cE)L′
+v in Eq. (S49)].
+The losses are averaged losses over 10 random splittings (50:50).
+
+S-15
+
+
+2
+4
+8
+16
+32
+64
+# of kernel control points kept (%)
+
+0.5
+
+1
+
+2
+
+4
+
+8
+
+16
+
+average losses (meV per electron)
+
+reduced training set
+validation set
+cutoff for current work
+
+Figure S2: Like Fig. S1, but convergence with respect to the number of kernel control points
+kept by the second sparsification layer (first layer fixed).
+
+S-16
+
+
+S4
+ML-RPA training set
+
+As a baseline, the ML-RPA training set contains 41 small molecules from the G2-2 database.S13
+
+We include all non-spin-polarized molecules containing elements C, O and H except for CH2,
+
+which does not posses a complete octet structure. We use experimental geometries where
+
+available, and otherwise geometries from accurate quantum chemistry calculations.S14 The
+
+molecules can be further classified as 20 hydrocarbons, 19 oxygen substituted hydrocarbons,
+
+and 2 inorganic molecules (H2 and O3). Thus, by including the G2 molecules we sample
+
+basic bonding motives and vacuum regions. To train ML-RPA for our specific applications,
+
+we supplement the training set with diamond and water structures, as discussed in the main
+
+text. Table S2 and Fig. S3 detail the ML-RPA fit errors with respect to the different training
+
+sub-groups.
+
+Table S2: Average training set losses calculated via Eq. (S49) (in meV per electron) specified
+for different sub-groups of the ML-RPA training set. To compensate for the small amount
+of surface data, surfaces are included twice in the training set, giving them higher fit weight.
+The H2O monomer at the experimental geometry is listed as a G2-molecule.
+
+cEL1,E
+(1 − cE)L1,v
+′
+
+41 G2-molecules
+0.73
+0.30
+40 bulk diamond structures
+0.59
+0.48
+16 diamond surfaces (x2)
+0.93
+1.09
+76 water structures
+0.71
+0.27
+
+189 structures in total
+0.73
+0.46
+
+S4.1
+Diamond surfaces
+
+Table S3 specifies the 28 diamond surfaces used to benchmark different DFT functionals
+
+(see Table 2 in the main text). These surfaces have been described in detail in past studies,
+
+we refer to the original references for more complete descriptions of the surface geome-
+
+tries.S17,S18,S20–S22 In the following, we briefly comment on the interesting case of oxygenated
+
+(111) surfaces, where several (meta-)stable configurations exist that are close in energy. The
+
+S-17
+
+
+-16000
+-14000
+-12000
+-10000
+-8000
+RPA exchange-correlation energy (meV per electron)
+
+-2
+
+0
+
+2
+
+4
+
+6
+
+ML-RPA energy error (meV per electron)
+
+G2-molecules
+bulk diamond
+diamond surfaces
+water
+
+Figure S3: ML-RPA energy fit error, EML−RPA
+xc
+/Ne −ERPA
+xc
+/Ne. Symbols distinguish between
+different sub-groups of the training set. The data spread along the y-axis indicates that
+ML-RPA balances the fit well across the different sub-groups. Further, the spread along the
+x-axis shows that the G2-molecules contain very different chemical environments, whereas
+the other training data are more homogeneous. The H2O monomer at the experimental
+geometry is listed as a G2-molecule.
+
+least stable surface is the (111)-3db symmetric (1 × 1) oxygenated surface, while the most
+
+stable surface is the 2 × 1 reconstructed (111)-3db oxygenated chain surface, and the three
+
+oxygenated (111)-1db surfaces are in between. The (111)-3db oxygenated chain surface can
+
+be interpreted as clean (111)-1db surface adsorbing a monolayer of CO molecules, compare
+
+Fig. 4 in the main text. This is significant insofar as CO molecules have been reported to
+
+be the main desorption product in temperate-programmed desorption experiments on oxy-
+
+genated (111) surfaces.S20 The C-O bond length of the oxygenated (111)-3db chain surface is
+
+calculated to be 1.20 Å (we use PBE geometries throughout). This clearly indicates strong
+
+S-18
+
+
+Table S3: List of the 28 diamond surfaces used for our surface energy benchmark (see Table
+2 in the main text).
+The first column defines the surface symmetry and stoichiometry
+(corresponding to the chemisorption of 1 ML hydrogen for hydrogenated surfaces, and 1 ML
+oxygen for oxygenated surfaces). The second column describes the geometry of the surface
+termination and quotes literature references, where the surfaces are characterized. Further
+columns show surface formation energies [see Eq. 12 in the main text] that are given in eV per
+surface atom. “Exact RPA” is the ground truth for ML-RPA, and basis set extrapolated RPA
+formation energies are obtained using Eq. (S50). Formation energies calculated with the
+PBE functional are also listed for comparison. All (100) and (111)-1db surfaces are included
+in the ML-RPA training set, all (110) and (111)-3db surfaces are out-of training. Underlined
+values correspond to the most stable configurations for a given a surface termination and
+orientation.
+
+PBE
+RPA
+
+extrap.
+exact
+ML
+
+(100)*
+1 × 1
+bulk terminated, as cutS15
+3.49
+3.70
+3.66
+3.57
+1 × 1
+bulk terminated, relaxedS15
+3.36
+3.62
+3.59
+3.51
+1 × 1:H
+bulk terminated, on-topS15
+0.90
+1.21
+1.21
+1.16
+1 × 1:O
+bulk terminated, ketoneS16
+2.29
+2.38
+2.38
+2.39
+1 × 1:O
+bulk terminated, etherS16
+1.97
+2.03
+1.99
+1.91
+
+2 × 1
+dimerS16
+1.89
+2.08
+2.08
+2.03
+
+2 × 1:2H
+dimer, on-topS16
+0.01
+0.20
+0.20
+0.11
+
+2 × 1:2O
+dimer, bridgeS17
+3.45
+3.50
+3.48
+3.40
+
+(110)
+1 × 1
+bulk terminated, as cutS18
+1.90
+2.11
+2.09
+1.95
+1 × 1
+bulk terminated, relaxedS18
+1.45
+1.69
+1.70
+1.59
+
+1 × 1:H
+bulk terminated, on-topS18
+-0.23
+-0.12
+-0.11
+-0.12
+
+1 × 1:O
+bulk terminated, on-top†
+3.38
+3.61
+3.60
+3.58
+
+∗included in the ML-RPA training set
+
+†similar to the hydrogenated (110) surface, the calculated C-O bond length is 1.36 Å.
+
+double bonds, in comparison, the C-O bond lengths for the (111)-1db oxygenated surfaces
+
+are 1.20 Å (ketone) and 1.31 Å (on-top), as well as {1.43 Å, 1.44 Å} (peroxide). Out of the
+
+three oxygenated (111)-1db surfaces, exact RPA and ML-RPA predict the peroxide struc-
+
+ture to be the most stable one, whereas PBE favors the on-top configuration. Otherwise,
+
+PBE, ML-RPA and exact RPA predict identical energy orderings throughout, see underlined
+
+values in Table S3.
+
+S-19
+
+
+Table S3, continued.
+
+PBE
+RPA
+
+extrap.
+exact
+ML
+
+(111)-1db*
+1 × 1
+bulk terminated, as cutS19
+2.46
+2.71
+2.69
+2.52
+1 × 1
+bulk terminated, relaxedS19
+1.94
+2.30
+2.29
+2.12
+1 × 1:H
+bulk terminated, on-topS19
+-0.34
+-0.19
+-0.19
+-0.24
+
+1 × 1:O
+bulk terminated, on-topS20
+2.84
+3.19
+3.19
+2.99
+2 × 1:2O
+bulk terminated (distorted), peroxideS20
+2.99
+3.02
+2.99
+2.94
+
+2 × 1
+Pandey chainS19
+1.18
+1.43
+1.41
+1.34
+
+2 × 1:2H
+Pandey chain, on-topS19
+0.31
+0.49
+0.47
+0.40
+2 × 1:2O
+Pandey chain, ketoneS20
+2.94
+3.08
+3.09
+2.99
+
+(111)-3db
+1 × 1
+bulk terminated, as cutS21
+4.27
+4.41
+4.37
+4.37
+1 × 1
+bulk terminated, relaxedS21
+4.26
+4.41
+4.37
+4.37
+1 × 1:H
+bulk terminated, on-topS21
+3.01
+3.38
+3.36
+3.43
+1 × 1:O
+bulk terminated, ketoneS17
+3.50
+3.92
+3.90
+3.87
+2 × 1
+Seiwatz chainS21
+2.44
+2.71
+2.70
+2.56
+
+2 × 1:2H
+Seiwatz chain, on-topS21
+0.00
+0.17
+0.17
+0.11
+
+2 × 1:2O
+Seiwatz chain, ketoneS17
+2.67
+2.91
+2.90
+2.79
+
+∗included in the ML-RPA training set
+
+Finally, correlated methods such as RPA are known to converge slowly with respect to the
+
+basis set size.S23,S24 To confirm the technical converge of our RPA calculations with respect
+
+to basis set, we extrapolate the RPA correlation energies with respect to the energy cutoff
+
+Eχ
+max using the formulaS25,S26
+
+ERPA
+c
+(Eχ
+max) = ERPA
+c
+(Eχ
+max = ∞) + const
+
+Eχ
+max
+3/2.
+(S50)
+
+Table S3 shows that the extrapolated formation energies are slightly larger than our
+
+“exact RPA” values, which form the ground truth for ML-RPA. The agreement between
+
+“exact” and extrapolated RPA formation energies is 40 meV or better throughout.
+
+The basis set incompleteness error also causes a slight underbinding of bulk diamond.
+
+The extrapolated values for the equlibrium lattice constant is 3.572 Å, whereas “exact RPA”
+
+S-20
+
+
+predicts 3.581 Å.
+
+S5
+Machine learning force fields for liquid water
+
+RPA-MLFF is trained directly on total energies and forces from RPA calculations. Since
+
+RPA force calculations are very expensive, we use a cheaper RPA setup here. Specifically,
+
+an energy cutoff of 500 eV is used for the plane-wave basis sets expanding both the orbitals
+
+and the response function (ML-RPA ground truth calculations use 600 eV and 400 eV,
+
+respectively). Our tests, however, indicate that this difference has only minor effects on the
+
+predicted liquid water RDFs. The RPA-MLFF training data set consists 107 water structures
+
+containing 32 molecules or less. We use a compact hyperparameter setup that has shown to
+
+enable an efficient and accurate MLFF training for liquid water.S27 In particular, the radial
+
+and angular descriptors are separated as described in Ref. S5, and the angular descriptors
+
+are truncated at angular momentum number l = 2. Further, the radial descriptors use a
+
+cutoff of 6.0 Å and 8 radial basis functions, whereas the angular descriptors use a smaller
+
+cutoff of 4.0 Å and only 6 radial basis functions. For a general description of the MLFF
+
+scheme see also Refs. S28 and S2. The RPA-MLFF training set errors are given in Table S4.
+
+The MLFF used to speed up ML-RPA uses the same descriptors as RPA-MLFF, but
+
+is trained on-the-flyS2,S28 at fixed volume using a temperature ramp from 270 K to 370 K
+
+and a supercell containing 64 water molecules. In this way, a training set of around 400
+
+structures is created. Thus, the combination of ML-RPA and MLFF allows for significantly
+
+more MLFF ground truth calculations, since ML-RPA is orders of magnitude cheaper than
+
+exact RPA. Moreover, the stresses predicted by ML-RPA can be seamlessly included in the
+
+MLFF training, whereas this would not be as easily possible for RPA-MLFF (RPA stress
+
+tensors can be included via finite differences,S29 but this is very expensive). The MLFFs
+
+for PBE+TS and RPBE+D3(BJ) are also trained on-the-fly, fit accuracy being similar to
+
+ML-RPA (see Table S4).
+
+S-21
+
+
+The production run which produced the RDFs shown in Fig. 5 in the main text used
+
+200000 MD steps with a time step of 1.5 fs. To increase sampling efficiency, the mass of the
+
+hydrogen atom was increased by a factor 8 (this does not affect static properties such as the
+
+RDF). For PBE+TS, which diffuses very weakly at 300 K, we further increased the supercell
+
+size to 512 water molecules, and increased the length of the MD run by a factor 3. Next, we
+
+define an independent test set of 10 liquid water snapshots sampled from the RPA-MLFF
+
+production run (64 water molecules). A low test set energy root means square error (RMSE)
+
+of 1.6 meV per atom demonstrates (i) that the ambient conditions used are well covered
+
+by the RPA-MLFF training set, (ii) that RPA-MLFF is able to extrapolate to the slightly
+
+larger simulation cell (64 water molecules). We also use this test set to evaluate the on-the-
+
+fly MLFFs, and the test set energy RMSEs are excellent (0.4 meV per atom for ML-RPA,
+
+0.6 meV per atom for PBE+TS, and 0.5 meV per atom for RPBE+D3(BJ), respectively).
+
+Table S4: Training set errors (root means square error, RMSE) for the MLFFs trained for
+liquid water. Energy RMSEs are given in meV per atom, force RMSEs are given in meV Å
+−1,
+and stress RMSEs are given in kbar.
+
+structures
+energy
+force
+stress
+
+RPA-MLFF
+107
+0.6
+27.0
+—
+ML-RPA-MLFF
+389
+0.4
+29.9
+0.26
+PBE+TS-MLFF
+490
+0.3
+31.7
+0.21
+RPBE+D3(BJ)-MLFF
+521
+0.3
+30.5
+0.21
+
+S6
+Water hexamer benchmark
+
+Figs. S4 and S5 detail the water hexamer benchmark for various semi-local and vdW func-
+
+tionals, respectively. The vdW corrected PBE+TS and RPBE+D3 functionals well improve
+
+over their respective GGA base functionals, whereas SCAN+rVV10 performs slightly worse
+
+than the pristine SCAN functional.
+
+S-22
+
+
+prism
+
+cage
+
+book1
+
+book2
+
+bag
+
+cyclic-chair
+
+cyclic-boat1
+
+cyclic-boat2
+
+-0.2
+
+-0.1
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+isomer energy differences (eV)
+
+LDA
+PBEsol
+PBE
+RPBE
+SCAN
+ML-RPA
+CCSD(T) reference
+
+Figure S4: Binding energies differences of eight hexamers as in Fig. 6 in the main text.
+ML-RPA results are compared to various semi-local density functionals. Lines drawn are
+only guides to the eye.
+
+S-23
+
+
+prism
+
+cage
+
+book1
+
+book2
+
+bag
+
+cyclic-chair
+
+cyclic-boat1
+
+cyclic-boat2
+
+-0.2
+
+-0.1
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+isomer energy differences (eV)
+
+PBE+TS
+RPBE+D3(BJ)
+optB88-vdW
+rev-vdW-DF2
+SCAN+rVV10
+ML-RPA
+CCSD(T) reference
+
+Figure S5: Like Fig. S4, but for various vdW functionals.
+
+S-24
+
+
+References
+
+(S1) Behler, J.;
+Parrinello, M. Generalized Neural-Network Representation of High-
+
+Dimensional Potential-Energy Surfaces. Physical Review Letters 2007, 98, 146401.
+
+(S2) Jinnouchi, R.; Karsai, F.; Kresse, G. On-the-fly machine learning force field generation:
+
+Application to melting points. Physical Review B 2019, 100, 014105.
+
+(S3) Arfken, G. B.; Weber, H. J. Mathematical methods for physicists. 1999.
+
+(S4) Bartók, A. P.; Kondor, R.; Csányi, G. On representing chemical environments. Physical
+
+Review B 2013, 87, 184115.
+
+(S5) Jinnouchi, R.; Karsai, F.; Verdi, C.; Asahi, R.; Kresse, G. Descriptors representing
+
+two- and three-body atomic distributions and their effects on the accuracy of machine-
+
+learned inter-atomic potentials. The Journal of Chemical Physics 2020, 152, 234102.
+
+(S6) Kohn, W.; Sham, L. J. Self-Consistent Equations Including Exchange and Correlation
+
+Effects. Phys. Rev. 1965, 140, A1133–A1138.
+
+(S7) Nagai, R.; Akashi, R.; Sasaki, S.; Tsuneyuki, S. Neural-network Kohn-Sham exchange-
+
+correlation potential and its out-of-training transferability. The Journal of Chemical
+
+Physics 2018, 148, 241737.
+
+(S8) Tozer, D. J.; Handy, N. C. The development of new exchange-correlation functionals.
+
+The Journal of Chemical Physics 1998, 108, 2545–2555.
+
+(S9) Becke, A. D.; Johnson, E. R. A simple effective potential for exchange. The Journal
+
+of Chemical Physics 2006, 124, 221101.
+
+(S10) Levy, M.; Zahariev, F. Ground-State Energy as a Simple Sum of Orbital Energies
+
+in Kohn-Sham Theory: A Shift in Perspective through a Shift in Potential. Physical
+
+Review Letters 2014, 113, 113002.
+
+S-25
+
+
+(S11) Verdi, C.; Karsai, F.; Liu, P.; Jinnouchi, R.; Kresse, G. Thermal transport and phase
+
+transitions of zirconia by on-the-fly machine-learned interatomic potentials. npj Com-
+
+putational Materials 2021, 7, 1–9.
+
+(S12) Arthur, D.; Vassilvitskii, S. k-means++: The Advantages of Careful Seeding; Technical
+
+Report 2006-13, 2006.
+
+(S13) Curtiss, L. A.; Raghavachari, K.; Redfern, P. C.; Pople, J. A. Assessment of Gaussian-
+
+2 and density functional theories for the computation of enthalpies of formation. The
+
+Journal of Chemical Physics 1997, 106, 1063–1079.
+
+(S14) Johnson, R. Computational Chemistry Comparison and Benchmark Database, NIST
+
+Standard Reference Database 101. 2002.
+
+(S15) Furthmüller, J.; Hafner, J.; Kresse, G. Dimer reconstruction and electronic surface
+
+states on clean and hydrogenated diamond (100) surfaces. Physical Review B 1996,
+
+53, 7334–7351.
+
+(S16) Sque, S. J.; Jones, R.; Briddon, P. R. Structure, electronics, and interaction of hydro-
+
+gen and oxygen on diamond surfaces. Physical Review B 2006, 73, 085313.
+
+(S17) Zheng, X.; Smith, P. The stable configurations for oxygen chemisorption on the dia-
+
+mond (100) and (111) surfaces. Surface Science 1992, 262, 219–234.
+
+(S18) Kern, G.; Hafner, J. Ab initio calculations of the atomic and electronic structure of
+
+clean and hydrogenated diamond (110) surfaces. Physical Review B 1997, 56, 4203–
+
+4210.
+
+(S19) Kern, G.; Hafner, J.; Kresse, G. Atomic and electronic structure of diamond (111) sur-
+
+faces I. Reconstruction and hydrogen-induced de-reconstruction of the one dangling-
+
+bond surface. Surface Science 1996, 366, 445–463.
+
+S-26
+
+
+(S20) Loh, K. P.; Xie, X. N.; Yang, S. W.; Zheng, J. C. Oxygen Adsorption on (111)-Oriented
+
+Diamond:
+A Study with Ultraviolet Photoelectron Spectroscopy, Temperature-
+
+Programmed Desorption, and Periodic Density Functional Theory. The Journal of
+
+Physical Chemistry B 2002, 106, 5230–5240.
+
+(S21) Kern, G.; Hafner, J.; Kresse, G. Atomic and electronic structure of diamond (111)
+
+surfaces II. (2 × 1) and (
+√
+
+3 ×
+√
+
+3) reconstructions of the clean and hydrogen-covered
+
+three dangling-bond surfaces. Surface Science 1996, 366, 464–482.
+
+(S22) Chaudhuri, S.; Hall, S. J.; Klein, B. P.; Walker, M.; Logsdail, A. J.; Macpherson, J. V.;
+
+Maurer, R. J. Coexistence of carbonyl and ether groups on oxygen-terminated (110)-
+
+oriented diamond surfaces. Communications Materials 2022, 3, 1–9.
+
+(S23) Furche, F. Molecular tests of the random phase approximation to the exchange-
+
+correlation energy functional. Phys. Rev. B 2001, 64, 195120.
+
+(S24) Klimeš, J.; Kaltak, M.; Kresse, G. Predictive GW calculations using plane waves and
+
+pseudopotentials. Physical Review B 2014, 90, 075125.
+
+(S25) Harl, J.; Schimka, L.; Kresse, G. Assessing the quality of the random phase approx-
+
+imation for lattice constants and atomization energies of solids. Phys. Rev. B 2010,
+
+81, 115126.
+
+(S26) Riemelmoser, S.; Kaltak, M.; Kresse, G. Plane wave basis set correction methods for
+
+RPA correlation energies. The Journal of Chemical Physics 2020, 152, 134103.
+
+(S27) Jinnouchi, R.; Minami, S.; Karsai, F.; Verdi, C.; Kresse, G. Proton Transport in
+
+Perfluorinated Ionomer Simulated by Machine-Learned Interatomic Potential. J. Phys.
+
+Chem. Lett. 2023, 14, 3581–3588.
+
+(S28) Jinnouchi, R.; Lahnsteiner, J.; Karsai, F.; Kresse, G.; Bokdam, M. Phase Transitions
+
+S-27
+
+
+of Hybrid Perovskites Simulated by Machine-Learning Force Fields Trained on the
+
+Fly with Bayesian Inference. Physical Review Letters 2019, 122, 225701.
+
+(S29) Liu, P.; Verdi, C.; Karsai, F.; Kresse, G. Phase transitions of zirconia: Machine-learned
+
+force fields beyond density functional theory. Physical Review B 2022, 105, l060102.
+
+S-28
+
+

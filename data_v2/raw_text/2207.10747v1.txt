@@ -1,0 +1,2255 @@
+A Transferable Recommender Approach for Selecting the Best Density Functional 
+
+Approximations in Chemical Discovery 
+
+ 
+
+Chenru Duan1,2, Aditya Nandy1,2, Ralf Meyer1, Naveen Arunachalam1, and Heather J. Kulik1,2 
+
+1Department of Chemical Engineering, Massachusetts Institute of Technology, Cambridge, MA 
+
+02139 
+
+2Department of Chemistry, Massachusetts Institute of Technology, Cambridge, MA 02139 
+
+ 
+
+Abstract:  Approximate density functional theory (DFT) has become indispensable owing to its 
+cost-accuracy trade-off in comparison to more computationally demanding but accurate 
+correlated wavefunction theory. To date, however, no single density functional approximation 
+(DFA) with universal accuracy has been identified, leading to uncertainty in the quality of data 
+generated from DFT. With electron density fitting and transfer learning, we build a DFA 
+recommender that selects the DFA with the lowest expected error with respect to gold standard 
+but cost-prohibitive coupled cluster theory in a system-specific manner. We demonstrate this 
+recommender approach on vertical spin-splitting energy evaluation for challenging transition 
+metal complexes. Our recommender predicts top-performing DFAs and yields excellent accuracy 
+(ca. 2 kcal/mol) for chemical discovery, outperforming both individual transfer learning models 
+and the single best functional in a set of 48 DFAs. We demonstrate the transferability of the DFA 
+recommender to experimentally synthesized compounds with distinct chemistry.  
+ 
+ 
+
+
+Introduction 
+
+With rapid advancements in computing power, density functional theory (DFT) has 
+
+become an indispensable companion to experiments as well as a primary tool in virtual high 
+
+throughput screening (VHTS)1 to generate large-scale computational datasets2. Combined with 
+
+machine learning (ML), these datasets have accelerated computational chemical discovery and 
+
+revolutionized scientific discoveries3, 4 in physics, chemistry, materials sciences, and biology. All 
+
+ML models, however, are limited by the quality of the training data, imposing strict requirements 
+
+for the accuracy of the first-principles methods used in VHTS. In DFT, a density functional 
+
+approximation (DFA) that works well on certain systems can fail prominently on other systems 
+
+due to the approximations made in the exchange-correlation functional5. This DFA dependence 
+
+is particularly strong in open-shell transition metal chemistry, with many examples of 
+
+compelling functional materials (e.g., metal organic frameworks) and catalytic reactions (e.g., C–
+
+H activation) that are dominated by static correlation6.  
+
+For simplicity, a single DFA is typically selected to screen through a large chemical 
+
+space in VHTS2.  It is known that the single-DFA approach can lead to bias in the computational 
+
+data sets generated, which further bias ML models and the final candidate materials in the ML-
+
+accelerated discovery7. Alternatively, when computational chemistry efforts are focused enough 
+
+on a small set of molecules for which experimental or accurate correlated wavefunction theory 
+
+reference data is available, different DFAs may be evaluated and then selected in a system and 
+
+property-dependent manner to obtain agreement8. Nevertheless, there is no guarantee that the 
+
+same DFA is optimal for different properties or different materials. These challenges pose 
+
+limitations on both mechanistic inquiry by computational chemists aiming to reach the "chemical 
+
+accuracy" needed to be predictive of experimental outcomes and in the emergence of massive-
+
+
+scale “big data” that enables deep model training in computational sciences9 as in computer 
+
+vision and natural language processing. 
+
+One way to improve the fidelity of DFT-derived data sets is to develop DFAs with 
+
+increased accuracy and generalizability. Recent advances in using ML to develop neural network 
+
+potentials10 and exchange-correlation functionals11 have shown promise in developing 
+
+transferable models.  Currently, however, they have severe limitations that curtail their practical 
+
+use. These DFAs have primarily been developed for and applied on narrow sets of closed-shell 
+
+organic molecules and are still less transferable relative to conventional DFAs developed in the 
+
+theoretical chemistry community over the past few decades. More importantly, these models 
+
+only target the total electronic energy of a geometry rather than other properties of chemical 
+
+interest, such as those involving multiple electronic states (e.g., spin splitting). 
+
+Here, we demonstrate an alternate route. Instead of developing a new DFA, we leverage 
+
+transfer learning (TL) and use a “regress-then-classify” strategy to develop a recommender12 to 
+
+select the best conventional DFA for a given system and a property of interest based on features 
+
+the electron density of the system under study. To demonstrate this approach, we recommend a 
+
+DFA that most accurately evaluates the vertical spin splitting energy of a transition metal 
+
+complex (TMC), a property highly sensitive to the choice of DFA7,20. This recommender selects 
+
+a DFA in a system-specific manner rather than based on average performance of DFAs and 
+
+captures the rank ordering of the top-performing DFAs. Crucially, our recommender has a mean 
+
+absolute error (MAE) of 2.1 kcal/mol, providing the accuracy required for the exploration of 
+
+transition metal chemical space. Because the electron density is a fundamental property of the 
+
+system, our recommender demonstrates excellent transferability, achieving similar accuracy for 
+
+recommending DFAs on unseen experimentally synthesized TMCs that contain diverse 
+
+
+chemistry. This recommender approach is expected to be a general framework for method 
+
+selection to increase the data quality in VHTS and ML-accelerated discovery in computational 
+
+sciences. 
+
+ 
+
+Results 
+
+Overview of the DFA recommender. Electron density lies in the core of Kohn-Sham (KS)-DFT 
+
+and can derive any ground state property of interest for a system. However, it is less commonly 
+
+used as representations in ML models due to its non-local nature in KS orbitals and its 
+
+cumbersome to fulfill translational and rotational symmetries when discretized to 3D cubes. Here, 
+
+we perform density fitting on the electron density13 of a TMC obtained from the representative 
+
+B3LYP calculation. The resulting coefficients of the basis functions, which preserve the required 
+
+physical (i.e., translational, rotational, and permutation) symmetries,  are used as the 
+
+representations of the TMC (Fig. 1a–1b, see Methods). To make this approach more general with 
+
+respect to chemical properties that involve multiple electronic states (here, vertical spin splitting), 
+
+we directly decompose the difference of electron density at two electronic states. These density 
+
+fitting coefficients are atom-centered, which have the advantage of being agnostic to model 
+
+architectures and can be readily combined with Behler–Parrinello, message passing, and graph 
+
+neural networks. 
+
+With the overarching goal of recommending a DFA in a system-specific way, one may 
+
+expect that the optimal approach is to treat the learning task as a multi-class classification 
+
+problem14 where the classes are different DFAs. However, due to the inherent similarity among 
+
+different DFAs, many DFAs perform similarly well in most cases, leading to label noise when 
+
+determining the “best” DFA. Correspondingly, this noise poses a challenge to classification 
+
+
+models (Supplementary Fig.1). Therefore, we take an alternative “regress-then-classify” strategy, 
+
+where we aim to recommend a low-error DFA instead of forcing ML models to recognize top-
+
+ranking DFAs (Fig. 1, see Methods). We thus set up transfer learning (TL) regression task to 
+
+predict the absolute difference of the vertical spin splitting energy between a DFA (f) and our 
+
+reference data from domain-based local pair natural orbital (DLPNO)-CCSD(T) theory15 (|DDEH–
+
+L[f]|).  In this “regress-then-classify” strategy, we first build Behler–Parrinello-type neural 
+
+networks to predict |DDEH–L[f]| using our B3LYP density fitting coefficients separately for a pool 
+
+of pre-selected candidate DFAs (Fig. 1c). We then select the DFA that gives the smallest 
+
+absolute predicted difference (i.e., predicted |DDEH–L[f]|) as the recommend DFA for the TMC 
+
+(Fig. 1d).  
+
+There are two approaches to evaluate the performance of the DFA recommender. The 
+
+first is the absolute error as a result of using the recommended DFA relative to the reference 
+
+DLPNO-CCSD(T) method. This measure serves as a practical metric for evaluating the accuracy 
+
+obtained by the recommender in VHTS. The second is the rank ordering of the recommended 
+
+DFA among the pool of candidate DFAs. This statistical measure quantifies how well the 
+
+recommender distinguishes top-performing candidate DFAs. Throughout our work, we will 
+
+consider both perspectives. 
+
+ 
+
+
+ 
+
+Fig. 1 | Workflow for the DFA recommender. a, B3LYP/def2-TZVP single-point energy 
+calculations are performed on both the high-spin (HS) and low-spin (LS) states to obtain their 
+electron densities at B3LYP level. b, The difference of the electron densities between the HS and 
+LS states is decomposed into each atom using a density fitting procedure. c, These coefficients 
+are used in a Behler–Parrinello-type neural network as a TL model to predict |DDEH-L[f]| for each 
+DFA (f) in our pool of 48 DFAs. Coefficients of different atoms that are in the same group of the 
+periodic table share the same local network and weights (e.g., WO for O (red), WH for H (gray) 
+and O and S share the same weights WO). The latent vectors of each element are lastly 
+concatenated and passed to a fully-connected network (WL) to predict |DDEH-L[f]|. d, The 48 
+predicted |DDEH-L[f]| are then sorted, where we recommend the DFA that yields the lowest 
+predicted |DDEH-L[f]|. 
+ 
+ 
+
+Performance of TL models. We first consider a set of 452 octahedral TMCs composed of 3d 
+
+mid-row transition metals and small common organic ligands in spectrochemical series (VSS-542, 
+
+Supplementary Fig. 2, see Methods). We demonstrate the performance of our TL models for 
+
+predicting the differences in vertical spin-splitting energies obtained by a DFA and DLPNO-
+
+CCSD(T) for a pool of 48 DFAs that cover multiple rungs of “Jacob’s ladder”. These 48 TL 
+
+models have mean absolute errors (MAEs) ranging from 2.3 kcal/mol to 3.4 kcal/mol, with a 
+
+median MAE of 2.5 kcal/mol on the 152 set-aside test TMCs in VSS-452 (Fig. 2a). These MAEs 
+
+are low considering the fact that the TL models were only trained on a small set of 300 TMCs 
+
+that contain diverse chemistry (see Methods). In fact, these MAEs are lower than the typical 
+
+experimental uncertainties for thermochemical properties of TMCs (e.g., 3 kcal/mol)16. Despite 
+
+
+the fact that some DFAs have very large (i.e., > 30 kcal/mol) DFA-derived MAEs, all 48 TL 
+
+models yield reasonably low MAEs, suggesting the general applicability of this TL approach 
+
+regardless of the candidate DFA considered. 
+
+Interestingly, the ranking of TL model MAEs does not have the same order as the error 
+
+ranking of the underlying DFA results relative to DLPNO-CCSD(T). For example, the DFA with 
+
+the lowest TL MAE is a double-hybrid functional DSD-PBEB95-D3BJ, which only has the fifth-
+
+lowest MAE relative to the reference calculation (Supplementary Figs. 3 and 4). MN15, which 
+
+gives the highest MAE among 48 TL models, only ranks 17th among the DFA MAEs relative to 
+
+DLPNO-CCSD(T). For the set of 48 DFAs, the rank-order coefficient (i.e., Spearman's r) 
+
+between DFAs ranked by TL model MAE and those ranked by DFA-derived MAE is only 0.36. 
+
+This observation suggests that a TL model does not necessarily have improved performance 
+
+when the MAE of the DFA-derived MAE of the baseline DFA is smaller, posing an interesting 
+
+question of how to select the best baseline method from which TL would yield the lowest errors. 
+
+Fig. 2 | Performance of TL models and the recommender on VSS-452 set. a, MAE of 48 TL 
+
+
+models for the prediction of |DDEH-L| with a box indicating their median (solid line). The MAEs 
+for each TL model (black circle) and our recommender approach (blue star) are also shown.  b, 
+Percentage for the absolute error with the recommender-selected DFA (gray bars), with the 
+cumulative percentage (blue solid line) shown according to the axis on the right. c, An example 
+complex Co(III)(C3H4N2)4(PH3)2, its recommended DFA (i.e ωB97X), and the associated DFA 
+error (0.1 kcal/mol). Atoms are colored as follows: pink for Co, brown for P, gray for C, blue for 
+N, and white for H. d, Percentage likelihood of a DFA residing in the top-5 choices suggested by 
+ground truth (green) and our DFA recommender (blue). The DFAs are sorted in a descending 
+order of the predicted likelihood of the recommender. In all cases, the model performance is 
+evaluated on the set-aside 152 test complexes of VSS-452. 
+
+ 
+Performance of the DFA recommender. We then utilize the predicted |DDEH–L[f]| from all 48 
+
+TL models to recommend a “best” DFA. We compare the vertical spin splitting energy obtained 
+
+by the recommended DFA and the DLPNO-CCSD(T) reference to evaluate the performance of 
+
+the recommender (see Methods). The recommender achieves an MAE of 2.1 kcal/mol on the set-
+
+aside test set of VSS-452, outperforming all 48 TL models. This MAE is only 2.5 times the 
+
+theoretical lower bound (0.8 kcal/mol), which is the performance we would achieve if the DFA 
+
+that gives the lowest error is always selected (Supplementary Fig. 5). Our recommender 
+
+outperforms random DFA selection (MAE = 13.3 kcal/mol) by a factor of 6.5. More importantly, 
+
+even for an alternate strategy representative of using prior knowledge in which we pick the 
+
+single DFA with the lowest average error over the VSS-452 set, its DFA-derived MAE (i.e., 6.2 
+
+kcal/mol with DSD-BLYP-D3BJ) would be three times larger than that of our recommender.  
+
+With this recommender, we are able to select DFAs that give errors within the 3 kcal/mol 
+
+threshold required for transition metal chemical discovery in 77% cases (Fig. 2b). Almost for all 
+
+complexes (i.e., 94%), the recommender can achieve a higher accuracy than the MAE (i.e., 6.2 
+
+kcal/mol) of the best single DFA.  
+
+One distinct advantage of this recommender approach is that its performance is likely to 
+
+improve systematically with increasing number of DFAs under consideration, despite using the 
+
+
+same training data set and TL models. For example, the recommender would achieve an MAE of 
+
+3.0 kcal/mol if we had used the smaller pool of 23 candidate DFAs introduced in our previous 
+
+work7 (Supplementary Table 1). However, as we add the remaining 25 DFAs that incorporate 
+
+alternate fractions of Hartree-Fock (HF) exchange, the MAE reduces to 2.1 kcal/mol, improving 
+
+upon the accuracy of our best TL model of DSD-PBEB95-D3BJ (2.3 kcal/mol, Supplementary 
+
+Table 2). We gain this additional accuracy of the recommender without significantly increasing 
+
+the computational cost, as there is no need for more training data with the computationally 
+
+demanding DLPNO-CCSD(T) reference. 
+
+The other distinct feature of our recommender approach is its system specificity. 
+
+Compared to the widely used strategy of selecting DFAs based on the statistically averaged 
+
+performance over a benchmark data set17, the recommender chooses the DFA only based on the 
+
+chemistry (here the electron density) of the system under consideration. As a result, our 
+
+recommender can avoid selecting a DFA that performs well on average yet particularly bad on 
+
+the given complex. For example, DSD-BLYP-D3BJ has the lowest DFA-derived MAE for 
+
+|DDEH–L[f]| (i.e., 6.2 kcal/mol) against DLPNO-CCSD(T) but gives a relatively high absolute 
+
+error of 9.2 kcal/mol on Co(III)(C3H5N2)4(PH3)2. Our recommender, instead, selects wB97X, 
+
+which has a very small error of 0.1 kcal/mol on this compound, despite the fact the DFA-derived 
+
+MAE of wB97X is much higher (i.e, 16.9 kcal/mol) and only ranks 37th out of 48 DFAs (Fig. 2c 
+
+and Supplementary Fig. 3). 
+
+Next, we investigate the statistics of the recommended DFA performance to determine 
+
+when our recommender correctly selects the top-performing functional. We focus on DFAs that 
+
+are within the top-5 choices as they usually result in the accuracy required for studies in 
+
+transition metal chemistry16 (i.e., 3.0 kcal/mol) because multiple DFAs can achieve similar 
+
+
+accuracy for a TMC (Supplementary Figs. 5 and 6). We find more than two-thirds (i.e., 100 out 
+
+of 152 complexes in the set-aside test set of VSS-452) of the recommended DFAs are within the 
+
+top-5 DFAs relative to the ground truth (Supplementary Fig. 7). In less than 15% of cases, our 
+
+approach recommends a DFA that is not in the top 10 out of 48 candidate DFAs. Interestingly, 
+
+we get more favorable ranking statistics using only the 23 DFAs from prior work7, despite a 
+
+higher recommender MAE (i.e., 3.0 kcal/mol, Supplementary Table 1). With these 23 candidate 
+
+DFAs, 88% of the DFAs selected by the recommender are within the top 5 and nearly none (i.e. 
+
+4%) fall out of the top-10 DFAs (Supplementary Fig. 8). We expect this behavior to be general 
+
+in our recommender approach: with more candidate DFAs in the pool, it is more difficult to get 
+
+favorable ranking statistics, as judged by identifying the single top performing functional, but 
+
+easier to obtain a lower MAE for practical performance because there are more DFAs to select 
+
+from. 
+
+Lastly, we compare the statistics of most probable DFAs that reside in top-5 choices 
+
+obtained by the ground truth and our recommender. Out of the 48 DFAs, MN15-L with 50% HF 
+
+exchange (i.e., MN15-L:50%) appears most frequently as a top-5 DFA, with a likelihood of 43% 
+
+for the 152 set-aside test TMCs in VSS-452 (Fig. 2d). Correspondingly, our recommender 
+
+identifies the same DFA to have the highest likelihood (53%) being in the top-5 candidate DFAs. 
+
+Moreover, for each base semi-local functional (i.e., BLYP, PBE, SCAN, M06-L, and MN15-L), 
+
+the DFA recommender successfully picks the HF exchange fraction that is most accurate for 
+
+VSS-452. As a result, our recommended DFAs maintain the rank ordering of probable top-5 
+
+DFAs compared to the ground truth, leading to a Spearman's r of 0.95. This extremely high 
+
+correspondence demonstrates that our DFA recommender is capable of identifying DFAs that are 
+
+most likely to be accurate in a given chemical space.  
+
+
+ 
+
+Interpreting TL model and recommender predictions. We use virtual adversarial attack18 as 
+
+an approach to uncover TL model focus when predicting |DDEH–L[f]|. During the attack, we 
+
+obtain the virtual adversarial perturbation (rvadv) on the inputs that maximizes the change of TL 
+
+model output (i.e., before and after the perturbation), which represents the region of model focus. 
+
+For example, the rvadv of the B3LYP TL model on Co(II)(SH2)4(SCN–)2 mostly concentrates on 
+
+Co and S atoms, suggesting that the B3LYP TL model focuses mostly on the metal and first 
+
+coordination sphere when predicting |DDEH–L| (Fig. 3a). By directly averaging over rvadv of all 
+
+TMCs in the set-aside test set of VSS-452 for a given DFA, we obtain its average TL model 
+
+focus. Interestingly, we find that all TL models have much stronger focus on the metal-local 
+
+environments compared to the untrained model, which is in agreement with our previous work7, 
+
+19 (Fig. 3b). This trend holds for all 48 DFAs despite the fact that spin-splitting energy itself can 
+
+be sensitive to DFA choice and the associated HF exchange fraction. 
+
+Intuitively, one would expect the accuracy of a DFA for predicting spin splitting energy 
+
+to depend on the ligand field strength of the ligands in the TMC17, 20. This relationship, however, 
+
+is challenging to disentangle when we have 48 candidate DFAs and only 152 test complexes, 
+
+making all the statistics insignificant. To tease out the trends of the recommended DFAs with 
+
+respect to the ligand field (measured by DLPNO-CCSD(T) DEH-L), we perform a control 
+
+experiment using only a small pool of candidate DFAs that contain the best DFA at each semi-
+
+local functional (i.e., BLYP:50%, PBE:30%, SCAN:40%, M06-L:40%, and MN15-L:50%). For 
+
+this experiment, we are able to maintain reasonable recommender performance (i.e., MAE = 2.5 
+
+kcal/mol) with these five select DFAs and still have a relatively large ratio between the number 
+
+of test TMCs and candidate DFAs to make our statistical analysis sound. We further partition the 
+
+
+DLPNO-CCSD(T) DEH-L from -100 kcal/mol to -10 kcal/mol equally into 9 ranges, thus 
+
+quantifying the complexes from those containing the weakest to the strongest ligand field ligands. 
+
+Among the five DFAs, each DFA has a ligand field strength range over which it performs the 
+
+best (Fig. 4a). For example, M06-L:40% is mostly selected for strong ligand fields (DLPNO-
+
+CCSD(T) DEH-L > -20 kcal/mol), while MN15-L:50% is recommended frequently for the weakest 
+
+fields (DLPNO-CCSD(T) DEH-L < -70 kcal/mol). This preference of selecting different DFAs at 
+
+different ligand field strengths also explains the great accuracy of our recommender approach: At 
+
+each specific range of DLPNO-CCSD(T) DEH-L, the recommender successfully avoids selecting 
+
+DFAs that have a large MAE, which in turn will likely yield low errors in practical applications 
+
+of the recommender (Fig. 4b). 
+
+ 
+
+Fig. 3 | Analysis of TL model focus using virtual adversarial attack. a, The cis 
+Co(II)(SH2)4(SCN)2 molecule (left) where the sphere radius of each atom is proportional to its 
+unsigned average of rvadv and its normalized rvadv (right) with the atom type shown at the start of 
+each row. Only the average rvadv over each atom type is shown, since the differences are small 
+within the same atom type due to the symmetry of this complex. The number of non-zero 
+elements differs in rvadv since the basis set size varies for different atom types. All atoms are 
+colored as follows: pink for Co, yellow for S, gray for C, blue for N, and white for H. b, Model 
+focus decomposed to metal locality for select DFAs in BLYP family (blue for BLYP, red for 
+B3LYP, green for BLYP:50%, and orange for B2GP-PLYP). Model focus of an untrained (i.e., 
+
+
+randomly initialized) TL model is also shown as a comparison. Error bars represent the standard 
+deviation across different TMCs in VSS-452 set. 
+
+ 
+
+Fig. 4 | Recommended DFAs by ligand field strength. a, Stacked normalized histogram for the 
+recommender-selected DFA by DLPNO-CCSD(T) DEH-L with a bin width of 10 kcal/mol. b, 
+|DDEH-L|  MAE for the same DFAs (circles colored as in top legend) at different ranges of 
+DLPNO-CCSD(T) DEH-L grouped by the same set of bins in a. If a DFA is never selected in a 
+range, it is shown with a horizontal bar instead of a circle. In both a and b, the DFA get most 
+frequently selected in a range is outlined with a black solid outline. For ease of visualization, we 
+show the recommender results on the set-aside test set of VSS-452 with only five DFAs (blue for 
+PBE:30%, red for SCAN:40%green for M06-L:40%, orange for MN15-L:50%, gray for 
+BLYP:50%) as candidates. 
+ 
+
+Transferability of the DFA recommender on diverse CSD complexes. A more challenging 
+
+test of the DFA recommender is on its application of chemically distinct out-of-distribution 
+
+complexes. For this purpose, we construct CSD-76, a set of 76 TMCs randomly sampled from 
+
+Cambridge Structural Database (CSD)21 that contain diverse ligand chemistry, symmetry, and 
+
+connectivity (Supplementary Fig. 9). Since all these complexes have been experimentally 
+
+synthesized and crystallized, they test the DFA recommender on a realistic task for exploring 
+
+transition metal chemical space. Without seeing any TMCs in CSD-76, the 48 TL models have 
+
+
+MAEs of predicting |DDEH–L[f]| that range from 3.1 to 6.6 kcal/mol, with a median of 4.5 
+
+kcal/mol (Fig. 5a). These MAEs are < 2 times those on the set-aside test set of VSS-452. While 
+
+there is some accuracy degradation, the transferability improves significantly over chemical-
+
+composition-based representations that often yield > 5 times MAE on out-of-distribution CSD 
+
+data22. We ascribe the great transferability of our TL models to the use of electron density as 
+
+inputs, which is a more fundamental property and can, in principle, dictate all ground state 
+
+properties of a system. 
+
+ 
+Using the predicted |DDEH–L[f]| from all 48 TL models, the recommender has a MAE of 
+
+3.0 kcal/mol, which still slightly outperforms the best TL model (3.1 kcal/mol from M06-2X, Fig. 
+
+5a). The recommender MAE on CSD-76 is only 1.5 times that on VSS-452 and is still within the 
+
+threshold of accuracy required for transition metal chemical discovery compared to experimental 
+
+uncertainties on measuring thermodynamic properties16. Despite the diverse and unseen 
+
+chemistry present in CSD-76, the recommender still selects DFAs with < 3 kcal/mol error 60% 
+
+of the time and < 5 kcal/mol error most of the time (82%), demonstrating its great transferability 
+
+(Fig. 5b). These observations are particularly encouraging as the TL models’ MAEs are more 
+
+varied on CSD-76 compared to VSS-452 (Fig. 5a). Moreover, the TL model MAE rankings by 
+
+dataset (e.g. VSS-452 vs. CSD-76) are very different (Supplementary Figs. 4 and 10). For 
+
+example, the DSD-PBEB95-D3BJ TL model gives the lowest MAE of 2.3 kcal/mol on VSS-452 
+
+but a rather high MAE of 4.6 kcal/mol (i.e., the median of 48 TL models) on CSD-76. This 
+
+highlights the robustness of the DFA recommender over the conventional TL approach, where 
+
+the DFA recommender always give lower MAEs regardless the distributions and rankings of TL 
+
+models built on different DFAs. 
+
+
+ 
+We next proceed to comparing the statistics of recommended DFAs for the out-of-
+
+distribution CSD-76 and the set-aside test set of VSS-452. The recommender gives comparable 
+
+ranking statistics of selected DFAs on CSD-76: 62% of the recommended DFAs are in the top 5 
+
+and 86% are in the top 10 (Supplementary Fig. 12). If we insisted on using the single “best” DFA 
+
+benchmarked on the VSS-452 set (i.e., DSD-BLYP-D3BJ) for exploring CSD chemical space, we 
+
+would have a 5.90 kcal/mol MAE. Moreover, this functional choice is only the actual top-5-
+
+performing DFA 28% of the time over the CSD-76 set. This observation, again, demonstrates the 
+
+robustness and transferability of the recommender approach over both the conventional 
+
+benchmark and TL approach on realistic chemical discovery. 
+
+ 
+Similar to the case of VSS-452, the DFA recommender is also able to identify the top-
+
+performing DFAs and correctly predict the relative likelihood of a DFA to be accurate for CSD-
+
+76 (Fig. 5c). For example, it successfully identifies M06 as the most probable DFA to reside in 
+
+the top-5, despite a slight overestimate of its likelihood (i.e., 64%) compared to the ground truth 
+
+of 56%. In addition, the recommender maintains the high rank ordering (Spearman's r = 0.90) of 
+
+probable top-5 DFAs relative to the ground truth on the CSD-76 set, demonstrating its great 
+
+transferability to unseen chemistry.  
+
+ 
+Due to the drastically different chemistry present in VSS-452 and CSD-76, it is no 
+
+surprise that the top-performing DFAs will vary for the two data sets (Supplementary Table 3, 
+
+Figs. 3 and 10). MN15-L:50%, the most probable (45%) DFA residing in the top-5 choices for 
+
+VSS-452, only has a 17% likelihood of being in top-5 for CSD-76. Meanwhile, M06, which is a 
+
+top-5 DFA only 30% of the time for VSS-452, becomes the most probable DFA to reside in the 
+
+top-5 with a probability of 56%. Although the recommender does not have this prior knowledge 
+
+for the two data sets, it still captures the trend well and selects M06 much more often than 
+
+
+MN15L:50% for TMCs in CSD-76 (Fig. 5c). The recommender also “intelligently” down-selects 
+
+DFAs that only perform well on VSS-452 (e.g., SCAN:40%, MN15-L:40%, M06-L:40%) and 
+
+up-selects DFAs that would perform well on CSD-76 (e.g., LRC-wPBEh, SCAN0, PBE:20%). 
+
+These observations suggest that our DFA recommender can be reliably applied to explore 
+
+diverse transition metal chemical spaces with high accuracy. 
+
+ 
+ 
+
+ 
+
+Fig. 5 | Performance of TL models and the recommender on CSD-76 set. a, Box plot for 
+MAE of 48 TL models for the prediction of |DDEH-L| for both the set-aside test set of VSS-452 
+and the CSD-76 set. The median of 48 TL models (solid line) and the recommender MAE (blue 
+star) are also shown. For each data set, an example complex is shown: trans 
+Mn(II)(C4H4O4)4(H2O)2 for VSS-452 (left) and a hexadentate Fe complex (refcode: KIJNEW) for 
+CSD-76 (right). All atoms are colored as follows: purple for Mn, orange for Fe, yellow for S, 
+gray for C, blue for N, red for O, and white for H. b, Percentage for the DFA recommender to 
+have errors below certain thresholds (1, 3, 5, or 10 kcal/mol) for the set-aside test set of VSS-452 
+(red circles) and CSD-76 (gray bars). c, Percentage likelihood of a DFA residing in the top-5 
+choices suggested by ground truth (green) and our recommender approach (blue) for the CSD-76 
+set, where DFAs are sorted in a descending order of the predicted likelihood of the recommender. 
+
+
+Percentage likelihood obtained by the recommender on the set-aside test set of VSS-452 (red 
+circles) is also shown as a comparison. 
+ 
+
+Discussion 
+
+DFT has become indispensable in both mechanistic study and in accelerated, automated 
+
+chemical or materials discovery. Its accuracy, however, can highly depend on the choice of DFA.  
+
+The single-DFA approach widely used in VHTS leads to bias in data acquisition, and expert 
+
+knowledge and heuristics cannot be expected to be predictive of a single best DFA across large 
+
+chemical spaces. In this work, we developed a general recommender approach to select DFAs in 
+
+a system-specific manner. Distinct from traditional classification tasks where the label is certain, 
+
+the “best” DFA can be expected to be ambiguous due to the similarities between candidate DFAs. 
+
+We devise a “regress-then-classify” strategy to select DFAs with low error instead of forcing a 
+
+model to directly classify the “best” DFA. By partitioning the electron density difference onto 
+
+each atom within a system, we build Behler–Parrinello-type neural networks for transfer learning 
+
+the differences between a DFA and the coupled cluster reference. The recommender then selects 
+
+the DFA that gives the lowest predicted difference from the reference.  
+
+We demonstrated this recommender approach on evaluating the vertical spin splitting 
+
+energy of open shell transition metal complexes. Trained only on 300 TMCs with common 
+
+monodentate ligands, our recommender achieves an accuracy of 2.1 kcal/mol, outperforming 
+
+both the conventional, single DFA and TL approach. This recommender also accurately captures 
+
+the rank ordering (Spearman’s r=0.96) of the likelihood of a DFA residing in the top-5 choices 
+
+relative to the ground truth. When directly applied on experimentally synthesized complexes 
+
+with diverse and unseen ligand chemistry and symmetry, the recommender maintains its stellar 
+
+performance despite the fact that the top-performing DFAs for the CSD complexes are 
+
+
+significantly different than the top-performing DFAs in the training data. The recommender still 
+
+provides the accuracy needed for transition metal chemistry exploration (i.e., MAE=3.0 kcal/mol) 
+
+and is able to select top-5 DFAs 62% of the time and capture the rank ordering (Spearman’s 
+
+r=0.90) of the likelihood of a DFA residing in the top-5 choices. 
+
+The recommender approach has two limitations in its current implementation. First, since 
+
+it uses the B3LYP electron density as inputs, this recommender is not "zero cost", and its 
+
+advantage is therefore greatest in transfer learning tasks where a property prediction with 
+
+"beyond DFT" accuracy is needed. The use of ML-predicted density, semi-empirical densities, or 
+
+guess densities (e.g., superposition of atomic potentials) can reduce the cost further. Second, a 
+
+DFA may not be universally accurate across all properties for a system. Generalization of the 
+
+current recommender may include redefining the loss function in the TL models to explicitly 
+
+encode all relevant objectives.  
+
+In its present form, this recommender approach does not introduce additional 
+
+computational cost when combined with existing DFT-based VHTS workflows that natively 
+
+output an optimized geometry and electron density of a molecule. Therefore, it can be directly 
+
+used in conjunction with traditional VHTS for improving the data quality from VHTS at no 
+
+additional cost. In addition, our recommender approach is not restricted to predicting a single 
+
+electronic energy of a molecule and thus can be generalized to more complex applications such 
+
+as catalysis. Although we demonstrate the recommender to select from a pool of conventional 
+
+DFAs, it is a general approach for method selection, including among semi-empirical theories, 
+
+ML-derived DFAs, or wavefunction theories. We expect this recommender approach to be 
+
+broadly useful in light of continuing advances in the methods available in the computational 
+
+sciences. 
+
+
+ 
+
+Methods 
+
+Density fitting procedure. In Kohn–Sham (KS) DFT, it is known that the ground state energy 
+
+of any interacting system is captured by a universal functional of the electron density23. In 
+
+practice, the electron density (r) is obtained from the occupied KS orbitals y(r), expanded as a 
+
+linear combination of the products of one-electron basis functions c(r), 
+
+ρ(𝑟) = &|ψ!(𝑟)|"
+
+!
+
+= & 𝐷#$χ#(𝑟)χ$(𝑟)
+
+#$
+
+(1) 
+
+where D is the density matrix and µ and n are indices for one-electron basis functions. The 
+
+electron density in Eq. 1, however, is not expressed in an atom-centered basis and thus cannot be 
+
+directly used as representation in neural networks. Thus, it is common to use density-fitting (DF) 
+
+basis functions to rewrite the electron density as an expansion of atom-centered densities, 
+
+ρ(𝑟) = & & 𝐶%
+
+&ϕ%(𝑟 − 𝑟&)
+
+%
+&
+
+= & ρ&(𝑟)
+(2)
+
+&
+
+ 
+
+where fQ(r–rA) is the Qth DF basis function for atom A13. However, C A
+
+Q  contains elements 
+
+resulting from DF basis sets where the angular momentum is nonzero (L ≠ 0) and is thus not 
+
+rotationally invariant. To obtain a rotationally invariant representation, we calculated the power 
+
+spectrum of CA
+
+Q  as the norm for each angular momentum L in the DF basis set. 
+
+𝑝'
+
+& = & 23𝐶%
+
+&32
+
+"
+
+(3)
+
+%∈'
+
+ 
+
+Therefore, pA
+
+L  satisfies rotational, translational, and permutation symmetry and correspondingly 
+
+can be used as a set of features into any neural network architectures (Fig. 1b). These features 
+
+
+then represent the chemical environment of atom A. For this procedure, we employ only the 
+
+density obtained from B3LYP, regardless of which functional is being studied in the TL models. 
+
+Here, we consider the vertical spin-splitting energy DEH–L as our property of interest, 
+
+which is the electronic energy difference between the high-spin (HS) and low-spin (LS) states of 
+
+open-shell TMCs. We focus on the spin-splitting energy because it identifies the quantum 
+
+mechanical ground state, which is an essential property of an open-shell system4. Because our 
+
+target property involves two distinct spin states in open-shell systems, we decomposed the 
+
+difference between the HS and LS electron densities for both the majority spin and minority spin 
+
+separately (Fig. 1a). 
+
+ρHSα(𝑟) − ρLSα(𝑟) = & & 𝐶%
+
+(&,.)
+
+%
+
+ϕ%(𝑟 − 𝑟&)
+(5)
+
+&
+
+ 
+
+ρHSβ(𝑟) − ρLSβ(𝑟) = & & 𝐶%
+
+(&,0)
+
+%
+
+ϕ%(𝑟 − 𝑟&)
+
+&
+
+(6) 
+
+For an atom A, we obtained and concatenated the power spectra of C(A,a)
+
+Q    and C(A,b)
+
+Q   to obtain its 
+
+features using Eq. 3. We used the def2-universal-jkfit24 as our DF basis set throughout this work. 
+
+The number of DF features for different atoms can vary due to the differences in the auxiliary 
+
+basis functions used by atoms. Here, we zero-padded the DF features for all atoms to the 
+
+maximum dimension of 58 for each atom density, which is the size of the DF basis set for the 
+
+transition metal atom (i.e., Cr, Mn, Fe, or Co) in a TMC. 
+
+ 
+
+Behler–Parrinello-type neural networks for transfer learning. We built Behler–Parrinello-
+
+type neural networks using the DF representation of the TMCs in this work25. These fully-
+
+connected neural networks used the DF representation of each atom as inputs, 
+
+𝑋&
+
+1 = σ9𝑊&∈2
+
+1
+𝑋&
+
+134;
+(7) 
+
+
+where X l
+
+A  is the representation of atom A at layer l, W l
+
+AÎg  is the lth-layer weights for the network 
+
+of elements in group g, and s is the activation function. Specifically, X 0
+
+A  is the set of 
+
+concatenated DF features of atom A (see density fitting procedure). The last layer of the network 
+
+outputs, Xn
+
+A , are summed for each chemical element (e),  
+
+𝑋56 = & 𝑋&
+
+6
+
+&∈5
+
+(8) 
+
+These Xn
+
+e  of different elements are then concatenated and passed to a fully-connected neural 
+
+network to obtain the final output (Fig. 1c). 
+
+Our model has three main differences from the original Behler–Parrinello neural network. 
+
+First, we replace the symmetry functions that describe the local geometric environment of an 
+
+atom therein by the DF representation, which is derived from the electron density and is thus a 
+
+more transferable representation. Second, we use the same local network for chemical elements 
+
+that are in the same group of the periodic table (e.g., O and S) to promote inter-row learning26. 
+
+Lastly, we keep the latent vector Xn
+
+e  for each element and use a neural network to obtain the final 
+
+output because our final target is not an single electronic energy of the ground state. 
+
+We adopted TL strategies and chose our target to be the absolute difference of vertical 
+
+spin-splitting energies between the result from each DFA (f) and a reference calculation (|DDEH–
+
+L[f]|). For each fully-connected neural network, we used three hidden layers and 96 neurons per 
+
+layer. The shifted softplus activation function, σ(𝑥) = softplus(𝑥) − log(2), is used throughout. 
+
+ 
+
+Recommender. We constructed separate TL models for each DFA (f) to predict |DDEH–L[f]| from 
+
+a pre-selected pool of DFAs (F). For a given system, we recommend the DFA, frec, that yields the 
+
+lowest predicted |DDEH–L[f]|, 
+
+
+𝑓rec = argminf∈F|ΔΔ𝐸H-L[𝑓]|
+(9) 
+
+When we evaluate the practical performance of the DFA recommender, we focus on the absolute 
+
+error introduced by using frec relative to the reference method (i.e., |DDEH–L[f]|) and the actual 
+
+ranking of frec among the pool of DFAs. 
+
+ 
+
+Data set construction. Mononuclear octahedral TMCs with Cr, Mn, Fe, and Co in oxidation 
+
+states II and III were studied in their HS and LS states: quintet and singlet for d6 Co(III)/Fe(II) 
+
+and d4 Mn(III)/Cr(II); sextet and doublet for d5 Fe(III)/ Mn(II), and quartet and doublet for d3 
+
+Cr(III) and d7 Co(II). For VSS-452, we used 20 monodentate ligands from both the 
+
+spectrochemical series and common organic ligands to obtain properties of complexes with 
+
+ligand fields ranging from weak to strong (Supplementary Fig. 2). We allowed up to two unique 
+
+ligands in a TMC and did not pose any constraints on ligand symmetry. Together with eight 
+
+metal–oxidation state combination and 20 ligands, this rule of assembling TMCs leads to a 
+
+hypothetical space of 24,480 TMCs (8´20=160 homoleptic and 8´20´19´8=24,320 heteroleptic). 
+
+We used k-medoids sampling to obtain 750 TMCs in this space as our starting data set. To test 
+
+the transferability and practical usefulness of our recommender, we collected 100 experimentally 
+
+synthesized TMCs with diverse ligand chemistry and connectivity from CSD as the starting point 
+
+for CSD-76. 
+
+ 
+
+DFT geometry optimization. Since we are interested in vertical spin splitting, only one 
+
+structure needs to be geometry optimized. In this case, we chose to optimize only the HS state. 
+
+For each HS complex, a DFT geometry optimization with the B3LYP27 global hybrid functional 
+
+was carried out using a developer version of graphical processing unit (GPU)-accelerated 
+
+
+electronic structure code TeraChem28. The LANL2DZ effective core potential29 basis set was 
+
+used for metals and the 6-31G* basis24 for all other atoms.  In all DFT geometry optimizations, 
+
+level shifting30 of 0.25 Ha on all virtual orbitals was employed. Initial geometries were 
+
+assembled by molSimplify31 for VSS-452 and were adopted from the crystal structure of CSD for 
+
+CSD-76. These geometries were optimized using the L-BFGS algorithm in translation rotation 
+
+internal coordinates (TRIC)32 to the default tolerances of 4.5 ´ 10-4 hartree/bohr for the 
+
+maximum gradient and 10-6 hartree for the energy change between steps. Because all HS TMCs 
+
+are open-shell, the unrestricted formalism was used for all geometry optimizations. 
+
+Geometry checks were applied to eliminate optimized structures that deviated from the 
+
+expected octahedral shape following previously established metrics without modification33. 
+
+Open-shell structures were also removed from the data set following established protocols if the 
+
+expectation value of the S2 operator deviated from its expected value33 of S(S + 1) by >1 µ2
+
+B . 
+
+After these two filtering steps, we converged 452 HS TMCs for VSS-452 and 76 HS TMCs for 
+
+CSD-76 with good octahedral geometries and electronic structures (Supplementary Table 4). 
+
+ 
+
+Single-point energy calculation. We followed our established protocol for the computation of 
+
+HS and LS electronic energies with multiple DFAs for the optimized TMCs using a developer 
+
+version of Psi4 1.434. In this workflow, the converged wavefunction obtained from the B3LYP 
+
+geometry optimization was used as the initial guess for the single-point energy calculations with 
+
+other DFAs, thus maximizing the correspondence of the converged electronic state among all 
+
+DFAs and also reducing the computational cost. 
+
+The range of 23 DFAs used in the development of the protocol7 were chosen to be evenly 
+
+distributed among the rungs of “Jacob's ladder”35 (Supplementary Table 1). Practically, it has 
+
+
+been observed that there is a nearly linear change of chemical properties (e.g., spin splitting) 
+
+computed with a DFA at different fractions of HF exchange20. Therefore, we sampled the HF 
+
+exchange from 10% to 50% with an interval of 10% on five selected semi-local functionals (i.e., 
+
+BLYP, PBE, SCAN, M06-L, and MN15-L). This procedure results in 25 additional DFAs 
+
+(Supplementary Table 2). Combined with the original 23 DFAs, we have a final pool of 48 DFAs 
+
+in total. 
+
+CCSD(T) has been treated as the “gold standard” for quantum chemistry and is 
+
+frequently used as benchmark for DFT17. Here, we used DLPNO-CCSD(T) (with T0 perturbative 
+
+triple correction15), which is a proxy for canonical CCSD(T), as our reference method due to the 
+
+sufficient accuracy of DLPNO-CCSD(T) on TMCs and the high computational cost of canonical 
+
+CCSD(T) for a large data set15. In addition, we expect our DFA recommender approach to be 
+
+general and have similar accuracy if reference data is derived from higher-level theory (e.g., 
+
+phaseless auxiliary field quantum Monte-Carlo36) or experiments in the future. Both DFT and 
+
+DLPNO-CCSD(T) single-point energies for all non-singlet states were calculated with an 
+
+unrestricted formalism and for singlet states with a restricted formalism. All single-point energy 
+
+calculations were performed with a balanced polarized triple-zeta basis set def2-TZVP24.  
+
+ 
+
+Train/test partition and model training. We randomly partitioned VSS-452, with 300 points 
+
+(66%) as the training set and 152 (34%) points as the set-aside test set. For all TL models, the 
+
+hyperparameters were selected using HyperOpt37 with 200 evaluations, with 60 points of the 
+
+training set used as the validation data. All TL models were built with PyTorch38. All models 
+
+were trained with the Adam optimizer up to 2000 epochs, using dropout and early stopping to 
+
+
+avoid over-fitting. We treated CSD-76 as the out-of-distribution test set, and thus no points in 
+
+CSD-76 was used during the whole model training procedure.  
+
+ 
+
+References 
+
+(1) Coley, C. W.; Eyke, N. S.; Jensen, K. F. Autonomous Discovery in the Chemical Sciences 
+Part I: Progress. Angew Chem Int Ed Engl 2020, 59 (51), 22858-22893. DOI: 
+10.1002/anie.201909987. 
+(2) Jain, A.; Ong, S. P.; Hautier, G.; Chen, W.; Richards, W. D.; Dacek, S.; Cholia, S.; Gunter, 
+D.; Skinner, D.; Ceder, G.; et al. Commentary: The Materials Project: A materials genome 
+approach to accelerating materials innovation. APL Materials 2013, 1 (1), 011002. DOI: 
+10.1063/1.4812323. 
+(3) Butler, K. T.; Davies, D. W.; Cartwright, H.; Isayev, O.; Walsh, A. Machine Learning for 
+Molecular and Materials Science. Nature 2018, 559 (7715), 547-555. DOI: 10.1038/s41586-018-
+0337-2. Carleo, G.; Cirac, I.; Cranmer, K.; Daudet, L.; Schuld, M.; Tishby, N.; Vogt-Maranto, L.; 
+Zdeborová, L. Machine learning and the physical sciences. Reviews of Modern Physics 2019, 91 
+(4), 045002. DOI: 10.1103/RevModPhys.91.045002. 
+(4) Nandy, A.; Duan, C.; Taylor, M. G.; Liu, F.; Steeves, A. H.; Kulik, H. J. Computational 
+Discovery of Transition-metal Complexes: From High-throughput Screening to Machine 
+Learning. Chem Rev 2021, 121 (16), 9927-10000. DOI: 10.1021/acs.chemrev.1c00347. 
+(5) Cohen, A. J.; Mori-Sánchez, P.; Yang, W. Challenges for Density Functional Theory. 
+Chemical reviews 2012, 112 (1), 289-320. Mardirossian, N.; Head-Gordon, M. Thirty years of 
+density functional theory in computational chemistry: an overview and extensive assessment of 
+200 
+density 
+functionals. 
+Molecular 
+Physics 
+2017, 
+115 
+(19), 
+2315-2372. 
+DOI: 
+
+10.1080/00268976.2017.1333644. 
+(6) Janesko, B. G. Replacing Hybrid Density Functional Theory: Motivation and Recent 
+Advances. Chemical Society Reviews 2021. DOI: 10.1039/d0cs01074j. 
+(7) Duan, C.; Chen, S.; Taylor, M. G.; Liu, F.; Kulik, H. J. Machine learning to tame divergent 
+density functional approximations: a new path to consensus materials design principles. Chem 
+Sci 2021, 12 (39), 13021-13036. DOI: 10.1039/d1sc03701c. 
+(8) Loipersberger, M.; Cabral, D. G. A.; Chu, D. B. K.; Head-Gordon, M. Mechanistic Insights 
+into Co and Fe Quaterpyridine-Based CO2 Reduction Catalysts: Metal–Ligand Orbital 
+Interaction as the Key Driving Force for Distinct Pathways. Journal of the American Chemical 
+Society 2021, 143 (2), 744-763. DOI: 10.1021/jacs.0c09380. 
+(9) N., F.; R., S.; S., A.; S., S.; R., G.-B.; C., C.; V., G. Neural Scaling of Deep Chemical Models. 
+ChemRxiv. Cambridge: Cambridge Open Engage 2022. 
+(10) Zhang, L.; Han, J.; Wang, H.; Car, R.; E, W. Deep Potential Molecular Dynamics: A 
+Scalable Model with the Accuracy of Quantum Mechanics. Phys Rev Lett 2018, 120 (14), 
+143001. DOI: 10.1103/PhysRevLett.120.143001. Smith, J. S.; Isayev, O.; Roitberg, A. E. ANI-1: 
+an extensible neural network potential with DFT accuracy at force field computational cost. 
+Chem Sci 2017, 8 (4), 3192-3203. DOI: 10.1039/c6sc05720a. Batzner, S.; Musaelian, A.; Sun, L.; 
+Geiger, M.; Mailoa, J. P.; Kornbluth, M.; Molinari, N.; Smidt, T. E.; Kozinsky, B. E(3)-
+
+
+equivariant graph neural networks for data-efficient and accurate interatomic potentials. Nat 
+Commun 2022, 13 (1), 2453. DOI: 10.1038/s41467-022-29939-5. 
+(11) Dick, S.; Fernandez-Serra, M. Machine learning accurate exchange and correlation 
+functionals of the electronic density. Nat Commun 2020, 11 (1), 3509. DOI: 10.1038/s41467-
+020-17265-7. Kirkpatrick, J.; McMorrow, B.; Turban, D. H. P.; Gaunt, A. L.; Spencer, J. S.; 
+Matthews, A.; Obika, A.; Thiry, L.; Fortunato, M.; Pfau, D.; et al. Pushing the frontiers of 
+density functionals by solving the fractional electron problem. Science 2021, 374 (6573), 1385-
+1389. DOI: 10.1126/science.abj6511. Li, L.; Hoyer, S.; Pederson, R.; Sun, R.; Cubuk, E. D.; 
+Riley, P.; Burke, K. Kohn-Sham Equations as Regularizer: Building Prior Knowledge into 
+Machine-Learned Physics. Physical Review Letters 2021, 126 (3), 036401. DOI: 
+10.1103/PhysRevLett.126.036401. Ma, H.; Narayanaswamy, A.; Riley, P.; Li, L. Evolving 
+symbolic 
+density 
+functionals. 
+arXiv, 
+https://arxiv.org/abs/2203.02540 
+2022. 
+DOI: 
+
+10.48550/ARXIV.2203.02540. 
+(12) McAnanama-Brereton, S.; Waller, M. P. Rational Density Functional Selection Using Game 
+Theory. Journal of Chemical Information and Modeling 2018, 58 (1), 61-67. DOI: 
+10.1021/acs.jcim.7b00542. 
+(13) Margraf, J. T.; Reuter, K. Pure non-local machine-learned density functional theory for 
+electron correlation. Nat Commun 2021, 12 (1), 344. DOI: 10.1038/s41467-020-20471-y. Grisafi, 
+A.; Fabrizio, A.; Meyer, B.; Wilkins, D. M.; Corminboeuf, C.; Ceriotti, M. Transferable 
+Machine-Learning Model of the Electron Density. ACS Cent Sci 2019, 5 (1), 57-64. DOI: 
+10.1021/acscentsci.8b00551. 
+(14) He, K.; Zhang, X.; Ren, S.; Sun, J. Deep Residual Learning for Image Recognition. In 2016 
+IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016. DOI: 
+10.1109/CVPR.2016.90. 
+(15) Floser, B. M.; Guo, Y.; Riplinger, C.; Tuczek, F.; Neese, F. Detailed Pair Natural Orbital-
+Based Coupled Cluster Studies of Spin Crossover Energetics. J Chem Theory Comput 2020, 16 
+(4), 2224-2235. DOI: 10.1021/acs.jctc.9b01109. 
+(16) Jiang, W.; DeYonker, N. J.; Determan, J. J.; Wilson, A. K. Toward accurate theoretical 
+thermochemistry of first row transition metal complexes. J Phys Chem A 2012, 116 (2), 870-885. 
+DOI: 10.1021/jp205710e. 
+(17) Mardirossian, N.; Head-Gordon, M. How Accurate Are the Minnesota Density Functionals 
+for Noncovalent Interactions, Isomerization Energies, Thermochemistry, and Barrier Heights 
+Involving Molecules Composed of Main-Group Elements? Journal of Chemical Theory and 
+Computation 2016, 12 (9), 4303-4325. DOI: 10.1021/acs.jctc.6b00637. 
+(18) Miyato, T.; Maeda, S. I.; Koyama, M.; Ishii, S. Virtual Adversarial Training: A 
+Regularization Method for Supervised and Semi-Supervised Learning. IEEE Trans Pattern Anal 
+Mach Intell 2019, 41 (8), 1979-1993. DOI: 10.1109/TPAMI.2018.2858821. 
+(19) Janet, J. P.; Kulik, H. J. Resolving transition metal chemical space: feature selection for 
+machine learning and structure-property relationships. The Journal of Physical Chemistry A 2017, 
+121 (46), 8939-8954. 
+(20) Liu, F.; Yang, T. H.; Yang, J.; Xu, E.; Bajaj, A.; Kulik, H. J. Bridging the Homogeneous-
+Heterogeneous Divide: Modeling Spin for Reactivity in Single Atom Catalysis. Frontiers in 
+Chemistry 2019, 7, 219. DOI: ARTN 219 
+10.3389/fchem.2019.00219. 
+
+
+(21) Groom, C. R.; Bruno, I. J.; Lightfoot, M. P.; Ward, S. C. The Cambridge Structural 
+Database. Acta Crystallographica Section B-Structural Science Crystal Engineering and 
+Materials 2016, 72, 171-179. DOI: 10.1107/S2052520616003954. 
+(22) Janet, J. P.; Duan, C.; Yang, T. H.; Nandy, A.; Kulik, H. J. A Quantitative Uncertainty 
+Metric Controls Error in Neural Network-Driven Chemical Discovery. Chemical Science 2019, 
+10 (34), 7913-7922. DOI: 10.1039/c9sc02298h. 
+(23) Hohenberg, P. a. K., W. Inhomogeneous Electron Gas. Phys. Rev. 1964, 136 (3B), 8864-
+8871. DOI: 10.1103/PhysRev.136.B864. Kohn, W. a. S., L. J. Self-Consistent Equations 
+Including Exchange and Correlation Effects. Phys. Rev. 1965, 140 (4A), A1133-A1138. DOI: 
+10.1103/PhysRev.140.A1133. 
+(24) Pritchard, B. P.; Altarawy, D.; Didier, B.; Gibson, T. D.; Windus, T. L. New Basis Set 
+Exchange: An Open, Up-to-Date Resource for the Molecular Sciences Community. J Chem Inf 
+Model 2019, 59 (11), 4814-4820. DOI: 10.1021/acs.jcim.9b00725. 
+(25) Behler, J.; Parrinello, M. Generalized neural-network representation of high-dimensional 
+potential-energy 
+surfaces. 
+Phys 
+Rev 
+Lett 
+2007, 
+98 
+(14), 
+146401. 
+DOI: 
+
+10.1103/PhysRevLett.98.146401. 
+(26) Harper, D. R.; Nandy, A.; Arunachalam, N.; Duan, C.; Janet, J. P.; Kulik, H. J. 
+Representations and strategies for transferable machine learning improve model performance in 
+chemical discovery. J Chem Phys 2022, 156 (7), 074101. DOI: 10.1063/5.0082964. 
+(27) Becke, A. D. Density-Functional Thermochemistry. III. The Role of Exact Exchange. 
+Journal of Chemical Physics 1993, 98 (7), 5648-5652. Stephens, P. J.; Devlin, F. J.; 
+Chabalowski, C. F.; Frisch, M. J. Ab Initio Calculation of Vibrational Absorption and Circular 
+Dichroism Spectra Using Density Functional Force Fields. The Journal of Physical Chemistry 
+1994, 98 (45), 11623-11627. 
+(28) Seritan, S.; Bannwarth, C.; Fales, B. S.; Hohenstein, E. G.; Isborn, C. M.; Kokkila-
+Schumacher, S. I. L.; Li, X.; Liu, F.; Luehr, N.; Snyder Jr., J. W.; et al. TeraChem: A graphical 
+processing unit-accelerated electronic structure package for large-scale ab initio molecular 
+dynamics. 
+WIREs 
+Computational 
+Molecular 
+Science 
+2021, 
+11 
+(2), 
+e1494. 
+DOI: 
+
+https://doi.org/10.1002/wcms.1494. Ufimtsev, I. S.; Martinez, T. J. Quantum Chemistry on 
+Graphical Processing Units. 3. Analytical Energy Gradients, Geometry Optimization, and First 
+Principles Molecular Dynamics. J Chem Theory Comput 2009, 5 (10), 2619-2628. DOI: 
+10.1021/ct9003004. 
+(29) Hay, P. J.; Wadt, W. R. Ab initio effective core potentials for molecular calculations. 
+Potentials for K to Au including the outermost core orbitals. The Journal of chemical physics 
+1985, 82 (1), 299-310. 
+(30) Saunders, V. R.; Hillier, I. H. A “Level–Shifting” method for converging closed shell 
+Hartree–Fock wave functions. International Journal of Quantum Chemistry 1973, 7 (4), 699-705. 
+(31) Ioannidis, E. I.; Gani, T. Z. H.; Kulik, H. J. molSimplify: A Toolkit for Automating 
+Discovery in Inorganic Chemistry. J. Comput. Chem. 2016, 37, 2106-2117. DOI: 
+10.1002/jcc.24437. 
+(32) Wang, L.-P.; Song, C. Geometry optimization made simple with translation and rotation 
+coordinates. The Journal of Chemical Physics 2016, 144 (21), 214108. 
+(33) Duan, C.; Janet, J. P.; Liu, F.; Nandy, A.; Kulik, H. J. Learning from Failure: Predicting 
+Electronic Structure Calculation Outcomes with Machine Learning Models. Journal of Chemical 
+Theory and Computation 2019, 15 (4), 2331-2345. DOI: 10.1021/acs.jctc.9b00057. 
+
+
+(34) Smith, D. G. A.; Burns, L. A.; Simmonett, A. C.; Parrish, R. M.; Schieber, M. C.; Galvelis, 
+R.; Kraus, P.; Kruse, H.; Di Remigio, R.; Alenaizan, A.; et al. Psi4 1.4: Open-source software for 
+high-throughput quantum chemistry. J Chem Phys 2020, 152 (18), 184108. DOI: 
+10.1063/5.0006002. 
+(35) Perdew, J. P.; Schmidt, K. Jacob's Ladder of Density Functional Approximations for the 
+Exchange-Correlation Energy. Density Functional Theory and Its Application to Materials 2001, 
+577, 1-20. 
+(36) Shee, J.; Arthur, E. J.; Zhang, S.; Reichman, D. R.; Friesner, R. A. Phaseless Auxiliary-
+Field Quantum Monte Carlo on Graphical Processing Units. J Chem Theory Comput 2018, 14 (8), 
+4109-4121. DOI: 10.1021/acs.jctc.8b00342. 
+(37) Bergstra, J.; Yamins, D.; Cox, D. D. Hyperopt: A Python Library for Optimizing the 
+Hyperparameters of Machine Learning Algorithms. In Proceedings of the 12th Python in science 
+conference, 2013; pp 13-20. 
+(38) Pytorch. https://pytorch.org/ (accessed 2022 July 7, 2022). 
+ 
+
+ 
+
+
+Supplementary Information of “A transferable recommender approach for selecting the best 
+
+density functional approximations in chemical discovery” 
+
+Chenru Duan1,2, Aditya Nandy1,2, Ralf Meyer1, Naveen Arunachalam1, and Heather J. Kulik1,2 
+
+1Department of Chemical Engineering, Massachusetts Institute of Technology, Cambridge, MA 
+
+02139 
+
+2Department of Chemistry, Massachusetts Institute of Technology, Cambridge, MA 02139 
+
+ 
+
+Abbreviation 
+
+The following is the list of abbreviation utilized in the main paper. 
+
+• DFA: Density functional approximation 
+• MAE: Mean absolute error 
+• VSS: vertical spin splitting 
+• CSD: Cambridge Structural Database 
+• HF: Hartree-Fock 
+• LRC: Long-range correction 
+• RS: Range-separated 
+• GGA: General gradient approximation 
+
+ 
+
+Supplementary Figures 
+
+Supplementary Figure 1. Standard deviation of the absolute error for the top-5 DFAs. 
+Normalized distributions of standard deviation (std. dev.) of |DDEH–L| for the top-5 DFAs. A kernel 
+density estimate (black) is also shown. It can be observed that the differences of |DDEH–L| for the 
+top-5 DFAs are mostly small (i.e., to 1.0 kcal/mol) for TMCs in VSS-452 set. 
+
+ 
+ 
+
+
+ 
+
+Supplementary Figure 2. 20 ligands used in VSS-452. The 20 small monodentate ligands 
+resembling those from the spectrochemical series that are used for VSS-452 set. The coordinating 
+atom is shaded in gray for each ligand. 
+
+ 
+
+ 
+
+Supplementary Figure 3. MAEs derived from the 48 DFAs compared to DLPNO-CCSD(T). 
+MAE of |DDEH–L| for the 48 DFAs of the VSS-452 set. The DFAs are sorted in an ascending order 
+of their DFA-derived MAEs. 
+
+ 
+
+ 
+
+ 
+
+Supplementary Figure 4. MAEs derived from the 48 TL models compared to DLPNO-
+CCSD(T). MAE of |DDEH–L| for the 48 TL models of the set-aside test set of VSS-452. The DFAs 
+are sorted in an ascending order of their TL MAEs. 
+
+
+ 
+
+Supplementary Figure 5. Theoretical bound of recommender approach with 48 DFAs. MAE 
+of |DDEH–L| constrained by only selecting a random top-n DFA (black dots and solid line) among 
+the 48 DFAs. The lower bound (green line), upper bound (red line), and the feasible area (gray 
+shaded) are also shown when the DFA selection is constrained in top-n choices. 
+
+ 
+
+ 
+
+Supplementary Figure 6. Box plot for the performance of 5th-best DFA. MAE for the 5th-best 
+DFA of |DDEH-L| with a box indicating their median (solid line) and mean (dashed line) for the VSS-
+452 set. 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+
+ 
+
+Supplementary Figure 7. Recommender rank-ordering performance with 48 DFAs. 
+Normalized distribution of the rank for selected DFA using our recommender approach, with the 
+cumulative percentage (blue solid line) shown according to the axis on the right. The cumulative 
+curve for a random guess (blue dashed line) is also shown. 
+
+ 
+
+ 
+
+ 
+
+Supplementary Figure 8. Recommender rank-ordering performance with 23 DFAs from 
+Duan et al.1. Normalized distribution of the rank for selected DFA using our recommender 
+approach, with the cumulative percentage (blue solid line) shown according to the axis on the right. 
+The cumulative curve for a random guess (blue dashed line) is also shown. 
+
+ 
+ 
+
+
+ 
+
+Supplementary Figure 9. Example TMCs in CSD-76. A Co complex with two tridentate ligands 
+(refcode: BEBJIB, left), a Co complex with one tetradentate and one bidentate ligand (refcode: 
+CEWTUT, middle), and a Fe complex with a hexadentate ligand (refcode: KIJNEW, right). All 
+atoms are colored as follows: pink for Co, orange for Fe, yellow for S, gray for C, blue for N, red 
+for O, and white for H. 
+
+ 
+
+ 
+
+ 
+
+Supplementary Figure 10. MAEs derived from the 48 TL models compared to DLPNO-
+CCSD(T). MAE of |DDEH–L| for the 48 TL models of the CSD-76 set. The DFAs are sorted in an 
+ascending order of their TL MAEs. 
+
+ 
+ 
+
+
+ 
+
+Supplementary Figure 11. MAEs derived from the 48 DFAs compared to DLPNO-CCSD(T). 
+MAE of |DDEH–L| for the 48 DFAs of the CSD-76 set. The DFAs are sorted in an ascending order 
+of their DFA-derived MAEs. 
+
+ 
+
+ 
+
+Supplementary Figure 12. Comparison of ranking statistics for recommended DFAs of set-
+aside test VSS-452 and CSD-76. Percentage for the DFA recommender to select top-n DFAs for 
+the set-aside test set of VSS-452 (red circles) and out-of-distribution CSD-76 (gray bars). 
+
+ 
+ 
+
+
+Supplementary Tables 
+
+Table 1. Summary of 23 DFAs in the original work of Duan et al.1, including their rungs on 
+“Jacob’s ladder” of DFT, HF exchange fraction, LRC range-separation parameter (bohr-1), MP2 
+correlation fraction, and whether empirical (i.e., D3) dispersion correction is included. 
+
+DFA 
+type 
+exchange 
+
+type 
+
+HF 
+
+exchange 
+
+percentage
+
+LRC 
+RS 
+
+parameter 
+
+(bohr-1)
+
+MP2 
+
+correlation 
+
+D3 
+
+dispersion 
+
+BP862-3 
+GGA
+GGA
+--
+--
+--
+no
+
+BLYP4-5 
+GGA 
+GGA 
+-- 
+-- 
+-- 
+no 
+
+PBE6 
+GGA
+GGA
+--
+--
+--
+no
+
+TPSS7 
+meta-GGA 
+meta-GGA 
+-- 
+-- 
+-- 
+no 
+
+SCAN8 
+meta-GGA
+meta-GGA
+--
+--
+--
+no
+
+M06-L9 
+meta-GGA
+meta-GGA
+--
+--
+--
+no
+
+MN15-L10 
+meta-GGA
+meta-GGA
+--
+--
+--
+no
+
+B3LYP11-13 
+GGA hybrid
+GGA
+0.200
+--
+--
+no
+
+B3P862, 11 
+GGA hybrid 
+GGA 
+0.200 
+-- 
+-- 
+no 
+
+B3PW9111, 14 
+GGA hybrid
+GGA
+0.200
+--
+--
+no
+
+PBE015 
+GGA hybrid 
+GGA 
+0.250 
+-- 
+-- 
+no 
+
+ωB97X16 
+RS hybrid
+GGA
+0.158
+0.300
+--
+no
+
+LRC-
+ωPBEh17 
+RS hybrid 
+GGA 
+0.200 
+0.200 
+-- 
+no 
+
+TPSSh7 
+meta-GGA hybrid 
+meta-GGA 
+0.100 
+-- 
+-- 
+no 
+
+SCAN018 
+meta-GGA hybrid
+meta-GGA
+0.250
+--
+--
+no
+
+M0619 
+meta-GGA hybrid 
+meta-GGA 
+0.270 
+-- 
+-- 
+no 
+
+M06-2X19 
+meta-GGA hybrid
+meta-GGA
+0.540
+--
+--
+no
+
+MN1520 
+meta-GGA hybrid 
+meta-GGA 
+0.440 
+-- 
+-- 
+no 
+
+B2GP-
+PLYP21 
+double hybrid 
+GGA 
+0.650 
+-- 
+0.360 
+no 
+
+PBE0-DH22 
+double hybrid
+GGA
+0.500
+--
+0.125
+no
+
+DSD-BLYP-
+D3BJ23 
+double hybrid 
+GGA 
+0.710 
+-- 
+1.000 
+yes 
+
+DSD-
+PBEB95-
+D3BJ23 
+
+double hybrid 
+GGA 
+0.660 
+-- 
+1.000 
+yes 
+
+DSD-PBEP6-
+D3BJ23 
+double hybrid 
+GGA 
+0.690 
+-- 
+1.000 
+yes 
+
+ 
+
+ 
+ 
+
+
+Table 2. Summary of the additional 25 DFAs compared to Duan et al.1,  including their rungs on 
+“Jacob’s ladder” of DFT, Hartree–Fock (HF) exchange fraction, long-range correction (LRC) 
+range-separation parameter (bohr−1), MP2 correlation fraction, whether empirical (i.e., D3) 
+dispersion correction is included. 
+
+DFA 
+type 
+exchange 
+
+type 
+
+HF 
+
+exchange 
+
+percentage 
+
+LRC 
+RS 
+
+parameter 
+
+(bohr-1) 
+
+MP2 
+
+correlation 
+
+D3 
+
+dispersion 
+
+BLYP:10% 
+GGA hybrid 
+GGA 
+0.100 
+-- 
+-- 
+no 
+
+BLYP:20% 
+GGA hybrid
+GGA
+0.200
+--
+--
+no
+
+BLYP:30% 
+GGA hybrid 
+GGA 
+0.300 
+-- 
+-- 
+no 
+
+BLYP:40% 
+GGA hybrid
+GGA
+0.400
+--
+--
+no
+
+BLYP:50% 
+GGA hybrid 
+GGA 
+0.500 
+-- 
+-- 
+no 
+
+PBE:10% 
+GGA hybrid
+GGA
+0.100
+--
+--
+no
+
+PBE:20% 
+GGA hybrid 
+GGA 
+0.200 
+-- 
+-- 
+no 
+
+PBE:30% 
+GGA hybrid
+GGA
+0.300
+--
+--
+no
+
+PBE:40% 
+GGA hybrid 
+GGA 
+0.400 
+-- 
+-- 
+no 
+
+PBE:50% 
+GGA hybrid
+GGA
+0.500
+--
+--
+no
+
+SCAN:10% 
+meta-GGA hybrid
+meta-GGA
+0.100
+--
+--
+no
+
+SCAN:20% 
+meta-GGA hybrid
+meta-GGA
+0.200
+--
+--
+no
+
+SCAN:30% 
+meta-GGA hybrid
+meta-GGA
+0.300
+--
+--
+no
+
+SCAN:40% 
+meta-GGA hybrid 
+meta-GGA 
+0.400 
+-- 
+-- 
+no 
+
+SCAN:50% 
+meta-GGA hybrid
+meta-GGA
+0.500
+--
+--
+no
+
+M06-L:10% 
+meta-GGA hybrid 
+meta-GGA 
+0.100 
+-- 
+-- 
+no 
+
+M06-L:20% 
+meta-GGA hybrid
+meta-GGA
+0.200
+--
+--
+no
+
+M06-L:30% 
+meta-GGA hybrid 
+meta-GGA 
+0.300 
+-- 
+-- 
+no 
+
+M06-L:40% 
+meta-GGA hybrid
+meta-GGA
+0.400
+--
+--
+no
+
+M06-L:50% 
+meta-GGA hybrid 
+meta-GGA 
+0.500 
+-- 
+-- 
+no 
+
+MN15-L:10% 
+meta-GGA hybrid
+meta-GGA
+0.100
+--
+--
+no
+
+MN15-L:20% 
+meta-GGA hybrid
+meta-GGA
+0.200
+--
+--
+no
+
+MN15-L:30% 
+meta-GGA hybrid
+meta-GGA
+0.300
+--
+--
+no
+
+MN15-L:40% 
+meta-GGA hybrid
+meta-GGA
+0.400
+--
+--
+no
+
+MN15-L:50% 
+meta-GGA hybrid 
+meta-GGA 
+0.500 
+-- 
+-- 
+no 
+
+ 
+ 
+
+
+Table 3. Ranking of DFA-derived MAEs of 48 DFAs on VSS-452 and CSD-76. 
+
+DFA 
+MAE ranking in VSS-452 
+MAE ranking in CSD-76 
+
+DSD-BLYP-D3BJ 
+1 
+6 
+
+M06-L:30 
+2 
+4 
+
+M06-2X 
+3 
+18 
+
+PBE0-DH 
+4 
+2 
+
+DSD-PBEP86-D3BJ 
+5 
+7 
+
+B2GP-PLYP 
+6 
+8 
+
+BLYP:50% 
+7 
+12 
+
+M06-L:40% 
+8 
+22 
+
+MN15-L:50% 
+9 
+30 
+
+M06 
+10 
+1 
+
+PBE:40% 
+11 
+13 
+
+M06-L:20% 
+12 
+3 
+
+MN15-L:40% 
+13 
+31 
+
+PBE:30% 
+14 
+5 
+
+SCAN:40% 
+15 
+19 
+
+MN15-L:30% 
+16 
+29 
+
+DSD-PBEB95-D3BJ 
+17 
+17 
+
+BLYP:40% 
+18 
+9 
+
+MN15-L 
+19 
+15 
+
+MN15-L:20% 
+20 
+27 
+
+MN15-L:10% 
+21 
+26 
+
+SCAN:30% 
+22 
+10 
+
+M06-L:50% 
+23 
+35 
+
+PBE:50% 
+24 
+32 
+
+PBE0 
+25 
+11 
+
+LRC-wPBEh 
+26 
+14 
+
+M06-L:10% 
+27 
+20 
+
+SCAN0 
+28 
+16 
+
+SCAN:50% 
+29 
+34 
+
+PBE:20% 
+30 
+24 
+
+SCAN:20% 
+31 
+25 
+
+MN15 
+32 
+23 
+
+BLYP:30% 
+33 
+21 
+
+B3PW91 
+34 
+28 
+
+B3P86 
+35 
+36 
+
+M06-L 
+36 
+37 
+
+w97X 
+37 
+33 
+
+SCAN:10% 
+38 
+40 
+
+BLYP:20% 
+39 
+38 
+
+B3LYP 
+40 
+39 
+
+PBE:10% 
+41 
+41 
+
+TPSSh 
+42 
+42 
+
+SCAN 
+43 
+44 
+
+BLYP:10% 
+44 
+43 
+
+PBE 
+45 
+45 
+
+TPSS 
+46 
+46 
+
+BP86 
+47 
+47 
+
+BLYP 
+48 
+48 
+
+ 
+
+
+Table 4. Summary of data filtering statistics for VSS-452 and CSD-76. 
+
+attempted 
+converged with good geometry and 
+electronic structure 
+
+VSS-452 
+750 
+452 
+
+CSD-76 
+100 
+76 
+
+ 
+
+ 
+
+1. 
+Duan, C.; Chen, S.; Taylor, M. G.; Liu, F.; Kulik, H. J., Machine learning to tame divergent density 
+
+functional approximations: a new path to consensus materials design principles. Chem Sci 2021, 12 (39), 
+13021-13036. 
+2. 
+Perdew, J. P., Density-Functional Approximation for the Correlation-Energy of the 
+
+Inhomogeneous Electron-Gas. Physical Review B 1986, 33 (12), 8822-8824. 
+3. 
+Becke, A. D., Density-Functional Exchange-Energy Approximation with Correct Asymptotic-
+
+Behavior. Physical Review A 1988, 38 (6), 3098-3100. 
+4. 
+Devlin, F. J.; Finley, J. W.; Stephens, P. J.; Frisch, M. J., Ab-Initio Calculation of Vibrational 
+
+Absorption and Circular-Dichroism Spectra Using Density-Functional Force-Fields - a Comparison of 
+Local, Nonlocal, and Hybrid Density Functionals. Journal of Physical Chemistry 1995, 99 (46), 16883-
+16902. 
+5. 
+Miehlich, B.; Savin, A.; Stoll, H.; Preuss, H., Results Obtained with the Correlation-Energy Density 
+
+Functionals of Becke and Lee, Yang and Parr. Chemical Physics Letters 1989, 157 (3), 200-206. 
+6. 
+Perdew, J. P.; Burke, K.; Ernzerhof, M., Generalized Gradient Approximation Made Simple. 
+
+Physical Review Letters 1996, 77 (18), 3865-3868. 
+7. 
+Tao, J. M.; Perdew, J. P.; Staroverov, V. N.; Scuseria, G. E., Climbing the Density Functional 
+
+Ladder: Nonempirical Meta-Generalized Gradient Approximation Designed for Molecules and Solids. 
+Physical Review Letters 2003, 91 (14), 146401. 
+8. 
+Sun, J. W.; Ruzsinszky, A.; Perdew, J. P., Strongly Constrained and Appropriately Normed 
+
+Semilocal Density Functional. Physical Review Letters 2015, 115 (3), 036402. 
+9. 
+Zhao, Y.; Truhlar, D. G., A New Local Density Functional for Main-Group Thermochemistry, 
+
+Transition Metal Bonding, Thermochemical Kinetics, and Noncovalent Interactions. Journal of Chemical 
+Physics 2006, 125 (19), 194101. 
+10. 
+Yu, H. S.; He, X.; Truhlar, D. G., MN15-L: A New Local Exchange-Correlation Functional for Kohn-
+
+Sham Density Functional Theory with Broad Accuracy for Atoms, Molecules, and Solids. Journal of 
+Chemical Theory and Computation 2016, 12 (3), 1280-1293. 
+11. 
+Becke, A. D., Density-Functional Thermochemistry. III. The Role of Exact Exchange. Journal of 
+
+Chemical Physics 1993, 98 (7), 5648-5652. 
+12. 
+Lee, C.; Yang, W.; Parr, R. G., Development of the Colle-Salvetti Correlation-Energy Formula into 
+
+a Functional of the Electron Density. Physical Review B 1988, 37, 785--789. 
+13. 
+Stephens, P. J.; Devlin, F. J.; Chabalowski, C. F.; Frisch, M. J., Ab Initio Calculation of Vibrational 
+
+Absorption and Circular Dichroism Spectra Using Density Functional Force Fields. The Journal of Physical 
+Chemistry 1994, 98 (45), 11623-11627. 
+14. 
+Perdew, J. P.; Chevary, J. A.; Vosko, S. H.; Jackson, K. A.; Pederson, M. R.; Singh, D. J.; Fiolhais, C., 
+
+Atoms, Molecules, Solids, and Surfaces - Applications of the Generalized Gradient Approximation for 
+Exchange and Correlation. Physical Review B 1992, 46 (11), 6671-6687. 
+15. 
+Adamo, C.; Barone, V., Toward Reliable Density Functional Methods Without Adjustable 
+
+Parameters: The PBE0 Model. Journal of Chemical Physics 1999, 110 (13), 6158-6170. 
+
+
+16. 
+Chai, J. D.; Head-Gordon, M., Systematic Optimization of Long-Range Corrected Hybrid Density 
+
+Functionals. Journal of Chemical Physics 2008, 128 (8), 084106. 
+17. 
+Rohrdanz, M. A.; Martins, K. M.; Herbert, J. M., A Long-Range-Corrected Density Functional That 
+
+Performs Well for Both Ground-State Properties and Time-Dependent Density Functional Theory 
+Excitation Energies, Including Charge-Transfer Excited States. Journal of Chemical Physics 2009, 130 (5), 
+054112. 
+18. 
+Hui, K.; Chai, J. D., SCAN-based Hybrid and Double-Hybrid Density Functionals From Models 
+
+Without Fitted Parameters. Journal of Chemical Physics 2016, 144 (4), 044114. 
+19. 
+Zhao, Y.; Truhlar, D. G., The M06 Suite of Density Functionals for Main Group Thermochemistry, 
+
+Thermochemical Kinetics, Noncovalent Interactions, Excited States, and Transition Elements: Two New 
+Functionals and Systematic Testing of Four M06-Class Functionals and 12 Other Functionals. Theoretical 
+Chemistry Accounts 2008, 120 (1-3), 215-241. 
+20. 
+Yu, H. Y. S.; He, X.; Li, S. H. L.; Truhlar, D. G., MN15: A Kohn-Sham Global-Hybrid Exchange-
+
+Correlation Density Functional With Broad Accuracy for Multi-Reference and Single-Reference Systems 
+and Noncovalent Interactions. Chemical Science 2016, 7 (9), 6278-6279. 
+21. 
+Karton, A.; Tarnopolsky, A.; Lamere, J. F.; Schatz, G. C.; Martin, J. M. L., Highly Accurate First-
+
+Principles Benchmark Data Sets for the Parametrization and Validation of Density Functional and Other 
+Approximate Methods. Derivation of a Robust, Generally Applicable, Double-Hybrid Functional for 
+Thermochemistry and Thermochemical Kinetics. Journal of Physical Chemistry A 2008, 112 (50), 12868-
+12886. 
+22. 
+Bremond, E.; Adamo, C., Seeking for Parameter-Free Double-Hybrid Functionals: The PBE0-DH 
+
+Model. Journal of Chemical Physics 2011, 135 (2), 024106. 
+23. 
+Kozuch, S.; Martin, J. M. L., Spin-Component-Scaled Double Hybrids: An Extensive Search for the 
+
+Best Fifth-Rung Functionals Blending DFT and Perturbation Theory. Journal of Computational Chemistry 
+2013, 34 (27), 2327-2344. 
+
+ 
+
+

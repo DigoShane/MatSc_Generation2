@@ -1,0 +1,3367 @@
+Heat flux for semi-local machine-learning potentials
+
+Marcel F. Langer,1, 2, 3, ∗ Florian Knoop,4, 3, † Christian Carbogno,3 Matthias Scheffler,3 and Matthias Rupp3, 5, 6
+
+1Machine Learning Group, Technische Universität Berlin, 10587 Berlin, Germany
+2BIFOLD – Berlin Institute for the Foundations of Learning and Data, Berlin, Germany
+3The NOMAD Laboratory at the FHI of the Max-Planck-Gesellschaft
+and IRIS Adlershof of the Humboldt Universität zu Berlin, Germany
+4Theoretical Physics Division, Department of Physics,
+Chemistry and Biology (IFM), Linköping University, SE-581 83 Linköping, Sweden
+5Department of Computer and Information Science,
+University of Konstanz, 78464 Konstanz, Germany
+6Materials Research and Technology Department,
+Luxembourg Institute of Science and Technology (LIST), Belvaux, Luxembourg
+(Dated: March 29, 2023)
+
+The Green-Kubo (GK) method is a rigorous framework for heat transport simulations in materials.
+However, it requires an accurate description of the potential-energy surface and carefully converged
+statistics. Machine-learning potentials can achieve the accuracy of first-principles simulations while
+allowing to reach well beyond their simulation time and length scales at a fraction of the cost. In
+this paper, we explain how to apply the GK approach to the recent class of message-passing machine-
+learning potentials, which iteratively consider semi-local interactions beyond the initial interaction
+cutoff. We derive an adapted heat flux formulation that can be implemented using automatic
+differentiation without compromising computational efficiency. The approach is demonstrated and
+validated by calculating the thermal conductivity of zirconium dioxide across temperatures.
+
+The thermal conductivity tensor κ describes the ability
+of a material to conduct heat when exposed to a temper-
+ature gradient. Its computational prediction is of great
+interest for the design of novel high-performance mate-
+rials which are needed, for example, as thermal barrier
+coatings in engines [1], or thermoelectrics for waste heat
+recovery [2]. Such materials often feature complex struc-
+ture and strongly anharmonic potential-energy surfaces
+(PES) [3, 4]. This implies the need to evaluate κ with the
+Green-Kubo (GK) method [5–9].
+In the GK approach, κ is expressed in terms of the
+integral of the autocorrelation function of the instanta-
+neous heat flux J(t) as observed in equilibrium molecular
+dynamics (MD) simulations,
+
+κ(T, p) =
+1
+
+kBT 2V lim
+t→∞
+
+� t
+
+0
+dτ ⟨J(τ) ⊗ J(0)⟩T,p ,
+(1)
+
+where kB is the Boltzmann constant, V the simulation
+cell volume, and ⟨·⟩T,p denotes an ensemble average at
+temperature T and pressure p.
+High-accuracy MD simulations can be performed us-
+ing density-functional theory (DFT) when the exchange-
+correlation approximation is reliable [10]. For the eval-
+uation of Eq. (1), this approach [11, 12] suffers from its
+numerical costs which limits the system sizes and time
+scales that can be treated, and therefore requires ad-
+ditional denoising and extrapolation approaches [12–14].
+The alternative, so far, was the use of semi-empirical force
+fields (FFs) [15]. Here, the interatomic interactions are
+described by a physically-motivated analytical equation
+
+∗ Corresponding author: mail@marcel.science
+† Corresponding author: florian.knoop@liu.se
+
+that includes free parameters which are fitted to experi-
+mental or ab initio results. This classical FF approach has
+been very successful, as it enables a proper consideration
+of the ensemble averages needed in Eq. (1). However, the
+restricted flexibility of FFs may limit their generality and
+ability to model novel materials.
+A new, more general class of FFs is the family of
+machine-learning potentials (MLPs) which leverage tech-
+niques like neural networks (NNs) [16–21]. MLPs offer,
+in principle, unrestricted flexibility, but are limited to
+the mechanisms and information that are provided by
+their training data. In local MLPs, linear scaling with
+system size is achieved by using the short-ranged nature
+of chemical bonding [22] to decompose the total energy
+into contributions that only depend on local atomic en-
+vironments. However, a strict locality assumption limits
+the flexibility and therefore accuracy of such MLPs. Some
+FFs therefore include explicit long-range electrostatic and
+van der Waals interactions [23–27]. Semi-local MLPs [28–
+39] build up longer-range correlations iteratively from
+local ones through message-passing mechanisms, thereby
+preserving linear scaling with system size. They have
+recently emerged as an alternative to strictly local MLPs
+and have shown promising performance in benchmark
+settings and first applications [35, 36, 40–42].
+While local MLPs have been used to investigate ther-
+mal transport via GK [43–50], more recent semi-local
+MLPs have not yet been applied, partially because a
+heat flux formulation that incorporates message-passing
+mechanisms was lacking. In this work, we fill that gap
+and extend the GK approach to semi-local potentials.
+To this end, we derive a formulation of the heat flux
+that explicitly accounts for semi-local interactions, find-
+ing that the resulting thermal conductivity significantly
+differs from a purely local form. While the computation
+of this heat flux scales quadratically with system size, we
+
+arXiv:2303.14434v2  [cond-mat.mtrl-sci]  28 Mar 2023
+
+
+2
+
+show that an alternative yet equivalent form based on an
+extended auxiliary system can be introduced, leading to
+overall linear scaling and straightforward practical imple-
+mentation of the approach via automatic differentiation
+(AD) [51, 52]. Using the SchNet message-passing neural
+network (MPNN) [29, 30], we demonstrate the accuracy
+and feasibility of large-scale semi-local MLP thermal con-
+ductivity calculations for zirconia (ZrO2), an oxide known
+for its strongly anharmonic PES [53, 54].
+For any potential function U({RJ}) that can be de-
+composed into atomic contributions U = �
+
+I UI({RJ}),
+where {RJ} denotes the set of all atomic positions RJ,
+the heat flux is given by the classical equivalent of a for-
+mula by Hardy [55], which we re-derive in the Supp. Mat.
+to explicitly account for periodic boundary conditions.
+This yields the full ‘Hardy’ heat flux
+
+J =
+�
+
+I∈Rsc
+J∈Rall
+
+�
+RJI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI
+(2)
+
+=: Jpot + Jconv ,
+(3)
+
+where ˙RI is the velocity of an atom, and EI = UI +
+1
+2mI ˙RI is the total energy per atom. For atom-pair vec-
+tors, we adopt the convention RIJ = RJ − RI.
+Rsc
+indicate the atoms in the simulation cell, while Rall enu-
+merates the full, infinite, bulk system. The nomenclature
+for heat flux contributions and the relation of Eq. (2) to
+DFT formulations are further discussed in the Supp. Mat.
+As this work considers FFs and MLPs that explicitly
+define atomic potential energies UI, total atomic energies
+EI and consequently Jconv can be computed in a straight-
+forward manner.
+We therefore only discuss the more
+involved computation of Jpot in the following, whereas
+the heat flux used for calculating κ is always equivalent
+to the full flux given by Eq. (2).
+Evaluating Jpot requires disentangling the contribu-
+tions of every atom, including those in the bulk, to every
+atomic potential energy UI. This can be challenging for
+non-pairwise, many-body potentials, leading to the devel-
+opment of specialized expressions for different FFs [56–61],
+many of which were recently unified and shown to be equiv-
+alent to Eq. (2) by Fan et al. [59]. Their work is based
+on the insight that translational invariance requires that
+the potential is computed only from atom-pair vectors
+RIJ, which provides a convenient basis to separate the
+computation of each UI into distinct sets of inputs.
+Combined with the introduction of an interaction cut-
+off radius rc and atomic neighborhoods N(I) = { RJ :
+|RIJ| ≤ rc, RJ ∈ Rall }, this leads to the notion of a local
+potential UI = UI({ RIJ : J ∈ N(I) }) and a correspond-
+ing local formulation of Jpot,
+
+Jlocal
+pot =
+�
+
+I∈Rsc
+
+�
+
+J∈N (I)
+RJI
+
+� ∂UI
+
+∂RIJ
+· ˙RJ
+
+�
+.
+(4)
+
+As each RIJ only contributes to one UI, derivatives of U
+naturally separate into atomic contributions ∂UI/∂RIJ =
+∂U/∂RIJ. The resulting expression can be implemented
+efficiently with AD, as detailed in the Supp. Mat.
+
+96
+324
+768
+1500
+2592
+4116
+8748
+Number of atoms in simulation cell (N)
+
+10−2
+
+10−1
+
+100
+
+101
+
+102
+
+103
+
+Time in s
+
+Unfolded, ∝ N 0.6
+
+Forces, ∝ N 0.7
+
+Hardy, ∝ N 1.9
+
+Fit ∝ N x
+
+Data
+
+FIG. 1. Computation time per timestep for different system
+sizes N for zirconia, evaluating a SchNet MPNN, for different
+heat flux formulations on a single Tesla Volta V100 32GB GPU.
+To estimate the asymptotic scaling, a function proportional
+to N x has been fitted to the results for large N. Note that
+on this setup with limited memory, the truly asymptotic limit
+cannot be reached.
+
+While being exact for local potentials, this formulation
+of the heat flux does not apply to the semi-local case. In
+such potentials, longer-range interactions are introduced
+without explicitly increasing the cutoff rc by building
+them up iteratively: Neighboring atoms are allowed to
+exchange information for a fixed number of iterations
+M [28]. Neighboring environments up to an effective cut-
+off radius reff
+c
+= Mrc therefore become correlated; atomic
+potential energies UI acquire a dependence on atom-pair
+vectors outside of their immediate neighborhoods N(I),
+rendering Eq. (4) inapplicable.
+To see this, we employ a description in terms of a graph
+G, where vertices V are identified with atoms I in the
+simulation cell, and connected via edges E labelled by
+atom-pair vectors RIJ if they lie within N(I). Semi-local
+MLPs then act on this graph by propagating information
+between vertices (see Supp. Mat.). Interactions outside
+of the simulation cell are therefore mapped back into it,
+and explicit replicas are not constructed.
+Assuming that reff
+c
+is chosen such that the minimum
+image convention (MIC) is applicable, Jpot in Eq. (2) can
+be rewritten (see Supp. Mat.) as
+
+Jsemi-local
+pot
+=
+�
+
+I∈V
+J∈V
+K∈N (J)
+
+RMIC
+JI
+
+�� ∂UI
+
+∂RKJ
+−
+∂UI
+
+∂RJK
+
+�
+· ˙RJ
+
+�
+, (5)
+
+generalizing Jlocal
+pot
+to semi-local MLPs. In the case of
+M = 1, this form reduces to Eq. (4).
+Equation (5) reflects the standard construction of semi-
+local MLPs; a double sum over all atoms is required and
+its evaluation formally scales quadratically with system
+size. As shown in Fig. 1, a direct implementation of this
+form is therefore impractical. While force predictions for a
+semi-local MLP based on the SchNet architecture [29, 30]
+remain below 100 ms for all system sizes investigated, the
+unoptimized calculation of the heat flux dominates the
+computational cost by several orders of magnitude at the
+
+
+3
+
+system sizes required for the GK method.
+If the analytical form of UI were known, a lower-scaling
+evaluation of the heat flux might be accessible by deriving
+and implementing analytical derivatives. Modern MLPs,
+however, typically rely on AD [51, 52] for efficiently com-
+puting derivatives without requiring detailed information
+on the functional form of the MLP.
+To take advantage of this, we now derive an adapted
+form of the heat flux that preserves the implicit treat-
+ment of interactions beyond local environments to retain
+the computational efficiency of semi-local MLPs, while
+explicitly attributing all contributions to UI to bulk posi-
+tions for Jpot in Eq. (2). This is achieved by constructing
+an extended simulation cell that explicitly includes all
+replicas that interact with atoms in the simulation cell,
+inspired by previous approaches which did not consider
+AD [62, 63]. The graph representation is then constructed
+without periodic boundary conditions, yielding ‘unfolded’
+vertices Runf. The potential energy obtained by summing
+over the original simulation cell, U, remains unchanged in
+this construction. This allows to retain the small cutoffs
+needed for efficiency, while enabling AD to compute the
+required derivatives.
+With this construction, Eq. (2) can be rewritten as
+
+Junfolded
+pot
+=
+�
+
+J∈Runf
+
+∂B
+∂RJ
+· ˙RJ
+
+−
+�
+
+J∈Runf
+
+�
+RJ
+
+� ∂U
+
+∂RJ
+· ˙RJ
+
+��
+,
+(6)
+
+introducing the energy barycenter B = �
+
+I∈Rsc RIUI,
+where the positions RI are treated as pre-factors and not
+included in the partial derivative. The dot product is
+taken between denominator and velocity. Writing the
+heat flux as the derivative of a vector B and a scalar
+U, as opposed to a high-dimensional Jacobian, ensures
+that these derivatives can be readily computed with AD,
+incurring the same asymptotic computational cost as the
+calculation of U and B, which is proportional to |Runf|.
+Since the number of additional positions is proportional
+only to the surface area of the simulation cell and the
+number of interactions M, the overall asymptotic linear
+scaling is restored, with |Runf| ∝ N + N 2/3 (see Fig. 1).
+To validate the approach, we benchmark the perfor-
+mance of a semi-local MLP, in particular the SchNet [29,
+30] MPNN architecture, for GK calculations on zirco-
+nia (ZrO2) and compare to results obtained with size-
+extrapolated ab initio GK [12], as well as GK with a local
+MLP [50], and experimental measurements [64–66].
+Training and validation data were generated using ab
+initio MD in the NpT ensemble, with four different tra-
+jectories heating up an initially tetragonal simulation
+cell with 96 atoms to target temperatures 750 K, 1500 K,
+2250 K and 3000 K. In total, 10 000 single-point calcu-
+lations were performed using FHI-aims [67] and FHI-
+vibes [68], using the PBEsol [69] functional and otherwise
+following the computational approach of Ref. [12].
+On this data, we train a SchNet MPNN, implemented in
+SchNetPack [70], with cutoff radius rc = 5 Å. We choose
+
+0
+5
+10
+15
+20
+25
+30
+35
+40
+
+Integration time in ps
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+κ in W/(m K)
+
+∼ 2.6 W/(m K)
+
+300 K
+
+Jsemi-local
+
+Junfolded
+
+Jlocal
+
+0
+1
+2
+3
+4
+5
+Integration time in ps
+
+0
+
+1
+
+2
+
+κ in W/(m K)
+
+∼ 0.6 W/(m K)
+
+1400 K
+
+Jsemi-local
+
+Junfolded
+
+Jlocal
+
+FIG. 2.
+Comparison of the integral of the heat flux autocorre-
+lation function for different formulations of the heat flux. The
+efficient re-formulation of the heat flux Junfolded is equivalent
+to the full heat flux Jsemi-local, but not to Jlocal, which neglects
+semi-local interactions. Results are given for an MPNN with
+M= 2 and zirconia at 300 K in the monoclinic phase (top) and
+1400 K in the tetragonal phase (bottom) for a simulation cell
+with 768 atoms. Shaded regions indicate standard error across
+eleven trajectories.
+
+an interaction depth M = 2 leading to an effective cutoff
+of 10 Å. In line with recent findings by others [36], we find
+this to be sufficient, as test set error does not significantly
+decrease for higher values of M or rc. Further details on
+the training procedure, choice of hyperparameters, and
+testing of the MLP can be found in the Supp. Mat.
+We find that this simple approach yields a MLP capable
+of describing the dynamics in monoclinic and tetragonal
+zirconia up to temperatures of approximately 2000 K. In
+this temperature range, the anharmonic vibrational den-
+sity of states matches that obtained from DFT. Beyond
+2000 K, the oxygen atoms become more mobile and differ-
+ent types of dynamical events are observed, in particular
+exchange-type oxygen diffusion. This behavior is also
+present in the training data in line with recent litera-
+ture [71], although slightly different diffusion events are
+observed given the smaller simulation cells and trajectory
+lengths. When diffusion increases at higher temperatures,
+the MLP becomes unstable. This might be due to the lim-
+ited amount of training data for these processes, especially
+for thermodynamic conditions close to the tetragonal-to-
+cubic phase transition. These observations suggest that
+an accurate description of defect formation is necessary
+to investigate zirconia above 2000 K, which is beyond the
+scope of the current work.
+Figure 2 compares our efficient implementation with
+
+
+4
+
+300
+450
+600
+750
+900
+1050
+1200
+1350
+1500
+1650
+1800
+
+Temperature in K
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+κ in W/(m K)
+
+This work (MLP) (m)
+
+This work (MLP) (t)
+
+Verdi et al. (MLP) (m,t)
+
+Carbogno et al. (DFT) (t)
+
+Bisson et al. (exp.) (m)
+
+M´evrel et al. (exp.) (m)
+
+Raghavan et al. (exp.) (m)
+
+FIG. 3. Thermal conductivity across temperatures computed
+with an MPNN using M= 2 message-passing steps and ex-
+perimentally determined lattice parameters [72, 73], com-
+pared with another MLP without extrapolation [50], size-
+extrapolated ab initio GK [12], and experimental measure-
+ments [64–66]. Error bars are shown as given in the respective
+publications, the ones in the present work reflect the standard
+error across eleven trajectories. Letters ‘t’ and ‘m’ indicate
+results for the tetragonal and monoclinic phase, respectively.
+
+the full semi-local heat flux, as well as the purely local
+heat flux formulation. Due to the high computational
+cost of the unoptimized implementation, we use a small
+simulation cell with N = 768 atoms, and rely on the noise
+reduction scheme introduced in Ref. [14]. The results
+confirm that our implementation Junfolded
+pot
+is equivalent
+to the semi-local heat flux Jsemi-local
+pot
+, while the local flux
+Jlocal
+pot
+is not, underestimating the thermal conductivity by
+approximately 40 % due to missing interactions beyond
+M = 1. A similar effect has been observed when formula-
+tions applicable to pairwise additive potentials are used
+for many-body force fields [60, 61].
+Enabled by computationally efficient access to J for
+semi-local MLPs, we then predict the thermal conduc-
+tivity of zirconia across temperatures. Since the focus
+of the present work is the heat flux, we do not treat the
+thermodynamics of zirconia with the MLP, but use experi-
+mentally determined lattice parameters [72, 73] to account
+for lattice expansion. At 1400 K, both phases are investi-
+gated, as the monoclinic phase is sufficiently stable during
+the course of the simulations, which consist of eleven tra-
+jectories of 1 ns each, with a N = 1500 simulation cell.
+These settings yield fully size- and time-converged results
+(see Supp. Mat. for details).
+The results presented in Fig. 3 are in good agreement
+with both experimental measurements in the monoclinic
+phase, and theoretical MLP predictions in the monoclinic
+and tetragonal phases. As this work uses similar lattice
+parameters and the same exchange-correlation functional
+as the work by Verdi et al. [50], the observed close agree-
+ment is to be expected. Remaining differences between
+the MLP results may be due to larger simulation cells
+used in the present work, enabled by the favorable scaling
+
+of computational cost due to the efficient heat flux im-
+plementation, and the semi-local nature of the employed
+MPNN. Compared to experiment, both MLPs are found
+to systematically underestimate κ by approximately 10 %
+to 20 %, which may be related to the intrinsic approxi-
+mation of a finite-range MLP, or the underlying density
+functional approximation.
+Larger
+differences
+are
+observed
+with
+the
+size-
+extrapolated ab initio GK results reported by Car-
+bogno et al. [12], which, however, were computed for
+the tetragonal phase at all temperatures. Additionally,
+due to the high computational cost of first-principles cal-
+culations, only three trajectories of 60 ps each were used,
+which is reflected in the larger statistical error.
+We conclude that the adapted GK approach for semi-
+local MLPs introduced in this work can successfully and
+efficiently predict the thermal conductivity of zirconia
+across temperatures, using 10 000 first-principles calcula-
+tions in total. Despite a moderate system size of 96 atoms
+for training, fully size-converged results were obtained
+without requiring additional extrapolation schemes.
+In summary, we have demonstrated the feasibility of
+applying AD-based semi-local MLPs to the prediction of
+thermal conductivities with the GK method. For this,
+we investigated the impact of semi-local interactions on
+the heat flux, and derived an adapted heat flux Junfolded
+pot
+that can be efficiently implemented via AD. This heat
+flux has asymptotically linear runtime and requires no
+further restrictions on the form of the potential.
+Its
+formulation is independent of the body-order of the po-
+tential energy function, making no distinction between
+pair, angle-dependent, or many-body potentials. As it
+relies on explicitly constructing an extended simulation
+cell, it is applicable to semi-local MLPs with moderate
+effective interaction ranges.
+
+DATA AND CODE AVAILABILITY
+
+Data
+and
+code
+required
+to
+reproduce
+all
+figures
+can be found at doi:10.5281/zenodo.7767432.
+First-
+principles calculations for the training data are ad-
+ditionally available on the NOMAD repository at
+doi:10.17172/NOMAD/2023.03.24-2.
+Further informa-
+tion and software can be found in the Supp. Mat. and at
+https://marcel.science/gknet.
+
+ACKNOWLEDGEMENTS
+
+This work was supported by the TEC1p Project (ERC
+Horizon 2020 No. 740233). M.F.L. gratefully acknowl-
+edges financial support by the German Ministry for Edu-
+cation and Research BIFOLD program (refs. 01IS18025A
+and 01IS18037A). F.K. acknowledges support from the
+Swedish Research Council (VR) program 2020-04630, and
+the Swedish e-Science Research Centre (SeRC). M.R. ac-
+knowledges funding from the European Union’s Horizon
+2020 research and innovation program under Grant Agree-
+
+
+5
+
+ment 952165. Part of this research was performed while
+M.F.L. and M.R. were visiting the Institute for Pure and
+Applied Mathematics (IPAM), which is supported by the
+National Science Foundation (Grant No. DMS-1925919).
+
+M.F.L. would like to thank Profs. Klaus-Robert Müller
+and Davide Donadio, as well as Carla Verdi, Fabian Nagel,
+and Adam Norris for constructive discussions and support.
+
+[1] A. Evans, D. Clarke, and C. Levi, J. Eur. Ceram. Soc. 28,
+1405 (2008).
+
+[2] G. J. Snyder and E. S. Toberer, Nat. Mater. 7, 105 (2008).
+[3] L.-D. Zhao, S.-H. Lo, Y. Zhang, H. Sun, G. Tan, C. Uher,
+C. Wolverton, V. P. Dravid, and M. G. Kanatzidis, Nature
+508, 373 (2014).
+
+[4] F. Knoop, T. A. R. Purcell, M. Scheffler, and C. Carbogno,
+Phys. Rev. Mater. 4, 083809 (2020).
+
+[5] L. Onsager, Phys. Rev. 37, 405 (1931).
+[6] L. Onsager, Phys. Rev. 38, 2265 (1931).
+[7] M. S. Green, J. Chem. Phys. 20, 1281 (1952).
+[8] R. Kubo, J. Phys. Soc. Jpn. 12, 570 (1957).
+[9] R. Kubo, M. Yokota, and S. Nakajima, J. Phys. Soc. Jpn.
+12, 1203 (1957).
+
+[10] A. M. Teale, T. Helgaker, A. Savin, C. Adamo, B. Aradi,
+A. V. Arbuznikov, P. W. Ayers, E. J. Baerends, V. Barone,
+P. Calaminici, E. Cancès, E. A. Carter, P. K. Chattaraj,
+H. Chermette, I. Ciofini, T. D. Crawford, F. De Proft,
+J. F. Dobson, C. Draxl, T. Frauenheim, E. Fromager,
+P. Fuentealba, L. Gagliardi, G. Galli, J. Gao, P. Geerlings,
+N. Gidopoulos, P. M. W. Gill, P. Gori-Giorgi, A. Görling,
+T. Gould, S. Grimme, O. Gritsenko, H. J. A. Jensen,
+E. R. Johnson, R. O. Jones, M. Kaupp, A. M. Köster,
+L. Kronik, A. I. Krylov, S. Kvaal, A. Laestadius, M. Levy,
+M. Lewin, S. Liu, P.-F. Loos, N. T. Maitra, F. Neese,
+J. P. Perdew, K. Pernal, P. Pernot, P. Piecuch, E. Re-
+bolini, L. Reining, P. Romaniello, A. Ruzsinszky, D. R.
+Salahub, M. Scheffler, P. Schwerdtfeger, V. N. Staroverov,
+J. Sun, E. Tellgren, D. J. Tozer, S. B. Trickey, C. A. Ull-
+rich, A. Vela, G. Vignale, T. A. Wesolowski, X. Xu, and
+W. Yang, Phys. Chem. Chem. Phys. 24, 28700 (2022).
+
+[11] A. Marcolongo, P. Umari, and S. Baroni, Nat. Phys. 12,
+80 (2015).
+
+[12] C.
+Carbogno,
+R.
+Ramprasad,
+and
+M.
+Scheffler,
+Phys. Rev. Lett. 118, 175901 (2017).
+
+[13] A.
+Marcolongo,
+L.
+Ercole,
+and
+S.
+Baroni,
+J. Chem. Theor. Comput. 16, 3352 (2020).
+
+[14] F. Knoop, C. Carbogno, and M. Scheffler, Ab initio green-
+kubo simulations of thermal transport in solids: Method
+and implementation (2022), arXiv:2209.01139.
+
+[15] M. González, J. Neutron. 12, 169 (2011).
+[16] J. B. Witkoskie and D. J. Doren, J. Chem. Theor. Comput.
+1, 14 (2004).
+
+[17] S. Lorenz, A. Groß, and M. Scheffler, Chem. Phys. Lett.
+395, 210 (2004).
+
+[18] J. Behler and M. Parrinello, Phys. Rev. Lett. 98, 146401
+(2007).
+
+[19] A. P. Bartók, M. C. Payne, R. Kondor, and G. Csányi,
+Phys. Rev. Lett. 104, 136403 (2010).
+
+[20] O. T. Unke, S. Chmiela, H. E. Sauceda, M. Gastegger,
+I. Poltavsky, K. T. Schütt, A. Tkatchenko, and K.-R.
+Müller, Chem. Rev. 121, 10142 (2021).
+
+[21] I. Poltavsky and A. Tkatchenko, J. Phys. Chem. Lett. 12,
+6551 (2021).
+
+[22] E. Prodan and W. Kohn, Proc. Natl. Acad. Sci. USA 102,
+11635 (2005).
+
+[23] A. K. Rappe and W. A. Goddard, J. Chem. Phys. 95,
+3358 (1991).
+
+[24] T. A. Halgren and W. Damm, Curr. Opin. Struct. Biol.
+11, 236 (2001).
+
+[25] P. Cieplak, F.-Y. Dupradeau, Y. Duan, and J. Wang,
+J. Phys. Condens. Matter 21, 333102 (2009).
+
+[26] T. P. Senftle, S. Hong, M. M. Islam, S. B. Kylasa,
+Y. Zheng, Y. K. Shin, C. Junkermeier, R. Engel-Herbert,
+M. J. Janik, H. M. Aktulga, T. Verstraelen, A. Grama,
+and A. C. T. van Duin, NPJ Comput. Mater. 2, 1 (2016).
+
+[27] T. W. Ko, J. A. Finkler, S. Goedecker, and J. Behler,
+Accounts Chem. Res. 54, 808 (2021).
+
+[28] J. Gilmer, S. S. Schoenholz, P. F. Riley, O. Vinyals, and
+G. E. Dahl, in Proceedings of the 34th International Con-
+ference on Machine Learning (ICML 2017), Sydney, Aus-
+tralia, August 6–11 (PMLR, 2017) pp. 1263–1272.
+
+[29] K.
+T.
+Schütt,
+P.-J.
+Kindermans,
+H.
+E.
+Sauceda,
+S. Chmiela, A. Tkatchenko, and K.-R. Müller, in Ad-
+vances in Neural Information Processing Systems 30
+(NIPS 2017), Los Angeles, California, December 4–9
+(Curran Assoc., 2017).
+
+[30] K.
+T.
+Schütt,
+H.
+E.
+Sauceda,
+P.-J.
+Kindermans,
+A. Tkatchenko, and K.-R. Müller, J. Chem. Phys. 148,
+241722 (2018).
+
+[31] O. T. Unke and M. Meuwly, J. Chem. Theor. Comput. 15,
+3678 (2019).
+
+[32] J. Klicpera, J. Groß, and S. Günnemann, in Proceed-
+ings of the Eighth International Conference on Learning
+Representations (ICLR 2020), Addis Ababa, Ethiopia,
+April 26–May 1 (OpenReview, 2020).
+
+[33] J. Klicpera, F. Becker, and S. Günnemann, in Ad-
+vances in Neural Information Processing Systems 34
+(NeurIPS 2021), virtual, December 6–14 (Curran Assoc.,
+2021) pp. 6790–6802.
+
+[34] O. T. Unke, S. Chmiela, M. Gastegger, K. T. Schütt,
+H. E. Sauceda, and K.-R. Müller, Nat. Commun. 12, 7273
+(2021).
+
+[35] S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa,
+M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky,
+Nat. Commun. 13, 1 (2022).
+
+[36] I. Batatia, D. P. Kovács, G. N. C. Simm, C. Ortner,
+and G. Csányi, MACE: Higher order equivariant message
+passing neural networks for fast and accurate force fields
+(2022), arXiv:2206.07697.
+
+[37] I. Batatia, S. Batzner, D. P. Kovács, A. Musaelian,
+G. N. C. Simm, R. Drautz, C. Ortner, B. Kozinsky, and
+G. Csányi, The design space of E(3)-equivariant atom-
+centered interatomic potentials (2022), arXiv:2205.06643.
+
+[38] A. Bochkarev, Y. Lysogorskiy, C. Ortner, G. Csányi, and
+R. Drautz, Multilayer atomic cluster expansion for semi-
+local interactions (2022), arXiv:2205.08177.
+
+[39] J. T. Frank, O. T. Unke, and K.-R. Müller, So3krates—
+self-attention for higher-order geometric interactions on
+arbitrary length-scales (2022), arXiv:2205.14276.
+
+[40] S. Stocker, J. Gasteiger, F. Becker, S. Günnemann, and
+J. T. Margraf, Mach. Learn. Sci. Tech. 3, 045010 (2022).
+
+
+6
+
+[41] O. T. Unke, M. Stöhr, S. Ganscha, T. Unterthiner,
+H. Maennel, S. Kashubin, D. Ahlin, M. Gastegger,
+L. Medrano Sandonas, A. Tkatchenko, and K.-R. Müller,
+Accurate machine learned quantum-mechanical force fields
+for biomolecular simulations (2022), arXiv:2205.08306.
+
+[42] C. Chen and S. P. Ong, A universal graph deep learn-
+ing interatomic potential for the periodic table (2022),
+arXiv:2202.02450.
+
+[43] G. C. Sosso, D. Donadio, S. Caravati, J. Behler, and
+M. Bernasconi, Phys. Rev. B 86, 104301 (2012).
+
+[44] C. Mangold, S. Chen, G. Barbalinardo, J. Behler,
+P. Pochet,
+K. Termentzidis,
+Y. Han,
+L. Chaput,
+D. Lacroix, and D. Donadio, J. Appl. Phys. 127, 244901
+(2020).
+
+[45] P. Korotaev, I. Novoselov, A. Yanilkin, and A. Shapeev,
+Phys. Rev. B 100, 144308 (2019).
+
+[46] H. Liu,
+X. Qian,
+H. Bao,
+C. Zhao, and X. Gu,
+J. Phys. Condens. Matter 33, 405401 (2021).
+
+[47] R. Li, E. Lee, and T. Luo, Mater. Today Phys. 12, 100181
+(2020).
+
+[48] R. Li, Z. Liu, A. Rohskopf, K. Gordiz, A. Henry, E. Lee,
+and T. Luo, Appl. Phys. Lett. 117, 152102 (2020).
+
+[49] X. Qian,
+S. Peng,
+X. Li,
+Y. Wei, and R. Yang,
+Mater. Today Phys. 10, 100140 (2019).
+
+[50] C. Verdi, F. Karsai, P. Liu, R. Jinnouchi, and G. Kresse,
+NPJ Comput. Mater. 7, 156 (2021).
+
+[51] A. Griewank and A. Walther, Evaluating Derivatives
+(Society for Industrial and Applied Mathematics, 2008).
+
+[52] A. G. Baydin, B. A. Pearlmutter, A. A. Radul, and J. M.
+Siskind, J. Mach. Learn. Res. 18, 5595 (2017).
+
+[53] S. Fabris, A. T. Paxton, and M. W. Finnis, Phys. Rev. B
+63, 094101 (2001).
+
+[54] C. Carbogno, C. G. Levi, C. G. Van de Walle, and
+M. Scheffler, Phys. Rev. B 90, 144109 (2014).
+
+[55] R. J. Hardy, Phys. Rev. 132, 168 (1963).
+[56] Y. Chen, J. Chem. Phys. 124, 054113 (2006).
+[57] N. C. Admal and E. B. Tadmor, J. Chem. Phys. 134,
+184106 (2011).
+
+[58] D. Torii, T. Nakano, and T. Ohara, J. Chem. Phys. 128,
+044504 (2008).
+
+[59] Z. Fan, L. F. C. Pereira, H.-Q. Wang, J.-C. Zheng,
+D. Donadio, and A. Harju, Phys. Rev. B 92, 094301
+(2015).
+
+[60] D. Surblys, H. Matsubara, G. Kikugawa, and T. Ohara,
+Phys. Rev. E 99, 051301 (2019).
+
+[61] P.
+Boone,
+H.
+Babaei,
+and
+C.
+E.
+Wilmer,
+J. Chem. Theor. Comput. 15, 5579 (2019).
+
+[62] A. P. Thompson, S. J. Plimpton, and W. Mattson,
+J. Chem. Phys. 131, 154107 (2009).
+
+[63] A. Kinaci, J. B. Haskins, and T. Çağın, J. Chem. Phys.
+137, 014106 (2012).
+
+[64] S. Raghavan, H. Wang, R. B. Dinwiddie, W. D. Porter,
+and M. J. Mayo, Scripta Materialia 39, 1119 (1998).
+
+[65] J.-F. Bisson, D. Fournier, M. Poulain, O. Lavigne, and
+R. Mévrel, Journal of the American Ceramic Society 83,
+1993 (2000).
+
+[66] R. Mévrel, J.-C. Laizet, A. Azzopardi, B. Leclercq,
+M.
+Poulain,
+O.
+Lavigne,
+and
+D.
+Demange,
+J. Eur. Ceram. Soc. 24, 3081 (2004).
+
+[67] V. Blum, R. Gehrke, F. Hanke, P. Havu, V. Havu, X. Ren,
+K. Reuter, and M. Scheffler, Comput. Phys. Comm. 180,
+2175 (2009).
+
+[68] F.
+Knoop,
+M.
+Scheffler,
+C.
+Carbogno,
+et
+al.,
+J. Open Source Software 5, 2671 (2020).
+
+[69] J. P. Perdew, A. Ruzsinszky, G. I. Csonka, O. A. Vydrov,
+G. E. Scuseria, L. A. Constantin, X. Zhou, and K. Burke,
+Phys. Rev. Lett. 100, 136406 (2008).
+
+[70] K.
+T.
+Schütt,
+P.
+Kessel,
+M.
+Gastegger,
+K.
+A.
+Nicoli,
+A.
+Tkatchenko,
+and
+K.-R.
+Müller,
+J. Chem. Theor. Comput. 15, 448 (2018).
+
+[71] K. Tolborg and A. Walsh, Anharmonic and entropic sta-
+bilisation of cubic zirconia from first principles (2022),
+ChemRxiv:2022-lkzm9.
+
+[72] R. Patil and E. Subbarao, J. Appl. Crys. 2, 281 (1969).
+[73] E. H. Kisi and C. Howard, Key Eng. Mater. 153–154, 1
+(1998).
+
+
+Supplementary Material:
+Heat flux for semi-local machine-learning potentials
+
+Marcel F. Langer,1, 2, 3, ∗ Florian Knoop,4, 3, † Christian Carbogno,3 Matthias Scheffler,3 and Matthias Rupp3, 5, 6
+
+1Machine Learning Group, Technische Universität Berlin, 10587 Berlin, Germany
+2BIFOLD – Berlin Institute for the Foundations of Learning and Data, Berlin, Germany
+3The NOMAD Laboratory at the FHI of the Max-Planck-Gesellschaft
+and IRIS Adlershof of the Humboldt Universität zu Berlin, Germany
+4Theoretical Physics Division, Department of Physics,
+Chemistry and Biology (IFM), Linköping University, SE-581 83 Linköping, Sweden
+5Department of Computer and Information Science,
+University of Konstanz, 78464 Konstanz, Germany
+6Materials Research and Technology Department,
+Luxembourg Institute of Science and Technology (LIST), Belvaux, Luxembourg
+
+I.
+AUTOMATIC DIFFERENTIATION
+
+For practical simulations based on machine-learning
+potentials, it is not only necessary to predict the total
+energy U, but also its derivatives with respect to atomic
+positions RI, e.g., the forces and the stress tensor [1].
+Since it is impractical to manually implement the required
+derivatives for deep neural networks or other complex
+architectures, automatic differentiation (AD) is employed.
+AD is a technique to automatically obtain derivatives
+of functions implemented as computer programs [2, 3] by
+reducing them to a directed acyclic graph of elementary
+operations, evaluating the local derivatives for each op-
+eration, and then applying the chain rule by traversing
+the graph: Traversing the graph from the output back-
+wards yields reverse-mode AD. Traversing from the inputs
+forwards yields forward-mode AD.
+AD can efficiently obtain vector products of the Ja-
+cobian of a function over either the input dimensions
+(forward mode) or the output dimensions (reverse mode),
+with the same asymptotic runtime as computing the orig-
+inal function. Computing the explicit Jacobian, on the
+other hand, requires repeated evaluations of such prod-
+ucts, incurring linear additional computational cost in
+either the input or output dimension.
+Therefore, if the energy prediction scales linearly with
+system size, and only derivatives of the scalar total po-
+tential energy U are required, the forces and stress can
+be predicted in a linearly-scaling fashion as well. In con-
+trast, explicitly computing all derivatives of the potential
+energy contributions, ∂UI/∂RJ, would incur quadratic
+computational cost, which introduces difficulties when
+implementing the GK method.
+Since AD relies on tracing the underlying computation,
+it can only produce derivatives with respect to quanti-
+ties that were explicitly used in computing a result; for
+instance, derivatives with respect to pair vectors RIJ
+cannot be computed when J /∈ N(I), i. e., for atoms that
+are not in the neighborhoood of I, since those atom-pair
+
+∗ Corresponding author: mail@marcel.science
+† Corresponding author: florian.knoop@liu.se
+
+vectors only appear implicitly through message passing,
+which is discussed in the next section.
+
+II.
+SEMI-LOCAL MACHINE-LEARNING
+POTENTIALS
+
+In this work, we consider machine-learning potentials
+(MLPs) with semi-local structure. In many cases, MLPs
+of this type are implemented as message-passing neural
+networks (MPNNs) [4], although constructions based on
+other forms of regression are also possible [5].
+This type of model aims to combine the computational
+efficiency of local MLPs, in which potential energy con-
+tributions are dependent on atoms within a cutoff rc,
+typically on the order of 5 Å to 10 Å, with the ability to
+model correlations extending beyond these cutoffs. This is
+achieved by allowing M interactions between neighboring
+environments, building up longer-range correlations itera-
+tively, without requiring the explicit construction of the
+extended neighborhoods, at the expense of an information
+bottleneck introduced by the restricted amount of infor-
+mation that can be communicated. One can alternatively
+view semi-local models as introducing a sparsification of
+interactions within reff
+c
+= Mrc.
+In order to clarify the construction of such models in
+practice, we now briefly introduce MPNNs. The (periodic)
+system at hand is represented by a graph G = (V, E),
+where the vertices V correspond to the atoms present in
+the simulation cell connected by edges E. Two vertices I
+and J are connected with an edge if |RIJ| ≤ rc, where rc
+is a user-defined cutoff radius. Since, by definition, I and
+J are atoms in the simulation cell, RIJ must be subjected
+to the minimum image convention (MIC) to account for
+periodicity,
+
+RMIC
+IJ
+= min
+n∈Z3 |RJ +
+�
+
+a
+naba − RI| ,
+(1)
+
+in which ba=1,2,3 denote the basis vectors spanning the
+simulation cell. Edges E are then labelled with the MIC
+atom-pair vectors. All vertices J connected with an edge
+to I define the local atomic neighborhood N(I). G is
+therefore boundary invariant, i.e., independent of the
+
+arXiv:2303.14434v2  [cond-mat.mtrl-sci]  28 Mar 2023
+
+
+22
+
+1
+2
+3
+
+4
+5
+
+U1
+U2
+U3
+U4
+U5
+
+6
+
+FIG. 1. Sketch of neural message passing with M = 2. Connections are only considered in one direction for simplicity.
+(1)
+
+Initialization: Each edge symbolises an interatomic distance and is associated with a color. Each node is an atom with an empty
+initial state. (2+3) Message-passing: Each node is updated based on the (empty) neighboring state, and its incoming edge.
+Afterwards, each node depends on the incoming edge. (4+5) Another message-passing iteration. Now, every state depends on
+next-to-nearest neighbors. (6) Readout: UI are predicted based on the final states.
+
+particular choice of unit cell; translational invariance is
+ensured by using relative positions.
+
+MPNN potentials operate on G in three stages, illus-
+
+trated in Fig. 1: initialization, message-passing, and read-
+out. Each message-passing step is labeled by t = 0, . . . , M.
+During initialization (t = 0), every atom I is assigned a
+state vector st=0
+
+I
+, based on chemical species. During the
+
+next stage, these states are updated with messages mt
+
+I
+
+that can depend on the states of both the receiver atom
+I and its neighbors J 2 N(I), as well as the edges RIJ
+connecting them:
+
+mt+1
+
+I
+=
+
+X
+
+J2N (I)
+
+M t(st
+
+I, st
+
+J, RIJ)
+(2)
+
+st+1
+
+I
+= F t(st
+
+I, mt+1
+
+I
+) .
+(3)
+
+Here, the message functions M t and update functions
+F t are differentiable functions implemented as neural
+networks. They are learned during training, and can differ
+over message-passing iterations. The message functions
+M t model pairwise interactions. Their aggregation into
+the total message mt+1
+
+I
+via a sum ensures permutational
+
+invariance. The update functions F t describe how the
+interactions with all neighbors influence the new state of
+the receiver atom. Over multiple iterations, information
+is propagated through the graph.
+
+We emphasize that this construction incorporates pe-
+
+riodicity by messages wrapping around boundaries back
+into the simulation cell.
+Since the atom-pair vectors
+
+within N(I) are identical whether I is in the simulation
+cell or a replica, this is equivalent to messages propagating
+into neighboring replicas. However, as we will see in the
+following section, this implicit treatment of periodicity
+introduces difficulty with the heat flux, which is resolved
+by adapting G.
+
+After M message-passing steps, the final stage is
+
+reached where a readout function R predicts the atomic
+potential energy contributions UI. This atom-independent
+
+readout function is learned during training and acts on
+each vector sM
+
+I
+representing the final state of atom I.
+
+The total potential energy U is then simply given by
+
+U =
+
+X
+
+I2V
+
+UI
+with
+UI = R(sM
+
+I ) .
+(4)
+
+For M > 1, the energy contribution UI is a function not
+only of {RIJ|J 2 N(I)}, but of every edge within M
+hops on the graph: Information propagates beyond local
+neighborhoods of atoms, allowing for implicit long-range
+interactions. This distinguishes MPNN potentials from
+other MLPs, which typically act only on local features. In
+the present framework, such simpler, strictly local models
+are included when setting M = 1.
+
+We also note that different strategies can be employed
+
+to deal with rotational invariance. Early MPNNs such as
+SchNet [6, 7] only use interatomic distances as inputs, dis-
+carding angular information. Recent equivariant MPNNs
+[8–12] can make use of atom-pair vectors and can ensure
+that st
+
+I and mt
+
+I transform appropriately under rotations.
+
+Message functions that take angular or higher-order infor-
+mation into account are also possible [13–16]. In this work,
+we use an invariant MPNN. The presented derivations
+and conclusions are however fully general and applicable
+to equivariant MPNNs.
+
+III.
+HEAT FLUX FORMULATIONS
+
+III.1.
+Derivation of Hardy Formula
+
+Due to the difficulties discussed in the main text, deriv-
+
+ing and implementing the heat flux for particular types
+of PES has been the focus of much previous work [17–24].
+This work aims to provide a unified perspective for the
+case of semi-local MLPs implemented using AD.
+
+As a starting point for this task, we re-derive the clas-
+
+sical equivalent of the heat flux introduced by Hardy [25],
+
+FIG. 1. Sketch of neural message passing with M = 2. Connections are only considered in one direction for simplicity.
+(1)
+Initialization: Each edge symbolises an interatomic distance and is associated with a color. Each node is an atom with an empty
+initial state. (2+3) Message-passing: Each node is updated based on the (empty) neighboring state, and its incoming edge.
+Afterwards, each node depends on the incoming edge. (4+5) Another message-passing iteration. Now, every state depends on
+next-to-nearest neighbors. (6) Readout: UI are predicted based on the final states.
+
+particular choice of unit cell; translational invariance is
+ensured by using relative positions.
+MPNN potentials operate on G in three stages, illus-
+trated in Fig. 1: initialization, message-passing, and read-
+out. Each message-passing step is labeled by t = 0, . . . , M.
+During initialization (t = 0), every atom I is assigned a
+state vector st=0
+I
+, based on chemical species. During the
+next stage, these states are updated with messages mt
+I
+that can depend on the states of both the receiver atom
+I and its neighbors J ∈ N(I), as well as the edges RIJ
+connecting them:
+
+mt+1
+I
+=
+�
+
+J∈N (I)
+M t(st
+I, st
+J, RIJ)
+(2)
+
+st+1
+I
+= F t(st
+I, mt+1
+I
+) .
+(3)
+
+Here, the message functions M t and update functions
+F t are differentiable functions implemented as neural
+networks. They are learned during training, and can differ
+over message-passing iterations. The message functions
+M t model pairwise interactions. Their aggregation into
+the total message mt+1
+I
+via a sum ensures permutational
+invariance. The update functions F t describe how the
+interactions with all neighbors influence the new state of
+the receiver atom. Over multiple iterations, information
+is propagated through the graph.
+We emphasize that this construction incorporates pe-
+riodicity by messages wrapping around boundaries back
+into the simulation cell.
+Since the atom-pair vectors
+within N(I) are identical whether I is in the simulation
+cell or a replica, this is equivalent to messages propagating
+into neighboring replicas. However, as we will see in the
+following section, this implicit treatment of periodicity
+introduces difficulty with the heat flux, which is resolved
+by adapting G.
+After M message-passing steps, the final stage is
+reached where a readout function R predicts the atomic
+potential energy contributions UI. This atom-independent
+
+readout function is learned during training and acts on
+each vector sM
+I
+representing the final state of atom I.
+The total potential energy U is then simply given by
+
+U =
+�
+
+I∈V
+UI
+with
+UI = R(sM
+I ) .
+(4)
+
+For M > 1, the energy contribution UI is a function not
+only of {RIJ|J ∈ N(I)}, but of every edge within M
+hops on the graph: Information propagates beyond local
+neighborhoods of atoms, allowing for implicit long-range
+interactions. This distinguishes MPNN potentials from
+other MLPs, which typically act only on local features. In
+the present framework, such simpler, strictly local models
+are included when setting M = 1.
+We also note that different strategies can be employed
+to deal with rotational invariance. Early MPNNs such as
+SchNet [6, 7] only use interatomic distances as inputs, dis-
+carding angular information. Recent equivariant MPNNs
+[8–12] can make use of atom-pair vectors and can ensure
+that st
+I and mt
+I transform appropriately under rotations.
+Message functions that take angular or higher-order infor-
+mation into account are also possible [13–16]. In this work,
+we use an invariant MPNN. The presented derivations
+and conclusions are however fully general and applicable
+to equivariant MPNNs.
+
+III.
+HEAT FLUX FORMULATIONS
+
+III.1.
+Derivation of Hardy Formula
+
+Due to the difficulties discussed in the main text, deriv-
+ing and implementing the heat flux for particular types
+of PES has been the focus of much previous work [17–24].
+This work aims to provide a unified perspective for the
+case of semi-local MLPs implemented using AD.
+As a starting point for this task, we re-derive the clas-
+sical equivalent of the heat flux introduced by Hardy [25],
+
+
+3
+
+combining existing approaches with the aim of clarifying
+the introduction of periodic boundary conditions. Often,
+the Hardy formula is given without explicitly specifying
+the range of the involved sums, introducing ambiguity
+in periodic boundary conditions: Sums can run either
+over the simulation cell, or the bulk, and describe either
+‘checkerboard’ or ‘toroidal’ boundary conditions, an ambi-
+guity highlighted by Erpenbeck [26] in the context of GK
+calculations of shear coefficients. In the context of AD,
+which relies explicitly on the forward computation of U,
+the precise construction of a given potential gains central
+importance, and we therefore take care to be as explicit
+as possible.
+In this derivation, we rely on the approach by Hardy [27]
+to provide a solution to the continuity equation in terms
+of bond functions,1 and follow the ideas of Ito and Naka-
+mura [30] to avoid the assumption of a pair potential.
+After solving the continuity equation for a finite system
+of N particles, we adopt periodic boundary conditions,
+recovering the Hardy formulation of the heat flux [20, 25].
+The heat flux required for the GK method is defined
+as the spatial integral of a current density
+
+J(t) =
+�
+
+V
+d3r j(r, t) ,
+(5)
+
+which arises from a continuity equation for the energy
+density
+
+˙e(r, t) + ∇ · j(r, t) = 0 ,
+(6)
+
+which in turn is defined as a scalar field that integrates
+to the total energy of the system
+
+E(t) =
+�
+
+V
+d3r e(r, t) .
+(7)
+
+We are studying the system under consideration with
+MD, treating it as a collection of N point particles con-
+tained in the volume V , whose state is fully characterised
+by a set of phase-space coordinates Γ = { ΓI : I =
+1 . . . N } = { (RI, pI) : I = 1 . . . N }, with atomic mo-
+menta pI. These coordinates evolve in time according to
+Newton’s equations of motion
+
+FI = −∂U(Γ)/∂RI = ˙pI = mI ¨RI ,
+(8)
+
+where U is the potential energy, which we take to be com-
+posed of atomic contributions; U = �N
+I=1 UI. This work
+considers potentials where this decomposition is available
+by design, as they approximate the BO PES in terms of
+many-body functions UI of the atomic coordinates.
+In DFT, on the other hand, the potential energy part of
+the Hamiltonian has a strictly pairwise structure; many-
+body interactions then emerge implicitly from the elec-
+tronic density, instead of being explicitly included in the
+
+1 A similar, but more rigorous machinery was developed by Noll [28],
+extending the work of Irving and Kirkwood [29], but in the interest
+of brevity, we do not adopt it here.
+
+energy expression. Carbogno et al. [22] exploit this pair-
+wise structure, which extends to the Hellmann-Feynman
+forces, to obtain pairwise derivatives of the potential.
+They then obtain an exact equivalent of Jpot, which purely
+relies on derivatives, and discard Jconv. The meaning and
+naming of these terms is further discussed at the end of
+the present section. We additionally note that an energy
+density for DFT can be defined [31] and a particular gauge
+can be chosen to obtain a heat flux [21].
+We now proceed with a derivation for potentials where
+atomic potential energies UI are explicitly available, and
+for the sake of generality assume that each UI can depend
+on the position of every atom J, such that UI = UI({RJ}).
+We will later specialize to particular types of potentials,
+restricting the dependence of UI to finite neighborhoods.
+With this, time-dependence appears only implicitly
+through the time-dependent positions and velocities, al-
+lowing us to recast the total time derivative in terms of
+partial derivatives with respect to positions. We suppress
+time-dependence in the following derivation. Additionally,
+all sums will run from 1 to N until the spatial integral
+over j(r) is executed.
+Following Hardy [27], we spatially localize the atomic
+total energy, given by the sum of potential energy UI
+and kinetic energy TI, EI = UI + TI with a function
+∆(RI −r), which is peaked at RI, decays to 0 as |RI −r|
+increases, and is normalized to 1.
+We also define a corresponding bond function, which
+localizes contributions along a line segment:
+
+ΛIJ(r) =
+� 1
+
+0
+dλ ∆(λRI + (1 − λ)RJ − r) .
+(9)
+
+One can then show that
+
+RIJ · ∇rΛIJ(r) = ∆(RI − r) − ∆(RJ − r) .
+(10)
+
+We then make an ansatz for e(r):
+
+e(r) =
+�
+
+I
+∆(RI − r)EI .
+(11)
+
+The time-derivative of e(r) is
+
+d
+dte(r, t) =
+�
+
+I
+
+� d
+
+dtEI
+
+�
+∆(RI − r)
+
++
+�
+
+I
+EI
+
+� d
+
+dt∆(RI − r)
+�
+.
+(12)
+
+The first term can be tackled by again splitting EI =
+UI + TI and resolving the time derivative using Eq. (8):
+
+d
+dtEI = d
+
+dtUI + d
+
+dtTI
+(13)
+
+=
+�
+
+j
+
+∂UI
+∂RJ
+· ˙RJ +
+�
+
+I
+Fi · ˙RI
+(14)
+
+=
+�
+
+j
+
+∂UI
+∂RJ
+· ˙RJ −
+�
+
+I
+
+∂U
+∂RI
+· ˙RI .
+(15)
+
+
+4
+
+Then, we re-arrange it in a pair-wise form
+
+�
+
+I
+
+� d
+
+dtEI
+
+�
+∆(RI − r)
+(16)
+
+=
+�
+
+I
+
+
+
+�
+
+j
+
+∂UI
+∂RJ
+· ˙RJ
+
+
+
+ ∆(RI − r)
+(17)
+
+−
+�
+
+I
+
+� ∂U
+
+∂RI
+· ˙RI
+
+�
+∆(RI − r)
+(18)
+
+=
+�
+
+IJ
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+�
+(∆(RI − r)
+
+− ∆(RJ − r)) ,
+(19)
+
+and finally apply the identity from above to obtain
+
+= ∇r ·
+
+��
+
+IJ
+RIJ
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+�
+ΛIJ(r)
+
+�
+
+.
+(20)
+
+The second term is easily resolved by the chain rule
+
+�
+
+I
+EI
+
+� d
+
+dt∆(RI − r)
+�
+(21)
+
+= −
+�
+
+I
+EI
+�
+∇r∆(RI − r) · ˙RI
+�
+(22)
+
+= −∇r ·
+� �
+
+I
+EI∆(RI − r) ˙RI
+�
+.
+(23)
+
+Comparing with the continuity equation, we find
+
+j(r) =
+�
+
+IJ
+RJI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+�
+ΛIJ(r)
+
++
+�
+
+I
+EI ˙RI ∆(RI − r) ,
+(24)
+
+a direct solution to the continuity equation.
+This result can also be justified from a physical per-
+spective. Any energy change at atom I must be balanced
+out by corresponding changes in the atoms J it interacts
+with, with an energy current flowing between them.2 If
+we can divide up the change in EI into contributions
+that can be attributed to different J, and identify the
+corresponding terms in EJ, we know the magnitude of
+the current between I and J. It is a natural assumption
+that the current flows directly between them, parallel to
+RIJ. The first term is one way to construct a vector field
+accordingly. The second term describes an alternative
+process to change local distribution of energy: Rather
+than energy flowing between atoms, the energy assigned
+to a given atom is ‘dragged along’ by the atom moving.
+Together, these two processes describe how the energy
+
+2 This does not mean that pairwise fluxes are always zero – this
+is only the case if ∂UI/∂RJ = ∂UJ/∂RI, which only applies to
+pair potentials, as pointed out by Fan et al. [20].
+
+density can change, and therefore yield the energy current
+density, solving the continuity equation.
+We are now in a position to compute the macroscopic
+heat flux J. However, we must first define the integration
+domain: Since the thermodynamic limit is inaccessible due
+to finite computational resources, practical simulations
+make use of periodic boundary conditions, replicating
+a simulation cell with N atoms periodically in space.
+This simulation cell must be large enough to capture the
+relevant dynamic processes for thermal transport. We
+then formally compute j for the resulting bulk, defining
+Rsc as the atoms in the simulation cell and Rall as the
+entire bulk. Extending the so-far unspecified sum over
+IJ explicitly over the bulk yields
+
+j(r) =
+�
+
+I∈Rall
+J∈Rall
+
+RJI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+�
+ΛIJ(r)
+
++
+�
+
+I
+EI ˙RI∆(RI − r) .
+(25)
+
+We now integrate over the simulation cell, obtaining
+
+J =
+�
+
+I∈Rsc
+J∈Rall
+
+�
+RJI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
+
++
+�
+
+I∈Rsc
+EI ˙RI ,
+(26)
+
+where we have used the fact that all contributions where
+I /∈ Rsc can be computed equivalently for the replica of I
+in the simulation cell. This is a general form of the heat
+flux, the classical equivalent of the formulation derived
+by Hardy for periodic quantum systems [20, 25]. We note
+that the minimum image convention does not yet appear.
+Equation (26) is typically split into two terms: The
+first one is identified as the ‘potential’ heat flux Jpot,
+describing heat flux due to energy exchange between
+atoms, and the second one as ‘convective’ term Jconv,
+accounting for changes in energy density due to atomic
+movements directly. Nomenclature changes across the
+literature. For instance, Fan et al. [20] refer to Jconv as
+‘kinetic’ term, while Carbogno et al. [22] refer to Jpot
+as ‘conductive’ or ‘virial’ term. We do not adopt this
+terminology as Jpot is not always composed of virials, i.e.,
+contributions to the stress: In general semi-local MLPs,
+the derivative ∂UI/∂RJ does not directly resolve into
+atom-pair vectors originating from I. In solids, Jpot is
+also not precisely the heat flux that determines thermal
+conductivity.
+
+III.2.
+Heat Flux in Solids
+
+In solids, atomic positions are bounded over time. In
+other words, atomic positions RI(t) can be split into a
+fixed reference position R0
+I and a time-dependent dis-
+placement from that position uI(t):
+
+RI(t) := R0
+I + uI(t)
+I ∈ Rall
+(27)
+
+
+5
+
+0
+5
+10
+15
+20
+25
+30
+35
+40
+
+Integration time in ps
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+κ in W/(m K)
+
+300 K
+
+J
+Jint
+Jpot
+Jconv
+
+0
+1
+2
+3
+4
+5
+Integration time in ps
+
+0
+
+1
+
+2
+
+κ in W/(m K)
+
+1400 K
+
+J
+Jint
+Jpot
+Jconv
+
+FIG. 2. Comparison of the integral of the heat flux autocor-
+relation function for J, Jint, Jpot and Jconv, at 300 K in the
+monoclinic phase (top) and 1400 K in the tetragonal phase
+(bottom), using ‘production’ settings (N=1500, t=1 ns). No
+noise reduction is applied in this case. Shaded areas indicate
+standard error.
+
+If we choose R0
+I such that it contains the information
+about which replica I belongs to,3 we obtain:
+
+RIn(t) = R0
+In + uI(t)
+(28)
+
+⇒ ˙RIn(t) = ˙RI(t) ,
+(29)
+
+where we introduce n as a an offset vector, indicating
+which integer multiples of lattice vectors are added to yield
+a given replica. In other words, the displacements and
+velocities are shared between all replicas of I. Substituting
+into Eq. (26), we obtain:
+
+J =
+�
+
+I∈Rsc
+J∈Rall
+
+�
+R0
+JI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
++ d
+
+dt
+
+�
+
+I∈Rsc
+uIEI
+(30)
+
+=: Jint + Jdisp .
+(31)
+
+This defines a new split for J, into an ‘interaction’ term
+Jint, which arises due to the exchange of energy between
+
+3 For instance by choosing positions in the pristine supercell, or
+R0
+I = R(t = 0), or average positions over the simulation run.
+
+atoms at sites I and J, and a remainder term due to the
+displacements, Jdisp. If uI(t) are bounded over time, then
+Jdisp is also bounded, and is therefore a non-diffusive heat
+flux, which does not contribute to κ [21, 32, 33].
+As we consider a solid system in this work, only Jint
+is reported throughout, as it allows for a more straight-
+forward implementation and noise removal.
+Figure 2
+compares J and Jint, showing that they are indeed equiv-
+alent for zirconia at the given temperatures. We note
+that Jconv does not disappear in isolation, and that Jpot
+is generally not equivalent to Jint.
+
+III.3.
+Local Heat Flux
+
+Let us briefly consider the heat flux for general local
+potentials where
+
+UI = UI(N(I)) ,
+(32)
+
+with N(I) containing positions, including replicas, up to
+a finite cutoff radius rc. Then
+
+J =
+�
+
+I∈Rsc
+J∈N (I)
+
+�
+RJI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI .
+(33)
+
+Since potentials are expected to be translationally in-
+variant, the dependence on RJ can only enter through
+atom-pair vectors, and we therefore obtain
+
+J =
+�
+
+I∈Rsc
+J∈N (I)
+
+�
+RJI
+
+� ∂UI
+
+∂RIJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI , (34)
+
+the form derived by Fan et al. [20]. If we further note
+that no interactions between environments occur, then
+every atom-pair vector can be uniquely assigned to one
+UI, and we can equivalently write
+
+J =
+�
+
+I∈Rsc
+J∈N (I)
+
+�
+RJI
+
+� ∂U
+
+∂RIJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI . (35)
+
+A similar form was derived by Carbogno et al. [22] for
+DFT, using the pairwise nature of the derivatives of the
+Hamiltonian.
+However, in DFT, electronic degrees of
+freedom enter U.
+In the present work, we consider local potentials as the
+M = 1 special case of semi-local models as introduced
+in Section II. In this setting, replicas are not explicitly
+constructed. Instead, the MIC is used on the atom-pair
+vectors providing the edges in the graph. The heat flux
+for the M = 1 case is therefore
+
+J =
+�
+
+IJ∈E
+
+�
+RJI
+
+� ∂UI
+
+∂RIJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI
+(36)
+
+=
+�
+
+IJ∈E
+
+�
+RJI
+
+� ∂U
+
+∂RIJ
+· ˙RJ
+
+��
++
+�
+
+I∈Rsc
+EI ˙RI .
+(37)
+
+This form can be efficiently implemented with AD, as it
+only requires derivatives of the scalar total energy, which
+can be obtained in one backwards pass.
+
+
+6
+
+III.4.
+Semi-Local Heat Flux
+
+To treat semi-local MLPs, we first note that by con-
+struction, Section II, interactions beyond the simulation
+cell are re-mapped into the cell and treated implicitly.
+Equation (26) cannot be immediately applied, since the
+replicas in Rall are not explicitly constructed, and are
+therefore inaccessible to AD. The approach used for local
+potentials, where we used the fact that each edge can be
+uniquely assigned to a given UI is also not applicable, as
+M > 1 correlates neighboring environments.
+A general solution to this difficulty is provided by the
+‘unfolded’ heat flux presented in the following section,
+which changes the construction of semi-local MLPs to
+allow this attribution. A preliminary solution that re-
+spects the standard construction of such models is to
+restrict the effective cutoff so only one replica of any
+given atom lies within the effective interaction radius of
+any other. Then, the minimum image convention can
+be used while computing derivatives only with respect
+to positions within the simulation cell. However, as we
+will see, this solution is inefficient, leading to quadratic
+scaling of the computational cost.
+We now transition to the notation introduced in Sec-
+tion II. Then, UI depends not only on N(I), but the set
+of neighborhoods within M hops on the graph. In general,
+it can depend on all neighborhoods, and we can therefore
+write the following, which highlights the dependence of
+the heat flux on interactions beyond the cutoff,
+
+Jsemi-local
+pot
+=
+�
+
+I∈V
+JK∈E
+
+RMIC
+JI
+
+×
+�� ∂UI
+
+∂RKJ
+−
+∂UI
+
+∂RJK
+
+�
+· ˙RJ
+
+�
+.
+(38)
+
+This form requires the explicit computation of all elements
+of the Jacobian ∂UI/∂RJK, or equivalently ∂UI/∂RJ,
+which in turn requires N-fold repeated evaluations with
+AD, leading to the quadratic scaling observed.
+
+III.5.
+Unfolded Heat Flux
+
+Conceptually, we now modify the construction of the
+MLP: Instead of constructing the input graph G based on
+positions in Rsc only, we instead start from an extended
+simulation cell Runf that includes all positions up at most
+reff
+c
+distant from the atoms in Rsc, i.e., all positions that
+contribute to U. The atom-pair vectors that appear in
+the resulting graph are identical to the standard construc-
+tion, and U is therefore unchanged. Similar ideas have
+been employed previously to define stress and heat flux
+under periodic boundary conditions [34, 35] without the
+consideration of AD.
+The unfolded heat flux Junfolded
+Hardy
+can then be obtained
+starting from Eq. (26). We first write out the atom-pair
+
+vector RJI,
+
+Jpot =
+�
+
+I∈Rsc
+J∈Runf
+
+�
+[RI − RJ]
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
+(39)
+
+=
+�
+
+I∈Rsc
+J∈Runf
+
+�
+RI
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
+(40)
+
+−
+�
+
+I∈Rsc
+J∈Runf
+
+�
+RJ
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
+.
+(41)
+
+In order to efficiently implement this expression with AD,
+we must rewrite it in the form of derivatives of scalar, or
+low-dimensional, quantities.
+For the first term, this requires the ability to move
+the partial derivative outside the sum over I, which we
+enable by formally replacing the RI appearing as pre-
+factors with auxiliary positions Raux
+I
+that are numerically
+identical, but not included in derivatives.
+We can then introduce the potential energy barycenter
+
+B =
+�
+
+I∈Rsc
+Raux
+I
+UI ,
+(42)
+
+the first term becomes
+�
+
+I∈Rsc
+J∈Runf
+
+�
+Raux
+I
+
+� ∂UI
+
+∂RJ
+· ˙RJ
+
+��
+=
+�
+
+J∈Runf
+
+∂B
+∂RJ
+· ˙RJ . (43)
+
+The vector-vector product is taken between the denomi-
+nator and the ˙RJ, not with B.
+In the second term, the sum over I can be executed
+directly, leaving only derivatives of the scalar energy U
+with respect to all positions in Runf. So:
+
+Jint =
+�
+
+J∈Runf
+
+∂B
+∂RJ
+· ˙RJ
+(44)
+
+−
+�
+
+J∈Runf
+RJ
+
+� ∂U
+
+∂RJ
+· ˙RJ
+
+�
+.
+(45)
+
+The first term requires one backwards pass through
+the computation of B for each of its three cartesian com-
+ponents, or, if forward-mode AD is available, a single
+forward pass. The second term can be simply computed
+from the gradient of U, which is obtained in a single
+backwards pass. Therefore, the asymptotic runtime scales
+with the number of atoms Nunf in Runf. The number of
+additional atoms to be considered scales with the surface
+of the simulation cell, constituting a shell of width reff
+c .
+Assuming constant density, V and N are proportional.
+Considering a cubic system for simplicity, the surface
+area of the simulation cell is proportional to L2, where
+L = V 1/3. Therefore, the surface area, and the additional
+number of atoms, is proportional to N 2/3.
+Asymptotically, this is dominated by the number of
+atoms N in the simulation cell itself, rendering this ap-
+proach formally linearly scaling in N. However, for fixed
+N, the number of additional positions increases cubically
+with M, restricting this approach to moderate M.
+
+
+7
+
+IV.
+HEAT FLUX BENCHMARK
+
+The timings of different implementations of the heat flux
+were taken for ten steps of molecular dynamics of different
+supercells of tetragonal zirconia, using the M = 2 SchNet
+with rc = 5 Å employed for all presented results. SchNet is
+implemented in SchNetPack [36], but used with a custom
+calculator. The reported runtimes exclude the calculation
+of neighborlists, which can be cached, but include the con-
+struction of the unfolded cell. Implementations and timing
+scripts are available at doi:10.5281/zenodo.7767432.
+
+V.
+TRAINING AND MODEL SELECTION
+
+V.1.
+Data
+
+Training and validation data was generated using molec-
+ular dynamics in the NpT ensemble, heating a tetragonal
+96-atom supercell from 0K to a grid of target temperatures
+up to 3000K at intervals of 750K at ambient pressure,
+spanning the entire temperature range up to the melt-
+ing point. In total, 10 000 single-point calculations were
+performed using FHI-aims [37], with the PBEsol [38] func-
+tional, 2 × 2 × 2 k-points, and light basis sets, with an
+additional basis function for O, following the approach of
+Ref. [22]. The calculations were set up and run using FHI-
+vibes [39]. We use the first 2000 steps of each trajectory
+for training, and the remaining 500 steps for validation.
+As test data, we obtained the calculations by Car-
+bogno et al. [40] from the NOMAD repository [41], con-
+sisting of three trajectories of about 15 000 steps per
+temperature (300K to 2400K in intervals of 300K), using
+every tenth step of all trajectories. This data was not
+used during training.
+
+V.2.
+Model and Training
+
+We use the SchNet [6, 7] MPNN architecture imple-
+mented in SchNetPack [36] with varying cutoff radius rc
+and interaction depth M, 128 atom features, 128 filter
+width, and a two-layer (128 → 64 → 1) output network.
+For training, we use the potential energy, the forces on
+each atom, and the total stress tensor in a joint squared
+error loss function, with weights 0.001, 0.999 and 100.0
+respectively, and the ADAM optimizer [42]. Whenever a
+plateau of the loss on the validation set is encountered
+(with a patience of 20 epochs), the learning rate is reduced
+by a factor of 1/4 from a start of 10−4 to a minimum of
+10−6. If the loss has not improved for 200 epochs, the
+training is terminated. Training was performed on two
+Tesla Volta V100 32GB GPUs using a batch size of 100.
+Hyperparameters other than cutoff radius and number
+of interactions (see next section) were selected based on
+successful termination of training and minimal error on
+the validation set, with a final selection based on the error
+on the test set.
+
+4.0
+4.5
+5.0
+5.5
+6.0
+6.5
+7.0
+Cutoff in ˚A (offset for visibility)
+
+50
+
+100
+
+150
+
+200
+
+250
+
+300
+
+350
+
+400
+
+AE Forces in meV/˚A
+
+M = 1
+M = 2
+M = 3
+
+5
+
+10
+
+15
+
+20
+
+25
+
+Relative AE Forces in %
+
+FIG. 3. Absolute prediction errors (AE) for the forces on the
+test set, for models with different cutoffs rc and numbers of
+message passing steps M. A constant horizontal offset has been
+added to rc. Boxes, whiskers, bars, markers show interquartile
+range, total range, median, and mean, respectively.
+The
+relative AE is scaled by the standard deviation of forces over
+the test set.
+
+V.3.
+Model Convergence with Cutoff and
+Interaction Depth
+
+We discuss the selection of the main model parameters,
+the cutoff radius rc, which determines the amount of local
+information available, and the number of message passing
+steps M, which controls the range of interactions within
+the network, leaving choice of training data and method,
+as well as model architecture fixed.
+
+V.3.1.
+Losses
+
+Test set errors were evaluated for the NOMAD reference
+data (Fig. 3). Going from M= 1, i.e., no message passing,
+to M= 2 yields an approximately constant decrease in er-
+ror. Additional message passing steps yield only marginal
+improvements. Predictive accuracy increases with cutoff
+radius, but saturates as the diameter of local environ-
+ments exceeds the diameter of approximately 10 Å of the
+simulation cells used in training, approaching an all-to-all
+model. In this regime, all degrees of freedom are seen in
+the simulation cell, and message-passing cannot propagate
+additional information. However, M= 1 is equivalent to a
+non-linear pair potential, while M> 1 can model higher-
+order interactions, leading to lower errors. We therefore
+proceed with M= 2 in the following, which is sufficient to
+demonstrate the effect of message passing for heat flux
+predictions and minimises additional computational cost.
+
+V.3.2.
+Vibrational Density of States
+
+Since predictive accuracy on a fixed test set cannot
+fully predict model performance for practical applications,
+where larger regions of the potential energy surface are ex-
+
+
+8
+
+0
+5
+10
+15
+20
+25
+30
+Frequency in THz
+
+Intensity (offset for visibility)
+
+FHI-aims
+
+rc = 6.5 ˚A
+
+rc = 6.0 ˚A
+
+rc = 5.5 ˚A
+
+rc = 5.0 ˚A
+
+rc = 4.5 ˚A
+
+FIG. 4. Comparison of vibrational density of states for MPNNs
+(M = 2) with different cutoff radii compared to a baseline
+computed with FHI-aims. Vertical lines indicate peaks in the
+FHI-aims result. Constant vertical offsets are applied to dis-
+tinguish curves. Results are averaged over three trajectories of
+60ps (∆t = 4 fs), at 300 K, with matching initial configurations.
+Shaded areas indicate the minimum and maximum.
+
+0
+500
+1000
+1500
+2000
+2500
+
+Temperature in K
+
+140
+
+142
+
+144
+
+146
+
+148
+
+150
+
+152
+
+Unit cell volume in ˚A3
+
+SchNet
+Verdi et al.
+Kisi et al. (exp.)
+
+FIG. 5.
+Unit cell volume, shown as rolling average over 10 ps,
+versus externally imposed temperature, compared to a similar
+MLP simulation [43] and experimental reference values [44].
+Vertical line indicates the estimated transition temperatures.
+
+plored, we evaluate dynamical properties as well. Figure 4
+shows the vibrational density of states (VDOS) for differ-
+ent choices of rc, evaluated for trajectories of tetragonal
+zirconia at 300K, started from identical initial configu-
+rations. For rc = 5 Å and higher, the reference VDOS
+from fully ab initio MD is adequately reproduced. Further
+increasing the cutoff only leads to marginal improvements.
+We therefore choose rc=5 Å and M= 2 to compute
+thermal conductivities. This model is used for all results
+presented in this work, and used across phases.
+
+V.4.
+Testing and Limits
+
+In this work, we employ a simple training strategy
+purely based on ab initio MD NpT simulations, as op-
+posed to more involved schemes that rely on active learn-
+
+ing. This approach decouples the training data from the
+model, allowing the straightforward comparison of differ-
+ent model parameters, as shown in Figs. 3 and 4, but
+cannot be expected to yield a PES for the entire phase
+diagram of zirconia. In this section, we therefore probe
+the limits of our MLP to assess whether it is sufficient for
+the purposes of the present work.
+
+As a stress test, we investigate the temperature depen-
+dence of the unit cell volume, probing the monoclinic to
+tetragonal phase transition of zirconia, which occurs at
+around 1480 K and is accompanied by a discontinuous
+change in volume [44]. To this end, we perform a NpT
+simulation with Martyna-Tobias-Klein barostat [45] with
+τ = 5 ps and stochastic velocity rescaling thermostats [46]
+with τ = 5 ps for the positions and τ = 3 ps for the lattice,
+with a heating rate of 1 K/ps, a simulation timestep of
+1 fs, and a simulation cell of 324 atoms. We compare with
+a similar simulation by Verdi et al. [43], which uses a heat-
+ing rate of 0.5 K/ps. We note that this simple approach
+cannot be expected to produce a quantitative estimate of
+the transition temperature, which require thermodynamic
+integration [43]. It can, however, indicate whether the
+transition is captured at all.
+
+Figure 5 shows the result: Despite not being explicitly
+trained for this task, the model qualitatively captures the
+phase transition, at a similar temperature to another MLP.
+However, it over-estimates unit cell volume by approxi-
+mately 1 %, and becomes unstable above 2000 K, likely
+due to insufficient training data around the tetragonal to
+cubic transition. During the GK workflow used in this
+work, we found that one out of eleven trajectories of 1 ns
+each becomes unstable at 1900 K; at 2000 K, no stable
+MD is possible with the given potential. Below 1900 K,
+we observe no instabilities in the potential in tetragonal
+and monoclinic cells, running hundreds of nanoseconds of
+MD at varying supercell sizes.
+
+Keeping these limitations in mind, we proceed to an
+investigation of the phonon band structure for the mon-
+oclinic and tetragonal phases. The results are displayed
+in Figs. 6 and 7, with the MLP adequately reproducing
+the DFT results. Supercell size convergence was checked,
+and we use a cell with N = 324 atoms for these figures.
+We can conclude that, while the model is limited in its
+ability to describe high-temperature behavior and lat-
+tice constants, it is adequate to model dynamics at lower
+temperatures, and therefore thermal conductivity for the
+temperature range investigated in the present work.
+
+VI.
+GREEN-KUBO CONVERGENCE
+
+This section is concerned with the determination of
+overall settings and parameters for the GK results pre-
+sented in this work.
+Overall, we follow the approach
+presented by Knoop et al. [47].
+
+
+9
+
+G
+
+Y
+
+HC
+
+EM1
+
+A
+
+X
+
+H1|M D
+
+Z|Y
+
+D
+
+Wave vector
+
+0
+
+5
+
+10
+
+15
+
+20
+
+25
+
+Frequency in THz
+
+0
+2
+4
+Density of states
+
+FHI-aims
+SchNet
+
+FIG. 6.
+Phonon band structure and density of states for
+monoclininc phase of zirconia, comparing SchNet and FHI-
+aims.
+
+G
+
+X
+
+M
+
+G
+
+Z
+
+R
+
+A
+
+Z|X
+
+R|M A
+
+Wave vector
+
+0
+
+5
+
+10
+
+15
+
+20
+
+25
+
+Frequency in THz
+
+0
+2
+4
+Density of states
+
+FHI-aims
+SchNet
+
+FIG. 7.
+Phonon band structure and density of states for
+tetragonal phase of zirconia, comparing SchNet and FHI-aims.
+
+VI.1.
+General Workflow
+
+We use experimentally determined lattice parameters as
+presented by Verdi et al. [43], based on references [44, 48],
+in a 12-atom primitive cell. From these primitive cells,
+simple n × n × n supercells are created. We proceed simi-
+larly for the tetragonal phase, with a 12-atom conventional
+cell in place of the 6-atom primitive cell.
+The systems are then thermalised in the NV T ensemble
+for 200 ps at ∆t = 4 fs, and 11 decorrelated frames are
+extracted from the resulting trajectories, taking every
+1000-th step from the end.
+These frames serve as the initial time-steps of the en-
+semble of trajectories used for the GK method. We use a
+4 fs timestep throughout, consistent with previous work.
+The duration of the trajectories used, as well as the time-
+step with which the heat flux is computed, is discussed
+in the following subsection.
+
+96
+324
+768
+1500
+2592
+Number of atoms (N 1/3) (offset for simulation time t)
+
+0
+
+2
+
+4
+
+6
+
+8
+
+κ in W/(m K)
+
+300 K
+
+Production
+Light
+
+96
+324
+768
+1500
+2592
+Number of atoms (N 1/3) (offset for simulation time t)
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+κ in W/(m K)
+
+1400 K
+
+Production
+Light
+
+FIG. 8. Convergence of thermal conductivity with respect to
+simulation cell size N and simulation duration t at 300 K in
+the monoclinic phase (top) and 1400 K in the tetragonal phase
+(bottom). For each N, different t from 0.1 ns to 2 ns in steps of
+0.1 ns are shown with a constant horizontal offset. Error bars
+indicate the standard error. The x-axis is scaled to indicate
+the effective length scale of the simulation cell, which is pro-
+portional to N 1/3. The chosen ‘production’ settings, N=1500,
+t=1 ns, as well as the ‘light’ settings, N=768, t=0.5 ns are
+indicated. For the ‘production’ settings, the standard error is
+shown as a shaded area.
+
+For consistency with the reference data, we report
+the spatial average of the thermal conductivity, κ =
+�
+
+α καα/3. We use the noise reduction scheme introduced
+in Ref. [47], discussed further in Section VI.3, throughout.
+We use the heat flux for solids Jint, which is, however,
+equivalent to the full J, as shown in Fig. 2.
+
+VI.2.
+Size and Time Convergence
+
+Formally, the Green-Kubo relation applies in a number
+of limits: infinite integration times, the bulk limit for
+system size, and the ensemble average over all realizations
+of the system at a given temperature and pressure [47].
+We investigate convergence with respect to simulation
+time t and supercell size N; finite ensemble size is taken
+into account to compute error bars.
+Figure 8 shows convergence with respect to simulation
+duration t and simulation cell size N at 300 K and 1400 K.
+At 300 K, for a given N, simulation times of at least 1 ns
+
+
+10
+
+Integration time in fs
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+κ in W/(m K)
+
+300 K
+
+3.0 THz
+2.0 THz
+1.0 THz
+0.5 THz
+0.3 THz
+
+101
+102
+103
+104
+
+Integration time in fs
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+κ in W/(m K)
+
+1400 K
+
+3.0 THz
+2.0 THz
+1.0 THz
+0.5 THz
+0.3 THz
+
+FIG. 9. Comparison of the integral of the heat flux autocorre-
+lation function for different choices of ωwindow, at 300 K in the
+monoclinic phase (top) and 1400 K in the tetragonal phase
+(bottom). Horizontal lines indicate chosen value for κ. ‘Pro-
+duction’ settings (N=1500, t=1 ns) are used. Shaded areas
+indicate standard error. Lower values of ωwindow correspond
+to more severe filtering.
+
+are required to obtain results that consistently lie within
+standard error of each other. Choosing t = 1 ns, we ob-
+serve no systematic increase in κ above N = 1500, as all
+results lie within the standard error of that estimate, high-
+lighted in Fig. 8. At 1400 K, anharmonic contributions
+dominate, leading to shorter phonon lifetimes, achieving
+convergence earlier. We therefore conclude that the pa-
+rameters t = 1 ns and N = 1500 are sufficient to obtain a
+converged estimate for κ at all temperatures of interest.
+For the comparison of heat flux formulations with high
+computational cost, we additionally require a reduced,
+‘light’, choice of parameters that yields a reasonable es-
+timate of the converged κ. We choose t = 0.5 ns and
+N = 768, which are used for the comparison of heat flux
+variations in Fig. 2 of the manuscript.
+
+VI.3.
+Filter Frequency and Heat Flux Timestep
+
+In addition to the number of atoms in the simulation
+cell N, and the simulation duration of the trajectories
+
+101
+102
+103
+104
+
+Integration time in fs
+
+0
+
+2
+
+4
+
+6
+
+8
+
+κ in W/(m K)
+
+10
+
+9
+
+8
+7
+6
+5
+4
+3
+2
+1
+
+300 K
+
+101
+102
+103
+104
+
+Integration time in fs
+
+0
+
+1
+
+2
+
+3
+
+4
+
+κ in W/(m K)
+
+10
+
+9
+
+8
+
+7
+
+6
+
+5
+4
+3
+2
+1
+
+1400 K
+
+FIG. 10. Comparison of the integral of the heat flux autocor-
+relation function for different choices of nhf, at 300 K in the
+monoclinic phase (top) and 1400 K in the tetragonal phase
+(bottom). The upper edges of the labels indicating nhf are
+aligned with horizontal lines indicating the value for κ chosen
+by the first dip of the corresponding heat flux autocorrelation
+function. ‘Production’ settings (N=1500, t=1 ns) are used.
+Shaded areas indicate standard error.
+
+used, auxiliary parameters are present in the GK method
+as used in this work. Since the processes determining the
+thermal conductivity typically occur on longer timescales
+than the simulation timestep ∆t, the heat flux can be
+computed at some larger timestep nhf · ∆t to reduce
+computational cost.
+Additionally, the heat flux is post-processed to reduce
+noise and enable the automatic determination of the cut-
+off for the integral in the GK relation. We use the noise
+reduction scheme presented in [47], consisting of two sep-
+arate mechanisms: Firstly, a gauge term of the form
+�
+
+I ΩI · ˙RI(t) is subtracted from the heat flux at every
+step, with the 3 × 3 matrices ΩI representing an average
+or reference atomic virial. Since our heat flux formulation
+does not lend itself to the computation of per-atom virials,
+we use virials computed for the pristine supercell. For
+sufficient simulation times, we find that this approxima-
+tion yields satisfactory results. Secondly, the integrated
+HFACF is filtered to reduce high-frequency noise, with a
+filter width twindow = 1/ωwindow.
+
+
+11
+
+In this section, we discuss the impact of the spacing
+parameter nhf, and of the filter frequency ωwindow. We
+note that in principle, the impact of these settings depends
+on the choice of N and t. We have, however, checked that
+the results presented here are robust to changes in N and
+t. In general, higher N and t reduce noise in the HFACF
+and therefore allow larger ωwindow and higher ∆t.
+Figure 9 shows the dependence of the integrated
+HFACF, as well as the resulting4 κ, on the choice of
+
+ωwindow. At 300 K, no strong dependence of κ on ωwindow
+is observed; results lie within the standard error.
+At
+1400 K, high choices of ωwindow lead to misidentification
+of the plateau in the integrated HFACF. From 1 THz,
+further reducing ωwindow yields only minor changes. We
+therefore choose ωwindow = 1 THz.
+Figure 10 shows the dependence on the spacing nhf.
+Across temperatures, up to nhf = 3 yields identical results.
+We therefore choose nhf = 2 to ensure consistent results.
+
+[1] F. Knuth, C. Carbogno, V. Atalla, V. Blum, and M. Schef-
+fler, Comput. Phys. Comm. 190, 33 (2015).
+
+[2] A. Griewank and A. Walther, Evaluating Derivatives
+(Society for Industrial and Applied Mathematics, 2008).
+
+[3] A. G. Baydin, B. A. Pearlmutter, A. A. Radul, and J. M.
+Siskind, J. Mach. Learn. Res. 18, 5595 (2017).
+
+[4] J. Gilmer, S. S. Schoenholz, P. F. Riley, O. Vinyals, and
+G. E. Dahl, in Proceedings of the 34th International Con-
+ference on Machine Learning (ICML 2017), Sydney, Aus-
+tralia, August 6–11 (PMLR, 2017) pp. 1263–1272.
+
+[5] A. Bochkarev, Y. Lysogorskiy, C. Ortner, G. Csányi, and
+R. Drautz, Multilayer atomic cluster expansion for semi-
+local interactions (2022), arXiv:2205.08177.
+
+[6] K.
+T.
+Schütt,
+P.-J.
+Kindermans,
+H.
+E.
+Sauceda,
+S. Chmiela, A. Tkatchenko, and K.-R. Müller, in Ad-
+vances in Neural Information Processing Systems 30
+(NIPS 2017), Los Angeles, California, December 4–9
+(Curran Assoc., 2017).
+
+[7] K.
+T.
+Schütt,
+H.
+E.
+Sauceda,
+P.-J.
+Kindermans,
+A. Tkatchenko, and K.-R. Müller, J. Chem. Phys. 148,
+241722 (2018).
+
+[8] N. Thomas, T. Smidt, S. Kearnes, L. Yang, L. Li,
+K. Kohlhoff, and P. Riley, in NeurIPS 2018 Workshop on
+Machine Learning for Molecules and Materials, Montréal,
+Canada, December 8 (Curran Assoc., 2018).
+
+[9] B.
+Anderson,
+T.-S.
+Hy,
+and
+R.
+Kondor,
+in
+Ad-
+vances in Neural Information Processing Systems 32
+(NeurIPS 2019), Montréal, Canada, December 8–14 (Cur-
+ran Assoc., 2019) pp. 14537–14546.
+
+[10] S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa,
+M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky,
+Nat. Commun. 13, 1 (2022).
+
+[11] O. T. Unke, S. Chmiela, M. Gastegger, K. T. Schütt,
+H. E. Sauceda, and K.-R. Müller, Nat. Commun. 12, 7273
+(2021).
+
+[12] K. T. Schütt, O. T. Unke, and M. Gastegger, Equivariant
+message passing for the prediction of tensorial properties
+and molecular spectra (2021), arXiv:2102.03150.
+
+[13] J. Klicpera, J. Groß, and S. Günnemann, in Proceed-
+ings of the Eighth International Conference on Learning
+Representations (ICLR 2020), Addis Ababa, Ethiopia,
+April 26–May 1 (OpenReview, 2020).
+
+[14] I. Batatia, D. P. Kovács, G. N. C. Simm, C. Ortner,
+and G. Csányi, MACE: Higher order equivariant message
+passing neural networks for fast and accurate force fields
+(2022), arXiv:2206.07697.
+
+4 Following the approach of Ref. [47], we select a cutoff time based
+on the first zero of the HFACF.
+
+[15] I. Batatia, S. Batzner, D. P. Kovács, A. Musaelian,
+G. N. C. Simm, R. Drautz, C. Ortner, B. Kozinsky, and
+G. Csányi, The design space of E(3)-equivariant atom-
+centered interatomic potentials (2022), arXiv:2205.06643.
+
+[16] J. T. Frank, O. T. Unke, and K.-R. Müller, So3krates—
+self-attention for higher-order geometric interactions on
+arbitrary length-scales (2022), arXiv:2205.14276.
+
+[17] Y. Chen, J. Chem. Phys. 124, 054113 (2006).
+[18] N. C. Admal and E. B. Tadmor, J. Chem. Phys. 134,
+184106 (2011).
+
+[19] D. Torii, T. Nakano, and T. Ohara, J. Chem. Phys. 128,
+044504 (2008).
+
+[20] Z. Fan, L. F. C. Pereira, H.-Q. Wang, J.-C. Zheng,
+D. Donadio, and A. Harju, Phys. Rev. B 92, 094301
+(2015).
+
+[21] A. Marcolongo, P. Umari, and S. Baroni, Nat. Phys. 12,
+80 (2015).
+
+[22] C.
+Carbogno,
+R.
+Ramprasad,
+and
+M.
+Scheffler,
+Phys. Rev. Lett. 118, 175901 (2017).
+
+[23] D. Surblys, H. Matsubara, G. Kikugawa, and T. Ohara,
+Phys. Rev. E 99, 051301 (2019).
+
+[24] P.
+Boone,
+H.
+Babaei,
+and
+C.
+E.
+Wilmer,
+J. Chem. Theor. Comput. 15, 5579 (2019).
+
+[25] R. J. Hardy, Phys. Rev. 132, 168 (1963).
+[26] J. J. Erpenbeck, Phys. Rev. E 51, 4296 (1995).
+[27] R. J. Hardy, J. Chem. Phys. 76, 622 (1982).
+[28] W. Noll, Journal of Rational Mechanics and Analysis 4,
+627 (1955).
+
+[29] J. H. Irving and J. G. Kirkwood, J. Chem. Phys. 18, 817
+(1950).
+
+[30] A. Ito and H. Nakamura, Progress of Theoretical Physics
+Supplement 178, 107 (2009).
+
+[31] N. Chetty and R. M. Martin, Phys. Rev. B 45, 6074
+(1992).
+
+[32] A. J. Ladd, B. Moran, and W. G. Hoover, Phys. Rev. B
+34, 5058 (1986).
+
+[33] L. Isaeva, G. Barbalinardo, D. Donadio, and S. Baroni,
+Nat. Commun. 10, 3853 (2019).
+
+[34] A. P. Thompson, S. J. Plimpton, and W. Mattson,
+J. Chem. Phys. 131, 154107 (2009).
+
+[35] A. Kinaci, J. B. Haskins, and T. Çağın, J. Chem. Phys.
+137, 014106 (2012).
+
+[36] K.
+T.
+Schütt,
+P.
+Kessel,
+M.
+Gastegger,
+K.
+A.
+Nicoli,
+A.
+Tkatchenko,
+and
+K.-R.
+Müller,
+J. Chem. Theor. Comput. 15, 448 (2018).
+
+[37] V. Blum, R. Gehrke, F. Hanke, P. Havu, V. Havu, X. Ren,
+K. Reuter, and M. Scheffler, Comput. Phys. Comm. 180,
+2175 (2009).
+
+[38] J. P. Perdew, A. Ruzsinszky, G. I. Csonka, O. A. Vydrov,
+G. E. Scuseria, L. A. Constantin, X. Zhou, and K. Burke,
+Phys. Rev. Lett. 100, 136406 (2008).
+
+
+12
+
+[39] F.
+Knoop,
+M.
+Scheffler,
+C.
+Carbogno,
+et
+al.,
+J. Open Source Software 5, 2671 (2020).
+
+[40] Dataset PRL_2017_aiGK on the NOMAD repository.
+[41] C. Draxl and M. Scheffler, J. Phys. Mater. 2, 036001
+(2019).
+
+[42] D. P. Kingma and J. Ba, Adam: A method for stochastic
+optimization (2014), arXiv:1412.6980.
+
+[43] C. Verdi, F. Karsai, P. Liu, R. Jinnouchi, and G. Kresse,
+NPJ Comput. Mater. 7, 156 (2021).
+
+[44] E. H. Kisi and C. Howard, Key Eng. Mater. 153–154, 1
+
+(1998).
+
+[45] G.
+J.
+Martyna,
+D.
+J.
+Tobias,
+and
+M.
+L.
+Klein,
+J. Chem. Phys. 101, 4177 (1994).
+
+[46] G. Bussi, D. Donadio, and M. Parrinello, J. Chem. Phys.
+126, 014101 (2007).
+
+[47] F. Knoop, C. Carbogno, and M. Scheffler, Ab initio green-
+kubo simulations of thermal transport in solids: Method
+and implementation (2022), arXiv:2209.01139.
+
+[48] R. Patil and E. Subbarao, J. Appl. Crys. 2, 281 (1969).
+
+

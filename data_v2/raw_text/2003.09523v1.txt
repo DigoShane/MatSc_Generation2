@@ -1,0 +1,5539 @@
+py4DSTEM: a software package for multimodal analysis of four-dimensional scanning
+transmission electron microscopy datasets
+
+Benjamin H Savitzky,1, ∗ Lauren A Hughes,1 Steven E Zeltmann,1 Hamish G Brown,1 Shiteng Zhao,1 Philipp
+M Pelz,1, 2 Edward S Barnard,3 Jennifer Donohue,1 Luis Rangel DaCosta,4 Thomas C. Pekin,5 Ellis
+Kennedy,1 Matthew T Janish,6 Matthew M Schneider,6 Patrick Herring,7 Chirranjeevi Gopal,7 Abraham
+Anapolsky,7 Peter Ercius,1 Mary Scott,1, 2 Jim Ciston,1 Andrew M Minor,1, 2 and Colin Ophus1, †
+
+1National Center for Electron Microscopy, Molecular Foundry,
+Lawrence Berkeley National Laboratory, 1 Cyclotron Road, Berkeley, CA, USA, 94720
+2Department of Materials Science and Engineering,
+University of California, Berkeley, Berkeley, USA, 94720
+3Molecular Foundry, Lawrence Berkeley National Laboratory, 1 Cyclotron Road, Berkeley, CA, USA, 94720
+4Department of Materials Science and Engineering,
+University of Michigan, Ann Arbor, Michigan, USA, 48109
+5Institut f¨ur Physik, Humboldt-Universit¨at zu Berlin, Newtonstraße 15, 12489 Berlin, Germany
+6Los Alamos National Laboratory, Los Alamos, NM, USA, 87545
+7Toyota Research Institute, Los Altos, CA, USA, 94022
+(Dated: March 24, 2020)
+
+Scanning transmission electron microscopy (STEM) allows for imaging,
+diffraction,
+and
+spectroscopy of materials on length scales ranging from microns to atoms.
+By using a high-
+speed, direct electron detector, it is now possible to record a full 2D image of the diffracted
+electron beam at each probe position, typically a 2D grid of probe positions.
+These 4D-STEM
+datasets are rich in information, including signatures of the local structure, orientation, deformation,
+electromagnetic fields and other sample-dependent properties. However, extracting this information
+requires complex analysis pipelines, from data wrangling to calibration to analysis to visualization,
+all while maintaining robustness against imaging distortions and artifacts. In this paper, we present
+py4DSTEM, an analysis toolkit for measuring material properties from 4D-STEM datasets, written
+in the Python language and released with an open source license.
+We describe the algorithmic
+steps for dataset calibration and various 4D-STEM property measurements in detail, and present
+results from several experimental datasets. We have also implemented a simple and universal file
+format appropriate for electron microscopy data in py4DSTEM, which uses the open source HDF5
+standard. We hope this tool will benefit the research community, helps to move the developing
+standards for data and computational methods in electron microscopy, and invite the community
+to contribute to this ongoing, fully open-source project.
+
+I.
+Introduction
+
+In
+a
+scanning
+transmission
+electron
+microscopy
+(STEM) experiment, a beam of high energy electrons
+is focused to a very fine probe – on the order of
+or, often, smaller than the atomic lattice spacing –
+and rastered across the surface of the sample [1].
+In
+traditional STEM, a (two-dimensional) image is formed
+by populating the value of each pixel with the number of
+electrons (times a scaling factor) scattered into a detector
+at each beam position. The geometry of the detector – its
+size, shape, and position in the microscope’s diffraction
+plane – determines which electrons are collected at
+each probe position.
+As a result, different detector
+geometries can give rise to rather different images, by
+varying which electron scattering processes dominate
+image contrast [2]. A point detector placed on the optic
+axis yields a bright-field STEM image which is formally
+equivalent by reciprocity to a TEM image. In contrast,
+
+∗ ben.savitzky@gmail.com
+† cophus@gmail.com
+
+annular detectors with large inner-radii are dominated
+by high momentum-transfer elastic scattering events,
+making high-angle annular dark-field STEM a popular
+geometry because image contrast then generally scales
+monotonically with the projected potential of the sample
+(“Z-contrast” imaging) [3]. Low-angle annular detectors
+have greater sensitivity to lighter elements, but lose the
+advantage of simple Z-contrast interpretability due to
+the increased importance of phase contrast, i.e.
+self-
+interference of the electron beam wavefunction.
+Many
+more detector geometries are possible, each best suited to
+reveal different aspects of sample structure, each suffering
+from different limitations [4].
+
+In four dimensional STEM (4D-STEM), we replace
+the standard STEM detectors,
+which integrate all
+electrons scattered over a large region, with a pixelated
+detector that captures the electron flux scattered to
+each angle in the diffraction plane [5–10].
+While a
+typical STEM image therefore produces a single number
+for each position of the electron beam, a 4D-STEM
+dataset produces a two dimensional image of diffraction
+space intensities for each real space beam position.
+The resulting four-dimensional data hypercube can be
+
+arXiv:2003.09523v1  [cond-mat.mtrl-sci]  20 Mar 2020
+
+
+2
+
+FIG. 1. 4D-STEM experimental geometry, and multimodal data analysis with py4DSTEM. An irradiated Gd2Ti2O7 sample
+contains complex, nanoscale structure, apparent in the distinct electron diffraction patterns across the field-of-view. From
+a single 4D-STEM experiment, py4DSTEM enables a range of measurements to be performed in post-processing, including
+virtual imaging, differential phase contrast, structural classification, strain mapping, and much more.
+
+collapsed in real space to yield information comparable
+to more traditional electron diffraction experiments.
+Alternatively, it can be collapsed in diffraction space to
+yield a variety of “virtual images,” corresponding to both
+traditional STEM imaging modes as well as more exotic
+virtual imaging modalities [11–15].
+More information
+still can be extracted by judicious combination of real
+and reciprocal space.
+The structure, symmetries, and
+spacings of Bragg disks can be used to extract spatially
+resolved maps of crystallinity, grain orientations, and
+lattice
+strain
+[16–23].
+Redundant
+information
+in
+
+overlapping Bragg disks can be leveraged to deconvolve
+the electron beam shape from the sample structure,
+yielding the sample potential itself [24–26].
+Rings of
+diffracted intensity characteristic of amorphous samples
+can be used to extract correlation functions describing
+the short and medium range order and disorder. Indeed,
+the space of possible quantities of physical interest which
+can be extracted from a single 4D-STEM experiment
+is formidable, leading others to use the term “universal
+detectors” for 4D-STEM capable pixelated cameras [15].
+Fig. 1 shows the experimental geometry of a 4D-STEM
+
+
+3
+
+experiment, and various measurements performed from
+the same experimental dataset.
+For a mathematical
+discussion of STEM and 4D-STEM image formation, see
+Appendix A.
+The price paid for the versatility of 4D-STEM is
+new complexity in both the raw experimental data
+and in the computational processing required to extract
+meaningful measurements. Maximizing the impact this
+new generation of STEM experiments will have on
+structural characterization research now requires that the
+computer processing methods which enable the various
+4D-STEM characterization modalities are accessible to as
+broad and diverse a segment of the scientific community
+as possible. Fortunately, a new generation of open source
+tools for electron scattering experiments is presently on
+the rise, such as hyperspy, pyXem, liberTEM, ncempy,
+and others[27–30].
+Here,
+we present free and open source software
+for analysis of 4D-STEM data.
+The aim of the
+Python-based project py4DSTEM is threefold:
+(1)
+to make 4D-STEM data analysis easy and accessible
+for everyone; (2) to facilitate reproducibility, even in
+cases of complicated or multi-step processing workflows;
+and (3) to provide a comprehensive, robust suite of
+4D-STEM analysis tools, enabling high throughput,
+multimodal analysis in which a single dataset can
+simultaneously provide many distinct measurements of
+sample structure. For ease and accessibility, py4DSTEM
+includes a complete API with associated documentation
+pages, many fully worked examples in the form of fully
+commented and interactive Jupyter notebooks, and a
+graphical user interface for fast data visualization and
+interaction.
+For reproducibility, py4DSTEM defines
+a set of structured data object types for 4D-STEM
+data processing, establishes a set of HDF5-based file
+format conventions for 4D-STEM data, and makes it
+easy to release, with any publication, the complete
+and fully transparent code which generates results and
+figures from raw data. For multimodal, high-throughput
+analysis, py4DSTEM includes a comprehensive suite of
+tools for structural analysis in crystalline and amorphous
+materials,
+including
+virtual
+imaging,
+phase
+and
+orientation mapping, strain mapping, radial distribution
+analysis, phase contrast imaging, classification, and
+more.
+A self-consistent framework allows many or
+even all of these measurements to be readily performed
+on a single dataset.
+The API and sample code for
+various analysis pipelines are freely available from the
+py4DSTEM repository [31].
+The organization of this document is as follows:
+following this introduction, Sec. II discusses the nature
+of 4D-STEM data,
+and how data is structured in
+py4DSTEM.
+Section
+III
+discusses
+basic
+processing
+algorithms
+which
+will
+typically
+be
+performed
+as
+precursors
+to
+the
+final
+measurements
+of
+interest,
+including
+locating
+Bragg
+disks,
+calibration,
+polar
+transformations, and classification.
+Section IV covers
+various 4D-STEM measurements that can be performed
+
+in
+py4DSTEM,
+including
+virtual
+imaging,
+phase
+mapping, strain mapping in amorphous or crystalline
+materials, short and medium range order analysis in
+amorphous materials, and phase retrieval in very thin
+samples.
+Conclusions are in Sec. V. Throughout, we
+have aimed to keep discussion qualitative in the main
+text, and have also included mathematical details for the
+interested reader in a number of appendices, referenced
+in the relevant sections.
+
+II.
+4D-STEM Data
+
+Fundamentally, most 4D-STEM is just many electron
+diffraction experiments being run sequentially.
+The
+nature of the diffraction pattern obtained at each scan
+position depends on the sample structure and the
+illumination conditions of the microscope, as illustrated
+schematically in Fig. 1.
+In crystalline materials and
+with small-angle illumination, the periodic structure of
+the sample gives rise to a periodic pattern of disks
+in the diffraction plane [32].
+A bright disk appears
+wherever the Bragg condition is met, with the disk
+positions reflecting a slice through the reciprocal lattice
+of the crystal.
+In amorphous materials, concentric
+rings of diffuse intensity appear centered about the
+optic axis [33].
+The radii of these rings reflect the
+characteristic spacings of the atoms in the sample, and
+can therefore be used to extract statistical measures of
+structure, such as the radial distribution function.
+In
+analyzing crystalline materials, the crux of the analysis
+will generally be measuring the Bragg angles in each
+diffraction pattern, by determining the positions of all
+the Bragg disks.
+In analyzing amorphous materials,
+analysis will generally revolve around radial integration
+of the diffraction patterns. In samples containing both
+crystalline and amorphous regions, both types of analysis
+can be performed in concert.
+
+A.
+Experimental Conditions
+
+A complete discussion of the many experimental
+conditions to attend to in devising a given 4D-STEM
+experiment is beyond our scope,
+however,
+there is
+one parameter which stands apart in its centrality
+to both acquiring and understanding 4D-STEM data:
+the convergence semiangle, α.
+When examining a
+diffraction pattern, α corresponds to the radius of the
+bright-field disk in the diffraction plane, and therefore
+also the radius of each refracted Bragg disk in a
+crystalline sample.
+In real space,
+the probe size
+is inversely related to α;
+larger convergence angles
+correspond
+to
+finer
+probes,
+and
+overlapping
+disks
+are required to generate sub-lattice sized probes and
+therefore allow atomic resolution imaging [34].
+In
+extracting a strain map, for example, non-overlapping
+disks are important, both to facilitate the detection
+
+
+4
+
+of the disk positions, and also because strain is a
+physical quantity only defined on length scales equal to
+or larger than single unit cells.
+For a ptychographic
+reconstruction of the atomic potentials of very thin
+materials, overlapped disks are essential, as they provide
+the redundant information required to extract the phase
+of the electron wavefunction and the sample electrostatic
+potential [35].
+For analysis of amorphous materials,
+measuring radial distribution functions requires nearly-
+parallel illumination (a small semiconvergence angle),
+while measurements of medium range order in fluctuation
+electron microscopy experiments will often vary the
+probe semiangle to probe different sizes of atomic clusters
+[36, 37].
+In general, the convergence angle should be
+selected carefully in light of the particular requirements
+of the experiment.
+
+B.
+Multimodal analysis - one dataset, many
+measurements
+
+A major advantage of 4D-STEM is the ability to
+perform a single experiment from which many distinctly
+meaningful structural measurements can be made. We
+take as our guiding example the Gd2Ti2O7 (GTO)
+crystal shown in Fig. 1. A pyrochlore structured GTO
+single crystal was first bombarded with ions, creating
+an amorphized layer.
+Then the sample was annealed,
+creating both a layer of recrystallization on the parent
+lattice as well as a band of smaller crystallites embedded
+in an amorphous matrix. Each of these regions is clearly
+visible in the diffraction patterns associated with various
+beam positions of the 4D-STEM scan.
+A selection of the types of measurements that can be
+performed from this dataset are shown in the figure.
+These include:
+virtual imaging spanning bright field
+images, annular dark field images, and dark field images
+of individual or multiple Bragg reflections (see Sec. IV A);
+differential phase contrast imaging, whereby shifts in
+the center of mass of the beam are used to back out
+the sample structure1 (see Sec. IV G 1); strain mapping,
+showing the local deformations of the atomic lattice (see
+Sec. IV C); and structural classification, where regions
+
+1 Note that while DPC provides useful image contrast in a fairly
+wide array of contexts, physical interpretation, and in particular
+interpretation in terms of the local sample potential, should
+be undertaken with care.
+In this dataset, for instance, the
+presence of non-overlapping Bragg disks indicates that there
+exists sample structure (the atomic lattice) which is too fine for
+our probe to resolve, and which will not be reflected in a DPC
+reconstruction.
+Moreover, the spatial sampling here is larger
+than probe width, so any variation in the potential between
+sampling points will be effaced in the reconstruction. Thus this
+DPC image, though still informative to a point, has no simple
+physical interpretation. Images in this category might be referred
+to as “pseudo-DPC”. For more discussion, and an example where
+the DPC image is well thought of as a reconstructed sample
+potential, see Sec. IV G 1 and Appendix I.
+
+of distinct structure are identified and segmented (see
+Secs. III E and IV B). With py4DSTEM, these analyses
+and more can all be applied to a dataset within a single,
+unified framework.
+
+C.
+Data Structures
+
+4-D data
+
+DataCube
+
+2-D slices
+
+DiffractionSlice
+
+RealSlice
+
+N-D points
+
+PointListArray
+
+PointList
+
+FIG. 2. py4DSTEM data structures. Data is saved as one
+of 5 classes of dataobjects – DataCube, DiffractionSlice,
+RealSlice, PointList, and PointListArray objects.
+
+Data in py4DSTEM is structured in five different
+types, broadly distinguished by their dimensionality,
+shown in Fig. 2.
+In-program, these are implemented
+as
+the
+following
+Python
+classes:
+DataCube,
+DiffractionSlice,
+RealSlice,
+PointList,
+and
+PointListArray. DataCube instances contain a 4D data
+array corresponding to the complete 4D-STEM dataset.
+DiffractionSlice and RealSlice instances contain
+one or more 2D arrays with shapes corresponding to
+that of diffraction space (i.e. the detector shape) or of
+real space (i.e. the raster scan shape), respectively. A
+DiffractionSlice might contain a single diffraction
+pattern, an image of the probe over vacuum, or the
+average background noise on the detector. A RealSlice
+might
+contain
+a
+virtual
+image,
+a
+Boolean
+mask
+indicating scan positions to be included or excluded
+in an analysis routine, or the x and y components of
+a lattice vector calculated at each scan position. This
+last example describes a RealSlice of depth 2, i.e. the
+data contained in the RealSlice class instance is two
+distinct 2D arrays (x and y of the lattice vector); in
+general DiffractionSlice and RealSlice objects can
+have arbitrary depth. The PointList class is flexible,
+containing a set of points of arbitrary length in an
+arbitrary number of dimensions. On instantiation of a
+PointList, a set of coordinates must be specified – e.g.
+to specify the positions and intensities of the Bragg disk
+positions detected in a single diffraction pattern, (‘qx’,
+‘qy’, ‘intensity’) might be used. Points may then
+be added or removed from the PointList, e.g.
+as
+
+
+5
+
+Bragg disks are detected and then thresholded. Data in
+PointLists can be easily extracted or sorted by chosen
+coordinates.
+PointListArray instances are 2D arrays
+of PointLists, organized in memory to facilitate quick
+access of the PointList corresponding to a single array
+element, and are useful when storing a PointList for
+each scan position. All these datastructure classes inherit
+from a parent class called DataObject which facilitates
+basic searching, storing, and saving functionality for all
+data generated by py4DSTEM, as well as linking to any
+relevant metadata.
+
+D.
+File Structure
+
+py4DSTEM saves data in the HDF5 format, described
+on the HDF5 website [38]. A description of the flavor of
+HDF5 used in py4DSTEM, which we refer to as “electron
+microscopy datasets” or EMD files, is available on the
+EMD website.
+Each HDF5 / EMD file generated by
+py4DSTEM has a top level group containing all data,
+allowing for the possibility of nesting many py4DSTEM
+files in a single, larger file, and version tags to allow
+for backwards compatibility. Within the top level group
+a py4DSTEM file contains 3 high level groups: data,
+metadata, and log. The data group typically contains
+5 subgroups corresponding to the 5 datastructures
+discussed in the previous section, and each of these
+contains any number of subgroups, each storing the
+contents of a single corresponding dataobject, including
+its raw data and any relevant metadata (e.g. the length
+of a PointList, the dimensions of a DiffractionSlice,
+etc).
+This structure makes it possible to bundle
+all elements of one or more data processing pipelines
+pertaining to a single raw dataset in a single location,
+and simplifies reuse between measurements of any shared
+datastructures.
+Loading data necessarily varies based on the input file
+type.
+For its native HDF5 files, py4DSTEM supports
+scanning the contents of a file before pulling anything
+into memory, so the entirety of large files need not be
+loaded if only some subset of smaller dataobjects are
+required. For very large datasets, memory mapping of
+datacubes is supported, whereby the contents of a loaded
+datacube object are left in non-volatile storage, and
+individual diffraction pattern are pulled into RAM only
+as they are accessed, enabling analysis of datasets that
+are larger than available system RAM. Binning during
+loading is also supported. For non-native files, many of
+the file types used in electron microscopy are proprietary
+and the contents are not publicly described, which
+hinders scientific progress within electron microscopy.
+py4DSTEM therefore relies on the i/o components of two
+other open source projects, hyperspy and openNCEM.
+Most electron microscopy file formats are currently
+supported, and to-date the py4DSTEM reader has been
+tested and works successfully for 4D-STEM data in .dm3,
+.dm4, etc., formats.
+
+The
+metadata
+group
+contains
+5
+subgroups:
+microscope, sample, user, calibration, comments,
+and
+original.
+The
+microscope
+group
+contains
+information
+related
+to
+the
+microscope
+setup
+and
+acquisition parameters, such as the accelerating voltage
+of the beam, the camera length, the convergence angle,
+and so forth.
+The sample group stores information
+such as the material imaged, synthesis information,
+and any sample preparation.
+The user group is for
+information related to the scientist or scientists who
+obtained the data, including names, institutions, and
+contact information. The calibration group contains
+the pixel sizes (in real and diffraction space), as well as
+any additional calibration information such as rotational
+offsets,
+diffraction
+shifts,
+and
+elliptical
+distortions,
+which will be discussed in more detail in Sec. III C The
+comments group is for any miscellaneous comments. The
+original group contains any raw metadata scraped
+from the original data file.
+More details about the program structure, interface,
+implementation, and usage, including its data handling,
+modules, the 4D-STEM HDF5 file structure, logging,
+and metadata handling is available in the py4DSTEM
+documentation, or in the py4DSTEM repository.
+
+III.
+Basic Processing
+
+In this section,
+we discuss the basic processing
+required for most datasets,
+namely:
+preprocessing
+in Sec. III A, Bragg disk detection (for crystalline
+samples) in Sec. III B, calibration in Sec. III C, polar
+transformations (for amorphous samples) in Sec. III D,
+and classification in Sec. III E. These processing steps
+are basic in the sense of underpinning all subsequent
+analyses, rather than in the sense of simplicity; these
+methods are not aimed at producing a final measurement
+or plot, but rather are the necessary preparatory work to
+ensure such ultimate measurements are possible, and are
+optimally accurate. Measurements and applications are
+addressed in Sec. IV.
+
+A.
+Preprocessing
+
+This section discusses several preprocessing steps that
+may be performed on a 4D-STEM dataset.
+None
+of these steps are universally required, however, care
+in preprocessing can significantly speed up subsequent
+processing, and lead to higher accuracy and precision in
+final analyses.
+Figure 3(a) shows the average of all the diffraction
+patterns from the GTO dataset.
+Vertical streaks are
+apparent in the image, as well as a handful of individual,
+erroneously saturated pixels.
+Zeroing the hot pixels,
+calculating a background image and subtracting it from
+each diffraction pattern, and then calculating a new
+average diffraction image yields Fig. 3(b).
+Here, hot
+
+
+6
+
+0
+100
+200
+
+counts x106
+log(counts)
+
+0
+
+1
+
+2
+
+3
+
+0
+
+5
+
+10
+
+15
+
+Pixel intensities
+
+(a)
+
+(b)
+
+Bkgrnd subtraction
+
+(e)
+
+(f)
+
+(c)
+
+(d)
+
+Electron counting
+Bin and crop
+
+2 nm-1
+
+FIG. 3. Preprocessing. (a) A position averaged diffraction
+pattern of raw 4D-STEM data.
+(b) The same position
+averaged diffraction pattern after subtracting a background
+determined from the yellow regions in (a).
+(c,d) The
+initial step of an electron counting procedure, in which
+minimum and maximum thresholds (black and red dashed
+lines, respectively) of the pixel intensities are used to rule
+out background pixels and x-ray strikes. (e,f) Binning and
+cropping.
+
+pixels were found by detecting outliers in the histogram of
+pixel intensities across the dataset. The background was
+determined by identifying edges of the detector which
+were beyond the HAADF detector and should ideally
+have no counts, then using this region (shown in yellow)
+over many diffraction patterns to calculate the average
+background streaking. Alternatively, one or many dark
+reference images can be recorded directly.
+While the
+nature of noise in a raw 4D-STEM dataset will vary
+from camera to camera and experiment to experiment,
+background subtraction is generally recommended.
+In 4D-STEM data with a sufficiently low electron dose,
+it is possible to detect individual electron strike events.
+Electron counting, i.e.
+determining and recording the
+diffraction space positions of each electron incident on
+the detector, is beneficial for both noise reduction and
+data compression. In py4DSTEM, this is implemented
+by first calculating a dark reference for the detector. A
+histogram of pixel intensity values is then generated from
+a random sampling of detector frames, and is used to
+calculate an upper intensity threshold (for excluding x-
+ray strikes) and a lower intensity threshold (for excluding
+the background).
+In Fig. 3, the histograms in panels
+(c,d) correspond to the low-dose dataset shown in (e,f).
+These diffraction patterns were recorded by placing an
+“amplitude plate” aperture in a condenser aperture, as
+described in [39]. Looping through each scan position,
+the dark reference is subtracted and the thresholds are
+applied to each detector frame, and the local maxima of
+the resulting image are identified. These local maxima
+are considered electron strike events. Optionally, their
+positions can be refined to subpixel precision.
+The
+electron counting shown in the figure compresses this
+data by a factor of ∼6000.
+The
+most
+basic
+preprocessing
+functions
+include
+
+reshaping, binning, and cropping data.
+Binning and
+cropping can be performed in either real or diffraction
+space, and allow large datasets to be reduced to more
+manageable sizes. For selected file formats, py4DSTEM
+also supports data binning on import.
+Figure 3e,f
+shows an electron beam which has been shaped using
+a structured condenser aperture; from panel (e) to (f)
+this data has been cropped and binned by a factor of
+three.
+Reshaping the data may be necessary in some
+cases, for instance, some file formats do not contain
+complete information about the real space scan shape,
+and thus can be initially loaded as 3D arrays (with
+the two real space dimensions collapsed into one) before
+being correctly reshaped into 4D arrays.
+
+B.
+Bragg disk detection
+
+For
+crystalline
+or
+semi-crystalline
+data,
+analysis
+generally begins by identifying the locations of all the
+Bragg disk reflections in each diffraction pattern, which
+correspond to the reciprocal lattice points of the crystal.
+In py4DSTEM, we find the Bragg disk positions in two
+steps: first, we extract the structure of the probe over
+vacuum in diffraction space to use as a template. We then
+find the Bragg disks by determining all the positions in
+each diffraction pattern that match the structure of this
+template [22].
+py4DSTEM includes 3 methods for generating vacuum
+probes.
+Ideally, we use an image or averaged image
+stack of the probe over vacuum.
+Alternatively, if an
+experimental 4D-STEM scan contains a vacuum region,
+or a region with only very thin material (e.g. amorphous
+carbon support), this can be used to generate a vacuum
+probe. In this case, the probes from each vacuum scan
+position should be aligned, to correct the translation of
+the diffraction patterns as the beam is scanned, and then
+averaged. Finally, if neither of these options is possible,
+a synthetic probe can be generated.
+Once
+a
+vacuum
+probe
+has
+been
+obtained,
+two
+additional processing steps are applied, with the purpose
+of generating a kernel for cross correlative template
+matching with the individual diffraction patterns. First,
+the center of the unscattered electron probe is found and
+shifted to the origin. Without this step, all measurements
+will have an offset, leading to incorrect results. Second,
+a Gaussian wider than the probe is subtracted, leading
+to a region of negative intensity surrounding the probe
+itself, such that the total integrated intensity of the kernel
+is zero. This has two advantages: first, it ensures that
+the cross correlation of noisy data is, on average, zero
+where there are no Bragg disks.
+Second, the negative
+kernel intensity penalizes cross correlation values where
+a Bragg disk and a template are slightly misaligned,
+enhancing the detectability of correlation maxima where
+disk/template alignment is perfect.
+While subtraction
+of a Gaussian is a useful heuristic, other approaches
+are possible, for instance those described in [22, 40–
+
+
+7
+
+(a)
+(b)
+(c)
+
+(d)
+(e)
+(f)
+(g)
+
+(h)
+(i)
+(j)
+(k)
+
+Vacuum Probe
+
+Diffraction Data
+Bragg Disk Positions
+
+BF Image
+Template matching via cross correlation
+
+0.2 nm-1
+50 nm
+
+2 nm-1
+
+FIG. 4. Bragg disk detection in GTO. (a) The vacuum probe. (b) A virtual bright field image. (c) Disk detection is accomplished
+by cross correlation of the probe template with each diffraction pattern. (d-g) Diffraction patterns corresponding to the four
+scan positions indicated in (b). (h-k) The detected Bragg peaks for these four diffraction patterns. The size of each circle
+indicates the cross correlation intensity, a rough approximation for disk intensity.
+
+44]. Adding structure to the electron probes using an
+amplitude mask in the objective aperture has also been
+shown to significantly enhance the precision of Bragg disk
+detection [39].
+The Bragg disks are located by calculating the cross
+correlation of the probe kernel with each diffraction
+pattern, and then locating the correlation maxima. The
+disk positions can be located with subpixel precision
+via local Fourier upsampling in the region about each
+maximum [45, 46]. py4DSTEM allows for standard cross
+correlations, as well as phase or hybrid correlations, to
+be performed at this stage; see Appendix B for detailed
+discussion.
+The detected Bragg disks in each diffraction pattern
+are a stored in a PointList instance with three
+coordinates specifying the disk position in the diffraction
+plane and its cross correlation intensity, (qx, qy, I). The
+Bragg disks from the complete datacube are stored in a
+PointListArray instance, with one such PointList for
+each scan position. For many analyses, such as strain or
+orientation mapping, all subsequent computation can be
+performed on this PointListArray alone, as it contains
+the most crucial scattering information.
+The data
+
+compression here is significant, as only 3 numbers are
+now required to store each Bragg disk. For a datacube
+consisting of 512×512 pixel diffraction patterns with a bit
+depth of 16, 20 detected disks in an average diffraction
+pattern, and using 64-bit floating point numbers for the
+disk coordinates, this scheme compresses the data by a
+factor of approximately 1000.
+Once the Bragg disks have been detected, all peaks
+from all scan positions may be collapsed into a single
+image in the shape of the diffraction plane. The resulting
+object is roughly interpretable as a position averaged
+probability distribution of reciprocal lattice points, and
+is defined carefully in Appendix C. Figure 5 shows an
+example using the GTO dataset.
+We refer to this
+object as a Bragg vector map (BVM). Figure 5a shows
+the BVM of the complete GTO 4D-STEM scan, while
+Figs. 5(c-f) show the BVMs generated from subsets of
+the scan region indicated in the virtual image shown in
+Fig. 5b. The BVM of the single crystal region, Fig. 5c,
+shows sharp reciprocal lattice peaks of the orthorhombic
+crystal in the ⟨01¯1⟩ projection.
+The BVM of Fig. 5d
+also contains sharp peaks, now oriented isotropically
+about the origin,
+indicating many small,
+randomly
+
+
+8
+
+(a)
+
+(c)
+(d)
+
+(e)
+(f)
+
+(b)
+
+2 nm-1
+
+2 nm-1
+
+50 nm
+
+FIG. 5. Bragg vector maps of GTO. (a) The Bragg vector map
+from the complete dataset. (b) Virtual bright-field image with
+boxes indicating four regions of interest. (d-f) Bragg vector
+maps generated from the four corresponding regions shown in
+(b).
+
+oriented crystal grains.
+Figure 5d also shows a faint
+ring resulting from amorphous scattering in this mixed
+cystalline/amorphous region. Note that ideally the BVM
+would be insensitive to amorphous scattering because
+it should only contain counts where Bragg scattering
+occurs, however, false-positive Bragg disk detection can
+occur in the amorphous halo, resulting the ring here as
+well as in Fig. 5f. Figure 5e shows little amorphous signal,
+sharp peaks indicating crystal scattering, and fewer peaks
+than in Fig. 5d, suggesting this layer of the sample may
+contain fewer, larger crystallites. Figure 5f shows little
+or no crystalline signal, suggesting a purely amorphous
+layer. Phase mapping, found in Sec. IV B, confirms these
+hypotheses about the sample structure.
+BVMs are a useful tool in 4D-STEM data processing.
+In py4DSTEM they are used in processing pipelines
+including calibration (see Fig. 6), classification (see
+Fig. 8), strain mapping (see Fig. 11), and others.
+
+C.
+Calibration
+
+Calibration is the single most important step of any
+quantitatively meaningful 4D-STEM data analysis, as
+all subsequent measurements hinge on the accuracy
+of
+the
+calibration.
+In
+4D-STEM
+a
+number
+of
+calibrations are desirable.
+These include correcting
+shifts of the diffraction pattern from the raster of the
+beam, correcting elliptical distortions of the diffraction
+patterns, calibrating the rotational offset between real
+and diffraction space, and calibrating the pixel sizes.
+Which calibrations are required will generally depend on
+the sample being imaged, the measurements being made,
+and the required precision.
+The data required to perform calibrations is similarly
+contingent, and depends on the structure of the sample,
+and which calibrations need to be performed.
+An
+image or a stack of images of the STEM probe over
+vacuum should always be acquired, and is important
+for analyses including Bragg disk detection, calibration
+of the convergence semiangle, and deconvolution of the
+probe. Scanning a standard calibration sample of known
+structure at the beginning or end of a microscope
+session is highly recommended, and will typically ensure
+the most accurate calibration of pixel sizes.
+Using a
+standard calibration sample which is polycrystalline is
+also highly recommended, to facilitate calibration of
+inevitable elliptical stretching of the diffraction patterns
+due to imperfect optics and alignments [43]. Obtaining
+an image of the probe, positioned over the sample and
+then highly defocused to create a shadow image in the
+diffraction plane, is the recommended data for calibrating
+the real/diffraction space rotational offset. In some cases
+it is possible to obtain the necessary calibrations directly
+from the experimental 4D-STEM scan, however, this is
+not guaranteed to be possible, and is especially dubious
+for samples of unknown structure.
+Figure 6 shows the complete calibration of a simulated
+
+
+9
+
+dataset [47]. The top row of subpanels shows the data:
+a 4D-STEM scan of the sample of interest, in this case
+a single-crystalline, strained gold nanoparticle (Fig. 6a);
+a 4D-STEM scan of a standard calibration sample, in
+this case polycrystalline gold (Fig. 6b); an image of the
+STEM probe in the diffraction plane (Fig. 6c); and an
+image of the STEM probe after defocusing to make a
+shadow image (Fig. 6d).
+Diffraction shifts – overall translation of the diffraction
+patterns resulting from the scanning of the electron
+beam – yield apparent shifts of the position optic axis
+from one diffraction pattern to the next [48].
+The
+size of the diffraction shifts depend on the real space
+field-of-view of the scan, on the camera length, and on
+the particular instrument used; generally speaking, we
+recommend measuring diffraction shifts in scans larger
+than a few tens of nanometers, and then applying
+corrections if deemed necessary.
+In py4DSTEM, this
+calibration is performed by identifying the unscattered
+beam at each scan position, and measuring the shifts
+in its position. These shifts are then fit to a plane or
+low order polynomial, which can be used to correct the
+diffraction shifts. For correcting the shifts, it is possible
+to shift each diffraction pattern by the measured amount
+to generate a new, corrected datacube, however, this is
+slow, resource intensive, and often unnecessary. Instead,
+it is often possible to simply use the measured shift
+values to set the origin of coordinates in any subsequent
+measurements made on individual diffraction patterns.
+Figure 6e-p shows BVMs before (e,f) and after (k,l)
+diffraction shift corrections have been applied to the
+measured bragg peak positions. The zoomed in images
+centered on the central peak (f,l) illustrate that the
+blurred peak of (f) collapses to a sharp peak in (l) after
+shift correction. In (g-p) we show the initial measurement
+of shifts of the central disk, a masking step to ignore some
+subset of data points, a smooth fit to the data, and the
+residuals, which are all much less than a single pixel.
+Elliptical distortions, in which circular features about
+the optic axis are stretched into ellipses, are generally
+experimentally unavoidable [43].
+These result from
+imperfect alignments,
+including off-axis illumination
+on the probe-forming condenser aperture, stigmation
+in the post-specimen optics,
+and finite tilt of the
+detector plane relative to the plane normal to the optic
+axis.
+Even in a well aligned system these distortions
+may be significant, and are therefore important to
+correct in many quantitatively sensitive experiments.
+In py4DSTEM, elliptical distortions can be measured
+by fitting an elliptical function to data within some
+specified annular region, as shown in Fig. 6(q,r).
+The
+functional forms of the fits are discussed in more
+detail in Appendix D. With elliptical fits in hand, the
+elliptical distortions can be corrected.
+For crystalline
+data in which the Bragg peaks have been measured and
+subsequent analysis will be performed on the measured
+peak positions only, correction may be accomplished
+by shifting the peak positions while leaving the raw
+
+data untouched.
+Figure 6r shows a BVM after such
+correction has been performed. An alternate approach to
+elliptical correction is to take a polar-elliptical transform,
+effectively re-sampling the data into a coordinate system
+which shares the data’s ellipticity. This latter approach
+is frequently useful in analysis of amorphous datasets,
+and is discussed further in Sec. III D.
+There is in general some angle of rotation between the
+electron beam in the sample plane and in the detector
+plane.
+Thus in order to correctly map orientations
+measured in the diffraction plane into real space, it is
+necessary to measure and account for this rotational
+offset.
+The simplest and most robust way to measure
+the offset is to compare a STEM image to a defocused
+probe shadow image.
+Any STEM image will suffice,
+provided that the same features are visible in the STEM
+and shadow images, and in Fig. 6 the bright field virtual
+image is used. Two identical points in each of the two
+images are identified in Fig. 6s,t and are then used
+to calculate the rotational offset.
+If a shadow image
+has not been obtained, other methods to determine the
+rotational offset are possible, however, will necessarily
+be less robust. Two additional techniques for rotational
+calibration are provided in py4DSTEM, both based on
+the principles of differential phase contrast imaging. As
+a result, these methods tend to work well when the
+assumptions of differential phase contrast hold.
+They
+are discussed further, along with the relevant caveats, in
+Sec. IV G 1.
+Calibration of the diffraction space pixel size minimally
+requires measuring a single diffraction vector with a
+known spacing. More accurate measurement is possible
+by fitting to several known spacings. Figure 6u shows a
+radial integral (see Sec. III D) of the elliptically corrected
+Bragg vector map shown in Fig. 6r.
+By indexing the
+peaks observed and using the known lattice spacing of
+gold, we use the measured peak positions to calculate
+the detector pixels size. The horizontal axis of these plots
+can then be written in physical units of ˚A−1.
+Ideally, the real space pixel size is determined by
+the distance the electron probe is rastered by the
+scan coils between detector frames, and is therefore
+equivalent to the size calibration of the instrument’s
+STEM scan.
+For this reason, processing tools for re-
+calibration of the real space pixel size are not provided.
+However,
+should such calibration be desired,
+it is
+straightforward to edit the py4DSTEM metadata based
+on independent measurement of the real space pixel sizes.
+When specimen drift leads to large deviations of the
+pixel size and scan direction angles, further pixel size
+measurements and drift correction may be required [49–
+52].
+
+D.
+Polar Transformation
+
+Transformation from Cartesian to polar coordinates
+is an important operation in many 4D-STEM analyses,
+
+
+10
+
+R/Q rotation
+
+(a)
+(b)
+(c)
+
+(d)
+
+Calibration Data
+
+4D-STEM, sample of interest
+4D-STEM, calibration sample
+Defocused probe
+
+Vacuum probe
+
+Diffraction Shifts
+
+(e)
+(f)
+
+(k)
+(l)
+
+After shift correction
+Measurement
+Mask
+Fit
+Residuals
+
+(g)
+(h)
+(i)
+(j)
+
+(m)
+(n)
+(o)
+(p)
+
+x shifts
+y shifts
+
+Elliptical Distortions
+
+(s)
+(q)
+(r)
+
+After ellipse correction
+Before ellipse correction
+Shadow image
+STEM image
+
+Detector Pixel Size
+
+1.0
+0.6
+0.8
+1.2
+0
+0.2
+0.4
+
+(u)
+
+111
+200
+220
+311
+111
+200
+220
+311
+
+(t)
+
+Intensity (A.U.)
+
+Before shift correction
+
+20 nm
+20 nm
+
+3 nm-1
+
+5 nm-1
+0.5 nm-1
+20 nm
+
+5 nm-1
+5 nm-1
+
+20 nm
+
+1 nm-1
+
++3
+
+-3
+(pix)
+
+FIG. 6. Calibration. (a-d) The recommended data to collect in order to fully calibrate a 4D-STEM dataset. Data shown here
+has been simulated. (a) A 4D-STEM dataset of a sample of interest, here a strained, single-crystal gold nanoparticle. (b) A
+4D-STEM dataset of a standard calibration sample, here a distribution of gold nanoparticles. In both (a) and (b), a virtual
+bright-field image and three selected diffraction patterns of the 4D-STEM datasets are shown. (c) An image or image stack
+of the probe over vacuum. (d) An image of the probe over the sample and defocused until a shadow image is visible. (e-u)
+A complete set of 4D-STEM calibrations. (e-p) Measurement and correction of translations of the diffraction patterns with
+the beam raster. (q-r) Measurement and correction of elliptical distortions. (s,t) Measurement of the rotational offset of the
+electron beam between the real and diffraction planes. (u) Measurement of the detector pixel size.
+
+especially of amorphous data.
+Sections IV E and IV F
+
+discuss two examples, fluctuation electron microscopy
+and radial distribution function analysis. Polar-elliptical
+transformations
+are
+useful
+for
+correcting
+elliptical
+distortions, as discussed in Sec. III C. This also enables
+calculation of elliptically corrected radial integrals.
+
+Figure 7 shows the transformation of the BVM of
+
+the simulated calibration sample of gold nanoparticles
+described in Sec. III C. Both a polar (a,c) and polar-
+elliptical (b,d) transformation have been performed, in
+the latter case using elliptical parameters fit from the
+image. In the polar case we see that, just as the circular
+coordinate axes poorly align with the data in (a), so
+too do the rings turn into vertical sinusoids in (c). In
+
+
+11
+
+0
+1
+2
+3
+4
+5
+6
+7
+k (Å
+1)
+
+(a)
+
+polar coords
+polar elliptical coords
+
+polar transform
+polar elliptical transform
+radial integral
+
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+ky
+
+kx
+
+ky
+
+kx
+
+θ
+
+k
+
+θ
+
+k
+
+polar-elliptical
+polar
+
+FIG. 7.
+Polar and polar-elliptical transforms.
+(a) Bragg
+vector map of the simulated gold nanoparticle calibration
+dataset, overlaid with a polar coordinate grid. (b) Identical
+data to (a), but overlaid with a polar-elliptical grid calibrated
+to this data. (c) The polar transform corresponding to (a).
+Note that the rings have been mapped to sinusoids, due
+to elliptical distortions.
+(d) The polar-elliptical transform
+corresponding to (b). The rings now map to lines, indicating
+that the elliptical calibration is correct. (e) Radial integrals
+calculated from the polar (red) and polar-elliptical (black)
+transforms.
+
+contrast, in (b) the axes and data are well aligned, and
+in (d) the rings turn into vertical lines rather than sine
+curves.
+Radial integration of a single or averaged diffraction
+pattern is an important operation, providing higher SNR
+information about electron scattering at each spatial
+
+frequency, at the expense of losing any orientation
+information.
+The
+polar-elliptical
+transform
+makes
+elliptically corrected radial integration easy – just sum
+along the theta axis of the transformed data. Figure 7e
+shows an example, with the radial integral calculated
+from the calibrated polar-elliptical transform in black
+and the radial integral from the simple polar transform in
+red. Note that the simple radial integral broadens peaks
+and, in the case of the first peak, splits a single peak into
+two apparent, but spurious, peaks.
+
+E.
+Classification
+
+In the context of 4D-STEM, classification refers to
+assigning one or more integer values to each scan
+position, which identify this position with associated
+classes.
+Ideally, each class corresponds to a type of
+diffraction pattern, or to structurally meaningful features
+or motifs, such that a scan position will be included
+in a given class if and only if its diffraction pattern
+contains these features. Virtual imaging, and thoughtful
+combination of virtual images and colormaps, is often
+the easiest way to visually differentiate distinct structural
+regions, and can be a powerful tool for microanalysis [12–
+14, 53]. By identifying each pixel with discrete class types
+classification goes a step further, facilitating subsequent
+analyses as well as enabling generation and identification
+of class diffraction patterns [54, 55].
+Figure 8 shows a simple classification example.
+A
+4D-STEM scan was taken of a medium entropy alloy
+containing a twin boundary,
+which is about three
+quarters of the way up the virtual image in Fig. 8a.
+Diffraction patterns averaged from 100 scan positions
+each about the positions shown with red, green, and blue
+sqaures are shown in Fig. 8b-d. Inspection reveals that
+the reciprocal lattice in Fig. 8b is twinned with respect to
+that of Figs 8c,d. This dataset is therefore an excellent
+testbed for a classification algorithm because the correct
+answer is immediately apparent: each diffraction pattern
+in this dataset should be assigned to one of two classes,
+according to the side of the twin boundary where it falls.
+The algorithm proceeds as follows.
+First, all Bragg
+disks are located, as described in Sec. III B. Next, the
+BVM is calculated, after any relevant calibrations such
+as diffraction shift correction have been performed – see
+Fig. 8e. The N maxima of the BVM are then located. A
+Voronoi tesselation of the diffraction plane is constructed
+using these maxima as the initial points, which carves the
+diffraction plane into a set of N regions, each of which
+is defined as the set of all points closest to one BVM
+maximum [56] - see Fig. 8f.
+Each of these N regions
+is assigned an integer value.
+Next, the set of Bragg
+peaks which has been detected at each scan position is
+retrieved, and each peak is assigned a label according
+to which Voronoi region it falls in - see Fig. 8g-i.
+At
+this stage the complexity of the data has been reduced
+significantly - for each scan position, we have a small
+
+
+12
+
+(a)
+
+Virtual image
+
+(b)
+
+(c)
+
+(d)
+
+Diffraction patterns
+
+0
+1
+
+2
+
+3
+
+4
+
+5
+6
+7
+
+8
+9
+
+10
+
+11
+12
+
+13
+
+14
+
+15
+
+16
+
+17
+
+18
+
+19
+
+20
+21
+22
+
+23
+
+24
+
+25
+
+26
+
+27
+
+28
+
+29
+
+30
+
+31
+
+32
+
+33
+
+34
+
+35
+
+36
+
+37
+
+38
+
+39
+
+40
+
+41
+
+42
+
+43
+
+44
+
+45
+46
+
+47
+
+48
+
+49
+
+50
+
+51
+
+52
+
+53
+
+54
+
+55
+
+56
+
+57
+
+58
+
+59
+
+60
+
+61
+
+62
+
+63
+
+(e)
+
+(f)
+
+Bragg Vector Map
+
+Find maxima and assign labels
+
+(j)
+
+Classified data
+
+0
+1
+3
+
+9
+
+10
+
+11
+
+14
+16
+
+17
+19
+
+21
+
+23
+24
+
+26
+
+27
+
+28
+
+29
+
+32
+
+33
+35
+
+40
+
+42
+
+45
+46
+
+47
+
+49
+
+50
+
+51
+
+54
+
+57
+
+59
+63
+
+0
+1
+
+2
+
+3
+
+4
+
+5
+6
+7
+
+8
+
+13
+15
+
+17
+
+18
+
+20
+
+25
+
+26
+
+36
+
+37
+
+39
+
+41
+
+45
+
+48
+
+49
+
+50
+
+56
+
+59
+
+61
+
+62
+
+63
+
+0
+1
+
+2
+
+3
+
+4
+
+5
+6
+7
+
+8
+12
+
+13
+15
+
+17
+
+18
+
+20
+
+37
+
+39
+
+41
+
+43
+
+48
+
+49
+
+50
+
+61
+
+62
+
+(g)
+
+(h)
+
+(i)
+
+BP co-occurance
+
+FIG. 8. A 4D-STEM classification algorithm. (a) Virtual image of a 4D-STEM dataset of a twin boundary. (b-d) Averages of
+100 diffraction patterns each from the regions shown in (a). (e) The Bragg vector map. (f) BVM maxima have been located,
+labelled, and used to segment the diffraction plane. (g-h) The segmentation in (f) is used to label the Bragg peaks in each
+diffraction pattern. (j) Co-occurance of Bragg peaks is used as a criterion to assign scan positions to classes, resulting in a
+classification which clearly identifies the twin boundary.
+
+set of integers encoding where Bragg scattering occurred,
+rather than an entire 2D diffraction pattern.
+Initial
+classes are identified by determining which Bragg peaks
+co-occur with the highest frequency, and these classes
+may then be refined, for instance via non-negative matrix
+factorization. Here, the final result is shown in Fig. 8j,
+with the data cleanly separated along the twin boundary.
+More detailed discussion of the algorithm can be found
+in Appendix E, and more complex classification example
+can be found in Sec. IV B.
+
+IV.
+Measurements and applications
+
+In this section, we build on the techniques described
+in Sec. III to make various measurements of physical
+interest from 4D-STEM datasets.
+In Sec. IV A we
+generate virtual images.
+In Sec. IV B we apply
+the
+classification
+algorithm
+discussed
+in
+Sec.
+III E
+
+to
+the
+GTO
+dataset
+to
+retrieve
+maps
+of
+various
+crystalline and amorphous phases present in the complex,
+nanostructured
+sample.
+In
+Secs.
+IV C
+and
+IV D
+
+we calculate strain maps from crystalline data, and
+from amorphous data respectively.
+In Secs. IV E
+
+and
+IV F
+we
+further
+analyze
+amorphous
+samples,
+
+calculating radial distribution functions in the former
+section and performing fluctuation electron microscopy
+analysis in the latter section.
+We conclude with two
+phase retrieval methods for reconstructing the sample
+potential,
+demonstrating
+differential
+phase
+contrast
+imaging in Sec. IV G 1 and ptychography in Sec. IV G 2.
+
+A.
+Virtual Imaging
+
+In a traditional STEM experiment, many imaging
+modalities are possible, by placing detectors of different
+geometries in different positions in the diffraction plane
+[1].
+4D-STEM enables virtual recreation of a wide
+swath of such imaging modalities in post processing
+[6, 8, 57, 58]. See Appendix A.
+Figure 9a,b shows an averaged diffraction pattern
+from the single crystalline region of the GTO sample,
+overlaid with various virtual detectors which were used to
+generate the images in Fig. 9c-g. Figure 9a shows annular
+dark field detectors of various inner and outer collection
+angles, and their corresponding virtual images are shown
+in Fig. 9c. The Miller indices of each Bragg reflection in
+the ⟨110⟩ projection are shown in Figure 9b, and virtual
+images corresponding to a detector placed about each
+
+
+13
+
+FIG. 9. Virtual imaging. (a) Virtual annular dark-field detectors. (b) Virtual bright field (green) and dark-field (yellow, red)
+detectors. (c) Virtual annular dark-field images. (d) Virtual dark-field images corresponding to circular detectors about each
+of the indexed Bragg peaks. (e) Virtual bright-field image. (f,g) Virtual images corresponding to the yellow and red detectors
+shown in (b), respectively. The inner, yellow peaks are only present in one of the two expected crystal structures in this system.
+
+of these peaks are shown in Fig. 9d. Here, a single 4D-
+STEM scan is used to virtually recreate images analogous
+to 45 distinct traditional dark-field TEM images, similar
+to [13].
+Figure 9b shows three detectors colored green, yellow,
+and red, corresponding to the three virtual images shown
+in Fig. 9e-g.
+The first is a virtual bright field image,
+while the latter two use virtual detectors which would
+be challenging to realize physically, but which are of
+particular interest because of the structural significance
+of the yellow and red peaks to two crystalline phases
+in this system:
+the red peaks are present in both of
+the two expected single crystal phases (pyrochlore and
+fluorite), while the yellow peaks vanish in the higher
+symmetry fluorite phase.
+Thus with 4D-STEM, it is
+possible to virtually recreate images corresponding to
+every possible integrating STEM detector geometry, and
+also to generate complex, bespoke detectors matched to
+the sample structure and properties of interest.
+
+B.
+Phase Mapping
+
+An
+important
+problem
+in
+many
+applications
+is
+mapping distinct structural phases, and potentially many
+phases, present within a single sample [21, 54, 55, 59].
+In this section we demonstrate mapping regions of a
+4D-STEM scan in which the diffraction patterns are
+sufficiently similar to be considered a single type, using
+the classification algorithm discussed in Sec. III E. This
+therefore constitutes ‘phase’ mapping in the sense of
+distinguishing regions of structural similarity, defined in
+terms of differences in the measured diffraction patterns.
+These differences may result from the presence of distinct
+crystal structures, crystal grains of various orientations,
+amorphous regions, and so on. The meaning of any one
+
+of these phases must be interpreted in the context of the
+particular sample, and the details of each phases’ average
+diffraction pattern [16].
+
+We return to the GTO dataset as an example. The
+results are shown in Fig. 10. The classification algorithm
+identifies 82 distinct crystalline phases, including 5 single
+crystal phases (Fig. 10b,e) and 77 smaller crystallites
+(Fig. 10d,g).
+We then additionally identified two
+amorphous phases (Fig. 10c,f). This was accomplished
+by masking away all detected Bragg peaks, calculating
+radial integrals of the masked diffraction patterns, then
+using these curves as inputs to a non-negative matrix
+factorization algorithm.
+Masking Bragg peaks is not
+required for purely amorphous data, but is essential
+for mixed amorphous/crystalline specimens, as Bragg
+scattering even from small crystallites in a primarily
+amorphous matrix would otherwise dominate the radially
+integrated signal.
+
+In this dataset,
+we find a single crystal region
+which appears to transition smoothly from a pyrochlore
+structure (Fig. IV Bb, dark purple, and Fig. 10e, upper
+left) to a flourite structure in which the superlattice
+reflections vanish (Fig. IV Bb, yellow, and Fig. 10e,
+lower right). Below the single crystal region is a mixed
+crystalline/amorphous region (Fig. IV Bc, lighter green,
+and Fig. 10f, right).
+Below this is a layer of larger
+crystallites (Fig. IV Bd,g), followed by a pure amorphous
+region (Fig. IV Bc, darker green, and Fig. 10f, left).
+With a phase map in hand, any number of additional
+analyses, such as the orientation or size distribution of
+the crystallites, or the strain in the single crystal (see
+Fig. 11), become readily calculable.
+
+
+14
+
+FIG. 10. Phase mapping. (a) All of the structurally distinct phases identified in this system, using the classification algorithm
+described in III E. (b,e) The single crystal phases and their class diffraction patterns. (c,f) The amorphous phases and their
+class diffraction patterns. (d,g) The polycrystalline phases and their class diffraction patterns.
+
+C.
+Crystalline Strain Mapping
+
+The diffraction pattern of a crystalline sample from a
+low index zone axis contains a grid of Bragg disks given
+by the reciprocal lattice of the sample.
+Therefore the
+spacing of the Bragg disks is inversely proportional to
+the real space atomic spacing. Precise measurements of
+the reciprocal lattice vectors can therefore be used to map
+the local strain present in a crystalline sample, given by
+the deviations of the lattice from the ideal spacing and
+angles [18, 60–64].
+
+In Fig. 11 we map the strain of the single crystal
+regions of the GTO data. Obtaining a strain map begins
+with Bragg peak detection as discussed in Sec. III B and
+data calibration as discussed in Sec. III C. Beginning
+from the calibrated BVM of the region of interest
+(Fig. 11a), the average reciprocal lattice vectors are
+extracted by taking its Radon transform, and then
+finding the projection angles at which the peaks of the
+BVM align (Fig. 11b).
+With the lattice vectors in
+hand, the BVM peaks are indexed (Fig. 11c). We then
+refine the reciprocal lattice vectors for each diffraction
+pattern by performing a fit to its set of detected Bragg
+peaks, using the average lattice vectors as an initial guess
+and weighting the fit according to the cross correlation
+intensities of the detected peaks. A reference lattice is
+chosen, and the infinitesimal strain tensor is computed
+at each beam position by examining the deviation of its
+local lattice vectors from the reference lattice. For further
+discussion see Appendix F.
+
+The results of this analysis are shown in Fig. 11e-
+h.
+Here, the x- and y-directions are shown in both
+real and diffraction space with red and orange arrows,
+respectively. ϵxx and ϵyy refer to the compressive/tensile
+(negative/positive) strain of the lattice along the x and
+y directions shown, while ϵxy and θ are the shear strain
+and the rotation of the lattice, respectively.
+Among
+other revealing features, the ϵxx map in this data shows
+significant tensile strain along the interface of the parent
+and recrystallized single crystal, indicating stretching of
+the crystal perpendicular to the interface.
+The choice of reference lattice is crucial to obtaining
+meaningful strain maps.
+In the simplest case, the
+experimental 4D-STEM scan contains a region of known
+undeformed lattice, which can be used directly to define
+the reference lattice. Alternatively, it is possible to obtain
+a separate scan of unstrained material to use as reference,
+however in this case, good calibrations are essential – see
+Sec. III C. With good calibrations and a known crystal
+structure, it is also possible to define a reference lattice
+by hand. In the case of the GTO dataset, in which there
+is a parent crystal at the top of the image and a region
+of recrystallization below, the parent crystal can be used
+as reference.
+Strain tensor values depend, in general, on the choice
+of coordinate system. It is therefore necessary to specify
+coordinates; without this specification, e.g. by including
+the coordinate axes on the plots, strain maps are not
+physically interpretable. Because there is some arbitrary
+rotation between real and diffraction space in 4D-STEM
+data, it is also important to show the orientation of the
+
+
+15
+
+yy
+(f)
+
+-1.50
+
+-0.75
+
+0.00
+
+0.75
+
+1.50
+
+%
+
+-1.00
+
+-0.50
+
+0.00
+
+0.50
+
+1.00
+
+xx
+(e)
+
+xy
+(g)
+(h)
+
+Diffraction space
+Real space
+
+Initial
+Chosen
+Coordinates
+Coordinates
+
+1. rotate
+2. possible flip
+
+(i)
+
+x
+
+y
+
+kx
+
+ky
+
+000
+
+222
+
+222
+
+004
+
+004
+
+222
+
+220
+222
+
+113
+
+113
+
+331
+
+113
+
+113
+
+440
+
+331
+
+440
+
+220
+
+331
+331
+
+111
+
+333
+
+333
+
+111
+
+111
+
+115
+
+115
+
+333
+
+333
+
+111
+
+002
+
+002
+
+115
+
+224
+
+224
+
+115
+
+224
+
+224
+
+442
+442
+
+006
+
+444
+
+335
+
+442
+
+006
+
+335
+
+442
+
+0
+2
+
+(a)
+(b)
+(c)
+
+2 nm-1
+
+100 nm
+
+FIG. 11. Crystalline strain mapping. (a) Bragg vector map
+of the crystalline region of the GTO sample. (b) Automated
+detection of the lattice vectors, using the Radon transform.
+(c) The indexed Bragg vector map. (e-h) Strain maps of the
+single crystal region. The upper color bar applies to (e-g),
+and the lower colorbar to (h).
+(i) The relevant coordinate
+systems in real and diffraction space.
+
+axes in both real and diffraction space.
+In Fig. 11h,
+two sets of yellow axes show the chosen coordinate with
+respect to which the strain maps are are measured, in
+real space and diffraction space respectively.
+In this
+data, the rotation between the two was small (∼ 2◦),
+however note that in general it need not be, and will vary
+between microscopes. The best coordinate system to use
+for a give strain map depends on the sample and the
+relevant material questions. Typically, orienting one of
+the principle axes along some important crystallographic
+direction is best, and in Fig. 11 the strain x-direction
+has been oriented along the ⟨1¯10⟩ direction, which is also
+direction of ion bombardment and of recrystallization.
+In a strain mapping workflow in py4DSTEM, calculating
+the strain from the reference lattice produces a strain
+map with respect to a coordinate system oriented along
+the detector frame (Fig. 11i, top row); typically, some
+coordinate orientation which is sensible for the system
+and questions under study should then be chosen, and the
+strain map rotated into this coordinate system (Fig. 11i,
+bottom row).
+
+D.
+Amorphous Strain Mapping
+
+Electron
+diffraction
+experiments
+of
+amorphous
+materials, or materials containing a substantial fraction
+of an amorphous phase, will typically include ring-like
+features with a radius given by a characteristic scattering
+length. Similarly to crystalline materials, a local increase
+or decrease in the average atomic spacing (i.e. strain)
+in amorphous materials will cause a decrease or increase
+respectively in the amorphous ring radius.
+By fitting
+an elliptical function to each diffraction image, we
+can directly measure these deviations due to local
+strain. This has been demonstrated both in individual
+TEM diffraction images [65] and in in situ 4D-STEM
+experiments [66].
+In
+py4DSTEM,
+we
+have
+implemented
+strain
+measurements
+of
+amorphous
+materials
+using
+the
+same elliptic fitting routines described in Sec. III C and
+Appendix D. Figure 12a-c show the elliptical fits.
+In
+each of the three plots shown, the data being displayed
+alternates in a pinwheel pattern between the data and
+the fit, for easy visual assessment of the fit quality. In
+the average diffraction pattern of the pure amorphous
+region, Fig. 12a, the data (shaded blue) is in excellent
+agreement with the fit. Using this fit as an initial guess,
+noisier individual diffraction patterns like Fig. 12b,c can
+then be fit as well. In data containing mixed amorphous
+and crystalline material, to obtain good elliptical fits to
+the amorphous signal it is important to mask off any
+Bragg scattering. In Fig. 12b,c the smaller black circles
+represent such masked regions.
+Figure 12d-g shows the strains computed beginning
+from these fits, then finding the deviation of the elliptical
+distortions from a reference.
+Here the median of the
+fully amorphous region is used. As with crystalline strain
+mapping, the choice of reference is important, and should
+be selected carefully based on the individual experiment.
+Figure 12d-f, showing the compressive/tensile strains
+along the shown x and y directions as well as the
+shear strain, are comparable to the crystalline ϵxx, ϵyy,
+and ϵxy plots from Fig. 11.
+Figure 12g additionally
+shows
+1
+2(ϵxx + ϵyy), representing the local dilation of
+the structure. Across the four shown amorphous strain
+plots we observe local structural changes, especially at
+the crystalline-amorphous interfaces.
+
+E.
+Radial Distribution Functions
+
+The radial distribution function (RDF), or g(r),
+describes the relative density of atoms some distance
+r from a given atomic position.
+Thus the RDF
+characterizes
+the
+distribution
+of
+distances
+between
+atoms in a given material.
+It can serve as an
+important fingerprint for amorphous materials, as it
+gives information about the distance and density of
+neighboring shells of atoms,
+which depend on the
+material’s structure, chemistry and defect density [67].
+
+
+16
+
+FIG. 12.
+Amorphous strain.
+(a-c) Elliptical fits to the
+average amorphous diffraction pattern, and two two selected
+diffraction patterns. In (a), blue wedges show the data, while
+clear wedges show the fit function. In (b) and (c), the data
+and the fit are similarly interleaved, and Bragg scattering
+has been masked away to ensure good fitting.
+(d-e) The
+compressive/tensile strains ϵxx and ϵyy, the shear strain ϵxy,
+and the dilation 1
+
+2(ϵxx + ϵyy).
+
+In this section, we qualitatively discuss the calculation of
+the RDF, and the structure of the resulting plot. Formal
+discussion of our methods, which follow [37, 68], are
+found in Appendix G.
+The RDF can be directly determined from the average
+diffraction pattern of an amorphous material, as long
+as enough counts / images are collected to average out
+any local density fluctuations, and the probe convergence
+semiangle is sufficiently small to not blur out the
+diffraction pattern [33].
+An example of the mean
+diffraction pattern from amorphous silicon is shown in
+Fig. 13a.
+A radial integral is then calculated, here
+using a polar-elliptical methods of Sec. III D, yielding
+the diffracted intensity as a function of distance from
+the optic axis.
+The resulting curve, I(k), is shown in
+Fig. 13c.
+The important elements of this signal are
+(1) thermal diffuse background, resulting from thermal
+motion of the atoms and which dominates the behavior
+shown here at low k values, (2) the single atom scattering
+factors, describing the scattered intensity profiles which
+result from individual atoms and which dominate the
+behavior at high k values, and (3) the structure factor
+Φ(k), which describes the arrangement of atoms relative
+to one another in the material. By fitting the thermal
+background and atomic scattering factors it is possible
+to calculate the structure factor, and from the structure
+factor it is possible to calculate the RDF. Figure 13d and
+
+0
+2
+4
+6
+8
+10
+12
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+1.2
+
+1.4
+
+1.6
+
+Å
+r (  )
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+
+( Å
+1)
+
+I(k)
+
+(a)
+
+(c)
+
+(d)
+
+(e)
+
+(b)
+
+Median Intensity
+Structure Factor Φ(k)
+g(r)
+RDF
+
+θ
+
+k
+
+k
+
+( Å
+1)
+k
+
+5 nm-1
+
+I(k)
+
+single atom
+scattering factor
+
+FIG. 13. Radial distribution function of amorphous silicon.
+(a) An average diffraction pattern. (b) The polar-elliptical
+transform of (a). (c) The radial intensity profile, calculated
+from (b). (d) The structure factor, calculated by determining
+and subtracting off the single atom scattering factor, and
+applying a bandpass mask to cut off high and low frequency
+noise. (e) The radial distribution function, calculated using
+the structure factor, showing the first few shells of Si atoms.
+
+e show the structure factor and RDF, respectively.
+We ultimately invert the structure factor, a diffraction
+space quantity,
+to retrieve the RDF, a real space
+quantity. The sampling of the RDF is thus determined
+by the maximum k values in the experimental data.
+In py4DSTEM we therefore upsample by padding the
+structure factor with zeros before inversion, which allows
+extraction of an RDF which is in principle arbitrarily
+smooth.
+However, that smoothness should not be
+over-interpreted: the highest frequencies at which true
+
+
+17
+
+median DP
+max DP
+
+median
+mean
+
+(a)
+(b)
+
+(c)
+
+(d)
+
+(e)
+
+q 111 = 0.32 Å-1
+
+q 220 = 0.53 Å-1
+
+q 311 = 0.62 Å-1
+
+(A.U.)
+(A.U.)
+
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+Å-1
+(   )
+
+FIG. 14. Fluctuation electron microscopy of predominantly
+amorphous silicon. (a) An average diffraction pattern of the
+4D-STEM scan, using median statistics.
+(b) A diffraction
+image generated by selecting the maximum value at each
+pixel across all scan positions, and revealing the presence of
+some amount of Bragg scattering, and therefore crystallinity,
+in this sample. (c) The radial intensity profiles of the dataset
+using median (red) and mean (blue) statistics respectively.
+(d) The variance over all angles versus radial position. (e)
+V (q)
+
+⟨I(q)⟩2 , a measure of short and medium range order which
+becomes larger with increasing order. Note the two peaks in
+blue (mean statistics) which become a single broad peak in
+red (median statistics). These come from Bragg scattering,
+suggesting the median statistics are superior for evaluating
+the amorphous structure.
+
+information has been transferred is set by the maximum
+k from the experimental data.
+In gathering data for RDF analysis it is important to
+capture high scattering angles to use in fitting the atomic
+scattering factors, therefore fairly short camera lengths
+are recommended.
+
+F.
+Fluctuation Electron Microscopy
+
+Fluctuation electron microscopy (FEM) is a method
+which, like RDF analysis, is used to characterize the
+structure of amorphous materials.
+In RDF analysis
+structure is typically considered out to distances of
+perhaps the first few shells of neighboring atoms,
+considered the “short range order” regime.
+However,
+many amorphous materials have a substantial degree
+of structural ordering beyond the first few shells [69].
+
+This property is referred to as “medium range order”
+in materials science [70, 71].
+When using 4D-STEM
+to study amorphous materials, the STEM probe size
+(set by the convergence semiangle and/or probe defocus)
+can be tuned to match the size of atomic clusters.
+When these clusters deviate from a fully random
+distribution, they lead to “speckles” in the amorphous
+halo.
+The technique of quantifying the degree of
+variability as a function of scattering angle and probe
+size is called fluctuation electron microscopy (FEM) [72].
+In this section we qualitatively discuss FEM, and a
+mathematical treatment is in Appendix H.
+Our approach follows the methods of [73]. The idea is
+to calculate the variance V (k) of the diffraction patterns
+as a function of scattering angle. With an appropriate
+normalization (see the appendix),
+the variance can
+be thought of as a metric of order.
+Consider the
+limiting cases: in a minimally ordered sample the atomic
+distribution is completely homogeneous,
+leading to
+perfectly smooth diffracted rings and thus zero variance
+at a given scattering angle.
+In a maximally ordered
+sample, a perfect crystal, the rings resolve into Bragg
+disks, so that the variance at some fixed k containing
+peaks will be maximized. The RDF is primarily sensitive
+to the 2-body atomic pair correlations, whereas the FEM
+variance is more sensitive to 4-body pair-pair correlations
+[36, 70], hence its utility in examining medium range
+order.
+Figure
+14
+shows
+an
+FEM
+measurement
+of
+an
+amorphous silicon sample, performed in py4DSTEM.
+Figure 14a shows the mean diffraction pattern of
+the dataset, with two strong amorphous rings visible.
+However, plotting the maximum intensity across all
+probe positions as in Fig. 14b shows some Bragg disk
+features, due to small regions of crystallinity in some
+probe positions. We could simply exclude these patterns
+from the FEM measurement, but there is a simpler
+way to suppress or eliminate unwanted contributions of
+crystalline regions to the variance V (q): replace the mean
+intensity as a function of orientation angle φ with the
+median intensity. Median statistics are much more robust
+against outliers, such as the high variance due to Bragg
+peaks.
+Figure 14c-e show FEM measurements using both
+mean and median statistics. The presence of crystalline
+regions barely effects the mean intensity ⟨I(q)⟩φ,R, but
+strongly modulates the variance V (q). Figure 14e shows
+a strong signal at q = 0.318 ˚A−1 that corresponds to
+the distribution of nearest neighbor atoms in amorphous
+Si, with a mean scattering vector approximately equal
+to
+the
+crystalline
+Si
+[111]
+lattice
+spacing.
+This
+signal is approximately the same using both mean and
+median statistics, unlike the second peak.
+When the
+normalized variance is calculated using mean statistics,
+two additional Bragg peak signals become visible on
+top of the second broad amorphous peak, corresponding
+to the [220] and [311] crystalline Si diffraction peaks.
+This example highlights the importance of either careful
+
+
+18
+
+inspection of the diffraction images or using robust
+statistical methods such as medians when performing
+FEM studies.
+
+G.
+Phase retrieval
+
+py4DSTEM includes two methods for reconstruction of
+the sample potential: differential phase contrast (DPC)
+and ptychography. Broadly, the idea in both methods
+is to extract the amount of extra phase that has been
+added to the electron beam at each scan position. That
+phase is then taken to be the total (i.e. projected) sample
+potential at this scan position times a constant which
+encodes electron-charge interaction strength. Figure 15
+show the results of the py4DSTEM phase retrieval
+algorithms applied to a carbon nanotube [74].
+These
+methods
+make
+the
+transmission
+function
+approximation and the projection approximation, and
+thus can be expected to be most reliable for thin, low-
+Z samples. In cases where these conditions don’t hold,
+phase retrieval should be interpreted cautiously.
+
+1.
+Differential phase contrast
+
+Differential phase contrast (DPC) uses the fact that,
+for a sufficiently thin object, the mean deflection of
+the electron probe at each scan position in the STEM
+raster is related to the specimen electric and magnetic
+field components transverse to the beam propagation
+direction. Examples of material science applications of
+this technique include the study of built-in electric fields
+in semiconductor devices [75], magnetic skyrmions [76]
+and domain structures [77] and as a technique for
+efficient visualisation of light atoms in materials [78].
+The technique was first suggested by Dekkers and De
+Lang [79], was extensively applied to the study of
+magnetic materials from the 1970s onward by Chapman
+and
+colleagues and
+has seen
+more ubiquitous
+use
+with increased uptake of more sophisticated segmented
+detectors [80] and the advent of fast-readout electron
+cameras in STEM [81].
+Figure 15a shows the sample potential after DPC
+reconstruction. The mean probe deflections are shown in
+Fig. 15c,d at each scan position in the x- and y-directions,
+respectively. Once these are calculated, optionally after
+defining some mask to cut off high angle scattering, DPC
+considers this vector field of deflections to be the gradient
+of some scalar function.
+The primary task of DPC is
+thus to reconstruct the scalar field (a.k.a.
+the DPC
+image) which has as its gradient the measured probe
+deflections. In py4DSTEM this inversion is accomplished
+by Fourier integration of the probe deflections [82,
+83].
+In the phase object regime (also known as the
+multiplicative approximation), the resulting scalar field is
+proportional to the sample potential. Appendix I derives
+the relation between the beam deflections and the sample
+
+potential, and discusses the Fourier integration approach
+used.
+A consequence of Fourier integration is that it
+implicitly assumes periodic boundary conditions, which
+can be problematic for non-periodic electron microscopy
+specimens. Boundary condition handling is important to
+a high quality DPC reconstruction, and in py4DSTEM
+we have used an iterative boundary condition correction
+algorithm which is discussed in detail in Appendix I.
+The rotational offset between real and diffraction
+space needs to be correctly calibrated to perform the
+Fourier integration step.
+One possibility is to use
+the method discussed in Sec. III C. In the context of
+DPC, alternative approaches to this calibration are also
+possible. In one, the beam deflections are assumed to
+be a conservative vector field, which must be true if
+they are the gradient of a scalar field. However, if the
+coordinate systems of real and reciprocal space contain
+a relative rotation, the measured beam deflections will
+all be similarly rotated, resulting in general in a non-
+conservative field. The correct rotational offset can thus
+be identified by finding the relative rotation which results
+in beam deflections which are conservative, which can
+be identified by minimizing the curl as a function of
+the rotation.
+In another approach, we note that the
+contrast of a DPC reconstruction, that is the contrast
+of the scalar field which results from Fourier integration
+of the beam deflections, is typically maximized when the
+rotational offset is correct.
+Thus the calibration may
+also be performed by maximizing the DPC contrast as a
+function of real/diffraction space rotation. Note that this
+method permits a 180 degree ambiguity in the rotational
+offset, corresponding to a contrast reversal in the DPC
+image.
+Finally, we note that Fourier integration effectively
+applies a low pass filter (see Appendix I). Some amount
+of low pass filtering is therefore inherent in DPC imaging
+as implemented in py4DSTEM.
+
+2.
+Ptychography
+
+Phase retrieval is difficult because phase is never
+directly recorded; instead, the detector only captures
+the square modulus of the electron wavefunction.
+In
+electron ptychography of crystals, the idea is that with
+a large enough convergence angle, the central disk will
+begin to overlap with other Bragg disks. In the overlap
+regions the phases of the two beams add coherently,
+and consequently phase reconstruction is possible by
+analyzing these regions.
+The method is analogous to
+holography, which combines a scattered beam and a
+reference beam to create an interference pattern, except
+that the ‘scattered’ and ‘reference’ beams are now the
+central beam and the Bragg reflected beams. Variations
+in these regions of interference as the beam is scanned
+enable phase retrieval. Ptychography was first suggested
+as a method to solve the crystallographic phase problem
+by Hoppe [84–86], and later extended to solve the phase
+
+
+19
+
+-0.8
++0.8
+
+(a)
+(b)
+(c)
+(d)
+
+Iterations
+
+0
+250
+500
+0.15
+
+0.20
+
+Error
+
+(e)
+
+Differential Phase Contrast
+Single Side Band Ptychography
+
+CoMx
+CoMy
+
+DPC Convergence
+
+pixels
+
+FIG. 15. Phase retrieval of a carbon nanotube, using (a) differential phase contrast, or (b) single side band ptychography. (c,d)
+The centers of mass of the diffraction patterns, used in DPC. (e) Convergence of the boundary condition correction component
+of the DPC algorithm.
+
+problem for arbitrary specimens by Rodenburg [87].
+py4DSTEM includes a ptychographic reconstruction
+algorithm which calculates the phase in a single step,
+based on the single-side-band approach and discussed
+in detail in Appendix J. Figure 15b shows the results
+for the carbon nanotube discussed above, and clearly
+reveals both the walls of the tube as well as the tortuous
+structure of carbon inside the tube. In general, direct
+solvers tend to be fast, however, better reconstruction
+quality is usually achieved with iterative algorithms.
+Unfortunately, a patent on iteration creates substantial
+challenges to making iterative ptychography codes of any
+sort freely available to the scientific community.
+
+V.
+Conclusion
+
+In this paper, we have presented the py4DSTEM
+software package written in Python, for analysis of 4D-
+STEM experiments. We have described the program’s
+purpose and structure, including an HDF5 based file
+standardization for 4D-STEM. We’ve described how
+py4DSTEM can be used for preprocessing and calibrating
+data, finding Bragg disk positions, transformation into
+polar-elliptical coordinates, and for classifying diffraction
+patterns based on commonalities in their diffraction
+patterns.
+We demonstrated measurements including
+virtual imagining, phase mapping, mapping strain in
+crystalline and amorphous materials, RDF and FEM
+analyses, and phase reconstruction with DPC and with
+ptychography.
+The analysis here spans 8 datasets,
+including seven experimental and one synthetic dataset.
+The py4DSTEM codes and many examples are freely
+available in the py4DSTEM repository on Github. As an
+open source project, both new users and new contributors
+are enthusiastically encouraged to try the code, use it in
+
+your own work, or make a pull request.
+
+Acknowledgements
+
+This project is supported by the Toyota Research
+Institute. Work at the Molecular Foundry was supported
+by the Office of Science, Office of Basic Energy Sciences,
+of the U.S. Department of Energy under Contract No.
+DE-AC02-05CH11231.
+BHS and LAH were supported
+by the Toyota Research Institute. SEZ was supported by
+STROBE, an NSF Science and Technology Center, under
+Grant No.
+DMR 1548924.
+SZ was supported by the
+US Office of Naval Research under Grant No. N00014-
+17-1-2283.
+JD was supported by the Dow University
+Partnership Initiative Program. CO and JC acknowledge
+support of Department of Energy Early Career Research
+Awards.
+The authors thank Shreyas Cholia, Matthew
+Henderson, Rollin Thomas, and Ludovico Bianchi from
+the National Energy Research Scientific Computing
+Center (NERSC) for support with high-performance
+computing integration.
+NERSC is a U.S. Department
+of Energy Office of Science User Facility operated under
+Contract No.
+DE-AC02-05CH11231.
+The authors
+thank Blas Uberuaga for sample acquisition and support.
+Thanks also to the developers of hyperspy, openNCEM,
+scipy, numpy, and matplotlib, without whom this project
+would not have been possible.
+
+
+20
+
+FIG. 16. Schematic of STEM experimental geometry, showing
+initial
+probe
+focused
+onto
+sample
+surface,
+propagating
+through sample, exiting the sample, and finally being imaged
+in the far field detector plane.
+
+Appendices
+
+A.
+Basic formalism for 4D-STEM
+
+Figure 16 shows the geometry of a STEM experiment.
+We define the following probe wavefunctions:
+
+Ψ0(k) = initial probe formed in diffraction space.
+ψ0(r) = probe focused onto sample surface.
+ψ(r) = probe at exit plane of sample.
+Ψ(k) = far field probe in detector plane.
+
+where r and k denote coordinates in the real space
+image and diffraction space planes, respectively, and the
+diffraction plane coordinate |k| = α
+
+λ for scattering angle
+α and relativistically corrected electron wavelength λ. In
+a STEM experiment, scan coils are used to move the
+probe to a given position R, denoted by ψ0(r − R). In
+this appendix, we first describe a simple model for 4D-
+STEM datasets, which primarily refers to the diffraction
+plane wavefunction Ψ(R, k). We then briefly discuss the
+more general question of how the wavefunction evolves
+from the initial probe Ψ0 to the final probe Ψ on the
+detector.
+A 4D-STEM dataset typically takes the form of a four-
+dimensional array of intensity values,
+
+I = Ii,j,n,m
+= I(Rx, Ry, kx, ky)
+= I(R, k).
+
+Here, each Ii,j,n,m is a scalar and (i, j, n, m) ∈ N,
+i.e.
+the dataset is a discrete 4D grid of numbers.
+The correspondences between (i, j) and scan position
+R
+=
+(Rx, Ry) and between (n, m) and diffraction
+
+coordinate k = (kx, ky) are determined by the real and
+diffraction space pixel size calibrations. The value of each
+Ii,j,n,m is given by the electron flux passing through the
+appropriate detector pixel, or by the square modulus of
+the beam wavefunction integrated over the detector pixel
+at k when the beam raster position is R. Thus the 4D-
+STEM dataset may be modelled by
+
+I(R, k) =
+� kx+∆k
+
+kx
+
+� ky+∆k
+
+ky
+|Ψ(R, k)|2dkxdky
+
+≈ |Ψ(R, k)|2
+
+where the approximation is exact in the limit of
+infinitesimally small detector pixels.
+Note that this
+simple model does not account for finite information
+transfer in the microscope, which could be included with
+a multiplicative transfer function M(k).
+In a STEM experiment with an integrating detector
+(ADF, BF, etc.), the image I(R) can be modeled as
+
+I(R) =
+�
+|Ψ(R, k)|2D(k)dk
+(A1)
+
+where D(k) reflects the detector geometry. For some 4D-
+STEM signal I(R, k) we can write down an equivalent
+virtual image Iv(R) as:
+
+Iv(R) =
+�
+I(k, R)D(k)dk.
+(A2)
+
+If Eqs. A1 and A2 look similar, it’s because they are. The
+key difference is in the meaning of the integration over
+D(k): in the former equation, it describes the action
+of the detector, and the integration occurs in hardware
+during data acquisition; in the latter equation, it is a
+prescription for which pixels of the 4D datacube need to
+be summed in post-processing.
+The evolution of the probe is comparatively simple
+from the probe forming aperture to the sample plane,
+and from the sample plane to the detector - both are
+given by Fourier transforms:
+
+ψ0(r) = Fk→rΨ0(k)
+Ψ(k) = Fr→kψ(r)
+(A3)
+
+where Fr→k is the forward transform from the real to
+diffraction domain, and Fk→r is the inverse transform
+from the diffraction to real domain. The most common
+initial condition for the electron probe in 4D-STEM is
+given by a circular aperture in a condenser plane
+
+Ψ0(k) = A(kmax)
+
+=
+�
+1
+if |k| ≤ kmax
+0
+otherwise
+(A4)
+
+where A(kmax) is the 2D “top hat” function, and kmax is
+the maximum scattering vector of the probe. The probe
+incident on the sampe is then an Airy disk function
+
+ψ0(r) = J1(2πkmax|r|)
+√π|r|
+(A5)
+
+
+21
+
+where J1 is a Bessel function of the first kind, and the
+peak amplitude is equal to √πkmax.
+This function is
+shown graphically in the upper right corner of Figure 16.
+More complex STEM probes can be formed by using
+amplitude-patterned apertures [39, 88], phase plates [89–
+92], or other methods [93, 94]. In a vacuum, ψ0(r) =
+ψ(r), so that Ψ(k) and Ψ0(k) are identical up to scaling
+and phase factors, so that without a sample the image on
+the detector directly reflects the electron beam passing
+through the probe-forming aperture.
+The
+change
+in
+the
+wavefunction
+from
+ψ0(r)
+to
+ψ(r), as the beam passes through a sample is, in
+general, analytically intractable, so numerical methods
+are typically used. Using some approximations described
+in [34], and omitting the scan coordinate R for clarity,
+the interaction of the STEM probe with the sample is
+governed by the time-independent Schr¨odinger equation
+
+∂ψ(r)
+
+∂z
+= iλ
+
+4π
+
+�∂2ψ(r)
+
+∂x2
++ ∂2ψ(r)
+
+∂y2
+
+�
++ iσV (r)ψ(r)
+(A6)
+
+where i is the imaginary constant, σ is the relativistically-
+corrected electron-matter interaction constant, and V (r)
+is the electrostatic potential inside the sample. Because
+the two operators on the right-hand side of equation A6
+do not commute, it is typical to use a split-step method
+to numerically solve this equation called the multislice
+method, first derived in [95].
+To use the multislice
+method to solve the interaction of the electron beam with
+the sample, we first divide up the sample into a series of
+N slices, Vn(r), which are 2D arrays that integrate all
+of the electrostatic potential contained in a given slice of
+thickness ∆z, given by
+
+Vn(r) =
+� z+∆z/2
+
+z−∆z/2
+V (r)dz
+(A7)
+
+By assuming each slice has infinitesimal thickness, the
+solution to the transmission operator is given by
+
+ψ(r) = T(r)ψ0(r) = eiσVn(r)ψ0(r).
+(A8)
+
+Between each slice, we assume zero electrostatic potential
+and can therefore advance the electron wave by using the
+free-space propagation operator, which can be efficiently
+applied in Fourier space [34]
+
+ψ(r) = Fk→r
+�
+eiλ∆z|k|2�
+Fr→kψ0(r)
+��
+.
+(A9)
+
+Note that the propagation operator eiλ∆z|k|2 uses the 2D
+inverse spatial coordinate k = kx
+2 + ky
+2. We alternate
+the application of the transmission and propagation
+operators to calculate the final wavefunction after
+interacting with the sample,
+
+ψ(r) =
+
+� N
+�
+
+n=1
+
+�
+Fk→r
+�
+eiλ∆z|k|2�
+Fr→k
+�
+eiσVn(r)�����
+
+ψ0(r),
+
+which is typically referred to as the exit wave.
+This
+method requires N transmission operations and N −
+
+1 propagation operations.
+The multislice method is
+often used for modeling 4D-STEM experiments, but
+can require a prohibitively high amount of computation
+time for very large simulations.
+Recently, a more
+efficient method has been developed to simulate 4D-
+STEM experiments called PRISM [96], which has been
+made available as a simulation code [97], and extended
+to simulate electron energy loss spectroscopy (STEM-
+EELS) inelastic scattering as well [98].
+
+B.
+Cross, phase, and hybrid correlations
+
+Cross-correlative template matching is a standard tool
+in image processing, and is widely used in computational
+analysis for electron microscopy [99, 100]. The purpose
+of this appendix is to outline the formalism for these
+methods,
+and to briefly discuss the effects of and
+appropriate uses cases for so-called ‘hybrid’ correlations.
+For functions f and g, written in one dimension for
+simplicity, the cross correlation is defined as
+
+(f ⋆ g)(x) =
+� ∞
+
+∞
+f(y)∗g(x + y)dy
+(B1)
+
+where ∗ indicates complex conjugation.
+The key idea
+here is that if f(x−a) = g(x), then (f ⋆g)(x = a) will be
+a maximum, because the integrand then becomes |f(y)|2
+
+and two functions are perfectly overlapped. Therefore,
+the cross correlation of the vacuum probe template with
+a diffraction pattern can be used to extract the Bragg
+disk positions simply by identifying the cross correlation
+maxima.
+Computationally, this is implemented via the cross
+correlation theorem, which states that
+
+(f ⋆ g)(x) = F−1 ((Ff)∗(Fg))
+(B2)
+
+where F is the Fourier transform. This follows directly
+from the Fourier transform of Eq. B1 and the change of
+variables x′ = x + y. Equation B2 therefore allows the
+integral of Eq. B1 to be computed efficiently via a few
+FFT operations, which is important because performing
+the cross correlation on each diffraction pattern (often
+10,000 or more) is the most computationally intensive
+step of many analysis workflows.
+In contrast to Eq. B2, the so-called phase correlation
+normalizes by the amplitude in Fourier space before
+applying the inverse transform:
+
+(f ⋆ g)phase(x) = F−1
+� (Ff)∗(Fg)
+
+|(Ff)∗(Fg)|
+
+�
+(B3)
+
+This leads to an analytically pleasing result:
+now, if
+f(x − a) = g(x), then (f ⋆ g)phase(x) = δ(x − a). The
+result follows directly from substituting f(x − a) = g(x)
+in to Eq. B3 and making use of the Fourier shift theorem.
+Thus where the cross correlation simply has a maximum
+where f and g best overlap, the phase correlation yields
+
+
+22
+
+a delta function which selects the point of interest. As
+a practical matter, however, phase correlations are also
+highly sensitive to noise, and this application tend to lead
+to many false positives when used with real data.
+An intermediate approach is possible using a hybrid
+correlation, in which a normalization somewhere in
+between a phase and cross correlation is used, as follows:
+
+(f ⋆ g)n(x) = F−1
+�
+(Ff)∗(Fg)
+
+|(Ff)∗(Fg)|1−n
+
+�
+(B4)
+
+Here, n ∈ [0, 1].
+For n = 1, the result is a cross
+correlation, and for n
+=
+0, the result is a phase
+correlation.
+Intermediate values may be thought of is
+applying intermediate weighting to the amplitude versus
+phase components of the signals in Fourier space. While
+the hybrid correlation is a heuristic approach, it is often
+effective. Giving more weight to the phase components
+(lower values of n) increases sensitivity to edges and
+can do a better job of identifying faint Bragg disks,
+however, the trade off is typically an increase in false-
+positives. Experience with many datasets indicates that
+an n value in the neighborhood 0.85 or 0.9 – similar to a
+cross correlation, but with a slightly increased sensitivity
+to edges – frequently yields good results.
+The noisier
+the data, the more caution is in order in using lower n
+values, and for very noisy data pure cross-correlations are
+recommended. Figure 17 shows cross, hybrid (for several
+n values) and phase correlations in one dimension for
+simulated data with and without noise.
+
+C.
+Bragg vector map formalism
+
+Let us refer to the i’th Bragg disk detected in the
+diffraction pattern at scan position (Rx, Ry) as BRx,Ry,i.
+In computer memory, this might be thought of as a length
+3 tuple: BRx,Ry,i = (kx,i, ky,i, Ii), where the subscript
+i indicates the i’th peak, and the three values are the
+coordinates of the disk center in diffraction space and
+the disk’s intensity.
+Analytically, we can think of the
+BRx,Ry,i as Kronecker deltas of strength Ii:
+
+BRx,Ry,i(k) = Iiδ(kx − kx,i)δ(ky − ky,i)
+(C1)
+
+The delta function specifies where the Bragg condition is
+met for parallel illumination; Bragg disks are formed by
+translating each point in the central disk by this vector,
+and may be thought of as the convolution of the aperture
+function with Eq. C1
+
+Let’s denote the set of all Bragg disks detected at a
+scan position (Rx, Ry) as BRx,Ry. For N disks in BRx,Ry
+we can write
+
+BRx,Ry(k) =
+
+N
+�
+
+i=1
+Iiδ(kx − kx,i)δ(ky − ky,i)
+(C2)
+
+Taking a summation over all scan positions gives
+
+B(k) =
+�
+
+rx∈Rx
+
+�
+
+ry∈Ry
+Brx,ry(k)
+(C3)
+
+=
+�
+
+rx,ry,i
+Irx,ry,iδ(k − krx,ry,i)
+(C4)
+
+B is the Bragg vector map. Physically, is interpretable as
+a (unnormalized) distribution of measured Bragg vector
+directions found within the sample over the area of the
+4D-STEM scan.
+
+D.
+Elliptical fitting and transforms
+
+In this appendix we describe various elements of
+py4DSTEM that make use of or relate to elliptical
+coordinates.
+First we discuss elliptical fitting, which
+is important for correction of elliptical distortions.
+We then briefly describe and relate the two elliptical
+parametrizations used in the code. Finally, we describe
+polar-elliptical transformations and radial integration.
+Two primary elliptical fitting routines are available
+in py4DSTEM. The first is appropriate for data that is
+well-described by a 1D elliptical curve - for instance, a
+Bragg vector map from a sample with many randomly
+oriented grains will typically contain elliptical rings
+associated
+with
+each
+characteristic
+spacing
+of
+the
+material. The second is a sum of two Gaussian functions,
+a simple Gaussian and a ‘double-sided’ Gaussian, and
+is appropriate for fitting amorphous diffraction patterns,
+and is a two-dimensional fit designed to capture the first
+amorphous halo.
+For 1D elliptical curve fitting, we first define some
+annular region of our 2D dataset containing pixels
+(kxi, kyi), each with intensity Ii. We then determine the
+ellipse that most closely fits this data by computing
+
+arg min
+kx0,ky0,A,B,C
+
+�
+
+i
+[A(kxi − kx0)2 + B(kxi − kx0)(kyi − ky0)+
+
+C(kyi − ky0)2 − 1]Ii
+
+The double-sided Gaussian function for amorphous
+halo fitting is defined as
+
+f(kx, ky;I0, I1, σ0, σ1, σ2, c, R, kx0, ky0, B, C) =
+N(r; 0, σ0, I0, )+
+N(r; R, σ1, I1)Θ(r − R)+
+N(r; R, σ2, I1)Θ(R − r)
+
+where
+(kx, ky)
+are
+the
+coordinates
+and
+(I0, I1, σ0, σ1, σ2, c, R, kx0, ky0, B, C)
+are
+parameters,
+where N(r; R, σ, I) is a Gaussian centered at R with
+standard deviation σ and with maximum amplitude I,
+where Θ is the Heaviside step function, and where r is
+the radial coordinate of an elliptical system given by
+r2 = (kx − kx0)2 + B(kx − kx0)(ky − ky0) + C(ky − ky0).
+When performing a fit, as before we first define an
+
+
+23
+
+Hybrid
+
+Phase
+
+Cross
+
+Hybrid
+
+Phase
+
+Cross
+
+Without Noise
+With Noise
+
+FIG. 17. Cross correlation, phase correlation, and hybrid correlation. A 1D vacuum probe has been correlated with a 1D comb
+of Bragg disks without (left) and with (right) noise. Various values of n are used, where n = 1 is a cross correlation, n = 0 is
+a phase correlation, and intermediate values are ‘hybrid’ correlations – see Eq. B4. Hybrid correlations increase sensitivity to
+edges and narrow the central maxima relative to a cross correlation, but also increase sensitivity to noise.
+
+annular region in the dataset to fit, typically about the
+first amorphous halo.
+The first term is meant to fit
+the decaying background, while the second and third
+terms fit the amorphous halo, while allowing for an
+asymmetrical shape on the inner/outer sides of the ring.
+
+When fitting ellipses we use the parametrization
+
+1 = A(kx − kx0)2 + B(kx − kx0)(ky − ky0) + C(ky − ky0)2
+
+(D1)
+for numerical stability. However the parameters of this
+form are not the most easily geometrically interpretable,
+so for this reason we also make use of the alternate
+parametrization
+
+kx = kx0 + A′r cos(θ) cos(φ) − B′r sin(θ) sin(φ)
+(D2)
+ky = ky0 + B′r cos(θ) sin(φ) + A′r sin(θ) cos(φ)
+
+where (kx, ky) are cartesian coordinates, (r, θ) are polar-
+elliptical coordinates, and (A′, B′, φ) are parameters
+corresponding to the two semi-axis, and the tilt of the
+A′-axis with respect to the kx-axis. Equations D1 and
+
+D2 are related by
+
+A′ =
+�
+2
+
+A + C + ξ
+
+B′ =
+�
+2
+
+A + C − ξ
+
+ξ = (A − C)
+
+�
+
+1 +
+�
+B
+
+A − C
+
+�2
+
+φ = 1
+
+2 tan−1
+�
+B
+
+A − C
+
+�
+
+Once the appropriate elliptical parameters are known,
+polar-elliptical transformations may be performed. After
+specifying
+a
+range
+and
+sampling
+the
+new
+polar
+coordinates, each point (r, θ) is mapped to some (kx, ky)
+position in Cartesian space,
+from which a bilinear
+interpolation is then used to compute the value at
+(r, θ).
+In py4DSTEM, arrays returned after polar-
+elliptical transformation are numpy masked arrays, to
+ensure that coordinates beyond the frame of the raw
+data are correctly handled, and also facilitating masking
+data where necessary, e.g.
+from a beamstop.
+Radial
+integrals are calculated by first computing the polar-
+
+
+24
+
+elliptical (or polar) transformation then summing along
+the θ-direction.
+
+E.
+Classification
+
+The underlying principle of the classification scheme
+described in Sec. III E is the definition of a particular
+feature vector, which is useful because it efficiently
+encodes the key physical features of crystalline electron
+scattering – the Bragg vectors.
+It therefore massively
+reduces the size of the data before classification, while
+honing in on the most physically relevant element of
+the diffraction data. For a calibrated Bragg vector map
+containing N delta-like peaks, we associate with each
+such peak an integer i ∈ {0, ..., N − 1}.
+For each
+diffraction pattern we generate a length-N vector v.
+The i’th element of v is defined in one of two ways:
+(1) a Boolean value indicating whether this diffraction
+patterns contains this Bragg peak, or (2) a floating point
+value of the intensity of this Bragg peak in this diffraction
+pattern.
+With these feature vectors in hand, we use matrix
+factorization methods to complete the classification.
+First we construct the matrix X which has the feature
+vectors v as its columns. For data with RN = RNx×RNy
+diffraction patterns, X has dimensions N×RN. X is then
+written as
+
+X = WH
+(E1)
+
+where W has shape N × C, H has shape C × RN,
+and C is the number of classes. W may be thought of
+as a collection of C column vectors, each describing a
+class in terms of weights for the various possible Bragg
+vectors observed over the entire dataset.
+H may be
+thought of as a set of column vectors which describe
+how to obtain, through linear combination of the classes,
+good approximations for each of the observed diffraction
+patterns.
+Alternatively, the row vectors of H may be
+thought of as an image (albeit reshaped):
+there are
+C of them, and each describes how much to weight
+the corresponding class in each of the RN positions
+of the electron beam.
+In Secs III E and IV B we use
+an algorithm based on the frequency of co-occurance
+of Bragg peaks across diffraction patterns to set initial
+values for W and H.
+We then optimize using non-
+negative matrix factorization [101].
+
+F.
+Strain
+
+In this appendix we discuss how the crystalline and
+amorphous strains are calculated in Secs. IV C and IV D.
+We’re interested in the infinitesimal strain matrix,
+where the deformed lattice differs very little from the
+undeformed lattice.
+For a material with a deformed
+state characterized by some displacement field u, and
+considering the system in a coordinate system with
+
+abscissa and ordinate (x1, x2), the infinitessimal strain
+matrix is
+
+ϵ =
+�
+ϵ11 ϵ12
+ϵ21 ϵ22
+
+�
+=
+
+
+
+
+
+∂u1
+∂x1
+− 1
+
+2
+�
+∂u1
+∂x2 + ∂u2
+
+∂x1
+
+�
+
+− 1
+
+2
+�
+∂u1
+∂x2 + ∂u2
+
+∂x1
+
+�
+∂u2
+∂x2
+
+
+
+
+
+(F1)
+
+and is typically accompanied by θR =
+1
+2
+�
+∂u1
+∂x2 − ∂u2
+
+∂x1
+
+�
+.
+
+The
+ϵii
+terms
+represent
+the
+compressive/tensile
+strain along the �xi directions, with positive values
+corresponding to tension. ϵ12 represents the shear strain,
+and our sign convention is chosen such that positive
+values correspond to the angle spanned from �x1 to
+�x2 becoming more obtuse in the deformed body.
+θR
+represents the rotation of the material, with positive
+values corresponding to counterclockwise rotation of a
+right-handed coordinate system.
+For
+both
+crystalline
+and
+amorphous
+strain,
+the
+strain matrix is calculated at each beam position by
+comparing two comparable measurements:
+one of the
+local structure, and one of an undeformed reference
+structure. For crystalline strain, the measurement we use
+is a pair of reciprocal lattice basis vectors. For amorphous
+strain, the measurement is a transformation of the ellipse
+fit to the (first) amorphous halo.
+For crystalline strain, consider a real space lattice with
+reference basis vectors a0 = (a0
+1, a0
+2) and local, deformed
+lattice vectors a = (a1, a2). The transformation matrix
+Ta0→a describes the linear deformation of the space, and
+given the lattice vectors is calculable via
+
+a = T aa0
+
+The strain matrix in Eq. F1 is defined with respect to
+some arbitrary area element of the material under study,
+so we consider a square unit area element with sides
+(�e0
+1, �e0
+2) = (�x1, �x2). The transformation T a maps these
+to a new set of vectors (e1, e2). In the limit of small area
+elements, the relevant derivatives are then expressible as
+
+∂u1
+∂x1
+= (e1 − e0
+1) · �e0
+1
+= T a
+11 − 1
+
+∂u1
+∂x2
+= (e1 − e0
+1) · �e0
+2
+= T a
+21
+
+∂u2
+∂x1
+= (e2 − e0
+2) · �e0
+1
+= T a
+12
+
+∂u2
+∂x2
+= (e2 − e0
+2) · �e0
+2
+= T a
+22 − 1
+
+ϵ can then be retrieved from T a.
+In practice,
+we calculate basis lattice vectors of
+the reciprocal lattice g = (g1, g2), by performing an
+intensity-weighted fit to measured Bragg peak positions
+at each scan position.
+The corresponding reference
+vectors g0 = (g0
+1, g0
+2) can be determined several ways,
+including defining a reference region, dataset, or using
+a known crystal structure. At this point it is possible
+to use g to determine a, then compute ϵ with the
+
+
+25
+
+methods above.
+Alternatively, assuming sufficiently
+small deformations that we may discard terms of second
+order and higher in a Taylor expansion in both rotation
+and scaling, it is possible to compute ϵ directly from the
+transformation Tg0→g, describing the linear deformation
+of reciprocal space, with remarkably little alteration to
+the above equations. In this case, the final expressions
+for the strain are
+
+ϵ11 = 1 − T g
+11
+ϵ22 = 1 − T g
+22
+
+ϵ12 = −1
+
+2 (T g
+12 + T g
+21)
+
+θR = 1
+
+2 (T g
+12 − T g
+21)
+(F2)
+
+To measure strain from the diffraction pattern of
+an amorphous material, we fit ellipses at each probe
+position using the methods described in Appendix D.
+After shifting the origin of each ellipse to k = (0, 0),
+we have
+
+qref
+2 = Akx
+2 + Bkxky + Cky
+2
+(F3)
+
+where qref
+is a reference radius,
+which defines an
+undeformed (circular) amorphous halo given by
+
+qref
+2 = kx
+2 + ky
+2.
+(F4)
+
+Because the measurement takes place in reciprocal
+space, it is more convenient to define the transformation
+matrix from the measured ellipse given by Eq. F4 to the
+reference circle given by Eq. F3, which is given by
+�
+kx
+′
+
+ky
+′
+
+�
+= T
+�
+kx
+ky
+
+�
+,
+(F5)
+
+where
+
+T =
+1
+√
+
+A + C + W
+
+�
+A + 1
+
+2W
+B
+B
+C + 1
+
+2W
+
+�
+,
+
+where
+
+W =
+�
+
+4AC − B2.
+
+This expression is valid as long as the roots are real,
+i.e. 4AC − B2 > 0. To calculate the strain deformation
+tensor, we proceed in a similar manner to F2, althrough
+we note the direction of the transformation has already
+been changed to the real space transformation directions,
+
+ϵ11 = T11 − 1
+ϵ22 = T22 − 1
+
+ϵ12 = 1
+
+2 (T12 + T21) .
+(F6)
+
+The full expressions for the strain tensor components are
+
+ϵ11 =
+A + 1
+
+2W
+√
+
+A + C + W − 1
+
+ϵ22 =
+C + 1
+
+2W
+√
+
+A + C + W − 1
+
+ϵ12 =
+B
+√
+
+A + C + W
+(F7)
+
+Taking a first order Taylor expansion about A = 1, C =
+1, and B = 0 yields the linear strain approximation
+
+ϵ11 = 1
+
+2(A − 1)
+
+ϵ22 = 1
+
+2(C − 1)
+
+ϵ12 = 1
+
+2B.
+(F8)
+
+Note that when using the linear approximation above, it
+is important to use a value for qref that is very close
+to the reference lattice average scattering radius, as
+the accuracy of the above expressions will suffer as the
+approximations A ≈ 1 and C ≈ 1 become worse.
+An alternative method of determining the real-space
+strains corresponding to an ellipse can be done using
+matrix notation. In matrix form, the ellipse equation F3
+can be represented as
+
+M =
+�
+A
+B/2
+B/2
+C
+
+�
+,
+(F9)
+
+where the major and minor axis directions are the
+eigenvectors of M, and their lengths are the square
+root of the eigenvalues.
+In the eigenbasis reference
+frame then, the transformation matrix, T, is simply the
+square root of the diagonalized eigenvalues, aligned with
+the corresponding eigenvectors. However, this must be
+rotated back to the traditional xy reference frame, or
+another chosen reference frame, via tensor rotation
+
+T′ = RTRT
+(F10)
+
+where
+R
+is
+a
+standard
+rotation
+matrix
+and
+the
+superscript T represents transpose.
+The angle with
+respect to the xy axis can be found by taking the two-
+argument arctangent (atan2) of an eigenvector. Finally,
+once T′ is in the correct orientation, the strains are
+simply
+
+ϵ11 = T11 − 1
+ϵ22 = T22 − 1
+ϵ12 = (T12 + T21) .
+(F11)
+
+We also note that most experiments will contain some
+degree of ellipticity even when no strain is present. In
+these cases, we will subtract the reference strain state
+from all measurements.
+
+G.
+Radial Distribution Functions
+
+We
+computation
+the
+radial
+distribution
+function
+following the methods of [37, 68].
+Beginning from an
+amorphous diffraction pattern, often averaged over many
+probe positions to increase the signal to noise ratio,
+we measure the radial intensity ⟨I(k)⟩φ averaged over
+the angular direction φ. Figure 13a-c shows such data
+
+
+26
+
+for amorphous silicon. Next, we estimate the structure
+factor using the expression
+
+Φ(q) = ⟨I(q)⟩φ − IBG(q) − N⟨f(q)2⟩
+
+N⟨f(q)2⟩
+q M(q),
+(G1)
+
+where
+IBG(q)
+is
+a
+background
+intensity
+estimate,
+⟨f(q)2⟩ is the mean-square of the parameterized single-
+atom scattering factors for all atomic species present,
+multiplied by N total atoms in the probe volume, and
+M(q) is a masking function. The single atom scattering
+term is typically fit to the high scattering angle region,
+past the region where oscillating structure factor peaks
+are visible. The background IBG(q) can be an additional
+constant offset, a more complex fitting function, or just
+neglected. A masking envelope function M(q) is required
+to zero the structure factor Φ(q) at low scattering angles
+due to residual intensity from the central beam.
+This
+function can also be used to zero the structure factor
+Φ(q) at high scattering angles as well, due to residual
+fitting errors in N⟨f(q)2⟩ and IBG(q). Figure 13c shows
+the single atom scattering fit, and Fig. 13d shows the
+masked structure factor.
+Next,
+we obtain the reduced radial distribution
+function (RDF) g(r) by taking the discrete (type II) sine
+transform of Φ(q), equal to
+
+g(r) =
+
+qmax
+�
+
+q=0
+Φ(q) sin
+�
+π
+
+qmax
+
+� q
+
+∆q + 1
+
+2
+
+� � r
+
+∆r + 1
+��
+,
+
+(G2)
+where qmax is the maximum q where Φ(q) is non-zero,
+and ∆q and ∆r are the pixel sizes in diffraction and real
+space respectively. g(r) should ideally approach 0 as r →
+0 within the nearest neighbor shell, and approach 1 as
+r → ∞, but errors in the above fitting procedure can
+cause deviations from these results. [37] Other authors
+recommend subtracting a 4th order polynomial from Φ(q)
+in order to reduce low spatial frequency artifacts. Here,
+we add a sigmoidal damping mask which clamps the RDF
+to zero as r → 0. Figure 13e shows the final result of the
+calculation, g(r).
+Finally, we can also compute the atomic density ρ(r)
+of our sample using the expression
+
+ρ(r) = r [g(r) + 4πrρ0] ,
+(G3)
+
+where ρ0 is the bulk atomic density of the sample. This
+expression can be used to determine the coordination
+number of neighboring shells of atoms, by integrating
+over the distances r corresponding to a specific shell.
+
+H.
+Fluctuation Electron Microscopy
+
+The FEM computation here follows the methods of
+[73].
+The first steps are identical to an RDF study,
+namely calibrating the elliptic distortions, performing
+the polar transformation and measuring the average
+
+intensity as a function of scattering angle ⟨I(q)⟩φ,R from
+all diffraction patterns at probe positions R. Next, we
+measure the variance V (q) of the intensity as a function
+of scattering angle over all diffraction patterns
+
+V (q) = ⟨[⟨I(q)⟩φ − ⟨I(q)⟩φ,R]2⟩R.
+(H1)
+
+In order to reduce the effect of thickness when comparing
+multiple datasets, we then compute the normalized
+variance Vnorm(q) as
+
+Vnorm(q) =
+V (q)
+
+⟨I(q)⟩2
+φ,R
+(H2)
+
+The RDF measurement described above is primarily
+sensitive to the 2-body atomic pair correlations, whereas
+the FEM variance is more sensitive to 4-body pair-pair
+correlations [70].
+
+I.
+Differential Phase Contrast
+
+In this appendix we summarize the mathematical
+underpinnings of the differential phase contrast method,
+adapted from Ref. [102].
+Following from Appendix A, we select for the STEM
+detector in Eq. A1, the so-called first moment detector
+function D(k) = k. Note that, in contrast to Eq. A1,
+here we use a vector valued detector function, yielding a
+vector valued image:
+
+I(R) =
+�
+|Ψ(k, R)|2kdk
+(I1)
+
+Physically, this distinction reflects that such a detector
+is sensitive to deflections of the total intensity of the
+electron beam, which is itself a vector quantity. A good
+approximation to Eq. I1 is possible using a segmented
+detector geometries [103].
+Substituting this into Eq. A3, this detector choice
+allows us to write:
+
+I(R) =
+�
+|Fr→k (ψ(r, R))|2kdk
+
+=
+�
+Fr→k (ψ(r, R)) F∗
+r→k (ψ(r, R)) kdk
+
+= 1
+
+2πi
+
+�
+Fr→k (∇rψ(r, R))
+
+× F∗
+r→k (ψ(r, R)) dk
+
+where ∗ indicates a complex conjugation, and in the last
+line the derivative property of the Fourier transform has
+been invoked.2
+
+So far no assumptions have been made.
+If a thin
+specimen is assumed3 we may model the probe-sample
+
+2 I.e. Fr→k(∇f(r)) = 2πikFr→k(f(r))
+3 A necessary but not sufficient condition is that the probe depth
+of field (equal to 1.7λ/α2) is much greater than the specimen
+thickness.
+
+
+27
+
+interaction as multiplication of the electron wave function
+with a specimen transmission function T(r) and we can
+continue with
+
+I(R) = 1
+
+2πi
+
+�
+dk
+�
+dre−2πik·r
+
+�
+ψ0(r − R)∇T(r) + T(r)∇ψ0(r − R)
+�
+
+×
+�
+dr′e2πik·r′ψ∗
+0(r − R)T ∗(r′)
+
+= 1
+
+2πi
+
+�
+dr
+�
+|ψ0(r − R)|2∇T(r)T ∗(r)
+
++ ∇rψ0(r − R)ψ∗
+0(r − R)|T(r)|2
+�
+(I2)
+
+We now take the phase object approximation and write
+the transmission function as T(r) = eiσV (R). The second
+half of the sum in Eq. I2 then becomes
+
+1
+2πi
+
+�
+dr∇rψ0(r − R)ψ∗
+0(r − R)
+
+= ℏ
+
+2π
+
+�
+drψ∗
+0(r − R)�pψ0(r − R)
+
+= ℏ
+
+2π ⟨p⟩
+
+where
+⟨p⟩
+is
+the
+expectation
+value
+of
+the
+probe
+momentum, and we’ve made use of the fact that the
+momentum operator is �p =
+1
+iℏ∇. But ⟨p⟩ is independent
+of R and thus provides some constant offset to I(R), and
+can be neglected.
+Continuing from Eq. I2 and again using the phase
+object approximation, we find
+
+I(R) = 1
+
+2πi
+
+�
+dr|ψ0(r − R)|2 (iσ∇V (r))
+
+= − σ
+
+2π
+
+�
+drE(r)|ψ0(r − R)|2
+
+= − σ
+
+2π E(R) ∗ |ψ0(R)|2
+(I3)
+
+where ∗ denotes a convolution, and we’ve made use of
+the fact that E = −∇V .
+To solve for V
+given I requires that we integrate
+Eq (I3), and we follow [24, 82, 83] and write
+
+V (R) = −F−1
+k→r
+
+�k · Fk→r{I(R)}
+
+ik2
+
+�
+/σ .
+(I4)
+
+Technically a quantitative measurement of V (R) also
+requires deconvolution of the probe wave function [105],
+a step which we ignore in py4DSTEM due to the fact
+that this serves to amplify noise in most experimental
+datasets.
+An additional challenge is the implicit assumption of
+periodic boundary conditions in the use of fast Fourier
+transforms to solve Eq. (I4).
+This is demonstrated in
+Fig. 18 for reconstruction of a test image, a holographic
+
+(a)
+(b)
+(c)
+
+(e)
+(f)
+(d)
+
+FIG. 18. (a) A test image, a holographic reconstruction of
+a biological cell in saline from Ref. [104], along with the
+numerical derivatives of a cropped region (white dashed line)
+of the image in (b) and (c). A DPC reconstruction from (b)
+and (c) produces (d), which has artifacts, most noticeably
+that indicated with a red arrow, result form the boundary
+conditions implicitly assumed by the use of fast Fourier
+transforms. (e) The approach implemented by py4DSTEM,
+discussed in the body text, is to reconstruct on a padded grid
+[the original grid of (b) and (c) is indicated by the dashed
+outline].
+The result of 10 iterations is shown in (f) which
+does not exhibit the same artefacts as (d).
+
+reconstruction of a biological cell in saline from Ref. [104],
+shown in Fig. 18(a). The x and y numerical derivatives
+of a cropped region (indicated by a white dashed outline)
+of Fig. 18(a) are shown in Fig. 18(b) and (c) respectively
+and the result of the solution proposed in Eq. (I4) is
+shown in Fig. 18(d). An artefact of the implicit periodic
+boundary conditions can be seen in part of the white
+cell on the right-hand side of the frame appearing on
+the opposite left-hand side as indicated by a red arrow
+in Fig. 18(d). The approach pursued in py4DSTEM to
+remedy this is to solve Eq. (I4) on a larger grid, one that
+has been “padded” with zeros as shown in Fig. 18(e).
+The original grid corresponding to the input derivatives
+in Fig. 18 is indicated by a white dashed outline in
+Fig. 18. The gradient of the solution in Fig. 18(e) is taken
+and the result subtracted from the input derivatives
+Fig. 18(b) and (c). The result of this subtraction (the
+residual) forms the input for another solution of Eq. (I4)
+on a padded grid which is added to the phase solution
+as a correction.
+This processes is iterated upon until
+convergence, the result of just 10 iterations is shown in
+Fig. 18(f), a more faithful reproduction of Fig. 18(a) than
+Fig. 18(d).
+
+J.
+Ptychography
+
+In this appendix we summarize the mathematics of
+the ptychographic reconstruction method implemented
+
+
+28
+
+in Fig. 15.
+Beginning from the transmission function
+approximation, the measured intensity I at a spatial
+frequency k and a probe position R is given by
+
+I(k, R) =
+����
+
+�
+ψ0(r − R)T(r)e2πir·kdr
+����
+
+2
+.
+(J1)
+
+The goal is to retrieve T from I.
+We first consider the transformed datacube I(k, K) =
+FR→KI(k, R), where K is the reciprocal coordinate to
+scan position R.
+Thus this is the datacube has been
+written in terms of scan frequencies.
+Assuming the
+sample is a weak phase object, this may be written as
+[106]
+
+I(k, K) = |Ψ0(k)|2 δ(k)
++ Ψ0(k)Ψ∗
+0(k + K)T(−k)∗
+
+− Ψ∗
+0(k)Ψ0(k − K)T(k)
+(J2)
+
+where T(k) = Fr→kT(r).
+The latter two terms in
+this expression each contain two copies of the aperture
+function, one centered at the optic axis and one shifted by
+the scan frequency K. For some given K, these terms can
+each be nonzero only at values of k where both disks are
+nonzero; that is, in the overlap between the shifted and
+unshifted disks. By looking only at the nonzero overlap
+between two disks, it is possible to simplify and solve
+Eq. J2 by eliminating one of its terms.
+To eliminate the third term, define the set of pixels
+
+K = {k : (|k| < k0)
+∧ (|k + K| < k0)
+∧ (|k − K| > k0)}
+
+where ∧ is the logical and operation and the maximum
+disk size is k0 =
+α
+λ for convergence semi-angle α and
+electron wavelength λ. Here, the first line requires that
+k is inside the central disk, the second line requires that
+k is inside the disk shifted by −K, and the third line
+requires that k is also outside the disk shifted by K. Thus
+K selects a region of double overlap while also excluding
+the region of triple overlap.
+If only data from k ∈ K is used, the third term in
+Eq. J2 vanishes, so that
+
+T(−k)∗ =
+�
+
+k∈K
+
+I(k, K)
+
+Ψ0(k)Ψ∗
+0(k + K),
+(J3)
+
+and T(r) can be obtained with a subsequent inverse
+Fourier transform. Since this uses only data from a single
+double-overlap region, this method has been dubbed
+single-sideband reconstruction.
+This approach can be extended to include data from
+the whole bright-field in the reconstructions.
+If the
+sample is a weak phase object, it obeys Friedel symmetry,
+so that T(k) = T(−k)∗ [106]. Inserting this into Eq. J2
+and solving gives [91]
+
+T(k) =
+�
+
+k : |k|<k0
+I(k, K) · Γ∗(k, K)
+
+|Γ(k, K)|2 ,
+(J4)
+
+where Γ is the disk-overlap function
+
+Γ(k, K) = Ψ0(k)Ψ∗
+0(k + K) − Ψ∗
+0(k)Ψ0(k − K).
+(J5)
+
+[1] Stephen J Pennycook, “A scan through the history of
+STEM,” in Scanning Transmission Electron Microscopy
+(Springer, 2011) pp. 1–90.
+
+[2] JM Cowley, “Scanning transmission electron microscopy
+of thin specimens,” Ultramicroscopy 2, 3–16 (1976).
+
+[3] ZL Wang and JM Cowley, “Simulating high-angle
+annular
+dark-field
+stem
+images
+including
+inelastic
+thermal diffuse scattering,” Ultramicroscopy 31, 437–
+453 (1989).
+
+[4] Steven R Spurgeon, “Scanning transmission electron
+microscopy of oxide interfaces and heterostructures,”
+arXiv preprint arXiv:2001.00947 (2020).
+
+[5] Nestor
+J
+Zaluzec,
+“Quantitative
+measurements
+of
+magnetic vortices using position resolved diffraction in
+Lorentz STEM,” Microscopy and Microanalysis 8, 376–
+377 (2002).
+
+[6] J-J Fundenberger, A Morawiec, Emmanuel Bouzy, and
+Jean-S´ebastien Lecomte, “Polycrystal orientation maps
+from TEM,” Ultramicroscopy 96, 127–137 (2003).
+
+[7] M
+Watanabe
+and
+D
+Williams,
+“Development
+of
+diffraction imaging for orientation analysis of grains in
+scanning transmission electron microscopy,” Microscopy
+
+and Microanalysis 13, 962–963 (2007).
+
+[8] Andrew R Lupini, Miaofang Chi, Sergei V Kalinin,
+Albina
+Y
+Borisevich,
+Juan
+Carlos
+Idrobo,
+and
+Stephen Jesse, “Ptychographic imaging in an aberration
+corrected stem,” Microscopy and Microanalysis 21,
+1219–1220 (2015).
+
+[9] Mark W Tate, Prafull Purohit, Darol Chamberlain,
+Kayla X Nguyen, Robert Hovden, Celesta S Chang,
+Pratiti Deb, Emrah Turgut, John T Heron, Darrell G
+Schlom, Daniel C Ralph, Gregory D Fuchs, Katherine S
+Shanks, Hugh T Philipp, David A Muller, and Sol M
+Gruner, “High dynamic range pixel array detector for
+scanning transmission electron microscopy,” Microscopy
+and Microanalysis 22, 237–249 (2016).
+
+[10] Colin Ophus, “Four-dimensional scanning transmission
+electron
+microscopy
+(4d-stem):
+From
+scanning
+nanodiffraction
+to
+ptychography
+and
+beyond,”
+Microscopy and Microanalysis 25, 563–582 (2019).
+
+[11] Bernhard
+Schaffer,
+Christian
+Gspan,
+Werner
+Grogger, Gerald Kothleitner,
+and Ferdinand Hofer,
+“Hyperspectral
+imaging
+in
+TEM:
+New
+ways
+of
+information extraction and display,” Microscopy and
+
+
+29
+
+Microanalysis 14, 70–71 (2008).
+
+[12] Jing Tao, Dario Niebieskikwiat, M Varela, Weidong
+Luo, MA Schofield, Y Zhu, Myron B Salamon, Jian-
+Min Zuo, Sokrates T Pantelides,
+and Stephen J
+Pennycook,
+“Direct
+imaging
+of
+nanoscale
+phase
+separation
+in
+La0.55Ca
+0.45MnO3:
+relationship
+to
+colossal magnetoresistance,” Physical Review Letters
+103, 097202 (2009).
+
+[13] Christoph Gammer,
+V Burak Ozdol,
+Christian H
+Liebscher, and Andrew M Minor, “Diffraction contrast
+imaging using virtual apertures,” Ultramicroscopy 155,
+1–10 (2015).
+
+[14] Huigang Zhang, Hailong Ning, John Busbee, Zihan
+Shen, Chadd Kiggins, Yuyan Hua, Janna Eaves, Jerome
+Davis, Tan Shi, Yu-Tsun Shao, et al., “Electroplating
+lithium transition metal oxides,” Science Advances 3,
+e1602427 (2017).
+
+[15] Jordan A Hachtel, Juan Carlos Idrobo, and Miaofang
+Chi, “Sub-˚angstrom electric field measurements on a
+universal detector in a scanning transmission electron
+microscope,”
+Advanced
+Structural
+and
+Chemical
+Imaging 4, 10 (2018).
+
+[16] Robert
+A
+Schwarzer
+and
+J
+Sukkau,
+“Automated
+crystal orientation mapping (ACOM) with a computer-
+controlled TEM by interpreting transmission Kikuchi
+patterns,”
+Materials
+Science
+Forum
+273,
+215–222
+(1998).
+
+[17] Koji Usuda, Toshinori Numata, Toshifumi Irisawa,
+Norio
+Hirashita,
+and
+Shinichi
+Takagi,
+“Strain
+characterization
+in
+SOI
+and
+strained-Si
+on
+SGOI
+MOSFET channel using nano-beam electron diffraction
+(NBD),” Materials Science and Engineering:
+B 124,
+143–147 (2005).
+
+[18] A B´ech´e, JL Rouviere, L Cl´ement, and JM Hartmann,
+“Improved
+precision
+in
+strain
+measurement
+using
+nanobeam electron diffraction,” Applied Physics Letters
+95, 123114 (2009).
+
+[19] Thomas A Caswell, Peter Ercius, Mark W Tate, Alper
+Ercan, Sol M Gruner,
+and David A Muller, “A
+high-speed area detector for novel imaging techniques
+in
+a
+scanning
+transmission
+electron
+microscope,”
+Ultramicroscopy 109, 304–311 (2009).
+
+[20] Christoph T Koch,
+V Burak
+¨Ozd¨ol,
+and Kazuo
+Ishizuka,
+“Quantitative
+four-dimensional
+electron
+diffraction in the TEM,” Microscopy and Analysis , 5
+(2012).
+
+[21] A Kobler, A Kashiwar, H Hahn,
+and C K¨ubel,
+“Combination of in situ straining and ACOM TEM:
+A novel method for analysis of plastic deformation of
+nanocrystalline metals,” Ultramicroscopy 128, 68–81
+(2013).
+
+[22] Thomas C Pekin, Christoph Gammer, Jim Ciston,
+Andrew M Minor,
+and Colin Ophus, “Optimizing
+disk registration algorithms for nanobeam electron
+diffraction strain mapping,” Ultramicroscopy 176, 170–
+176 (2017).
+
+[23] Jingwei Hou, Christopher W Ashling, Sean M Collins,
+Andraˇz Krajnc, Chao Zhou, Louis Longley, Duncan N
+Johnstone, Philip A Chater, Shichun Li, Marie-Vanessa
+Coulet, et al., “Metal-organic framework crystal-glass
+composites,” Nature communications 10, 1–10 (2019).
+
+[24] Ivan Lazi´c, Eric GT Bosch,
+and Sorin Lazar, “Phase
+contrast STEM for thin samples: Integrated differential
+
+phase contrast,” Ultramicroscopy 160, 265–280 (2016).
+
+[25] Z Chen, M Weyland, P Ercius, J Ciston, C Zheng,
+MS Fuhrer, AJ D’Alfonso, LJ Allen, and SD Findlay,
+“Practical aspects of diffractive imaging using an
+atomic-scale coherent electron probe,” Ultramicroscopy
+169, 107–121 (2016).
+
+[26] Knut M¨uller-Caspary, Martial Duchamp, Malte R¨osner,
+Vadim Migunov, Florian Winkler, Hao Yang, Martin
+Huth, Robert Ritz, Martin Simson, Sebastian Ihle,
+et al., “Atomic-scale quantification of charge densities
+in two-dimensional materials,” Physical Review B 98,
+121408 (2018).
+
+[27] Francisco de la Pea,
+Eric Prestat,
+Vidar Tonaas
+Fauske, Pierre Burdet, Petras Jokubauskas, Magnus
+Nord, Tomas Ostasevicius, Katherine E. MacArthur,
+Mike Sarahan, Duncan N. Johnstone, Joshua Taillon,
+Jonas Lhnemann, Vadim Migunov, Alberto Eljarrat,
+Jan
+Caron,
+Thomas
+Aarholt,
+Stefano
+Mazzucco,
+Michael
+Walls,
+Tom
+Slater,
+Florian
+Winkler,
+pquinn
+dls,
+Ben
+Martineau,
+Gal
+Donval,
+Robert
+McLeod,
+Eric
+R.
+Hoglund,
+Ivo
+Alxneit,
+Daniel
+Lundeby, Trond Henninen, Luiz Fernando Zagonel,
+and
+Andreas
+Garmannslund,
+“hyperspy/hyperspy:
+Hyperspy
+v1.5.2
+(version
+v1.5.2).”
+Zenobo
+http://doi.org/10.5281/zenodo.3396791 (2019).
+
+[28] Magnus Nord, Robert WH Webster, Kirsty A Paton,
+Stephen McVitie, Damien McGrouther, Ian MacLaren,
+and Gary W Paterson, “Fast pixelated detectors in
+scanning transmission electron microscopy. part i: Data
+acquisition, live processing and storage,” arXiv preprint
+arXiv:1911.11560 (2019).
+
+[29] Duncan
+N.
+Johnstone,
+Phillip
+Crout,
+Joonatan
+Laulainen, Simon Hgs, Ben Martineau, Tina Bergh,
+Stef Smeets, Sean Collins, Jdrzej Morzy, Hkon nes, Eric
+Prestat, Tiarnan Doherty, Tomas Ostasevicius, Mohsen
+Danaie,
+and Rob Tovey, “pyxem/pyxem: pyxem 0.7.
+1,” Zenodo 10.5281/zenodo.3533653 (2019).
+
+[30] Alexander Clausen, Dieter Weber, Karina Ruzaeva,
+Vadim Migunov, Jan Caron, Rahul Chandra, Magnus
+Nord, Colin Lawrence Livermore National Lab Ophus,
+Simon
+Peter,
+Jay
+Schyndel
+van,
+Jaeweon
+Shin,
+Knut Mller-Caspary,
+and Rafal Dunin-Borkowski,
+“Libertem/libertem: 0.3.0,” (2020).
+
+[31] Steven
+E;
+Barnard
+Edward;
+DaCosta
+Luis
+R;
+Brown
+Hamish
+Galloway;
+Henderson
+Matt;
+Ginsburg David Savitzky,
+Benjamin H; Zeltmann,
+“py4dstem/py4dstem:
+Doi
+release,”
+Zenobo
+http://doi.org/10.5281/zenodo.3333960
+(2020),
+10.5281/zenodo.3333960.
+
+[32] C Barry Carter and David B Williams, Transmission
+electron
+microscopy:
+Diffraction,
+imaging,
+and
+spectrometry (Springer, 2016).
+
+[33] Takeshi Egami and Simon JL Billinge, Underneath the
+Bragg peaks: structural analysis of complex materials
+(Elsevier, 2003).
+
+[34] Earl
+J
+Kirkland,
+Advanced
+computing
+in
+electron
+microscopy (Springer Science & Business Media, 2010).
+
+[35] Reiner Hegerl and W Hoppe, “Dynamische theorie
+der kristallstrukturanalyse durch elektronenbeugung
+im inhomogenen prim¨arstrahlwellenfeld,” Berichte der
+Bunsengesellschaft f¨ur physikalische Chemie 74, 1148–
+1154 (1970).
+
+[36] JM
+Rodenburg,
+“Measurement
+of
+higher-order
+correlation
+functions
+in
+amorphous
+materials
+via
+
+
+30
+
+coherent microdiffraction,” Electron Microscopy and
+Analysis 1999: Proceedings of the Institute of Physics
+Electron Microscopy and Analysis Group Conference,
+University of Sheffield, 24-27 August 1999 161, 145
+(1999).
+
+[37] Xiaoke Mu,
+Di Wang,
+Tao Feng,
+and Christian
+K¨ubel,
+“Radial
+distribution
+function
+imaging
+by
+stem
+diffraction:
+Phase
+mapping
+and
+analysis
+of
+heterogeneous
+nanostructured
+glasses,”
+Ultramicroscopy 168, 1–6 (2016).
+
+[38] The HDF Group, “Hierarchical Data Format, version
+5,” (1997-NNNN), http://www.hdfgroup.org/HDF5/.
+
+[39] Steven
+E
+Zeltmann,
+Alexander
+M¨uller,
+Karen
+C
+Bustillo, Benjamin Savitzky, Lauren Hughes, Andrew M
+Minor,
+and
+Colin
+Ophus,
+“Patterned
+probes
+for
+high
+precision
+4d-stem
+bragg
+measurements,”
+Ultramicroscopy , 112890 (2019).
+
+[40] MJ Williamson, P van Dooren,
+and J Flanagan,
+“Quantitative analysis of the accuracy and sensitivity
+of
+strain
+measurements
+from
+nanobeam
+electron
+diffraction,” IEEE 22nd International Symposium on
+the Physical and Failure Analysis of Integrated Circuits
+(IPFA) , 197–200 (2015).
+
+[41] Tim
+Grieb,
+Florian
+F
+Krause,
+Christoph
+Mahr,
+Dennis
+Zillmann,
+Knut
+M¨uller-Caspary,
+Marco
+Schowalter, and Andreas Rosenauer, “Optimization of
+NBED simulations for disc-detection measurements,”
+Ultramicroscopy 181, 50–60 (2017).
+
+[42] Tim Grieb,
+Florian F Krause,
+Marco Schowalter,
+Dennis Zillmann, Roman Sellin, Knut M¨uller-Caspary,
+Christoph Mahr, Thorsten Mehrtens, Dieter Bimberg,
+and Andreas Rosenauer, “Strain analysis from nano-
+beam electron diffraction:
+Influence of specimen tilt
+and beam convergence,” Ultramicroscopy 190, 45–57
+(2018).
+
+[43] Christoph Mahr, Knut M¨uller-Caspary, Robert Ritz,
+Martin
+Simson,
+Tim
+Grieb,
+Marco
+Schowalter,
+Florian F Krause, Anastasia Lackmann, Heike Soltau,
+Arne Wittstock, et al., “Influence of distortions of
+recorded diffraction patterns on strain analysis by nano-
+beam electron diffraction,” Ultramicroscopy 196, 74–82
+(2019).
+
+[44] Elliot Padgett, Megan E Holtz, Paul Cueva, Eric
+Langenberg, Darrell G Schlom,
+and David A Muller,
+“The exit-wave power-cepstrum transform for scanning
+nanobeam electron diffraction. part 1: Robust strain
+mapping at subnanometer resolution and subpicometer
+precision,” arXiv preprint arXiv:1911.00984 (2019).
+
+[45] Manuel Guizar-Sicairos, Samuel T. Thurman,
+and
+James R. Fienup, “Efficient subpixel image registration
+algorithms,” Opt. Lett. 33, 156–158 (2008).
+
+[46] R. Soummer, L. Pueyo, A. Sivaramakrishnan,
+and
+R. J. Vanderbei, “Fast computation of Lyot-style
+coronagraph propagation,” Opt. Express 15, 15935–
+15951 (2007).
+
+[47] Colin
+Ophus
+and
+Benjamin
+H
+Savitzky,
+“Simulated
+calibration
+dataset
+for
+4d
+scanning
+transmission
+electron
+microscopy,”
+Zenodo
+10.5281/zenodo.3592520 (2020).
+
+[48] AJ Craven and TW Buggy, “Design considerations and
+performance of an analytical stem,” Ultramicroscopy 7,
+27–37 (1981).
+
+[49] Xiahan
+Sang
+and
+James
+M
+LeBeau,
+“Revolving
+scanning transmission electron microscopy: Correcting
+
+sample
+drift
+distortion
+without
+prior
+knowledge,”
+Ultramicroscopy 138, 28–35 (2014).
+
+[50] Colin Ophus,
+Jim Ciston,
+and Chris T Nelson,
+“Correcting
+nonlinear
+drift
+distortion
+of
+scanning
+probe and scanning transmission electron microscopies
+from image pairs with orthogonal scan directions,”
+Ultramicroscopy 162, 1–9 (2016).
+
+[51] Benjamin H Savitzky, Ismail El Baggari, Colin B
+Clement, Emily Waite, Berit H Goodge, David J
+Baek, John P Sheckelton, Christopher Pasco, Hari Nair,
+Nathaniel J Schreiber, et al., “Image registration of low
+signal-to-noise cryo-stem data,” Ultramicroscopy 191,
+56–65 (2018).
+
+[52] Yi Wang, Y Eren Suyolcu, Ute Salzberger, Kersten
+Hahn, Vesna Srot, Wilfried Sigle,
+and Peter A van
+Aken, “Correcting the linear and nonlinear distortions
+for atomically resolved STEM spectrum and diffraction
+imaging,” Microscopy 67, i114–i122 (2018).
+
+[53] Alpesh Khushalchand Shukla, Quentin M Ramasse,
+Colin Ophus, Despoina Maria Kepaptsoglou, Fredrik S
+Hage, Christoph Gammer, Charles Bowling, Pedro
+Alejandro Hern´andez Gallegos,
+and Subramanian
+Venkatachalam, “Effect of composition on the structure
+of lithium-and manganese-rich transition metal oxides,”
+Energy & Environmental Science 11, 830–840 (2018).
+
+[54] G
+Brunetti,
+D
+Robert,
+P
+Bayle-Guillemaud,
+JL
+Rouviere,
+EF
+Rauch,
+JF
+Martin,
+JF
+Colin,
+F Bertin, and C Cayron, “Confirmation of the domino-
+cascade model by LiFePO4/FePO4 precession electron
+diffraction,” Chemistry of Materials 23, 4515–4524
+(2011).
+
+[55] Marcus
+Gallagher-Jones,
+Colin
+Ophus,
+Karen
+C
+Bustillo,
+David R Boyer,
+Ouliana Panova,
+Calina
+Glynn,
+Chih-Te
+Zee,
+Jim
+Ciston,
+Kevin
+Canton
+Mancia, Andrew M Minor, et al., “Nanoscale mosaicity
+revealed in peptide microcrystals by scanning electron
+nanodiffraction,”
+Communications
+biology
+2,
+1–8
+(2019).
+
+[56] C Bradford Barber, David P Dobkin,
+and Hannu
+Huhdanpaa, “The quickhull algorithm for convex hulls,”
+ACM Transactions on Mathematical Software (TOMS)
+22, 469–483 (1996).
+
+[57] Nestor
+J
+Zaluzec,
+“Computationally
+mediated
+experimental science,” Microscopy and Microanalysis
+9, 150–151 (2003).
+
+[58] J Fatermans,
+AJ den Dekker,
+K M¨uller-Caspary,
+I Lobato, CM OLeary, PD Nellist,
+and S Van Aert,
+“Single atom detection from low contrast-to-noise ratio
+electron microscopy images,” Physical Review Letters
+121, 056101 (2018).
+
+[59] Edgar F Rauch, Joaquin Portillo, Stavros Nicolopoulos,
+Daniel
+Bultreys,
+Sergei
+Rouvimov,
+and
+Peter
+Moeck, “Automated nanocrystal orientation and phase
+mapping in the transmission electron microscope on
+the basis of precession electron diffraction,” Zeitschrift
+f¨ur Kristallographie International journal for Structural,
+physical, and Chemical Aspects of Crystalline Materials
+225, 103–109 (2010).
+
+[60] Koji
+Usuda,
+Tomohisa
+Mizuno,
+Tsutomu
+Tezuka,
+Naoharu
+Sugiyama,
+Yoshihiko
+Moriyama,
+Shu
+Nakaharai,
+and Shinichi Takagi, “Strain relaxation
+of
+strained-Si
+layers
+on
+SiGe-on-insulator
+(SGOI)
+structures
+after
+mesa
+isolation,”
+Applied
+Surface
+Science 224, 113–116 (2004).
+
+
+31
+
+[61] JP Liu, K Li, SM Pandey, FL Benistant, A See,
+MS Zhou, LC Hsia, Ruud Schampers,
+and Dmitri O
+Klenov, “Strain relaxation in transistor channels with
+embedded epitaxial silicon germanium source/drain,”
+Applied Physics Letters 93, 221912 (2008).
+
+[62] E Sourty, J Stanley,
+and B Freitag, “Using stem
+with quasi-parallel illumination and an automated peak-
+finding routine for strain analysis at the nanometre
+scale,” Physical and Failure Analysis of Integrated
+Circuits, 2009. IPFA 2009. 16th IEEE International
+Symposium on the , 479–484 (2009).
+
+[63] Paola Favia, Mihaela Popovici, Geert Eneman, Gang
+Wang, Mireia Bargallo-Gonzalez, Eddy Simoen, Nicolas
+Menou,
+and Hugo Bender, “Nano-beam diffraction:
+crystal structure and strain analysis at the nanoscale,”
+ECS Transactions 33, 205–219 (2010).
+
+[64] Fumihiko Uesugi, Akira Hokazono, and Shiro Takeno,
+“Evaluation of two-dimensional strain distribution by
+STEM/NBD,” Ultramicroscopy 111, 995–998 (2011).
+
+[65] C
+Ebner,
+R
+Sarkar,
+J
+Rajagopalan,
+and
+C Rentenberger, “Local,
+atomic-level elastic strain
+measurements of metallic glass thin films by electron
+diffraction,” Ultramicroscopy 165, 51–58 (2016).
+
+[66] Christoph Gammer, Colin Ophus, Thomas C Pekin,
+J¨urgen Eckert, and Andrew M Minor, “Local nanoscale
+strain mapping of a metallic glass during in situ
+testing,” Applied Physics Letters 112, 171905 (2018).
+
+[67] D
+Srolovitz,
+Takeshi
+Egami,
+and
+Vaclav
+Vitek,
+“Radial distribution function and structural relaxation
+in amorphous solids,” Physical Review B 24, 6936
+(1981).
+
+[68] David RG Mitchell and TC Petersen, “Rdftools:
+A
+software
+tool
+for
+quantifying
+short-range
+ordering
+in amorphous materials,” Microscopy research and
+technique 75, 153–163 (2012).
+
+[69] Jr C Phillips, “Topology of covalent non-crystalline
+solids I: Short-range order in chalcogenide alloys,”
+Journal of Non-Crystalline Solids 34, 153–181 (1979).
+
+[70] MMJ Treacy and JM Gibson, “Variable coherence
+microscopy:
+A rich source of structural information
+from disordered materials,” Acta Crystallographica
+Section A 52, 212–220 (1996).
+
+[71] JM Gibson, MMJ Treacy,
+and PM Voyles, “Atom
+pair persistence in disordered materials from fluctuation
+microscopy,” Ultramicroscopy 83, 169–178 (2000).
+
+[72] PM Voyles and DA Muller, “Fluctuation microscopy in
+the STEM,” Ultramicroscopy 93, 147–159 (2002).
+
+[73] Stephanie
+N
+Bogle,
+Lakshmi
+N
+Nittala,
+Ray
+D
+Twesten, Paul M Voyles,
+and John R Abelson, “Size
+analysis of nanoscale order in amorphous materials
+by variable-resolution fluctuation electron microscopy,”
+Ultramicroscopy 110, 1273–1278 (2010).
+
+[74] H Yang, RN Rutte, L Jones, M Simson, R Sagawa,
+H
+Ryll,
+M
+Huth,
+TJ
+Pennycook,
+MLH
+Green,
+H
+Soltau,
+et
+al.,
+“Simultaneous
+atomic-resolution
+electron ptychography and Z-contrast imaging of light
+and heavy elements in complex nanostructures,” Nature
+Communications 7, 12532 (2016).
+
+[75] Naoya Shibata, Scott D Findlay, Hirokazu Sasaki,
+Takao Matsumoto,
+Hidetaka Sawada,
+Yuji Kohno,
+Shinya Otomo, Ryuichiro Minato, and Yuichi Ikuhara,
+“Imaging of built-in electric field at a pn junction by
+scanning transmission electron microscopy,” Scientific
+reports 5, 10040 (2015).
+
+[76] Takao Matsumoto, Yeong-Gi So, Yuji Kohno, Hidetaka
+Sawada, Yuichi Ikuhara,
+and Naoya Shibata, “Direct
+observation of σ7 domain boundary core structure
+in magnetic skyrmion lattice,” Science advances 2,
+e1501280 (2016).
+
+[77] J N Chapman, P E Batson, E M Waddell,
+and R P
+Ferrier, “The direct determination of magnetic domain
+wall profiles by differential phase contrast electron
+microscopy,” Ultramicroscopy 3, 203–214 (1978).
+
+[78] Jiamei Song, Christopher S Allen, Si Gao, Chen Huang,
+Hidetaka Sawada, Xiaoqing Pan, Jamie Warner, Peng
+Wang,
+and Angus I Kirkland, “Atomic resolution
+defocused electron ptychography at low dose with a
+fast, direct electron detector,” Scientific reports 9, 3919
+(2019).
+
+[79] NH Dekkers and H De Lang, “Differential phase
+contrast in a STEM,” Optik 41, 452–456 (1974).
+
+[80] Naoya Shibata, Scott D Findlay, Yuji Kohno, Hidetaka
+Sawada,
+Yukihito
+Kondo,
+and
+Yuichi
+Ikuhara,
+“Differential
+phase-contrast
+microscopy
+at
+atomic
+resolution,” Nature Physics 8, 611 (2012).
+
+[81] Matus
+Krajnak,
+Damien
+McGrouther,
+Dzmitry
+Maneuski,
+Val
+O’Shea,
+and
+Stephen
+McVitie,
+“Pixelated
+detectors
+and
+improved
+efficiency
+for
+magnetic imaging in STEM differential phase contrast,”
+Ultramicroscopy 165, 42–50 (2016).
+
+[82] Matthew R Arnison,
+Kieran G Larkin,
+Colin JR
+Sheppard, Nicholas I Smith,
+and Carol J Cogswell,
+“Linear phase imaging using differential interference
+contrast microscopy,” Journal of microscopy 214, 7–12
+(2004).
+
+[83] Ryan
+Close,
+Zhen
+Chen,
+Naoya
+Shibata,
+and
+SD
+Findlay,
+“Towards
+quantitative,
+atomic-
+resolution reconstruction of the electrostatic potential
+via
+differential
+phase
+contrast
+using
+electrons,”
+Ultramicroscopy 159, 124–137 (2015).
+
+[84] Walter
+Hoppe,
+“Beugung
+im
+inhomogenen
+prim¨arstrahlwellenfeld. i. prinzip einer phasenmessung
+von
+elektronenbeungungsinterferenzen,”
+Acta
+Crystallographica
+Section
+A:
+Crystal
+Physics,
+Diffraction, Theoretical and General Crystallography
+25, 495–501 (1969).
+
+[85] W Hoppe and G Strube, “Beugung in inhomogenen
+prim¨arstrahlenwellenfeld.
+ii.
+lichtoptische
+analogieversuche
+zur
+phasenmessung
+von
+gitterinterferenzen,” Acta Crystallographica Section A:
+Crystal Physics, Diffraction, Theoretical and General
+Crystallography 25, 502–507 (1969).
+
+[86] W
+Hoppe,
+“Beugung
+im
+inhomogenen
+prim¨arstrahlwellenfeld.
+iii.
+amplituden-und
+phasenbestimmung
+bei
+unperiodischen
+objekten,”
+Acta Crystallographica Section A: Crystal Physics,
+Diffraction, Theoretical and General Crystallography
+25, 508–514 (1969).
+
+[87] JM Rodenburg and RHT Bates, “The theory of super-
+resolution electron microscopy via Wigner-distribution
+deconvolution,” Phil. Trans. R. Soc. Lond. A 339, 521–
+553 (1992).
+
+[88] Giulio Guzzinati, Wannes Ghielens, Christoph Mahr,
+Armand B´ech´e, Andreas Rosenauer, Toon Calders,
+and Jo Verbeeck, “Electron bessel beam diffraction for
+precise and accurate nanoscale strain mapping,” arXiv
+preprint arXiv:1902.06979 (2019).
+
+[89] Benjamin J McMorran, Amit Agrawal, Ian M Anderson,
+
+
+32
+
+Andrew A Herzing, Henri J Lezec, Jabez J McClelland,
+and John Unguris, “Electron vortex beams with high
+quanta of orbital angular momentum,” science 331,
+192–195 (2011).
+
+[90] Colin Ophus, Jim Ciston, Jordan Pierce, Tyler R
+Harvey, Jordan Chess, Benjamin J McMorran, Cory
+Czarnik, Harald H Rose,
+and Peter Ercius, “Efficient
+linear phase contrast in scanning transmission electron
+microscopy with matched illumination and detector
+interferometry,” Nature Communications 7 (2016).
+
+[91] Hao
+Yang,
+Peter
+Ercius,
+Peter
+D
+Nellist,
+and
+Colin Ophus, “Enhanced phase contrast transfer using
+ptychography combined with a pre-specimen phase
+plate in a scanning transmission electron microscope,”
+Ultramicroscopy 171, 117–125 (2016).
+
+[92] Jo Verbeeck, Armand B´ech´e, Knut M¨uller-Caspary,
+Giulio Guzzinati, Minh Anh Luong,
+and Martien
+Den Hertog, “Demonstration of a 2× 2 programmable
+phase plate for electrons,” Ultramicroscopy 190, 58–65
+(2018).
+
+[93] AM
+Blackburn
+and
+JC
+Loudon,
+“Vortex
+beam
+production and contrast enhancement from a magnetic
+spiral phase plate,” Ultramicroscopy 136, 127–143
+(2014).
+
+[94] Giulio Pozzi, Peng-Han Lu, Amir H Tavabi, Martial
+Duchamp, and Rafal E Dunin-Borkowski, “Generation
+of electron vortex beams using line charges via the
+electrostatic aharonov-bohm effect,” Ultramicroscopy
+181, 191–196 (2017).
+
+[95] John M Cowley and A F Moodie, “The scattering of
+electrons by atoms and crystals. I. a new theoretical
+approach,” Acta Crystallographica 10, 609–619 (1957).
+
+[96] Colin Ophus, “A fast image simulation algorithm for
+scanning transmission electron microscopy,” Advanced
+Structural and Chemical Imaging 3, 13 (2017).
+
+[97] Alan Pryor, Colin Ophus,
+and Jianwei Miao, “A
+streaming
+multi-GPU
+implementation
+of
+image
+simulation
+algorithms
+for
+scanning
+transmission
+electron
+microscopy,”
+Advanced
+Structural
+and
+Chemical Imaging 3, 15 (2017).
+
+[98] Hamish G Brown, Jim Ciston,
+and Colin Ophus,
+
+“A linear-scaling algorithm for rapid computation of
+inelastic transitions in the presence of multiple electron
+scattering,” arXiv preprint arXiv:1908.07628 (2019).
+
+[99] Joachim Frank, “Averaging of low exposure electron
+micrographs of non-periodic objects,” Ultramicroscopy
+1, 159–162 (1975).
+
+[100] Jan
+Modersitzki,
+Numerical
+methods
+for
+image
+registration
+(Oxford
+University
+Press
+on
+Demand,
+2004).
+
+[101] F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel,
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer,
+R. Weiss,
+V. Dubourg,
+J. Vanderplas,
+A. Passos,
+D.
+Cournapeau,
+M.
+Brucher,
+M.
+Perrot,
+and
+E.
+Duchesnay,
+“Scikit-learn:
+Machine
+learning
+in
+Python,” Journal of Machine Learning Research 12,
+2825–2830 (2011).
+
+[102] EM Waddell and JN Chapman, “Linear imaging of
+strong phase objects using asymmetrical detectors in
+stem,” Optik 54, 83–96 (1979).
+
+[103] Knut
+M¨uller-Caspary,
+Florian
+F
+Krause,
+Florian
+Winkler,
+Armand B´ech´e,
+Johan Verbeeck,
+Sandra
+Van Aert,
+and Andreas Rosenauer, “Comparison
+of first moment stem with conventional differential
+phase contrast and the dependence on electron dose,”
+Ultramicroscopy 203, 95–104 (2019).
+
+[104] Paul M¨uller, Mirjam Sch¨urmann, Salvatore Girardo,
+Gheorghe
+Cojoc,
+and
+Jochen
+Guck,
+“Accurate
+evaluation of size and refractive index for spherical
+objects in quantitative phase imaging,” Opt. Express
+26, 10729–10743 (2018).
+
+[105] HG Brown, Naoya Shibata, Hirokazu Sasaki, T C
+Petersen, D M Paganin, M J Morgan,
+and S D
+Findlay,
+“Measuring
+nanometre-scale
+electric
+fields
+in scanning transmission electron microscopy using
+segmented detectors,” Ultramicroscopy 182, 169–178
+(2017).
+
+[106] JM Rodenburg,
+BC McCallum,
+and PD Nellist,
+“Experimental
+tests
+on
+double-resolution
+coherent
+imaging via STEM,” Ultramicroscopy 48, 304–314
+(1993).
+
+

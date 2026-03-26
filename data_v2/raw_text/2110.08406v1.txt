@@ -1,0 +1,2730 @@
+Surrogate- and invariance-boosted contrastive learning for data-scarce applications in science
+
+Charlotte Loh,1, ∗ Thomas Christensen,2 Rumen Dangovski,1 Samuel Kim,1 and Marin Soljaˇci´c2
+
+1Department of Electrical Engineering and Computer Science, Massachusetts Institute of Technology, Cambridge, Massachusetts, USA
+2Department of Physics, Massachusetts Institute of Technology, Cambridge, Massachusetts, USA
+
+Deep learning techniques have been increasingly applied to the natural sciences, e.g., for property prediction
+and optimization or material discovery. A fundamental ingredient of such approaches is the vast quantity of
+labelled data needed to train the model; this poses severe challenges in data-scarce settings where obtaining labels
+requires substantial computational or labor resources. Here, we introduce surrogate- and invariance-boosted
+contrastive learning (SIB-CL), a deep learning framework which incorporates three “inexpensive” and easily
+obtainable auxiliary information sources to overcome data scarcity. Specifically, these are: 1) abundant unlabeled
+data, 2) prior knowledge of symmetries or invariances and 3) surrogate data obtained at near-zero cost. We
+demonstrate SIB-CL’s effectiveness and generality on various scientific problems, e.g., predicting the density-of-
+states of 2D photonic crystals and solving the 3D time-independent Schr¨odinger equation. SIB-CL consistently
+results in orders of magnitude reduction in the number of labels needed to achieve the same network accuracies.
+
+I.
+INTRODUCTION
+
+In recent years, there has been increasing interest and rapid
+advances in applying data-driven approaches, in particular
+deep learning via neural networks, to problems in the nat-
+ural sciences [1–4]. Unlike traditional physics-informed ap-
+proaches, deep learning relies on extensive amounts of data
+to quantitatively discover hidden patterns and correlations
+to perform tasks such as predictive modelling [4, 5], prop-
+erty optimization [6, 7] and knowledge discovery [8, 9]. Its
+success is thus largely contingent on the amount of data avail-
+able and a lack of sufficient data can severely impair model
+accuracy. Historically, deep learning applications have over-
+come this by brute-force, e.g., by assembling vast curated data
+sets by crowd-sourced annotation or from historical records.
+Prominent examples include ImageNet [10] and CIFAR [11]
+in computer vision (CV) and WordNet [12] in natural language
+processing (NLP) applications. The majority of problems in
+the natural sciences, however, are far less amenable to this
+brute-force approach, partly reflecting a comparative lack of
+historical data, and partly the comparatively high resource-
+cost (e.g. time or labor) of synthesizing new experimental or
+computational data.
+Recently, to alleviate the reliance on labeled data, tech-
+niques like transfer learning and self-supervised learning have
+emerged. Transfer learning (TL) [13–16] refers to the popular
+approach of fine-tuning a neural network which has been pre-
+trained on a large labeled source dataset for a target task. TL
+is widely adopted in CV and NLP applications; prominently,
+models pre-trained on ImageNet [10] such as VGGNet [17]
+and ResNet [18] are used for fine-tuning on a variety of CV
+tasks, while powerful language models like BERT [19] and
+GPT3 [20] pre-trained on large-scale corpus have been used
+for fine-tuning on a variety of downstream NLP tasks. Within
+the natural sciences, TL has also been explored and proven
+effective [21–24]. Most works, however, make use of source
+data from a different problem [21, 22] or field [23, 24], e.g.
+using models pre-trained on ImageNet [10] to accelerate train-
+ing of material prediction tasks; this limits the efficacy of TL
+
+∗ cloh@mit.edu
+
+due to the dissimilarity between the source and target prob-
+lems [25, 26].
+Extending from TL, self-supervised learning (SSL) [27, 28]
+is a technique where the pre-training stage uses only unlabeled
+data. Specifically, “pretext tasks” like image rotation predic-
+tion [29] and jigsaw puzzle solving [30] are invented for the
+data to provide its own supervision. In particular, contrastive
+SSL [28] (or contrastive learning) is an increasingly popular
+technique where the pretext task is constructed as contrast-
+ing between two variations of a sample and other samples,
+where variations are derived using image transformations. The
+goal is for the pre-trained model to output embeddings where
+similar (differing) instances are closer (further) in the embed-
+ding metric space; this has proven to be highly effective for
+CV downstream tasks like classification, segmentation and de-
+tection. Recent contrastive learning techniques [31–35] have
+achieved unprecedented successes in CV; yet, there has been
+few applications to the natural sciences [36, 37], partly owing
+to the intricacy of designing transformation strategies [38]
+suitable for scientific problems.
+Here, we introduce Surrogate- and Invariance- boosted Con-
+trastive Learning (SIB-CL), a deep learning framework using
+self-supervised and transfer learning techniques to incorporate
+various sources of “auxiliary information” (see Fig. 1). Unlike
+dominant deep learning fields like CV and NLP, problems in
+the natural sciences often benefit from a rich and deep array
+of codified and formal insight and techniques. Prominently
+among these are exact and approximate analytical techniques
+or general insights requiring minimal or no computational
+cost. In SIB-CL, we consider sources of auxiliary information
+sources that are either accessible a priori, or can be easily
+obtained by inexpensive means. Specifically, these are: 1)
+abundant unlabeled data; 2) prior knowledge in the form of
+invariances of the physical problem, which can be governed by
+geometric symmetries of the inputs or general non-symmetry
+related invariances of the problem; 3) a surrogate dataset on
+a similar problem that is cheaper to generate, e.g. by invok-
+ing simplifications or approximations to the labelling process.
+We show that SSL and TL techniques used in SIB-CL pro-
+vide effective and broadly-applicable strategies to incorporate
+these auxiliary information sources, enabling effective and
+high-quality network training despite data scarcity. Here, its
+effectiveness will be demonstrated in various problems in the
+
+arXiv:2110.08406v1  [cs.LG]  15 Oct 2021
+
+
+2
+
+a  ��������������
+b  ��������������������
+c  �����������������
+��������������
+
+�������������
+���������������
+���������
+������������������
+
+��
+��
+�
+�
+
+d  
+
+�
+
+Figure 1. Overcoming data scarcity with SIB-CL. We propose
+to overcome data scarcity by leveraging a) an abundance of un-
+labeled data, b) prior knowledge of the underlying physics (e.g.,
+symmetries and invariances of the data) and c) knowledge from a
+possibly-approximate surrogate data which is faster and cheaper
+to generate (e.g., coarse-grained computations or special-case
+analytical solutions). d) SIB-CL incorporates these auxiliary infor-
+mation into a single framework to accelerate training in data-scarce
+settings. Examples show unit cells of square 2D photonic crystals
+(see also Fig. 3).
+
+natural sciences, in particular, on two systems in the fields of
+photonics and quantum calculations.
+
+II.
+RESULTS
+
+A.
+Surrogate- and Invariance-Boosted Contrastive Learning
+(SIB-CL)
+
+We seek to train a neural network to predict desired proper-
+ties (or “labels”) y from input x using minimal training data.
+More precisely, for a target problem Dt = {xi, yi}Nt
+i=1 consisting
+of Nt input–label pairs, we focus on problem spaces where Nt
+is too small to successfully train the associated network. To
+overcome this, we introduce two auxiliary data sets: (1) a set of
+zero-cost unlabeled inputs Du = {xi}Nu
+i=1 and (2) a surrogate data
+set Ds = {˜xi, ˜yi}Ns
+i=1 consisting of inexpensively computed labels
+˜yi (e.g. from approximation or semi-analytical models) with
+associated input ˜xi (possibly, but not necessarily, a “simple”
+subset of all inputs). The quantity of each of these auxiliary
+data sets are assumed to far exceed the target problem, i.e.
+{Nu, Ns} ≫ Nt (and, typically, Nu > Ns).
+On the basis of these auxiliary datasets, we introduce a new
+framework—Surrogate and Invariance-Boosted Constrastive
+Learning (SIB-CL)—that significantly reduces the data re-
+quirements on Dt (Fig. 2). SIB-CL achieves this by splitting
+the training process into two stages: a first, interleaved two-
+step pre-training stage using the auxiliary data sets Du and Ds
+(Fig. 2a,b), followed by a fine-tuning stage using the target
+data set Dt (Fig. 2c).
+In the first step of the pre-training stage (Fig. 2a), we exploit
+contrastive learning to learn invariances in the problem space
+
+using unlabelled inputs aggregated from the target and surro-
+gate data sets DCL = {xi}Nu
+i=1 ∪{˜xi}Ns
+i=1. We complement DCL by a
+set of known, physics-informed invariance relations {g} (which
+we formally associate with elements of a group G) which map
+input–label pairs (xi, yi) to (gxi, yi), i.e., to new input with iden-
+tical labels. We base this step on the SimCLR technique [32],
+though we also explore using the BYOL technique [33] later
+(see Discussion and SI Section S1). Specifically, for each input
+xi in DCL (sampled in batches of size B), two derived variations
+gxi and g′xi are created by sampling1 two concrete mappings
+g and g′ from the group of invariance relations G. The resul-
+tant 2B inputs are then fed into encoder and then projector
+networks, H and J respectively, producing metric embeddings
+zi(′) = J(H(g(′)xi)). A positive pair {zi, zi′} is the pair of metric
+embeddings derived from the two variations of xi, i.e. gxi and
+g′xi; all other pairings in the batch are considered negative. At
+each training step, the weights of H and J are simultaneously
+updated according to a contrastive loss function defined by
+the normalized temperature-scaled cross entropy (NT-Xent)
+loss [32]:
+
+Lii′ = − log
+exp(sii′/τ)
+
+�2B
+j=1[i � j] exp(si j/τ)
+,
+(1)
+
+where sii′ = ˆzi · ˆzi′ (and ˆzi = zi/∥zi∥) denotes the cosine simi-
+larity between two normalized metric embeddings ˆzi and ˆzi′,
+[i � j] uses the Iverson bracket notation, i.e. evaluating to 1 if
+i � j and 0 otherwise, and τ is a temperature hyperparameter
+(fixed at 0.1 here). The total loss is taken as the sum across
+all positive pairs in the batch. In our batch sampling of DCL,
+we sample one-third of each batch from Ds and two-thirds
+from Du. Conceptually, the NT-Xent loss acts to minimize
+the distance between embeddings of positive pairs (numerator
+of Eq. (1)) while maximizing the distances between embed-
+dings of negative pairs in the batch (denominator of Eq. (1))
+Consequently, we obtain representations H(xi) that respect the
+underlying invariances of the problem.
+Each epoch of contrastive learning (i.e. each full sampling
+of DCL) is followed by a supervised learning step—the sec-
+ond step of the pre-training stage (Fig. 2b)—on the surrogate
+dataset Ds, with each input from Ds subjected to a random
+invariance mapping. This supervised step shares the encoder
+network H with the contrastive step but additionally features a
+predictor network G, both updated via a task-dependent super-
+vised training loss function (which will be separately detailed
+later). This step pre-conditions the weights of G and further
+tunes the weights of H to suit the target task.
+The pre-training stage is performed for 100 – 400 epochs
+and is followed by the fine-tuning stage (Fig. 2c). This final
+stage uses Dt to fine-tune the networks H and G to the actual
+problem task—crucially, with significantly reduced data re-
+quirements on Dt. Each input from Dt is also subjected to a
+random invariance mapping; the associated supervised training
+loss function is again problem-dependent and may even differ
+from that used in the pre-training stage.
+
+1 see Methods: Training Details for sampling algorithmn
+
+
+3
+
+Attract
+
+Repel others
+
+Share weights
+
+Transfer weights
+
+ω
+
+Surrogate labels
+
+a  Contrastive learning without labels
+
+b  Predictor pre-training with
+     surrogate dataset,
+
+Pre-training stage
+
+c  Fine-tuning stage ( target dataset Dt = { xi , yi } )                     
+
+xi
+
+xj
+
+yk  (ω)
+
+ω
+
+Target labels
+
+ { xi }
+ ~
+
+yk (ω)
+~
+
+Representation
+
+“Positive pair”
+
+“Negative pairs”
+
+Surrogate samples
+
+Unlabeled samples 
+DCL = { { xi }, { xi } }
+~
+
+Encoder
+ 
+ 
+H
+
+H
+Predictor
+        G
+
+H
+G
+
+ { xi }
+Target samples
+
+minimize 
+error
+xk
+ ~
+
+minimize 
+error
+xk
+
+zi 
+
+zi’ 
+
+zj
+
+zj’ 
+
+Metric embedding
+
+Projector
+J
+
+Ds = { xi , yi } 
+ ~  ~
+
+G(H ( g xk  ))
+ ~
+
+G(H ( g xk  ))
+
+g xi
+
+g’xi
+
+H(g xi )
+
+H(g’ xi )
+
+Figure 2. Surrogate- and Invariance-Boosted Contrastive Learning (SIB-CL) framework. Network training proceeds via a pre-
+training stage (a,b) followed by a fine-tuning stage (c). a,b) The pre-training stage alternates a contrastive learning step (a) using
+unlabeled data DCL with a supervised learning step (b) using surrogate data Ds. Contrastive learning encourages representations that
+respect the underlying invariances of the problem and supervised learning on the surrogate dataset attunes both representations and a
+predictor network to the desired prediction task. c) After 100 – 400 epochs of pre-training, the encoder and predictor weights are copied
+and subsequently fine-tuned by supervised learning on the target dataset Dt.
+
+In the following sections, we evaluate the effectiveness
+of SIB-CL on two problems: predicting the density-of-states
+(DOS) of two-dimensional (2D) photonic crystals (PhCs) and
+predicting the ground state energy of the three-dimensional
+(3D) non-interacting Schr¨odinger equation (see SI for addi-
+tional experiments, including predictions of 2D PhC band
+structures). To evaluate the effectiveness of SIB-CL, we bench-
+mark our results against two baselines:
+
+1. Direct supervised learning (SL): randomly initialized
+networks H and G are trained using supervised learning
+on only the target dataset Dt. This reflects the perfor-
+mance of conventional supervised learning, i.e. without
+exploiting auxiliary data sources.
+
+2. Conventional transfer learning (TL): networks H and
+G are first pre-trained using supervised learning on the
+surrogate dataset Ds and then subsequently fine-tuned
+on Dt. This reflects the performance of conventional
+TL-boosted supervised learning, albeit on an unusually
+well-aligned transfer task.
+
+These baselines do not exploit prior knowledge of invari-
+ances; in order to more critically evaluate SIB-CL, we also
+considered augmented versions of these baselines that incor-
+porate invariance information via a simple data augmentation
+approach (see SI Section S4), i.e. each input is subjected to
+a transformation randomly sampled from {g} each time be-
+fore it is fed into the encoder network H. We abbreviate them
+correspondingly as SL-I and TL-I.
+
+B.
+2D Photonic Crystals
+
+Photonic crystals (PhC) are wavelength-scale periodically-
+structured materials, whose dielectric profiles are engineered
+to create exotic optical properties not found in bulk materials,
+such as photonic band gaps and negative refractive indices,
+with wide-ranging applications in photonics [39, 40]. Promi-
+nently among these applications is PhC’s ability to engineer the
+strength of light-matter interactions [40]—or, equivalently, the
+density of states (DOS) of photonic modes. The DOS captures
+
+
+4
+
+the number of modes accessible in a spectral range, i.e., the
+number of modes accessible to an spectrally narrow emitter, di-
+rectly affecting e.g. spontaneous and stimulated emission rates.
+However, computing the DOS is expensive: it requires dense
+integration across the full Brillouin zone (BZ) of the PhC and
+summation over bands. Below, we demonstrate that SIB-CL
+enables effective training of a neural network for prediction
+of the DOS in 2D PhCs, using only hundreds to thousands
+of target samples, dramatically reducing DOS-computation
+costs. Such neural networks could help to accelerate the design
+of PhC features, either directly via backpropagation [41] or
+by offering a cheap evaluation for multiple invocations of the
+model, replacing conventional design techniques like topology
+optimization [42] and inverse design [43].
+
+Dataset generation. PhCs are characterised by a periodically
+varying permitivitty, ε(r), whose tiling makes up the PhC’s
+structure. For simplicity, we consider 2D square lattices of peri-
+odicity a with a “two-tone” permitivtty profile, i.e. ε ∈ {ε1, ε2},
+with εi ∈ [1, 20]. We assume lossless isotropic materials so
+that ε(r) and the resultant eigenfrequencies are real. We use a
+level-set of a Fourier sum function (see Methods for details)
+to parameterize ε(r), discretized to result in a 32 × 32 pixel
+image, which form the input to the neural network. Special
+care was taken in the sampling algorithm to create diverse unit
+cells with features of varying sizes, with examples depicted in
+Fig. 3a.
+We define the DOS of 2D PhCs by [44]
+
+DOS(ω) =
+A
+
+(2π)2
+�
+
+n
+
+�
+
+BZ
+δ(ω − ωnk) d2k,
+(2)
+
+with ω denoting the considered frequency, ωnk the PhC band
+structure, n the band index, k the momentum in the BZ, and
+A = a2 the unit cell area. In practice, we evaluate Eq. (2) using
+the generalized Gilat–Raubenheimer (GGR) method [45]—
+which incorporates the band group velocity extrapolatively to
+accelerate convergence—in an implementation adapted from
+Ref. 46. The band structure and associated group velocities are
+evaluated using the MIT Photonic Bands (MPB) software [47]
+for the transverse magnetic (TM) polarized bands (Fig. 3b,
+also see Methods).
+We define labels for our network using the computed DOS
+values (Fig. 3c) subjected to three simple post-processing steps
+(see Methods): (i) spectral smoothing using a narrow Gaussian
+kernel S∆, (ii) shifting by the DOS of the “empty-lattice” (i.e.,
+uniform lattice of index navg), DOSEL(ω) = ωa2n2
+avg/2πc2, and
+(iii) rescaling both DOS- and the frequency-values by the
+natural frequency ω0 = 2πc/anavg. More explicitly, we define
+the network-provided DOS labels as
+
+y ≜ ω0[(S∆ ∗ DOS) − DOSEL](ω/ω0),
+(3)
+
+and sample over the normalized spectral range 0 ≤ ω/ω0 ≤
+0.96. Step (i) accounts for the finite spectral width of phys-
+ical measurements and regularizes logarithmic singularities
+associated with van Hove points; step (ii) counteracts the lin-
+ear increase in average DOS that otherwise leads to a bias
+at higher frequencies, emphasizing instead the local spectral
+features of the DOS; and step (iii) ensures comparable input-
+
+1
+
+20
+�
+
+MPB
+
+Subtract
+empty 
+lattice
+
+DOS (a.u.)
+
+0
+1.2
+
+DOSΔ – DOSEL (a.u.) 
+
+0
+
+0
+
+1.2
+
+a
+
+a
+
+2D PhC: Periodic unit cell 
+
+DOSΔ
+
+DOSEL
+
+Frequency ω/ω0
+Frequency ω/ω0
+
+GGR
+
+Frequency ω/ω0
+
+1.6
+
+0
+
+0.6
+
+0.3
+
+0.9
+
+1.2
+
+a 2D Photonic crystals
+b Photonic band
+    structure
+
+c Photonic density of states (DOS)
+
+Figure 3. 2D photonic crystals dataset generation. a) We gen-
+erated 20 000 square 2D PhC unit cells using a level set of Fourier
+sums, giving two-tone permittivity profiles ε(r) ∈ {ε1, ε2} with
+εi ∈ [1, 20]. 7000 of these unit cells were randomly selected;
+b) their TM photonic band structures were computed via MPB, and
+c) their corresponding density-of-states (DOS) were computed.
+The DOS spectrums were then smoothed, standardized, and the
+“empty-lattice” DOS were subtracted from them to derive the labels
+of the dataset.
+
+and output-ranges across distinct unit cells, regardless of the
+cell’s average index.
+In our experiments, we use 20 000 unlabelled unit cells for
+contrastive learning, select a target dataset of varying sizes
+Nt ∈ [50, 3000] for fine-tuning, and evaluate the prediction
+accuracy on a fixed test set containing 2000 samples.
+For the surrogate dataset of inexpensive data, Ds, we cre-
+ated a simple dataset of 10 000 PhCs with centered circu-
+lar inclusions of varying radii r ∈ (0, a/2] and inclusion and
+cladding permittivities sampled uniformly in εi ∈ [1, 20]. This
+simple class of 2D PhCs is amenable to semi-analytical treat-
+ments, e.g. Korringa-Kohn–Rostoker or multiple scattering
+approaches [48–51], that enable evaluation of the DOS at full
+precision with minimal computational cost. Motivated by this,
+we populate the surrogate dataset Ds with such circular inclu-
+sions and their associated (exact) DOS-labels.2
+
+Invariances of PhC DOS. The considered PhCs possess no
+spatial symmetries beyond periodicity. Despite this, as an in-
+trinsic, global quantity (or, equivalently, a k-integrated quan-
+tity) the DOS is setting-independent and invariant under all
+
+2 Since we are motivated mainly by proof-of-principle rather than concrete
+applications—and since we have access to a preponderance of computa-
+tional resources (provided by MIT Supercloud)—we computed the surro-
+gate labels in MPB directly, avoiding the need to implement either of the
+semi-analytical approaches.
+
+
+5
+
+size-preserving transformations, that is, under all elements of
+the Euclidean group E(2). For simplicity’s sake, we restrict
+our focus to the elements of E(2) that are compatible with a
+pixelized unit cell (i.e., that map pixel coordinates to pixel
+coordinates). This subset is the direct product of the 4mm
+(C4v) point group G0 of the point lattice spanned by aˆx and aˆy
+and the group Gt of pixel-discrete translations. In more detail:
+
+1. Point group symmetry (G0): 4mm includes the identity
+operation (1), 2- and 4-fold rotations (C2 and C±
+4 ), and
+horizontal, vertical, and diagonal mirrors (σh, σv, and
+σ(′)
+d ), i.e. G0 = {1,C2,C−
+4 ,C+
+4 , σh, σv, σd, σ′
+d}. Formally,
+this is the PhCs’ holosymmetric point group.
+
+2. Translation symmetry (Gt): While the DOS is invari-
+ant under all continuous translations t, the pixelized unit
+cells are compatible only with pixel-discrete transla-
+tions; i.e., we consider the (factor) group Gt = {iN−1aˆx +
+jN−1aˆy}N−1
+i, j=0 with N = 32.
+
+Additionally, the structure of the Maxwell equations endows
+the DOS with two non-Euclidean “scaling” invariances [39]:
+
+1. Refractive
+scaling
+(Gs):
+The
+set
+of
+(positive)
+amplitude-scaling transformations of the refractive in-
+dex g(s)n(r) = sn(r) define a group Gs = {g(s) | s ∈ R+}
+and map the PhC eigenspectrum from ωnk to s−1ωnk.
+Equivalently, g(s) maps DOS(ω) to sDOS(sω) and thus
+leaves the y-labels of Eq. (3) invariant under the ω0-
+normalization.
+
+2. Size scaling (G′
+s): Analogously, the size-scaling trans-
+formations g′(s)r = sr define a group G′
+s = {g′(s) |
+s ∈ R+}, and also map ωnk to s−1ωnk and DOS(ω) to
+sDOS(sω); i.e., also leaving the y-labels invariant.
+
+Of Gs and G′
+compatible (G′ s, only the amplitude-scaling Gs is pixel-
+s can be implemented as a tiling-operation in the
+unit cell, which, however requires down-sampling). Accord-
+ingly, we restrict our focus to the pixel-compatible invariances
+of the product group G = G0 × Gt × Gs and sampled its ele-
+ments randomly. In practice, the sampling-frequency of each
+element in G is a hyperparameter of the pre-training stage (see
+Methods and SI Section S5).
+
+PhC DOS prediction. To assess the trained network’s perfor-
+mance in an easily interpretable setting, we define the evalua-
+tion error metric, following Ref. 46:
+
+Leval =
+
+�
+ω/ω0
+���DOSpred
+∆
+− DOS∆
+���
+
+�
+ω/ω0 DOS∆
+,
+(4)
+
+where DOS∆ = S∆ ∗ DOS = ω−1
+0 y + DOSEL and DOSpred
+∆
+=
+ω−1
+0 ypred + DOSEL are the true and predicted S∆-smoothened
+DOS, respectively, and the sums are over the spectral range
+0.24 ≤ ω/ω0 ≤ 0.96 (we omit the spectral region 0 ≤ ω/ω0 <
+0.24 during evaluation to get a more critical metric, since the
+DOS has no significant features there). The network archi-
+tecture and training details (loss functions, hyperparameters,
+layers etc.) are discussed in the Methods section.
+The performance of SIB-CL under this error measure is
+evaluated in Fig. 4 and contrasted with the performance of
+
+the SL and TL baselines. In practice, to minimize the fluctua-
+tions due to sample selection, we show the mean of Leval for
+three separate fine-tuning stages on distinct randomly-selected
+datasets of size Nt, evaluated on a fixed fixed test set.
+A significant reduction of prediction error is observed for
+SIB-CL over the baselines, especially for few fine-tuning sam-
+ples: e.g., at Nt = 100, SIB-CL has 4.6% error while SL (TL)
+has 7.6% (6.9%) error. More notably, we see a large reduction
+in the number of fine-tuning samples Nt needed to achieve
+the same level of prediction error, which directly illustrates
+the data savings in the data-scarce problem. We obtain up to
+13× (7×) savings in Nt when compared to SL (TL) at a target
+prediction error of ∼ 5.3%. The predicted and true DOS are
+compared as functions of frequency in Fig. 4b across a range
+of error levels as realized for different unit cell input.
+SIB-CL was also observed to outperform the invariance-
+augmented baselines SL-I and TL-I (see SI Section S4), albeit
+by a smaller margin than the unaugmented baselines, con-
+sistent with expectations. Nevertheless, we observe a clear
+performance advantage of SIB-CL over TL-I, demonstrating
+the effectiveness and utility of the constrastive learning step in
+SIB-CL compared to naive augmented TL-approaches.
+To demonstrate that the effectiveness of SIB-CL extends
+beyond the DOS prediction problem, we also trained a net-
+work using SIB-CL and all baselines to predict the PhC band
+structure (see SI Section S2). For this task, the network la-
+bels y are ωnk/ω0, sampled over a 25 × 25 k-grid and over
+the first 6 bands, i.e., y ∈ R6×25×25
+≥0
+, while the input labels x
+remain unchanged. Unlike the DOS, the band structure is not
+invariant under the elements of G0, but remains invariant un-
+der translations (Gt) and refractive amplitude scaling (Gs), i.e.
+G = Gt × Gs. Also for this task, we found SIB-CL to enable
+significant data savings, ranging up to 60× relative to the SL
+baseline.
+
+C.
+3D Schr¨odinger Equation
+
+As a test of the applicability of SIB-CL to higher-
+dimensional problems, we consider predicting the ground state
+energies of the single-particle, time-independent Schr¨odinger
+Equation (TISE) for random three-dimensional (3D) poten-
+tials in box. This problem demonstrates a proof-of-principle
+application to the domain of electronic structure calculations,
+which is of fundamental importance to the understanding of
+molecules and materials across physics, chemistry, and mate-
+rial science.
+
+Dataset generation. The eigenstates ψn and eigenenergies
+En of a (non-relativistic) single-particle electron in a potential
+U(r) are the eigensolutions of the TISE:
+
+ˆHψn = ( ˆT + ˆU)ψn = Enψn,
+(5)
+
+where ˆH = ˆT + ˆU is the Hamiltonian consisting of kinetic
+ˆT = − 1
+
+2∇2 and potential energy ˆU = U(r) contributions. Here,
+and going forward, we work in Hartree atomic units (h.a.u.).
+For simplicity, we consider random potentials U(r) confined
+to a cubic box of side length 10 Bohr radii (a0), with values in
+the range [0, 1] Hartree (see Methods for details). Examples
+of the generated potentials are shown in Fig. 5a (left).
+
+
+6
+
+DOS Δ
+DOS pred
+DOS EL
+
+b  Visualization of prediction error
+
+0.24
+0.96 0.24
+0.96
+1
+
+10
+1
+
+10
+1
+
+10
+
+Error: 1.5%
+2.5%
+
+3.2%
+3.8%
+
+4.5%
+5.5%
+
+Density of states  ω0 DOS (ω/ω0)
+
+Frequency ω/ω0
+
+a  Results of DOS prediction
+
+1
+20
+�
+Δ
+
+Relative error (%)
+
+4
+
+3
+
+5
+6
+7
+8
+
+Fine-tuning size Nt
+
+50
+100
+200
+400
+800
+1600
+3200
+2
+
+SL
+TL
+SIB-CL
+13x
+
+7x
+
+Figure 4. Network prediction results for PhC-DOS problem.
+a) Network prediction error against fine-tuning dataset sizes, Nt,
+between 50 and 3000, when using our SIB-CL framework (based
+on SimCLR [32] during contrastive learning) compared against
+the baselines: conventional transfer learning (TL) and direct su-
+pervised learning (SL). A 13-fold (7-fold) reduction in target data
+requirements is obtained by using SIB-CL over SL at a relative
+error target of ∼ 5.3%. Error bars show the 1σ uncertainty level
+estimated from varying the data selection of Dt. b) Examples of the
+DOS spectrum predicted by the SIB-CL-trained network compared
+against the actual DOS at various error levels (insets depict asso-
+ciated unit cells, shown here using the network-inputs’ resolution
+of 32 × 32).
+
+We associate the network input–label pairs (x, y) with the
+potentials U(r) (sampled over a 32 × 32 × 32 equidistant grid)
+and ground state energies E0, respectively. We evaluate E0 by
+using (central) finite differences with implicit Dirichlet bound-
+ary conditions to discretize Eq. (5), which is subsequently
+solved using an iterative sparse solver [52]. The target dataset
+Dt is computed using a 32 × 32 × 32 finite-differences dis-
+cretization, with an estimated mean numerical error ≈ 0.1%
+(Fig. 5b, left).
+In the previously considered PhC DOS problem, the surro-
+gate dataset Ds was built from a particularly simple input class
+with exact and inexpensive labels. Here, instead, we assemble
+Ds by including the original range of inputs x but using approx-
+
+imate labels ˜y. In particular, we populate the surrogate dataset
+with input–label pairs (x, ˜y), with ˜y = ˜E0 computed from a
+low-resolution finite-difference 5 × 5 × 5 discretization of U(r)
+(Fig. 5b). ˜E0 has a relatively high error of ∼ 10% (Fig. 5b,
+right) but is orders of magnitude faster to compute: e.g., a
+naive power iteration eigensolver requires O(n2) operations
+per iteration (with n = N3 denoting the number of grid-voxels
+and N the grid-points per dimension), such that iterations at
+N = 5 require ∼ 105-fold less work than at N = 32.
+To assess the impact of the choice of surrogate data, we
+also examine an alternative surrogate dataset, with input–label
+pairs (˜x, ˜y), derived from quantum harmonic oscillator (QHO)
+potentials:
+
+˜x = ˜U(r) = 1
+
+2ω◦2 · (r − c)◦2,
+(6)
+
+where (A◦n)i = An
+i is the Hadamard (element-wise) power
+operator. We define the associated surrogate labels by the
+open-boundary QHO energies, i.e. by ˜y = ˜E0 = 1
+
+2
+�
+i ωi, and
+assign the input ˜x by the in-box grid discretization of ˜U(r).
+The ˜y labels consequently reflect an example of analytically
+approximated labels (here, with approximation-error due to
+the neglect of the Dirichlet boundary conditions); see SI Sec-
+tion S3. For quicker training of the network, we use the 2D
+version of the TISE with this surrogate dataset (i.e. Ds and
+Dt consist of 2D QHO potentials and 2D random potentials
+respectively).
+
+Ground-state energy prediction. The ground-state energy
+is invariant under elements of the symmetry point group, i.e.
+G = G0 in 2D. In 3D, we instead have the m3m point group,
+which notably has 48 elements (instead of just 8 in G0).
+
+Figure 5c shows the results using the surrogate dataset of
+reduced resolution data, compared against the baselines. We
+observe up to 40× data savings for SIB-CL when compared to
+SL; SIB-CL was also observed to outperform the augmented
+baselines, SL-I and TL-I (see SI Section S4). As a validation
+step, the prediction accuracies are noted to be in the orders
+of ≈ 1%, making the surrogate (target) dataset with ≈ 10%
+(≈ 0.1%) numerical error an appropriate design choice as
+approximate (target) data. For the experiments using the QHO
+surrogate dataset, we obtain up to 4× savings when using SIB-
+CL compared to SL (see SI Section S3); the data savings are
+diminished, within expectations, since the QHO dataset is way
+simpler and contains less information to “transfer”.
+
+III.
+DISCUSSION
+
+The widespread adoption and exploitation of data-driven
+techniques, most prominently deep learning via neural net-
+works, to scientific problems has been fundamentally limited
+by a relative data scarcity. That is, data is only rarely avail-
+able in the quantities required to train a network to faithfully
+reproduce the salient features of nontrivial scientific prob-
+lems; moreover, even if such data can be generated, it typically
+requires excessive computational effort. Here, we have in-
+troduced SIB-CL, a novel framework that overcomes these
+fundamental challenges by incorporating prior knowledge and
+auxiliary information, including problem invariances, “cheap”
+
+
+7
+
+TISE
+
+Energy (Hartree) 
+
+ a  Generation of fne-tuning dataset, {U (i)(r), E0
+(i)
+ } 
+
+E0
+(1)
+ 
+
+E0
+(2)
+ 
+TISE
+(3d fnite 
+diference)
+
+0
+1
+
+3D random potentials 
+
+U (1)(r)
+
+10ao
+
+U (2)(r)
+
+ b  Generation of pre-training cheap surrogate dataset, {U (i)(r), Ẽ0
+(i)} 
+
+Lower resolution
+
+N = 32
+
+Discretization points N
+4
+8
+16
+32
+64
+
+0.01
+
+0.1
+
+1
+
+10
+
+Relative numerical error (%)
+
+Ẽ0
+
+U(r)
+
+ c  Results for ground-state energy prediction
+
+U ( hartree )
+
+Nlow
+Nlow = 5 
+
+frst
+excited
+states
+
+0.3
+
+0.8
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+Fine-tuning size Nt
+
+ Relative test error (%)
+
+50
+100
+200
+400
+800
+1600
+3200
+
+SL
+TL
+SIB-CL
+
+0.63
+
+1.25
+
+2.5
+
+5
+
+10
+
+40x
+
+6x
+
+Figure 5. 3D Time-independent Schr¨odinger Equation (TISE).
+a) Generation of the dataset from 3D random ‘in-a-box’ potentials.
+We use a finite-difference numerical method with Dirichlet bound-
+ary conditions to solve for the ground-state energies, E0. b) Left:
+Generation of the reduced resolution surrogate dataset, where
+the input unit cell resolution was reduced from 32 × 32 × 32 to
+5 × 5 × 5 and the same numerical solver was used to obtain the
+approximated ground-state energy. Right: The relative numerical
+error of E0 obtained from the numerical solver when compared
+to N = 128 (which is taken to be the ‘theoretical’ value) shows
+that N = 5 (N = 32) is a good choice for the reduced (original)
+resolution since it gives a relatively high (low) error of 10% (0.1%).
+c) Network prediction error against fine-tuning dataset sizes Nt
+for SIB-CL and the baselines on the TISE problem. For SIB-CL,
+we show the best results among the two contrastive learning tech-
+niques, SimCLR [32] and BYOL [33]. SIB-CL was seen to give up
+to 40×(6×) data savings when compared to SL (TL).
+
+problem classes, and approximate labels. With SIB-CL, the re-
+quired quantities of costly, high-quality training data is substan-
+tially reduced, opening the application-space of data-driven
+techniques to a broader class of scientific problems.
+
+We demonstrated the versatility and generality of SIB-CL by
+applying it to problems in photonics and electronic structure,
+namely to the prediction of the DOS and band structures of 2D
+PhCs and the ground state energies of the TISE. Through our
+experiments, we demonstrated that even very simple sources
+of auxiliary information can yield significant data savings. For
+instance, the group of invariances G can be just a set of simple
+rotations and mirrors as in the TISE problem. Similarly, there
+are diverse options for constructing the surrogate dataset: here,
+we explored the use of simplified structures where (semi-)
+analytical solutions exist (e.g., circular structures of PhCs),
+approximate calculations of the target problem (e.g., reduced
+resolution computations of TISE), and even a combination of
+the two (e.g., approximated energies of QHO potentials in the
+TISE problem). Most natural science disciplines, especially
+physics, have deep and versatile caches of such approximate
+and analytical approaches which can be drawn from in the
+creation of suitable surrogate datasets.
+In the problems studied here, SIB-CL outperformed all
+baselines (including invariance-augmented baselines, see SI
+Section S4). We conjecture that SIB-CL’s performance advan-
+tage stems predominantly from enforcing problem invariances
+via a contrastive loss, which is more effective than naive data
+augmentation (cf. the performance edge of SIB-CL over TL-I).
+To substantiate this hypothesis, we performed several ablation
+experiments (see SI Section S5). Firstly, when all invariance
+information are disregarded in SIB-CL (i.e., if the group of
+invariances G is reduced to the trivial identity group), we
+observe very similar performance to TL. This demonstrates
+that the constrastive stage is only effective in combination
+with invariance information, or, equivalently, that the utility of
+the contrastive stage hinges strongly on attracting nontrivial
+positive pairs rather than merely repelling negative pairs.
+Next, we explored the consequences of selectively and in-
+creasingly removing invariances from G. We found that includ-
+ing more invariances strictly improves SIB-CL’s performance,
+consistent with expectations since the elements of G are true
+invariances of the downstream task. This is contrary to the
+standard self-supervised learning (SSL) paradigm which is
+task-agnostic, i.e., the downstream task is not known during
+the contrastive learning stage, and transformations may not
+be true invariances of the downstream problem so including
+more transformations can sometimes be harmful [32, 38, 53].
+While contrastive learning has gained enormous popular-
+ity in recent years, its techniques has mainly found applica-
+tions in computer vision tasks (e.g., image classification on
+ImageNet [10]) while its utility to regression problems has
+remained largely unexplored. Techniques like SimCLR are
+based on instance discrimination, i.e., the network is trained to
+discriminate between “negative” pairs in the batch. Intuitively,
+such techniques may seem less well-suited to regression prob-
+lems where the latent space is often continuous rather than
+discrete or clustered as in classification problems. Indeed, we
+made several empirical observations that disagree with the find-
+ings of standard contrastive learning applications on classifica-
+tion problems. Notably, it is widely corroborated [32, 54, 55]
+that using a larger batch size is always more beneficial, which
+can be interpreted as the consequence of having more negative
+pairs for instance discrimination. This empirical finding was
+
+
+8
+
+not echoed in our experiments, thus suggesting that instance
+discrimination may not be highly appropriate in regression
+problems. Motivated by this, we also explored the BYOL
+technique [33] which is not based on instance discrimination
+and does not use explicit negative pairs in its contrastive loss
+function (see SI Section S1), but found no performance advan-
+tage. Despite many empirical successes, contrastive learning
+remains poorly understood and lacks a solid theoretical expla-
+nation [38, 56–58] for why and when these algorithms work
+well. Our work further underscores and motivates the need
+to develop such an improved foundation, not only to address
+the noted deviations from expectations but also to guide the
+emerging application of contrastive learning techniques to
+regressions tasks.
+
+Our work is complementary to the growing body of work
+on equivariant networks for various symmetry groups [59–62],
+particularly for applications in the natural sciences [63, 64].
+These works are mainly motivated by the fact that the exploita-
+tion of symmetry knowledge provides a strong inductive bias,
+or constraint on the space of possible models, allowing the
+network to achieve better predictive accuracy (equivalently,
+higher data efficiency at the same level of accuracy). A well-
+known illustration of this idea is the superiority of convolu-
+tional neural networks (CNNs) over simple fully connected
+(FC) networks for image tasks, arising from the translation
+equivariance of CNNs. Like equivariant networks, SIB-CL
+also aims to create a network that respects the underlying sym-
+metries of the problem. However rather than “hard-coding”
+invariance information into the model architecture, the process
+is implemented/achieved organically via contrastive learning.
+The price paid for this more generic approach, is that feature
+invariance to the symmetry group G is only approximately
+achieved—to a degree expressed indirectly by the NT-Xent
+loss (Eq. (1))—rather than exactly as is the case for “hard-
+coded” problem-specific equivariant architectures. Conversely,
+SIB-CL has the advantage of being simple and readily gener-
+alizable to any known invariance, i.e., requires no specialized
+kernels, and can readily incorporate additional invariances
+without changes to the underlying architecture. Relatedly, SIB-
+CL’s superior performance over TL-I similarly suggests that
+using contrastive learning to enforce invariances is likely to be
+more effective than naive data augmentation.
+
+Our work provides new insights on how issues of data
+scarcity can be overcome by leveraging sources of auxiliary
+information in natural science problems. The SIB-CL frame-
+work presented in this work demonstrates how such auxiliary
+information can be readily and generically incorporated in
+the network training process. Our work also provides new in-
+sights on the thus-far less-explored application of contrastive
+learning for regression tasks, opening up opportunities for
+applications in several domains dominated by regression prob-
+lems, in particular, the natural sciences.
+
+IV.
+METHODS
+
+A.
+Dataset generation
+
+PhC unit cells. We parameterize ε(r) by choosing a level set
+of a Fourier sum function φ, defined as a linear sum of plane
+waves with frequencies evenly spaced in the reciprocal space
+(up to some cut-off). i.e.
+
+φ(r) = Re
+
+
+
+9
+�
+
+k=1
+ck exp(2πink · r)
+
+ ,
+(7)
+
+where each nk is a 2D vector (nx, ny) and we used 3 Fourier
+components per dimension, i.e. nx, ny ∈ [−1, 0, 1] (and thus
+the summation index k runs over 9 terms). ck is a complex
+coefficient, ck = reiθ with r, θ separately sampled uniformly in
+[0, 1). Finally, we uniformly sample a filling fraction, defined
+as the fraction of area in the unit cell occupied by ε1, in [0, 1)
+to determine the level set ∆ so as to obtain the permitivitty
+profile:
+
+ε(r) =
+
+
+ε1
+φ(r) ≤ ∆
+ε2
+φ(r) > ∆ .
+(8)
+
+This procedure produces periodic unit cells with features of
+uniformly varying sizes due to the uniform sampling of the
+filling ratio and without strongly divergent feature scales thus
+corresponding to fabricable designs.
+
+PhC DOS processing. With the MIT Photonic Bands (MPB)
+software [47], we use 25 × 25 plane waves (and also a 25 × 25
+k-point resolution) over the Brillouin zone −π/a < kx,y ≤ π/a
+to compute the band structure of each unit cell up to the first
+10 bands and also extract the group velocities at each k-point.
+We then computed the DOS for ω/ω0 ∈ [0, 0.96] over 16 000
+equidistantly-spaced frequency samples using the generalized
+Gilat–Raubenheimer (GGR) method [45, 46]. Next, we com-
+puted the S∆-smoothened DOS, i.e., DOS∆ = S∆ ∗ DOS, using
+a Gaussian filter S∆(ω) = e−ω2/2∆2/
+√
+
+2π∆ of spectral width
+∆ = 0.006ω0. Before defining the associated network labels
+y, we downsampled DOS∆ to 400 frequency points. Finally,
+the network y-labels are constructed according to Eq. (3),
+i.e., by subtracting the “background” empty-lattice DOS—i.e.,
+DOSEL(ω) = a2n2
+avgω/2πc2, the DOS of a uniform unit cell Ω
+of index navg =
+1
+|Ω|
+�
+
+Ω n(r) d2r—and rescaling by ω0. Subtract-
+ing DOSEL removes a high-frequency bias during training and
+was found to improve overall network accuracy.
+
+3D TISE unit cells. To generate samples of U(r), we follow
+the same procedure in Eqs. (7) and (8) to first create two-tone
+potential profiles in 3D, i.e. r = (x, y, z) and nk = (nx, ny, nz)
+are now 3D vectors. We create finer features by increasing the
+number of Fourier components to nx, ny, nz ∈ [−2, −1, 0, 1, 2]
+(and hence the summation in Eq. (7) now runs over 125 terms).
+We also modify the range of potential, i.e. ε1 in Eq. (8) is set
+to 0, while ε2 is uniformly sampled in [0, 1]. The periodicity
+is removed by truncating 20% of the unit cell from each edge.
+A Gaussian filter with a kernel size 8% of the (new) unit cell
+is then applied to smooth the potential profile and, finally,
+
+
+9
+
+the unit cells are discretized to a resolution of 32 × 32 × 32.
+This procedure is illustrated in SI Section S3 and is similarly
+used to produce the 2D unit cells, discretized to 32 × 32,
+when using the QHO surrogate dataset. The ratio between the
+length scale and potentials’ dynamic range was also carefully
+selected to produce non-trivial wavefunctions, so as to create
+a meaningful deep learning problem (see SI Section S3 for
+further discussion).
+
+B.
+Model Architecture
+
+Our encoder network, H consists firstly of 3 to 4 convo-
+lutional neural network (CNN) layers followed by 2 fully
+connected (FC) layers, where the input after the CNNs was
+flattened before being fed into the FCs layers. The channel
+dimensions in the CNN layers and number of nodes in the
+FC layers vary for the different problems, and are listed in
+Table I. For TISE, the CNN layers have 3D kernels to cater
+for the 3D inputs, while the CNNs for the remaining problems
+uses regular 2D kernels used in standard image tasks. For the
+predictor network, G, we used 4 FC layers for all the prob-
+lems, with number of nodes listed in Table II. The predictor
+network for the band structure problem consists of 6 blocks of
+the same layer architecture, each block leading to each of the
+6 bands and separately updated using the loss from each band
+during training. A similar architecture was used in previous
+work [5]. We included BatchNorm [65], ReLU [66] activa-
+tions and MaxPooling between the CNN layers, and ReLU
+activations between all the FC layers in H and G. For the pro-
+jector network J, we used 2 FC layers with hidden dimension
+1024 and ReLU activation between them; the final metric em-
+beddings have dimension 256. J is fixed across all problems.
+Using the DOS prediction problem, we also experimented with
+deeper projector networks (i.e. increasing to 4 FC layers with
+the same hidden dimensions), as well as including BatchNorm
+between the layers, and found small improvements.
+
+Problem
+Channel dim per CNN layer # nodes per FC layer
+
+DOS
+[64, 256, 256] (2D)
+[1024, 1024]
+Band structure
+[64, 256, 256] (2D)
+[256, 1024]
+TISE
+[64, 256, 256, 256] (3D)
+[256, 256]
+
+Table I. Network architecture for H. Bold values indicate the di-
+mension of the representation for the different problems.
+
+Problem
+# nodes per FC layer
+
+DOS
+[1024, 1024, 512, 400]
+Band structure [256, 512, 512, 625] × 6
+TISE
+[256, 256, 32, 1]
+
+Table II. Network architecture for G. Bold values indicate the di-
+mension of the network output which matches the label dimension
+for that problem
+
+C.
+Training Details
+
+Invariance sampling during contrastive learning. In con-
+ventional contrastive learning applications in computer vision
+(CV), different instances of the input are often created via a
+pre-optimized, sequential application of various data augmen-
+tation strategies such as random cropping, color distortion and
+Gaussian blur [32, 33]. Adopting this technique, we also apply
+transformations from each sub-group of G in the randomly
+determined order [Gt, G0, Gs] and, additionally, experimented
+various algorithms for performing contrastive learning; see
+SI Section S5. We find that introducing stochasticity in trans-
+formation application is an effective strategy and thus use it
+in SIB-CL. More specifically, for each sub-group Gα, with
+α ∈ {0, t, s}, we set a probability pα to which any non-identity
+transformation is applied. (Equivalently, inputs are not trans-
+formed with probability (1 − pα).) {pα} is a set of hyperpa-
+rameters that are often intricately optimized for in standard
+CV applications (among other hyperparameters such as the
+order and strength of augmentations); here, for simplicity, we
+omitted this optimization step. We set pα = 0.5 for all α’s, and
+sampled the elements uniformly, i.e. each transformation in
+Gα is applied with probability 0.5/mα with mα being the total
+number of non-identity elements in Gα.
+
+PhC DOS prediction loss functions. In step b of the pre-
+training stage where we trained using supervised learning loss
+on Ds (Fig. 2b), we used the pre-training loss function
+
+LPT = mean(ω/ω0)
+�
+log(1 + |ypred − y|)
+�
+,
+(9)
+
+for each sample in the batch, where ypred and y are the network
+prediction and the true label of that sample respectively and | · |
+gives the element-wise absolute value. We take the mean over
+the (normalized) frequency axis (ω/ω0) to get a scalar for LPT.
+This loss function was used during pre-training (for SIB-CL
+and the TL baselines); its purpose is to encourage the network
+to learn from the surrogate dataset the general features in the
+DOS spectrum and underemphasize the loss at places where
+the DOS diverges, i.e. at the Van Hove singularities. In our
+experiments, we found that LPT indeed gave better prediction
+accuracies than the standard L1 or mean squared error (MSE)
+loss functions. After the pre-training step, the standard L1
+loss function was used during fine-tuning on Dt (Fig. 2c) for
+SIB-CL and all the baselines.
+
+PhC band structure prediction loss functions. During su-
+pervised training (for both pre-training and fine-tuning), we
+use the MSE loss function; for evaluation, we use a relative
+error measure (for easier interpretation) given by,
+
+Leval = meank
+
+
+1
+6
+
+6
+�
+
+n=1
+
+|ωpred
+n
+(k) − ωn(k)|
+ωn(k)
+
+ ,
+(10)
+
+where ωn(k) are the eigen frequencies indexed over band num-
+bers n = 1, 2, ..., 6 and k are the wave vectors restricted to
+the Brillouin zone, i.e. −π/a < kx,y ≤ π/a. The evaluation loss
+is taken as the mean over all 6 bands and over all (25 × 25)
+k-points.
+
+Ground-state energy prediction loss functions. The MSE
+loss function is similarly used during both the pre-training and
+
+
+10
+
+Problem
+CL (step a)
+PT of G (step b)
+FT (step c)
+
+DOS
+B ∈ {192, 768}
+B ∈ {16, 32, 64}
+B ∈ {16, 32, 64}
+α ∈ {10−4, 10−3} α ∈ {10−4, 10−3}
+α ∈ {10−4, 10−3}
+
+Band structure B ∈ {192, 768}
+B ∈ {16, 32, 64}
+B ∈ {16, 32, 64}
+α ∈ {10−4, 10−3} α ∈ {10−4, 10−3}
+α ∈ {10−4, 10−3}
+
+TISE
+B ∈ {384}
+B ∈ {32, 64, 128} B ∈ {32, 64, 128}
+α ∈ {10−6, 10−5} α ∈ {10−5, 10−4}
+α ∈ {10−4, 10−3}
+
+Table III. Hyperparameters used in the contrastive learning (CL),
+pre-training (PT) of G and fine-tuning (FT) steps. The main hyper-
+parameters we varied are the batch size (B) and the learning rates
+(α).
+
+fine-tuining stages of supervised training of the ground-state
+energy prediction problem. During evaluation, we use a simple
+relative error measure,
+
+Leval = |ypred − y|/y,
+(11)
+
+where ypred is the network prediction and y = E0 is the recorded
+ground-state energy, for each sample in the test set.
+
+Training hyperparameters. For training the networks in all
+problems, we used Adam optimizers [67], with learning rates
+for the different steps specified in Table III. We also use an
+adaptive learning rate scheduler for the fine-tuning stage. Even
+though standard contrastive learning methods implement a
+cosine annealing scheduler [68], we found that this was not
+beneficial for SIB-CL on our problems and thus omitted it. Ad-
+ditionally, in order to prevent networks H and G from overfit-
+ting to the surrogate dataset, we explored various conventional
+regularization techniques during the pre-training stage, such
+as weight decay and dropout. We found that these were not
+beneficial; instead, we used early stopping where we saved
+the pre-trained model at various epochs and performed the
+fine-tuning stage on all of them, picking only the best results
+to use as the final performance. For SIB-CL, the pre-trained
+model was saved at {100, 200, 400} epochs, and for TL (both
+with and without invariances), the pre-trained model was saved
+at {40, 100, 200} epochs. Finally, another important hyperpa-
+rameter in our experiments is the kernel size (nk) of the CNN
+layers; apart from optimizing the learning process, this hy-
+perparameter can be used to adjust the network size. This is
+important in our experiments since we are training/fine-tuning
+on varying sizes Nt of the target dataset; a smaller (bigger)
+dataset is likely to need a smaller (bigger) network for opti-
+mal results. For the DOS prediction, we varied nk ∈ {5, 7}; for
+band structures, nk ∈ {7, 9, 11} and for TISE, nk ∈ {5, 7}. The
+same set of nk was applied for both SIB-CL and all baselines
+in every problem. Apart from those mentioned here, SIB-CL
+
+involves many other hyperparameters not explored here; see
+additional comments in SI Section S6.
+
+DATA & CODE AVAILABILITY
+
+The neural networks were implemented and trained
+using the PyTorch framework [69]. PhC band structures
+were computed using MPB [47]. Numerical solution
+of the TISE ground-state energies was implemented in
+Python using SciPy [70]. DOS calculations were carried
+out using the GGR method, adapted from the MATLAB
+implementation in Ref. 46. All source codes used for dataset
+generation and network training are publicly available at
+https://github.com/clott3/SIB-CL.
+
+ACKNOWLEDGEMENTS
+
+We thank Peter Lu, Andrew Ma, Ileana Rugina, Hugo
+Larochelle, and Li Jing for fruitful discussions. We acknowl-
+edge the MIT SuperCloud and Lincoln Laboratory Supercom-
+puting Center for providing HPC resources that have con-
+tributed to the research results reported here. This work was
+sponsored in part by the United States Air Force Research
+Laboratory and the United States Air Force Artificial Intelli-
+gence Accelerator and was accomplished under Cooperative
+Agreement Number FA8750-19-2-1000. The views and con-
+clusions contained in this document are those of the authors
+and should not be interpreted as representing the official poli-
+cies, either expressed or implied, of the United States Air Force
+or the U.S. Government. The U.S. Government is authorized
+to reproduce and distribute reprints for Government purposes
+notwithstanding any copyright notation herein. This work was
+also sponsored in part by the the National Science Foundation
+under Cooperative Agreement PHY-2019786 (The NSF AI
+Institute for Artificial Intelligence and Fundamental Interac-
+tions, http://iaifi.org/) and in part by the US Office of
+Naval Research (ONR) Multidisciplinary University Research
+Initiative (MURI) grant N00014-20-1-2325 on Robust Pho-
+tonic Materials with High-Order Topological Protection. This
+material is also based upon work supported in part by the
+U. S. Army Research Office through the Institute for Soldier
+Nanotechnologies at MIT, under Collaborative Agreement
+Number W911NF-18-2-0048 and upon work supported by
+the Air Force Office of Scientific Research under the award
+number FA9550-21-1-0317. C. L. also acknowledges financial
+support from the DSO National Laboratories, Singapore.
+
+[1] A. Agrawal and A. Choudhary, Deep materials informatics:
+Applications of deep learning in materials science, MRS Com-
+munications 9, 779 (2019).
+
+[2] A. C. Mater and M. L. Coote, Deep Learning in Chemistry,
+
+Journal of Chemical Information and Modeling 59, 2545 (2019).
+
+[3] A. Tanaka, A. Tomiya, and K. Hashimoto, Deep Learning and
+Physics (Springer Nature, 2021).
+
+[4] A. W. Senior, R. Evans, J. Jumper, J. Kirkpatrick, L. Sifre,
+T. Green, C. Qin, A. ˇZ´ıdek, A. W. R. Nelson, A. Bridgland,
+H. Penedones, S. Petersen, K. Simonyan, S. Crossan, P. Kohli,
+
+
+11
+
+D. T. Jones, D. Silver, K. Kavukcuoglu, and D. Hassabis, Im-
+proved protein structure prediction using potentials from deep
+learning, Nature 577, 706 (2020).
+
+[5] T. Christensen, C. Loh, S. Picek, D. Jakobovi´c, L. Jing, S. Fisher,
+V. Ceperic, J. D. Joannopoulos, and M. Soljaˇci´c, Predictive
+and generative machine learning models for photonic crystals,
+Nanophotonics 9, 4183 (2020).
+
+[6] S. Kim, P. Y. Lu, C. Loh, J. Smith, J. Snoek, and M. Soljaˇci´c,
+Scalable and Flexible Deep Bayesian Optimization with Aux-
+iliary Information for Scientific Problems, arXiv:2104.11667
+(2021).
+
+[7] S. Ahn, J. Kim, H. Lee, and J. Shin, Guiding Deep Molecu-
+lar Optimization with Genetic Exploration, arXiv:2007.04897
+(2020).
+
+[8] D. Jha, L. Ward, A. Paul, W.-k. Liao, A. Choudhary, C. Wolver-
+ton, and A. Agrawal, ElemNet : Deep Learning the Chemistry of
+Materials From Only Elemental Composition, Scientific Reports
+8, 17593 (2018).
+
+[9] P. Y. Lu, S. Kim, and M. Soljaˇci´c, Extracting Interpretable
+Physical Parameters from Spatiotemporal Systems Using Unsu-
+pervised Learning, Physical Review X 10, 031056 (2020).
+
+[10] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei,
+ImageNet: A large-scale hierarchical image database, in 2009
+IEEE Conference on Computer Vision and Pattern Recognition
+(2009) pp. 248–255.
+
+[11] A. Krizhevsky, V. Nair, and G. Hinton, Cifar-10 (canadian insti-
+tute for advanced research), (2009).
+
+[12] G. A. Miller, WordNet: a lexical database for English, Commun.
+ACM 38, 39 (1995).
+
+[13] C. Tan, F. Sun, T. Kong, W. Zhang, C. Yang, and C. Liu, A
+Survey on Deep Transfer Learning, arXiv:1808.01974 (2018).
+
+[14] S. J. Pan and Q. Yang, A Survey on Transfer Learning, IEEE
+Transactions on Knowledge and Data Engineering 22, 1345
+(2010).
+
+[15] X. Glorot, A. Bordes, and Y. Bengio, Domain adaptation for
+large-scale sentiment classification: A deep learning approach,
+in Proceedings of the 28th International Conference on Interna-
+tional Conference on Machine Learning (2011) p. 513–520.
+
+[16] Y. Bengio, Deep learning of representations for unsupervised
+and transfer learning, in Proceedings of ICML Workshop on
+Unsupervised and Transfer Learning (2012) pp. 17–36.
+
+[17] K. Simonyan and A. Zisserman, Very deep convolutional net-
+works for large-scale image recognition, in International Con-
+ference on Learning Representations (2015).
+
+[18] K. He, X. Zhang, S. Ren, and J. Sun, Deep Residual Learning
+for Image Recognition, in 2016 IEEE Conference on Computer
+Vision and Pattern Recognition (CVPR) (IEEE, Las Vegas, NV,
+USA, 2016) pp. 770–778.
+
+[19] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, BERT:
+Pre-training of Deep Bidirectional Transformers for Language
+Understanding, arXiv:1810.04805 (2019).
+
+[20] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan,
+P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell,
+S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child,
+A. Ramesh, D. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen,
+E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner,
+S. McCandlish, A. Radford, I. Sutskever, and D. Amodei, Lan-
+guage models are few-shot learners, in Advances in Neural In-
+formation Processing Systems, Vol. 33, edited by H. Larochelle,
+M. Ranzato, R. Hadsell, M. F. Balcan, and H. Lin (Curran As-
+sociates, Inc., 2020) pp. 1877–1901.
+
+[21] Y. Qu, L. Jing, Y. Shen, M. Qiu, and M. Soljaˇci´c, Migrating
+Knowledge between Physical Scenarios Based on Artificial
+Neural Networks, ACS Photonics 6, 1168 (2019).
+
+[22] H. Yamada, C. Liu, S. Wu, Y. Koyama, S. Ju, J. Shiomi,
+J. Morikawa, and R. Yoshida, Predicting Materials Properties
+with Little Data Using Shotgun Transfer Learning, ACS Central
+Science 5, 1717 (2019).
+
+[23] N. Lubbers, T. Lookman, and K. Barros, Inferring low-
+dimensional microstructure representations using convolutional
+neural networks, Physical Review E 96, 052111 (2017).
+
+[24] X. Li, Y. Zhang, H. Zhao, C. Burkhart, L. C. Brinson, and
+W. Chen, A Transfer Learning Approach for Microstructure
+Reconstruction and Structure-property Predictions, Scientific
+Reports 8, 13461 (2018).
+
+[25] M. T. Rosenstein, Z. Marx, L. P. Kaelbling, and T. G. Dietterich,
+To Transfer or Not To Transfer, in NIPS’05 Workshop, Inductive
+Transfer: 10 Years Later (2005).
+
+[26] J. Yosinski, J. Clune, Y. Bengio, and H. Lipson, How transfer-
+able are features in deep neural networks?, arXiv:1411.1792
+(2014).
+
+[27] L. Jing and Y. Tian, Self-supervised visual feature learning with
+deep neural networks: A survey, CoRR abs/1902.06162 (2019),
+arXiv:1902.06162.
+
+[28] A. Jaiswal, A. R. Babu, M. Z. Zadeh, D. Banerjee, and
+F. Makedon, A Survey on Contrastive Self-supervised Learning,
+arXiv:2011.00362 (2021).
+
+[29] S. Gidaris, P. Singh, and N. Komodakis, Unsupervised
+Representation Learning by Predicting Image Rotations,
+arXiv:1803.07728 (2018).
+
+[30] M. Noroozi and P. Favaro, Unsupervised Learning of Visual
+Representations by Solving Jigsaw Puzzles, arXiv:1603.09246
+(2017).
+
+[31] K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, Momentum
+Contrast for Unsupervised Visual Representation Learning,
+arXiv:1911.05722 (2020).
+
+[32] T. Chen, S. Kornblith, M. Norouzi, and G. Hinton, A Simple
+Framework for Contrastive Learning of Visual Representations,
+arXiv:2002.05709 (2020).
+
+[33] J.-B. Grill, F. Strub, F. Altch´e, C. Tallec, P. H. Richemond,
+E. Buchatskaya, C. Doersch, B. A. Pires, Z. D. Guo, M. G. Azar,
+B. Piot, K. Kavukcuoglu, R. Munos, and M. Valko, Bootstrap
+your own latent: A new approach to self-supervised Learning,
+arXiv:2006.07733 (2020).
+
+[34] M. Caron, I. Misra, J. Mairal, P. Goyal, P. Bojanowski, and
+A. Joulin, Unsupervised Learning of Visual Features by Con-
+trasting Cluster Assignments, arXiv:2006.09882 (2021).
+
+[35] X. Chen and K. He, Exploring Simple Siamese Representation
+Learning, arXiv:2011.10566 (2020).
+
+[36] Y. Wang, J. Wang, Z. Cao, and A. B. Farimani, MolCLR: Molec-
+ular Contrastive Learning of Representations via Graph Neural
+Networks, arXiv:2102.10056 (2021).
+
+[37] S. J. Wetzel, R. G. Melko, J. Scott, M. Panju, and V. Ganesh,
+Discovering symmetry invariants and conserved quantities by
+interpreting siamese neural networks, Physical Review Research
+2, 033499 (2020).
+
+[38] Y. Tian, C. Sun, B. Poole, D. Krishnan, C. Schmid, and
+P. Isola, What Makes for Good Views for Contrastive Learning?,
+arXiv:2005.10243 (2020).
+
+[39] J. D. Joannopoulos, S. G. Johnson, J. N. Winn, and R. D. Meade,
+
+Photonic Crystals: Molding the Flow of Light, 2nd ed. (Prince-
+ton University Press, 2008).
+
+[40] E. Yablonovitch, Inhibited Spontaneous Emission in Solid-State
+Physics and Electronics, Physical Review Letters 58, 2059
+(1987).
+
+[41] J. Peurifoy, Y. Shen, L. Jing, Y. Yang, F. Cano-Renteria, B. G.
+DeLacy, J. D. Joannopoulos, M. Tegmark, and M. Soljaˇci´c,
+Nanophotonic particle simulation and inverse design using arti-
+ficial neural networks, Science Advances 4, eaar4206 (2018).
+
+
+12
+
+[42] J. S. Jensen and O. Sigmund, Topology optimization for nano-
+photonics, Laser & Photonics Reviews 5, 308 (2011).
+
+[43] S. Molesky, Z. Lin, A. Y. Piggott, W. Jin, J. Vuckovi´c, and A. W.
+Rodriguez, Inverse design in nanophotonics, Nature Photonics
+12, 659 (2018).
+
+[44] L. Novotny and B. Hecht, Principles of Nano-Optics (Cam-
+bridge University Press, 2012).
+
+[45] G. Gilat and L. Raubenheimer, Accurate numerical method for
+calculating frequency-distribution functions in solids, Phys. Rev.
+144, 390 (1966).
+
+[46] B. Liu, S. G. Johnson, J. D. Joannopoulos, and L. Lu, General-
+ized Gilat-Raubenheimer method for density-of-states calcula-
+tion in photonic crystals, Journal of Optics 20, 044005 (2018).
+
+[47] S. G. Johnson and J. D. Joannopoulos, Block-iterative frequency-
+domain methods for Maxwell’s equations in a planewave basis,
+Optics Express 8, 173 (2001).
+
+[48] K. Ohtaka, Energy band of photons and low-energy photon
+diffraction, Physical Review B 19, 5057 (1979).
+
+[49] X. Wang, X.-G. Zhang, Q. Yu, and B. N. Harmon, Multiple-
+scattering theory for electromagnetic waves, Physical Review B
+47, 4161 (1993).
+
+[50] A. Moroz, Density-of-states calculations and multiple-scattering
+theory for photons, Physical Review B 51, 2068 (1995).
+
+[51] A. Moroz, Metallo-dielectric diamond and zinc-blende photonic
+crystals, Physical Review B 66, 115109 (2002).
+
+[52] R. B. Lehoucq, D. C. Sorensen, and C. Yang, Arpack users
+guide: Solution of large scale eigenvalue problems by implicitly
+restarted arnoldi methods. (1997).
+
+[53] T. Xiao, X. Wang, A. A. Efros, and T. Darrell, What Should
+Not Be Contrastive in Contrastive Learning, arXiv:2008.05659
+(2021).
+
+[54] A. v. d. Oord, Y. Li, and O. Vinyals, Representation Learning
+with Contrastive Predictive Coding, arXiv:1807.03748 (2019).
+
+[55] Y. Tian, D. Krishnan, and P. Isola, Contrastive Multiview Cod-
+ing, arXiv:1906.05849 (2020).
+
+[56] T. Wang and P. Isola, Understanding Contrastive Representation
+Learning through Alignment and Uniformity on the Hyper-
+sphere, arXiv:2005.10242 (2020).
+
+[57] S. Arora, H. Khandeparkar, M. Khodak, O. Plevrakis, and
+N. Saunshi, A Theoretical Analysis of Contrastive Unsuper-
+vised Representation Learning, arXiv:1902.09229 (2019).
+
+[58] M. Wu, C. Zhuang, M. Mosse, D. Yamins, and N. Goodman,
+On Mutual Information in Contrastive Learning for Visual Rep-
+resentations, arXiv:2005.13149 (2020).
+
+[59] T. S. Cohen and M. Welling, Group Equivariant Convolutional
+Networks, arXiv:1602.07576 (2016).
+
+[60] N.
+Thomas,
+T.
+Smidt,
+S.
+Kearnes,
+L.
+Yang,
+L.
+Li,
+K. Kohlhoff, and P. Riley, Tensor field networks: Rotation- and
+translation-equivariant neural networks for 3D point clouds,
+arXiv:1802.08219 (2018).
+
+[61] M. Weiler, M. Geiger, M. Welling, W. Boomsma, and T. Cohen,
+3D Steerable CNNs: Learning Rotationally Equivariant Features
+in Volumetric Data, arXiv:1807.02547 (2018).
+
+[62] F. B. Fuchs, D. E. Worrall, V. Fischer, and M. Welling, SE(3)-
+Transformers: 3D Roto-Translation Equivariant Attention Net-
+works, arXiv:2006.10503 (2020).
+
+[63] S. Batzner, T. E. Smidt, L. Sun, J. P. Mailoa, M. Kornbluth,
+N. Molinari, and B. Kozinsky, SE(3)-Equivariant Graph Neural
+Networks for Data-Efficient and Accurate Interatomic Poten-
+tials, arXiv:2101.03164 (2021).
+
+[64] Z. Chen, N. Andrejevic, T. Smidt, Z. Ding, Y.-T. Chi, Q. T.
+Nguyen, A. Alatas, J. Kong, and M. Li, Direct prediction of
+phonon density of states with Euclidean neural networks, Ad-
+vanced Science , 2004214 (2021).
+
+[65] S. Ioffe and C. Szegedy, Batch Normalization: Accelerating
+Deep Network Training by Reducing Internal Covariate Shift,
+arXiv:1502.03167 (2015).
+
+[66] V. Nair and G. E. Hinton, Rectified linear units improve re-
+stricted boltzmann machines., in ICML (2010) pp. 807–814.
+
+[67] D. P. Kingma and J. Ba, Adam: A Method for Stochastic Opti-
+mization, arXiv:1412.6980 (2017).
+
+[68] I. Loshchilov and F. Hutter, SGDR: Stochastic Gradient Descent
+with Warm Restarts, arXiv:1608.03983 (2017).
+
+[69] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan,
+T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, A. Desmaison,
+A. Kopf, E. Yang, Z. DeVito, M. Raison, A. Tejani, S. Chil-
+amkurthy, B. Steiner, L. Fang, J. Bai, and S. Chintala, PyTorch:
+an imperative style, high-performance deep learning library, in
+Advances in Neural Information Processing Systems 32 (2019)
+pp. 8024–8035.
+
+[70] P. Virtanen, R. Gommers, T. E. Oliphant, M. Haber-
+land, T. Reddy, D. Cournapeau, E. Burovski, P. Peterson,
+W. Weckesser, J. Bright, S. J. van der Walt, M. Brett, J. Wilson,
+K. J. Millman, N. Mayorov, A. R. J. Nelson, E. Jones, R. Kern,
+E. Larson, C. J. Carey, ˙I. Polat, Y. Feng, E. W. Moore, J. Vander-
+Plas, D. Laxalde, J. Perktold, R. Cimrman, I. Henriksen, E. A.
+Quintero, C. R. Harris, A. M. Archibald, A. H. Ribeiro, F. Pe-
+dregosa, P. van Mulbregt, and SciPy 1.0 Contributors, SciPy 1.0:
+Fundamental Algorithms for Scientific Computing in Python,
+Nature Methods 17, 261 (2020).
+
+
+SUPPLEMENTARY INFORMATION
+
+Surrogate- and invariance-boosted contrastive learning for
+data-scarce applications in science
+
+Charlotte Loh,1 Thomas Christensen,2 Rumen Dangovski,1 Samuel Kim,1 and Marin Soljaˇci´c2
+
+1Department of Electrical Engineering and Computer Science, Massachusetts Institute of Technology,
+Cambridge, Massachusetts, USA
+2Department of Physics, Massachusetts Institute of Technology, Cambridge, Massachusetts, USA
+
+CONTENTS
+
+S1. BYOL illustration & results
+1
+
+S2. Photonic Crystals Band Structure Prediction
+2
+
+S3. TISE: Additional details and results
+3
+
+S4. Additional baselines: including invariance information
+
+using data augmentation
+5
+
+S5. ”Baking in” invariances using contrastive learning:
+Ablation studies and further experiments
+5
+
+S6. Additional comments on hyperparameters
+7
+
+Supplemental References
+7
+
+S1. BYOL ILLUSTRATION & RESULTS
+
+In BYOL [S2], instead of a single network like in SimCLR [S1], there are two networks of the same
+architecture (Supplementary Figure 1a): a trainable online network (with weights parameterized by θ)
+and a fixed target network (with weights parameterized by ξ). The two variations of a unit cell (obtained
+via sampling from G) are separately fed through the online and target network, where the online network
+features an additional “BYOL predictor” sub-network which is not present in SimCLR. The weights
+of the online network θ are then updated by minimizing the mean squared error (MSE) between the
+(normalized) online and target embeddings, as given by,
+
+LBYOL
+j j′,θξ =
+��� ¯K(zj,θ) − ¯z j′,ξ
+���2 = 2 − 2 ·
+⟨K(z j,θ), zj′,ξ⟩
+���K(zj,θ)
+��� ·
+���z j′,ξ
+���,
+(S1)
+
+where ∥ · ∥ indicates the L2 norm, K is the ”BYOL predictor” and z represent the respective embeddings
+illustrated in Supplementary Figure 1a. As for the target network, at each training step, it is updated using
+an exponential moving average of the online network weights,
+
+ξ ← τξ + (1 − τ)θ,
+(S2)
+
+where τ ∈ [0, 1] is a target decay rate hyperparameter. Unlike SimCLR’s loss function (Eq. (1) in the
+main text), where negative pairs are explicitly being “pushed apart” due to the denominator of the cross
+entropy loss function, the BYOL loss (Eq. (S1)) does not explicitly involve negative pairs.
+
+In Supplementary Figure 1b, we compare the results when replacing the SimCLR technique in SIB-
+CL with the BYOL technique, evaluated on the DOS prediction problem for Photonic Crystals (PhC);
+we also depict the baselines’ performances for comparison. When including the full suite of invariance
+information (i.e. translations (t), rotations (C), mirrors (σ) and scaling (s)), BYOL was observed to give
+slightly poorer performance compared to SimCLR. Here, for convenience, rotation and mirror operations
+are collectively defined as C = {C2,C±
+4 } and σ = {σh, σv, σ(′)
+d } respectively. When removing the scaling
+transformation, BYOL was seen to give similar results to SimCLR (as well as similar to BYOL including
+the scaling transformation). This suggests that the use of negative pairs during contrastive learning has no
+significant implications, despite initial intuition that such a concept may seem inappropriate for regression
+problems. Additionally, our results also suggest that BYOL was observably not effective at handling the
+scaling transformation. This observation was further echoed in the TISE ground-state energy prediction
+
+arXiv:2110.08406v1  [cs.LG]  15 Oct 2021
+
+
+2
+
+xi
+
+g xi
+
+g’ xi
+
+Hθ
+
+Hθ(g xi )
+
+Hξ(g’ xi )
+
+Representation
+
+zi,θ 
+
+zi’,ξ 
+
+Metric 
+embedding
+
+Jθ
+
+BYOL 
+Predictor
+K
+
+K(zi,θ) 
+
+stop
+gradient 
+(sg)
+sg(zi’,ξ ) 
+
+MSE
+loss
+
+a  BYOL illustration
+
+b  PhC DOS Prediction: BYOL vs SimCLR
+
+SL
+TL
+
+SimCLR  (t + C + σ + s)
+BYOL  (t + C + σ + s)
+
+SimCLR  (t + C + σ )
+BYOL  (t + C + σ )
+
+ Relative test error (%)
+
+50
+100
+200
+400
+800
+1600
+3200
+
+8
+7
+6
+
+4
+
+5
+
+3
+
+2
+
+BYOL 
+embedding
+
+Online
+
+Target
+Hξ
+Jξ
+
+Fine-tuning size Nt
+
+c  TISE low resolution (3D): BYOL vs SimCLR
+
+SL
+TL
+
+SimCLR (C + σ )
+BYOL (C + σ )
+
+ Relative test error (%)
+
+Fine-tuning size Nt
+
+50
+100
+200
+400
+800
+1600
+3200
+
+0.63
+
+1.25
+
+2.5
+
+5
+
+10
+
+Supplementary Figure 1. BYOL for contrastive learning a) Illustration of the BYOL algorithm, which includes
+two networks, an online and a target network. The variables here correspond to the variables defined in Fig. 2
+in the main text, except here we include explicit reference to the network weights using θ and ξ. b) Results for
+using BYOL in SIB-CL compared against when using SimCLR on the PhC DOS prediction problem, when using
+various combinations of invariances: translations (t), rotations (C) and mirrors (σ), and scaling (s). c) Results for
+using BYOL in SIB-CL compared against when using SimCLR on the ground-state energy prediction problem
+(in 3D, and using low resolution data as the surrogate dataset).
+
+problem (Supplementary Figure 1c); here, the performance differences between the two techniques were
+observed to mostly occur within the 1σ uncertainty range. In other words, this result implies that neither
+technique outperforms the other with statistical significance.
+
+S2. PHOTONIC CRYSTALS BAND STRUCTURE PREDICTION
+
+In this section, we describe additional experiments of performing PhC band structure regression, where
+we trained a network to predict the transverse-magnetic (TM) band structures of the PhCs, up to the
+first 6 bands. Unlike the DOS, we do not integrate over the Brillouin zone and thus the set of invariant
+transformations is reduced to just the choice of the unit cell origin (i.e., to translation invariance, G = Gt).
+During supervised training (for both pre-training and fine-tuning), we use the mean squared error (MSE)
+loss function; for evaluation, we use a relative error measure (for easier interpretation) given by,
+
+Leval = meank
+
+
+1
+6
+
+6
+�
+
+n=1
+
+|ωpred
+n
+(k) − ωn(k)|
+ωn(k)
+
+ ,
+(S3)
+
+where ωn(k) are the eigen frequencies indexed over band numbers n = 1, 2, ..., 6 and k are the wave
+vectors restricted to the Brillouin zone, i.e. −π/a < kx,y ≤ π/a. The evaluation loss is taken as the mean
+over all 6 bands and over all k-points. Details of the network architecture and training hyperparameters
+used in these experiments are described in the Methods section of the main text.
+
+The results are shown in Supplementary Figure 2a, where SIB-CL was observed to give more than 60×
+data savings compared to any of the baselines. Examples of the band structure predicted by the trained
+
+
+3
+
+Resolution Band structure error DOS error
+
+4 × 4
+3.5%
+18.7%
+8 × 8
+1.7%
+3.1%
+16 × 16
+0.5%
+1.0%
+
+Supplementary Table 1. Computational accuracy of band structure compared to DOS.
+
+>60x
+
+SL
+TL
+SIB-CL
+
+ Relative test error (%)
+
+50
+100
+200
+400
+800
+1600
+3200
+
+4
+
+3
+
+2
+
+1
+
+Error 5.0 %
+Error 1.5 %
+
+Frequency (ωa/navg2πc)
+
+0
+
+0.3
+
+0.6
+
+0.9
+
+1.2
+
+1.5
+
+0
+
+0.3
+
+0.6
+
+0.9
+
+1.2
+
+1.5
+
+1
+20
+�
+kx
+
+ky
+
+kx
+
+ky
+
+a  PhC band structure prediction results
+b  Band structure visualization
+
+Fine-tuning size Nt
+
+Supplementary Figure 2. PhC band structure prediction a) Performance of SIB-CL (based on SimCLR [S1]
+for the contrastive learning step), compared against the baselines introduced in the main text, for band structure
+prediction. Error bars show the 1σ uncertainty level estimated from varying the data selection of the fine-tuning
+dataset. b) Examples of the band structure predicted by the SIB-CL trained network (indicated by markers)
+compared against the actual band structure (indicated by surface plots) at 1.5% and 5% error levels; insets
+depict the associated unit cells.
+
+network at various error levels are also depicted in Supplementary Figure 2b, where the markers indicate
+the network prediction and the surface plots depict the true band structure. While the data savings is
+highly impressive, we found the choice of the evaluation metric to be more subtle (than the DOS predic-
+tion task). This is because most of the unique features in the band structure of each unit cell are contained
+only at some k-points, and the band structure at the remaining k-points can be very well approximated
+using the “empty-lattice” (a featureless unit cell filled entirely by the average permitivitty); thus we un-
+desirably under-emphasize the prediction error when we take the mean over k. This is further illustrated
+in Supplementary Table 1, where we show the relative numerical error (according to metric Eq. (S3))
+of the band structures when computed using a reduced resolution (i.e. approaching the “empty-lattice”)
+of the unit cell. At a resolution of 4 × 4 we have an error amounting to only 3.5%, suggesting that the
+“empty-lattice” band structure is a rather good approximation. In other words, in order to critically eval-
+uate the band structure prediction problem, an asymmetric loss function (that emphasizes the differences
+at the “special” k-points) should be used. Nevertheless, Supplementary Figure 2a serves as clear evid-
+ence that SIB-CL outperforms the baselines (since we use the same evaluation metric in SIB-CL and all
+baselines). In contrast, the DOS does not have this issue (Supplementary Table 1) and thus it is acceptable
+to use a straightforward evaluation metric, as presented in the main text.
+
+S3. TISE: ADDITIONAL DETAILS AND RESULTS
+
+The process of generating the random potentials U(r) for the time-independent Schr¨odinger equation
+(TISE) problem, as explained in the Methods section of the main text, is illustrated in Supplementary
+Figure 3a (here in 2D for illustration purposes). When generating the dataset, special care was taken
+in choosing the dynamic range of the potential and the physical size of the infinitely-bounded box to
+ensure that we produce non-trivial solutions. A dataset with trivial solutions would be one where the
+
+
+4
+
+samples have their wavefunctions either 1) resemble the ground-state solution of a “particle in a box”,
+i.e. the variations in the potential are too weak relative to the confinement energy of the box, or 2) highly
+localized in local minimas of the potential, i.e. the variations in the potentials are too strong relative
+to the confinement energy. Both extremes would not create a meaningful deep learning problem and
+thus we avoid them by carefully controlling the ratio between the potential range and length scale. In
+Supplementary Figure 3b, we display some examples of potentials in our dataset and their corresponding
+ground-state solution, and verify that they indeed avoid the two aforementioned extremes. We show them
+in 2D here for illustration purposes, whereas in the main text the TISE problem is in 3D.
+
+Apart from using reduced resolution data as the surrogate dataset for the TISE problem as presented in
+the main text, we also experimented with using a simple, analytically-defined dataset like a dataset of
+quantum harmonic oscillators (QHO). For quicker training of the neural networks, we work with the
+TISE problem in 2D for these experiments. Different unit cells in the QHO surrogate dataset are defined
+
+c  Generation of QHO dataset, { Ũi (r), Ẽ0,i } 
+
+closed form
+
+0
+
+50
+
+ d  Results for QHO as surrogate
+
+Ẽ0 =      (ωx+ωy)
+1
+2
+
+Ũi( x, y )
+
+ c =( cx , cy )
+
+SL
+TL
+SIB-CL
+
+ Relative test error (%)
+
+10
+
+5
+
+2.5
+
+1.25
+50
+100
+200
+400
+800
+1600
+3200
+
+b  TISE 2D potentials and eigen-functions 
+
+0
+
+1
+
+Truncate
+(remove
+periodicity)
+
+Gaussian
+smooth
+
+Discretize
+to 32 × 32
+
+Fine-tuning size Nt
+
+ a  Generation of random potentials (2D)
+
+x
+
+y
+
+x
+y
+
+Supplementary Figure 3. TISE QHO a) Illustration of the proceedure used to generate samples of random
+potential, here illustrated in 2D for simplicity. b) Examples of 2D potentials and their corresponding wavefunction
+solutions (eigenfunctions) show that solutions are non-trivial. c) The QHO dataset consists of 2D QHO poten-
+tials, ˜U(r) = 1
+
+2ω◦2 · (r− c)◦2 with different values of ω and c, and labels are the closed-form solutions of the QHO
+(ignoring Dirichlet boundary conditions). d) Results of SIB-CL (using BYOL for contrastive learning) compared
+against the baselines for ground-state energy prediction in 2D when using the QHO surrogate dataset.
+
+
+5
+
+using different values of ω = (ωx, ωy) and c = (cx, cy) in
+
+˜U(r) = 1
+
+2ω◦2 · (r − c)◦2,
+(S4)
+
+and the ground-state energy can be analytically defined as ˜E0 = 1
+
+2(ωx + ωy) (see Supplementary Fig-
+ure 3c). We experimented with the dynamic ranges of ω and c to ensure that the potential of the unit cells
+are sufficiently large near the infinite boundaries, since our prediction task assumes Dirchlet boundary
+conditions. To do so, we solved for the ground-state energies of a small sample set of QHO potentials
+using our eigensolver (with Dirichlet boundary conditions) and chose dynamic ranges of ω and c such
+that the error of the analytical solution from the numerical solution is small. The final values we chose are
+ωx, ωy ∈ [0.3, 3.2] and cx, cy ∈ [0, 4.5], which gave an acceptable error of around 2.6% (defined according
+to the same loss metric used for network evaluation).
+
+Results for using QHO potentials with analytically-defined solutions as the surrogate dataset is shown in
+Supplementary Figure 3d, where SIB-CL was seen to also outperform the baselines. However, we observe
+a smaller performance margin from the baselines, as well as between the two baselines, as compared to
+the other problems; this is likely due to the simplicity of the QHO surrogate dataset.
+
+S4. ADDITIONAL BASELINES: INCLUDING INVARIANCE INFORMATION USING DATA AUGMENTATION
+
+The baselines introduced in the main text, SL and TL, do not invoke any invariance information during
+network training. In Supplementary Figure 4, we explore adding invariance information to these baselines
+via a simple data augmentation approach; we refer to them as SL-I and TL-I for invariance-augmented
+SL and TL respectively. Specifically, the training procedure of SL-I corresponds exactly to Fig. 2c in
+the main text, i.e. each sample in the fine-tuning dataset undergoes a transformation randomly sampled
+from G before entering the encoder network H. Similarly, TL-I corresponds exactly to Fig. 2bc, where
+samples from the surrogate and target dataset are each transformed with a random element from G before
+entering the encoder H during both the pre-training and fine-tuning stages. In Supplementary Figure 4,
+we show results of these invariance-augmented baselines and compare them against SIB-CL, SL and
+TL for each of the four regression problems described in this work: DOS prediction (Supplementary
+Figure 4a) and band structure prediction (Supplementary Figure 4b) of 2D PhCs; and for TISE, we have
+ground-state energy prediction when using low resolution data (Supplementary Figure 4c) and QHO
+potentials (Supplementary Figure 4d) as surrogate datasets. In all four problems, we found that SIB-CL
+outperforms all the baselines, some with significant margins.
+
+S5. ”BAKING IN” INVARIANCES USING CONTRASTIVE LEARNING: ABLATION STUDIES AND
+FURTHER EXPERIMENTS
+
+Using the notation in the main text, the group of invariant transformations used for the PhC DOS predic-
+tion problem can be expressed as G = {1 , t , C , σ , s}, where we use C = {C2,C±
+4 } and σ = {σh, σv, σ(′)
+d }
+to indicate the set of all rotation and flip operations respectively. In Supplementary Figure 5a, we present
+results from an ablation experiment on SIB-CL, where we selectively, and increasingly, remove trans-
+formations from G. We observe SIB-CL’s prediction accuracy to monotonically worsen (improve) as
+more transformations are removed (added) from G. This is expected, since all of these transformations
+are true invariances of the (DOS prediction) problem, and thus including more types of transformation
+is equivalent to incorporating more prior knowledge of the problem which should improve the model ac-
+curacy. This observation is typically not echoed in standard contrastive learning applications in computer
+vision; a possible reason is that the data augmentation strategies used to generate the transformations
+there are not necessarily true invariances since the downstream task is not known during contrastive
+learning and thus some transformations may prove ineffective [S5]. This observation also validates the
+effectiveness of using contrastive learning to invoke prior knowledge of physical invariances.
+
+Next, we also performed an ablation experiment where we discarded all invariance information from the
+contrastive learning step, for both SimCLR and BYOL. To do so, we reduce G to the trivial identity group,
+
+
+6
+
+ a PhC DOS prediction
+ b  PhC band structure prediction
+
+ c  TISE low resolution (3D)
+
+ d  TISE SHO
+
+ Relative test error (%)
+
+50
+100
+200
+400
+800
+1600
+3200
+50
+100
+200
+400
+800
+1600
+3200
+
+50
+100
+200
+400
+800
+1600
+3200
+50
+100
+200
+400
+800
+1600
+3200
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+4
+
+3
+
+10
+
+2.5
+
+5
+
+1.25
+
+0.625
+
+10
+
+2.5
+
+5
+
+1.25
+
+ d  TISE QHO (2D)
+
+SL
+TL
+TL - I (t + C + σ + s)
+SL - I (t + C + σ + s)
+SIB-CL (t + C + σ + s) 
+
+Fine-tuning size Nt
+
+Supplementary Figure 4. Baselines with invariance information Results for supervised learning (SL),
+invariance-augmented supervised learning (SL-I), regular transfer learning (TL), invariance-augmented transfer
+learning (TL-I) and SIB-CL for all four regression problems discussed in this work: a) Density-of-states (DOS)
+prediction of 2D photonic crystals (PhCs), b) band structure prediction of 2D PhCs, c) ground-state energy
+prediction for 3D potentials using low resolution data as surrogate, and d) ground-state energy prediction for 2D
+potentials using quantum harmonic oscillator (QHO) potentials as surrogate.
+
+G = {1}, (i.e. such that gxi = g′xi = xi in Fig. 2 of the main text). The results of this experiment are shown
+in Supplementary Figure 5b, where we observe that both SimCLR and BYOL gave prediction accuracies
+that coincided very well to the TL baseline (which includes only information from the surrogate dataset
+and not invariances). This further validates SIB-CL’s approach of using contrastive learning to invoke
+knowledge of invariances—once this knowledge is removed, doing contrastive learning as a pre-training
+step provides no benefits. Equivalently, this suggests that the utility of SIB-CL is derived from attracting
+non-trivial positive pairs (i.e. learning invariances) rather than repelling negative pairs.
+
+Another insightful ablation experiment is to retain all elements of G during pre-training, but reduce G
+to the trivial identity group only during fine-tuning. This experiment can be explored for SIB-CL and
+TL-I (but not SL-I since doing so would give exactly SL) and will tell us how effectively each method
+had “baked in” invariance information into the representions during the pre-training stage. We refer to
+these experiments as SIB-CL-rt and TL-I-rt correspondingly. From Supplementary Figure 5c, the high
+correspondence observed between SIB-CL and SIB-CL-rt suggests that SIB-CL learns, and retains, most
+of the invariance information from the pre-training stage. On the contrary, the gap between TL-I and
+TL-I-rt suggests that while some invariance information is learnt during pre-training (indicated by the
+gap between TL and TL-I-rt), much of its “invariance learning” also occurs during the fine-tuning stage.
+This suggests that, compared to TL-I, representations learnt from SIB-CL have higher semantic quality;
+this is highly desirable, for example, in domains where there exist a series of different tasks (that obey
+the same invariances) since these representations can be simply “reused” without needing to re-train the
+network.
+
+Finally, we also studied three different algorithms for performing contrastive learning on these invari-
+
+
+7
+
+ances, which are described in detail as follows;
+
+1. Standard: transformations from G are uniformly sampled from the sub-groups in the following
+order: [Gt, G0, Gs] and applied sequentially to each input. This sampling procedure gives rise to
+instances which have “highly compounded” invariances; in other words, the two variations of the
+unit cell (or a positive pair) can look drastically different.
+
+2. Independent: contrastive learning was performed independently for each sub-group of transform-
+ations and their losses were summed; i.e. we create a positive pair for each sub-group, compute
+the NT-Xent loss for each pair and sum them to get the total contrastive loss. This algorithm is
+slower than the rest (though it can be mitigated via parallel computing) since the number of for-
+ward passes per iteration increases according to the number of sub-groups present. However, this
+sampling procedure create positive instances that differ only by a single sub-group operation and
+hence their differences are less drastic.
+
+3. Stochastic: Similar to standard, except there is some probability, pα, to whether each transformation
+sampled from Gα will be applied. In our experiments, we set pα = 0.5 for all α’s, (i.e. α ∈ {0, t, s}).
+In other words, there is a 50% chance we do not apply each transformation.
+
+These 3 algorithms are compared in Supplementary Figure 5d, where the stochastic approach is seen to
+produce the best model accuracies. While the differences are small, the stochastic method is still strictly
+better than the other two for various combinations of transformations (Supplementary Figure 5d left &
+right) and statistically significant at larger Nt. We conjecture that this is because the standard method
+uses instances with highly compounded invariances which are difficult to learn, whereas the independent
+method uses simple invariances governed by single transformations which are easily learnt but omits
+useful knowledge of compounded invariances. The stochastic method presents as an ideal middle-ground
+between the two methods. In practice, the individual pα for each sub-group of transformations are hyper-
+parameters that should be tuned for optimization; a detailed tuning of the individual pα will likely widen
+the performance edge of the stochastic method.
+
+S6. ADDITIONAL COMMENTS ON HYPERPARAMETERS
+
+Apart from the hyperparameters discussed in the Methods section of the main text, SIB-CL involves many
+other possible training hyperparameters which was not studied in this work. For instance, we simply
+alternate contrastive learning and predictor pre-training (i.e., Fig. 2ab in the main text) after every epoch;
+however, one could in principle vary the interval between the two steps, perform the two steps entirely
+sequentially, or even consider joint-training (i.e. updating the weights of H using a weighted average
+of the loss from both steps). The initial motivation for training the two steps alternately (instead of
+sequentially) is to provide some information about the predictive task to H during contrastive learning.
+This is a key deviation of SIB-CL from standard self-supervised learning (SSL) techniques which are
+completely task agnostic. We conjecture that SIB-CL will be more effective for predictive modelling
+problems in science, where the labels are often more sophisticated (and the label space is often larger)
+than image classes used in vision tasks for standard SSL. For standard SSL, a single linear layer (as
+opposed to a dense non-linear predictor network used in our case) is often applied after the encoder and
+is deemed to be sufficient for the classification task; this is a common evaluation procedure in SSL [S3;
+S4; S7] also better known as the “linear protocol”.
+
+Additionally, as suggested in Section S5, the stochastic sampling parameter for the different sub-group
+of invariances (i.e. pα) can also be tuned separately (here, we set them all to 0.5 for simplicity). Tuning
+the frequency and strength of transformations was found to be highly important in contrastive learning in
+standard computer vision applications [S5; S6] and are thus often exhaustively varied during optimiza-
+tion [S1]. If we were to study the variations discussed here, performances better than the ones presented
+in this work might be attainable for SIB-CL.
+
+
+8
+
+Regular TL
+
+No inv
+s
+
+ C + σ 
+t 
+t   + s
+t  + C + σ
+t + C + σ + s
+
+ a  Using only selected invariances, SimCLR
+
+50
+100
+200
+400
+800
+1600
+3200
+
+8
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+ Relative test error (%)
+
+ b  Remove invariance from contrastive learning
+
+50
+100
+200
+400
+800
+1600
+3200
+
+8
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+ Relative test error (%)
+
+d  Studying diferent algorithms for contrastive learning
+
+Standard
+Independent
+Stochastic
+
+Standard
+Independent
+Stochastic
+
+ Relative test error (%)
+
+50
+100
+200
+400
+800
+1600
+3200
+50
+100
+200
+400
+800
+1600
+3200
+
+7
+
+6
+
+5
+
+4
+
+3
+
+6
+
+5
+
+4
+
+3
+
+ =  { t , C , σ , s }
+ = { t , C , σ }
+
+Fine-tuning size Nt
+
+Fine-tuning size Nt
+Fine-tuning size Nt
+
+ c  Removing transformations during fne-tuning
+
+TL - I  
+TL - I - rt
+
+BYOL (     =  {1} )
+SimCLR (     =  {1} )
+
+SimCLR (     =  {t + C + σ + s} )
+
+Relative error (%)
+
+4
+
+3
+
+5
+
+6
+7
+8
+
+Fine-tuning size Nt
+50
+100
+200
+400
+800
+1600
+3200
+2
+
+TL
+
+SIB-CL
+SIB-CL - rt
+
+Supplementary Figure 5. Ablation studies Results from ablation experiments on the DOS prediction task
+show that: a) when selected transformations are removed from the group of known invariances G during con-
+trastive learning, performance of SIB-CL (here based on SimCLR) monotonically worsens; b) when reducing
+G to just the trivial identity group (during both pre-training and fine-tuning), both SimCLR and BYOL display
+similar performance to the transfer learning baseline (without invariances); c) when reducing G to just the trivial
+identity group only during fine-tuning (here referred to by appending -rt to the methods’ abbreviations), SIB-
+CL’s performance was not compromised while TL-I’s was; d) the stochastic sampling approach (explained in
+the text) produces the best performance, both when all transformations are included (left) and all but scaling
+transformation are included (right).
+
+SUPPLEMENTAL REFERENCES
+
+[S1] Chen, Ting, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton (2020), “A Simple Framework for
+Contrastive Learning of Visual Representations,” arXiv:2002.05709 .
+
+[S2] Grill, Jean-Bastien, Florian Strub, Florent Altch´e, Corentin Tallec, Pierre H. Richemond, Elena Buchatskaya,
+Carl Doersch, Bernardo Avila Pires, Zhaohan Daniel Guo, Mohammad Gheshlaghi Azar, Bilal Piot, Koray
+Kavukcuoglu, R´emi Munos, and Michal Valko (2020), “Bootstrap your own latent: A new approach to self-
+supervised Learning,” arXiv:2006.07733 .
+
+[S3] Kolesnikov, Alexander, Xiaohua Zhai, and Lucas Beyer (2019), “Revisiting Self-Supervised Visual Represent-
+ation Learning,” arXiv:1901.09005 .
+
+
+9
+
+[S4] Oord, Aaron van den, Yazhe Li, and Oriol Vinyals (2019), “Representation Learning with Contrastive Predictive
+Coding,” arXiv:1807.03748 .
+
+[S5] Tian, Yonglong, Chen Sun, Ben Poole, Dilip Krishnan, Cordelia Schmid, and Phillip Isola (2020), “What Makes
+for Good Views for Contrastive Learning?” arXiv:2005.10243 .
+
+[S6] Xiao, Tete, Xiaolong Wang, Alexei A. Efros, and Trevor Darrell (2021), “What Should Not Be Contrastive in
+Contrastive Learning,” arXiv:2008.05659 .
+
+[S7] Zhang, Richard, Phillip Isola, and Alexei A. Efros (2016), “Colorful Image Colorization,” arXiv:1603.08511 .
+
+

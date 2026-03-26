@@ -1,0 +1,2015 @@
+Machine learning depinning of dislocation pileups
+Mika Sarvilahti,1 Audun Skaugen,1 and Lasse Laurson1, a)
+
+1Computational Physics Laboratory, Tampere University,
+P.O. Box 692, FI-33014 Tampere, Finland
+
+(Dated: 1 July 2020)
+
+We study a one-dimensional model of a dislocation pileup driven by an external stress and interacting with random
+quenched disorder, focusing on predictability of the plastic deformation process. Upon quasistatically ramping up the
+externally applied stress from zero the system responds by exhibiting an irregular stress–strain curve consisting of a
+sequence of strain bursts, i.e., critical-like dislocation avalanches. The strain bursts are power-law distributed up to
+a cutoff scale which increases with the stress level up to a critical flow stress value. There, the system undergoes
+a depinning phase transition and the dislocations start moving indefinitely, i.e., the strain burst size diverges. Using
+sample-specific information about the pinning landscape as well as the initial dislocation configuration as input, we
+employ predictive models such as linear regression, simple neural networks and convolutional neural networks to study
+the predictability of the simulated stress–strain curves of individual samples. Our results show that the response of
+the system – including the flow stress value – can be predicted quite well, with the correlation coefficient between
+predicted and actual stress exhibiting a non-monotonic dependence on strain. We also discuss our attempts to predict
+the individual strain bursts.
+
+I.
+INTRODUCTION
+
+One of the key ideas of many disciplines including mate-
+rials science in particular is that structure and properties of
+materials tend to be related.1,2 For instance, much of metal-
+lurgy is about tuning materials microstructure to design ma-
+terials with desired mechanical properties.2 Typically the re-
+lation between, say, the precipitate content of a precipitation-
+hardened alloy3 and its yield strength is understood as an av-
+erage property, and indeed in the case of macroscopic bulk
+samples the sample-to-sample variations in the yield stress of
+identically prepared samples tend to be small. However, this
+changes when dealing with samples with sizes down to the
+micrometer range and below: Recent micropillar compres-
+sion experiments have revealed the fluctuating, irregular na-
+ture of small-scale crystal plasticity,4,5 originating from the
+collective, critical-like dynamics of interacting dislocations
+mediating the deformation process. The fact that plasticity
+of small crystals proceeds via an irregular sequence of strain
+bursts with a broad size distribution implies also that sample-
+to-sample variations of the plastic response or the stress–strain
+curves might be considerable,6 even if the samples have been
+prepared and the deformation experiments performed using
+the same protocol.
+This raises the important general question of what can be
+said about the relation between initial structure and mechan-
+ical properties for individual samples of small crystals, when
+random variations in the initial (micro)structure become im-
+portant. One way of framing the issue is to consider what
+we refer to as deformation predictability: Given a small crys-
+talline sample with a specific arrangement of pre-existing dis-
+locations and possibly of some other defects interfering with
+dislocation motion, how well can one use such information to
+predict the plastic response of that sample? A key challenge
+here is the high dimensionality of any reasonable description
+
+a)Electronic mail: lasse.laurson@tuni.fi
+
+of the disordered initial state, combined with the possibility of
+non-linearities in the mapping from the initial state properties
+to the ensuing response. This likely implies that simple em-
+pirical laws relating sample properties to its plastic response
+may be difficult to formulate. Challenges of this type are a
+key factor behind the recent emergence of machine learning
+(ML) algorithms as an important part of the toolbox of scien-
+tists in a wide range of fields including also physics and ma-
+terials science.7 ML has been demonstrated to be an efficient
+approach to address a wide spectrum of problems including
+materials property prediction, discovery of novel materials,
+etc.8–14 These developments have lead to the emergence of
+a novel research field referred to as materials informatics,15
+
+where informatics methods – including ML – are used to de-
+termine material properties that are hard to measure or com-
+pute using traditional methods.
+In general, many supervised ML algorithms including neu-
+ral networks are capable of learning non-linear mappings from
+a high-dimensional feature vector to a desired output, and
+hence these methods should be useful tools when address-
+ing the question of deformation predictability. An important
+opening in this direction was recently achieved by Salmenjoki
+et al.,16 who applied ML to study deformation predictability
+in the case of simple two-dimensional discrete dislocation dy-
+namics (DDD) simulations. The key idea of Ref.16 was that
+exploiting ML algorithms provides a useful set of methods to
+quantify predictability of complex systems such as plastically
+deforming crystals. This was achieved by training ML mod-
+els including neural networks and support vector machines
+to infer the mapping from the initial dislocation microstruc-
+ture to the response of the system to applied stresses, char-
+acterized by the stress–strain curve. Following Ref.16, ML
+has been further applied to predicting stress–strain curves of
+plastically deforming crystals,17 and learning the interaction
+kernel of dislocations.18 Recently ML has also been applied
+to the closely related problems of, e.g., predicting the local
+yielding dynamics of dry foams,19 the creep failure time of
+disordered materials,20 as well as the occurrence times of "lab-
+oratory earthquakes".21
+
+arXiv:2006.16833v1  [cond-mat.mtrl-sci]  30 Jun 2020
+
+
+2
+
+By its nature, the problem of predicting the plastic defor-
+mation process of crystalline samples depends on details such
+as whether the crystal only contains pre-existing glissile dis-
+locations (this was the case in Ref.16), or if other defect popu-
+lations interacting with the dislocations are present. The latter
+could include solute atoms, precipitates, voids, etc., or even
+grain boundaries in the case of polycrystals. If present, a de-
+scription of these additional defects needs to be included in the
+initial state of the system used as input for the predictive ML
+models. The presence of such static defects within the crystal
+may also change the response of the crystal to applied stresses
+and thus the process to be predicted in a fundamental manner.
+It has been shown that the deformation dynamics of “pure”
+dislocation systems are governed by dislocation jamming,22,23
+
+resulting in glassy dislocation dynamics characterized by “ex-
+tended criticality”, with the cutoff scale of the size distribution
+of dislocation avalanches diverging with the system size at any
+stress level.24–26 This can be contrasted with systems where
+significant pinning of dislocations due to other defects within
+the crystal may instead induce a depinning phase transition of
+the dislocation assembly, resulting in critical-like dislocation
+dynamics only in the immediate proximity of the critical point
+(stress) of the depinning transition.27,28
+
+In this paper, we study deformation predictability in a one-
+dimensional periodic model of a dislocation pileup, interact-
+ing with a quenched (frozen) random pinning landscape. The
+model is perhaps the simplest possible system including both
+interacting mobile dislocations and a quenched random pin-
+ning field interfering with dislocation motion, and therefore
+it serves as a useful playground to explore the ideas of ML-
+based deformation predictability discussed above. It is known
+to exhibit a depinning phase transition at a critical flow stress
+value σflow, separating pinned and moving phases of the dislo-
+cation system.29 We generate a large database of stress–strain
+curves, each corresponding to a unique randomly generated
+initial microstructure, by simulating the model with a qua-
+sistatically increasing applied stress for different system sizes
+(or different numbers of dislocations, N). First, the statistical
+properties of the stress–strain curves and the strain bursts are
+analyzed, followed by training and testing of various predic-
+tive models ranging from linear regression to convolutional
+neural networks (CNNs) to establish mappings from the ini-
+tial random microstructure (defined by both the static pinning
+landscape and the initial configuration of the dislocations) to
+the response of the system to applied stresses (i.e., the stress–
+strain curve).
+Our results show that the different predictive models em-
+ployed are capable of learning the relation between the input
+and the stress–strain curves quite well, as measured by the cor-
+relation coefficient between the predicted and simulated stress
+value at a given strain. In particular, the sample flow stress
+(i.e., the sample-dependent finite size critical point of the de-
+pinning transition) can be predicted surprisingly well, with the
+correlation coefficient reaching values as high as 0.89 for a
+regularized CNN. We also explore the predictability of indi-
+vidual strain bursts taking place during the deformation pro-
+cess. Critical avalanches are expected to be inherently unpre-
+dictable, and indeed we find approximately zero predictability
+
+for most of the strain bursts belonging to the power law scal-
+ing regime of their size distribution. Interestingly, we also
+find that strain bursts belonging to the cutoffs of the distribu-
+tions as well as those taking place very close to the flow stress
+exhibit non-vanishing predictability.
+
+II.
+THE MODEL: EDGE DISLOCATION PILEUP WITH
+QUENCHED DISORDER
+
+The dislocation pileup model we study here is similar to the
+one in Refs.29,30. It describes a system of N straight, parallel
+edge dislocations subject to an external shear stress σ glid-
+ing along the direction set by their Burgers vector (here, the
+x direction) within a given glide plane. By neglecting rough-
+ness of the dislocation lines, the system may be described by a
+set of point dislocations with coordinates xi representing cross
+sections of the dislocation lines moving in one dimension.
+The dislocations interact repulsively with each other via long-
+range stress fields with the stress field magnitude inversely
+proportional to their mutual distance.29 In addition, the dislo-
+cations are taken to interact via short-range forces with a set
+of Np randomly positioned Gaussian pinning centres, play-
+ing here the role of quenched disorder. In real crystals these
+pinning centres could be solute atoms, or immobile forest dis-
+locations threading the plane of the pileup. The overdamped
+equations of motion of the N point dislocations thus read
+
+χ dxi
+
+dt = µb2∑
+j̸=i
+
+1
+
+xi −xj
++bσ +F(xi),
+(1)
+
+where χ is the effective viscosity, xi the position of the ith
+dislocation, µ the shear modulus, b the Burgers vector mag-
+nitude, and F is the pinning force landscape. We choose a
+pinning force consisting of Gaussian potential wells centered
+at pinning sites
+�
+xp
+�
+, given by
+
+F(x) = −dE
+
+dx ,
+E(x) = −
+
+Np
+∑
+p=1
+Epe− 1
+
+2
+� x−xp
+
+sp
+
+�2
+,
+(2)
+
+where xp is the position of the pth pinning point, Ep a pinning
+energy scale, and sp the standard deviation of the Gaussian.
+For simplicity, we set χ = µ = b = 1, and Ep = s2
+p = 0.5.
+Periodic boundary conditions within a system of size L are
+employed by performing an infinite sum over the stress fields
+of the periodic images of each dislocation,29
+
+∞
+∑
+k=−∞
+
+1
+
+x+kL =
+π
+
+Ltan(πx/L).
+(3)
+
+The average spacing between dislocations is set to L/N = 16
+and that between pinning sites to L/Np = 2. The sum over
+pinning sites is truncated so that only pinning sites that are
+closer than a cut-off distance of 8 are included in the sum.
+The simulations are carried out by first choosing the posi-
+tions of the Np pinning sites at random from a uniform dis-
+tribution along the one-dimensional system of length L. N
+dislocations are then placed in the system with the constant
+
+
+3
+
+0
+10
+20
+30
+40
+50
+60
+
+Position x (Periodic)
+
+-2.5
+
+-2
+
+-1.5
+
+-1
+
+-0.5
+
+0
+
+Pinning Energy E
+
+T
+
+T
+
+T
+
+T
+
+T
+
+Pinning Energy E
+Pinning Points
+Relaxed Dislocations
+
+10-2
+10-1
+100
+101
+102
+
+Strain 
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+4 dislocations
+16 dislocations
+64 dislocations
+
+(a)
+
+(b)
+
+FIG. 1. (a) An example of a relaxed dislocation configuration in the
+simulation model with N = 4 (and hence of linear size L = 16N =
+64). The randomly positioned pinning sites (there are Np = L/2 =
+32 of them) are shown as circles, and the resulting pinning energy
+landscape E(x) is shown with the solid line. (b) Example stress–
+strain curves σ(ε) for three different system sizes (N = 4, 16 and 64),
+illustrating the characteristic irregular staircase shape of the curves,
+as well as the size effect where smaller systems exhibit fewer but
+larger strain bursts.
+
+spacing of L/N = 16; this equally spaced dislocation configu-
+ration would be the minimum energy state of the pileup in the
+absence of pinning sites. The dislocations are initially allowed
+to relax to a metastable configuration with σ = 0; see Fig. 1(a)
+for an example of a relaxed configuration with N = 4, show-
+ing also the pinning energy landscape. Then σ is increased
+quasistatically from zero with the rate
+
+dσ
+dt =
+mσ
+
+e
+
+r[¯v(t)−vth]
+
+vth
++1
+,
+(4)
+
+where mσ = 10−4 is the maximum stress rate, vth = 2 · 10−4
+
+is a threshold velocity value, ¯v(t) = (1/N)∑N
+i=1 vi (with vi =
+dxi/dt) is the spatially averaged dislocation velocity, and
+r = 100 is a shape parameter. In practice this amounts to a
+continuous, smooth approximation of the step function, with
+dσ/dt ≈ mσ for ¯v < vth and dσ/dt ≈ 0 for ¯v > vth, such that
+σ is increased only in between strain bursts and kept constant
+during them. Strain ε is accumulated by dislocation motion,
+
+ε(t) = 1
+
+N
+
+N
+∑
+i=1
+[xi(t)−xi(0)].
+(5)
+
+The simulations are run until the dislocations start to flow in-
+definitely, i.e., the strain burst size diverges, which happens at
+a sample-dependent flow stress σflow. The stress–strain curves
+σ(ε) are recorded by storing σ(t) and ε(t) every 20 dimen-
+sionless time unit during the simulations. Example stress–
+strain curves are shown in Fig. 1(b) for three different system
+sizes. Notice the characteristic irregular staircase-like struc-
+
+ture of the curves, as well as the larger size of strain bursts for
+smaller systems.
+The resulting stress–strain curves, each corresponding to
+a different realization of the random pinning landscape and
+relaxed initial dislocation positions, are stored in a database
+consisting of 10000 stress–strain curves for each system size,
+to be used as training and testing data for the predictive mod-
+els. For the largest systems (N = 64...512), we also generate
+a separate dataset of 1000 stress–strain curves stored at a finer
+time resolution of ∆t = 2, in order to better detect individual
+strain bursts. This latter data set is used to analyze the statis-
+tical properties of the strain bursts, as well as to train and test
+ML models for predicting strain bursts.
+
+III.
+PREDICTIVE MODELS: FROM LINEAR REGRESSION
+TO CONVOLUTIONAL NEURAL NETWORKS
+
+In what follows we will introduce the predictive models
+used in this study. These encompass both linear and non-
+linear models using hand-picked features as input, as well as
+a CNN that requires less feature engineering as it uses a com-
+plete description of the system’s initial state as input. Using
+these different models allows us to assess the dependence of
+our results on any particular model.
+Before training, each input feature (each input channel in
+the CNN case) is standardized by subtracting the mean and
+dividing by the standard deviation, and the dataset is divided
+randomly into a training set containing 80% of the data points,
+and a testing set containing the remaining 20%. Predictabil-
+ity is measured by calculating the correlation coefficient be-
+tween predicted and target outputs of the testing set and aver-
+aging the result over 5 training instances. Predictive models
+are implemented using the Python libraries scikit-learn31 for
+LASSO and Keras32 for simple neural networks and CNNs.
+The prediction models work by minimizing the loss, which
+mainly consists of the mean squared error. In addition, most
+models are L1-regularized, which adds a penalty term to the
+loss to prevent overlearning. L1 regularization often improves
+the result and encourages the model to focus on the most use-
+ful/promising input features while discarding the unimportant,
+and as a byproduct it allows us to determine which input fea-
+tures are used by the model.
+
+A.
+Linear regression: LASSO
+
+A linear regression model performs an affine transfor-
+mation, where input features are first linearly combined
+by multiplication with a (weight) matrix and then biased
+by adding a translation vector.
+If the model is optimized
+using L1-regularization for the weight matrix, it is com-
+monly called LASSO (linear absolute shrinkage and selec-
+tion operator33). In this study, this model is applied by using
+sklearn.linear_model.Lasso, which has a built-in opti-
+mizer and only requires the user to choose the regulariza-
+tion parameter α. We found that values of α in the range
+10−3 ≲ α ≲ 10−2 gave good results, and chose α = 10−2.
+
+
+4
+
+B.
+Simple neural networks
+
+When two linear regression models are stacked in such a
+way that the intermediate result is activated by applying a
+non-linear activation function, such as the rectified linear unit
+(ReLU), the combined model becomes a simple neural net-
+work which can, to some extent, learn general non-linear map-
+pings. An intermediate result of such model is called a hidden
+layer, and elements of the intermediate result are referred to as
+hidden units. L1-regularization is applied to each layer, with a
+parameter αn describing the strength of regularization at each
+layer.
+Tested variants for stress–strain curve prediction differ by
+the number of hidden units, hidden layers and regularization.
+Most have one hidden layer with 64 hidden units and use
+α1 = 10−2 for the first weight matrix and αn = 10−5 for the
+rest. All models use ReLU-activations for the hidden layers.
+One variant has less regularization, meaning that α1 = 10−3
+
+instead of 10−2. Theoretically, one hidden layer is enough
+for reproducing any continuous mapping given enough hidden
+units, but a model with 3 hidden layers is employed here as
+well for comparison to other studies. The models are trained
+using the Adam optimizer34 with learning rate 10−3 for 100
+epochs.
+The predictability of strain bursts is studied using a simple
+neural network having one hidden layer with 64 hidden units.
+Model output is in this case very big, consisting of a vector-
+ized (one-dimensional) version of an avalanche map that is
+originally two-dimensional (see the Results section below for
+details). We found that all parameters collapsed to 0 if α is
+too high, so a value of 10−5 is used for all weight matrices. A
+lower α parameter makes the model susceptible to overlearn-
+ing. Therefore, models are trained only for 10 epochs but with
+a higher learning rate of 10−2.
+
+1.
+Selecting features for prediction
+
+The LASSO and simple neural network models require
+hand-picked features for predicting stress–strain curves and
+strain bursts. It turns out that good, information-rich features
+for flow stress prediction are given by quantiles of distribu-
+tions derived from the sample-specific pinning landscapes.
+Fig. 2(a) shows the correlation of the flow stress with quan-
+tiles of the pinning energy E, the pinning force F, as well as
+DF = dF
+
+dx and D2F = d2F
+
+dx2 . In a non-interacting system, the
+flow stress would be controlled by the most negative pinning
+force F, which provides the strongest obstacle for dislocation
+motion. In an interacting system, it is possible for the dis-
+locations to push on each other and overcome the strongest
+pinning force at a smaller applied stress. As a result, the cor-
+relation between the most negative value of F [given by the
+0% quantile of F in Fig. 2(a)] and the flow stress is quite
+small. Interestingly, the 5% quantile of F exhibits a much
+larger negative correlation of approximately −0.8 with σflow,
+independently of system size [Fig. 2(b)]. Other quantiles of
+the pinning force as well as of the other quantities listed in
+Fig. 2(a) also appear to contain useful information for flow
+
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+
+Quantile
+
+-1
+
+-0.8
+-0.6
+-0.4
+-0.2
+
+0
+
+0.2
+0.4
+0.6
+0.8
+
+1
+
+Correlation with Flow Stress
+
+E
+F
+DF
+
+D2F
+
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+
+Pinning Force Quantile
+
+-1
+
+-0.8
+-0.6
+-0.4
+-0.2
+
+0
+
+0.2
+0.4
+0.6
+0.8
+
+1
+
+Correlation with Flow Stress
+
+4
+8
+16
+32
+64
+128
+
+(a)
+
+(b)
+
+FIG. 2. (a) Correlation between flow stress and quantiles of pin-
+ning potential energy E, pinning force F, derivative of the pinning
+force D(F), and the second derivative of the pinning force D2(F)
+for a system of N = 64 dislocations. Dotted lines show the abso-
+lute value of the correlation for easier comparison of magnitudes. (b)
+demonstrates that the correlations of the pinning force quantiles are
+not dependent on the system size N (legend). These quantiles are
+used as hand-picked features for linear regression and simple neural
+networks. Notice that the 5% quantile of the pinning force exhibits a
+high (negative) correlation of ≈ 0.8 with the flow stress.
+
+stress prediction. We therefore give the entire quantile curve
+(sampled on 64 uniformly chosen points) of each field as input
+features.
+In addition to these input features describing the pinning
+landscape, we also give input features that describe the ini-
+tial relaxed configuration of dislocations {xj}N
+j=1. In particu-
+lar, we use the values E(xj),F(x j),DF(xj) and D2F(xj), as
+well as the distances between successive dislocations, Dxj =
+xj+1−x j (with xN+1 = x1+L). These fields are given as sorted
+lists, so they can be interpreted as quantiles.
+Finally, we choose a set of features given by local extrema
+of E and F, as well as the successive differences in energy ex-
+trema D(E extrema), also given as 64 uniformly spaced quan-
+tiles.
+
+C.
+Convolutional neural networks
+
+These models take discretized fields as input and have the
+ability to find out if the target output depends on the spatial
+variations within the input fields. The CNN structure used
+in this study is adapted for periodic input signals by apply-
+ing a convolution-activation-pooling scheme that continues to
+downsample the input array down to a single spatial element.
+Initially, an input field has 1 024 = 210 spatial elements, so
+there are 10 convolutional layers (each layer halves the num-
+ber of spatial elements). This makes the result effectively in-
+dependent of the particular choice of origin of the input fields.
+All convolutional layers employed here use a window size
+
+
+5
+
+10-2 10-1 100
+101
+102
+
+Strain 
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+16
+
+100
+
+102
+
+104
+
+10-2 10-1 100
+101
+102
+
+Strain 
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+64
+
+100
+
+102
+
+104
+
+10-2 10-1 100
+101
+102
+
+Strain 
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+256
+
+100
+
+102
+
+104
+
+0.5
+0.6
+0.7
+0.8
+0.9
+
+Flow Stress flow
+
+0
+
+10
+
+20
+
+30
+
+Probability Density
+
+16
+64
+256
+
+(a)
+(b)
+
+(c)
+(d)
+
+FIG. 3. (a), (b) and (c) show the bivariate histograms of the stress–
+strain curves for different system sizes [N = 16 in (a), N = 64 in
+(b), and N = 256 in (c)]. (d) displays the probability distributions
+of the sample flow stresses σflow, showing how the distributions get
+increasingly narrow upon increasing the system size.
+
+of 3, periodic boundary conditions, ReLU-activation and non-
+overlapping max-pooling of size 2 (taking the maximum value
+within non-overlapping bins), and have 16 hidden units. The
+leftover hidden units after the last pooling operation are di-
+rectly connected to the output layer. When predicting a single
+output feature from 2 input fields (channels), the CNN has
+7 185 learnable parameters.
+
+The CNN is trained using the same Adam optimizer as for
+other neural network models, with a learning rate of 10−3,
+learning rate decay of 10−5 and 50 training epochs. We found
+that even weak L1-regularization caused the parameters to col-
+lapse to 0 in most cases, so we do not regularize these models.
+However, in the case of predicting flow stress only, a kernel
+regularization value of 5·10−4 for the convolutional layers is
+found to work.
+
+The input to the CNNs consists of the pinning landscape
+fields E,F,DF and D2F (although we found that giving one
+pinning field, such as E or F, suffices because the CNN can
+compute the higher derivatives by differentiation), as well as a
+field J defined as a sum of Gaussians centered on the relaxed
+dislocation positions xi,
+
+J(x) =
+N
+∑
+i=1
+
+1
+√
+
+2π e− (x−xi)2
+
+2
+.
+(6)
+
+This field J serves to describe the dislocation positions in
+terms of an input field with similar structure as the pinning
+landscape, and which is independent of the spatial resolution
+[see Fig. 7(a) for examples of these input fields]. Notice that
+by contrast to the case of hand-picked features, these fields are
+given in order rather than sorted.
+
+10-210-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+64
+
+100
+
+101
+
+102
+
+10-2
+10-1
+100
+101
+102
+
+Avalanche Size (Strain Units)
+
+10-2
+
+100
+
+102
+
+Probability Density
+
+10-210-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+128
+
+100
+
+101
+
+102
+
+10-2
+10-1
+100
+101
+102
+
+Avalanche Size (Strain Units)
+
+10-2
+
+100
+
+102
+
+Probability Density
+
+10-210-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+256
+
+100
+
+101
+
+102
+
+10-2
+10-1
+100
+101
+102
+
+Avalanche Size (Strain Units)
+
+10-2
+
+100
+
+102
+
+Probability Density
+
+ 
+ 0.921
+
+10-210-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+512
+
+100
+
+101
+
+102
+
+10-2
+10-1
+100
+101
+102
+
+Avalanche Size (Strain Units)
+
+10-2
+
+100
+
+102
+
+Probability Density
+
+ 
+ 1.007
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+FIG. 4.
+Left panels: Bivariate avalanche histograms (avalanche
+counts) as a function of the stress σ and avalanche size ∆ε. Right
+panels: The stress-resolved probability distributions of the strain
+bursts sizes P(∆ε,σ), considering three stress bins: 0.59-0.60 (blue),
+0.63-0.64 (red), and 0.67-0.68 (yellow). The average flow stress is
+around 0.69. (a) N = 64, (b) N = 128, (c) N = 256 and (d) N = 512.
+The right panel of (d) shows that the highest stress bin data in the
+largest system size exhibits a power-law part consistent with an ex-
+ponent τ ≈ 1.0 [see Eq. (7)].
+
+IV.
+RESULTS
+
+In this section, we first consider the statistical properties of
+our dataset of stress–strain curves. Then we report our results
+for training the predictive models, and employ them to explore
+the predictability of the deformation dynamics of the pileup
+model. Finally, we also discuss our results on the problem of
+predicting individual strain bursts.
+
+A.
+Statistical properties of the stress–strain curves
+
+We start by quantifying the system size dependent sample-
+to-sample variations in the plastic response of the system.
+Figs. 3(a-c) show bivariate histograms of the stress–strain
+curves for three system sizes (with N = 16, 64 and 256, re-
+spectively), illustrating that the sample-to-sample variability
+
+
+6
+
+10-2
+10-1
+100
+101
+102
+
+Strain 
+
+0.6
+
+0.65
+
+0.7
+
+0.75
+
+0.8
+
+0.85
+
+0.9
+
+0.95
+
+1
+
+Mean Correlation
+
+Linear Regression (LASSO)
+NN (16 hidden units)
+NN (64 hu)
+NN (64 hu, less regularization)
+NN (3 hidden layers, 64 hu each)
+
+FIG. 5. Predictability of stress–strain curves for the system size N =
+64 using hand-picked features, measured by the correlation between
+predicted and actual stresses in the test set. The shown result is a
+sample mean over 5 trained models, each using their own random
+division into training and testing sets. Each line corresponds to a
+given predictive model as indicated in the caption. The plateau at
+large strains corresponds to the predictability of the flow stress.
+
+10-2
+10-1
+100
+101
+102
+
+Strain 
+
+E
+
+F
+
+DF
+
+D2F
+E(xj)
+
+F(xj)
+
+DF(xj)
+
+D2F(xj)
+
+E extrema
+
+F extrema
+
+D(E extrema)
+
+Dxj
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+FIG. 6. Weight analysis of the trained LASSO model for the N = 64
+system. Color indicates the total L1 penalty (L1 norm) from each
+feature category’s weights as a function of strain, averaged over 5
+training instances. Notice that properties of the initial dislocation
+positions are most useful at small strains, while more generic features
+of the force landscape become more useful at larger strains.
+
+in the plastic response is more pronounced in smaller systems.
+The same applies to the probability densities of the sample
+flow stresses σflow, shown in Fig. 3(d): The distributions are
+quite broad for small systems and get narrower upon increas-
+ing the system size, presumably approaching a delta peak in
+the thermodynamic limit. The average magnitude of the σflow-
+values is in agreement with previous results.29
+
+As the stress–strain curves consist of a sequence of discrete
+strain bursts or dislocation avalanches ∆ε, we consider also
+their stress-dependent size distributions P(∆ε,σ). Quite gen-
+erally for systems exhibiting a depinning phase transition, one
+expects them to obey the scaling form
+
+P(∆ε,σ) = (∆ε)−τ f
+�
+∆ε
+
+∆ε∗(σ)
+
+�
+,
+(7)
+
+where τ is the critical exponent of the avalanche size distri-
+bution, f(x) is a scaling function that obeys f(x) = const.
+for x ≪ 1 and f(x) → 0 for x ≫ 1, and ∆ε∗(σ) is a stress-
+dependent cutoff avalanche size.
+Left panels of Figs. 4(a-
+d) show the bivariate histograms of the avalanche count as a
+function of σ and avalanche size ∆ε for different system sizes
+(with N = 64, 128, 256 and 512, respectively). These illustrate
+that indeed the maximum strain burst size increases upon ap-
+proaching the flow stress from below, and the increase close to
+the flow stress is more clear-cut for larger systems. Notice also
+that these histograms show an excess of strain bursts around
+σ ≈ 0.4. This feature is likely related to the characteristic pin-
+ning force magnitude due to an isolated pinning point given by
+Eq. (2). Right panels of Figs. 4(a-d) show the corresponding
+stress-resolved strain burst size distributions P(∆ε,σ), con-
+sidering three different stress bins below the flow stress for
+each system size. For the largest system sizes considered, the
+data appears to be consistent with a power-law part charac-
+terized by an exponent τ ≈ 1.0 [see right panels of Figs. 4(c)
+and (d)]. This value is somewhat lower than the expectation
+of τ ≈ 1.25 based on the scaling of the elastic energy of the
+pileup in Fourier space,29 suggesting that the pileup model
+would be in the same universality class with depinning of con-
+tact lines35 and planar cracks.36,37 As we focus here on study-
+ing rather small systems, this difference in likely due to finite
+size effects.
+Overall, the statistical properties of the plastic response of
+the pileup model shows two key features relevant for defor-
+mation predictability: (i) There are sample-to-sample varia-
+tions in the response (that we will try to predict using machine
+learning), and (ii) the distribution of strain bursts ∆ε displays
+characteristics of a critical system, suggesting that individual
+strain bursts may be inherently unpredictable. In what follows
+we will use our trained predictive models to explore how well
+(i) the sample stress–strain curves and (ii) individual strain
+bursts can be predicted.
+
+B.
+Predictability of the sample stress–strain curves
+
+1.
+LASSO and simple neural networks
+
+Fig. 5 shows the mean correlation coefficient between the
+predicted and actual stress values as a function of strain for
+N = 64, using linear regression (LASSO) and different vari-
+ants of simple neural networks. First, we note that the flow
+stress prediction is only slightly better than the magnitude of
+the correlation with the 5% quantile of the pinning force land-
+scape found above (∼ 0.8, see Fig. 2), with the correlation
+coefficient assuming values in the range of 0.825-0.84 de-
+pending on the model used (the large-strain plateau in Fig. 5).
+Second, the correlation clearly depends on strain, exhibiting
+a rather pronounced dip reaching values as low as 0.65 or so
+for intermediate strains, along with two additional, lesser dips
+for smaller strains, before reaching a value close to 1 as the
+strain goes to zero. The latter is true especially for LASSO,
+while the neural network models seem to struggle a bit in
+capturing the deformation dynamics for very small strains.
+
+
+7
+
+10-2
+10-1
+100
+101
+102
+
+Strain 
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Mean Correlation
+
+Linear Regression (LASSO)
+Conv (simultaneously)
+Conv (individually)
+Conv ( flow only, regularized)
+
+0
+50
+100
+150
+200
+250
+
+Position x (Periodic)
+
+-3
+
+-2
+
+-1
+
+0
+
+Field Value
+
+Pinning Energy E
+Indicator of Relaxed Dislocations J
+
+(a)
+
+(b)
+
+FIG. 7. (a) Example input fields for a CNN with N = 16. Dot markers
+show the spatial resolution. (b) Stress–strain curve predictability at
+N = 16 for different models: LASSO (blue line); a "generalist" CNN
+predicting the entire stress–strain curve at once (red line); individual
+"specialist" CNNs trained specifically to predict the stress at a single
+strain (yellow circles); and an L1-regularized CNN trained to only
+predict the flow stress (purple circle).
+
+The reduced predictability for intermediate strains could be
+related to the importance of inherently unpredictable disloca-
+tion avalanches, in analogy with results of Ref.16.
+
+It is interesting to analyze which features the predic-
+tive models end up using for prediction, and how that
+might depend on strain.
+Since the models utilize heavy
+L1-regularization, analysis of the learned weights becomes
+straightforward. Features that contribute to predictability are
+allowed to have high regularization penalty in exchange for
+decreasing loss, while unimportant features will not decrease
+loss sufficiently to justify a high regularization penalty. Fig. 6
+shows how much penalty is generated by the weights corre-
+sponding to each feature category for the LASSO model. At
+the start, the pinning force derivative at the relaxed dislocation
+positions, DF(xj), is the most active feature, but also the pin-
+ning energy at the initial dislocation positions, E(xj), is used.
+This is reasonable as such quantities could be used to estimate
+the initial linear response of the dislocations. Interestingly,
+and perhaps somewhat counter-intuitively, the pinning energy
+at the initial dislocation positions becomes even more impor-
+tant for intermediate strains, in addition to a larger diversity of
+features used. Flow stress prediction uses mainly the quantiles
+of the pinning force F, as well as its local extrema points. This
+dependence of the important features on strain indicates that
+predicting the response of the system to infinitesimal stresses
+is of a different nature compared to predicting the flow stress.
+
+2.
+Predictability of stress–strain curves: convolutional neural
+networks
+
+We then proceed to employ CNNs as predictive models.
+Fig. 7(b) shows the mean correlation as a function of strain
+as obtained using three different types of CNNs, along with
+the LASSO result for reference. Here, the system size N = 16
+is considered. First, we consider a CNN which predicts the
+entire stress–strain curve at once [a "generalist" CNN, shown
+as a red line in Fig. 7(b)]. This model actually underperforms
+the simple linear regression model for majority of the strain
+values. This could be due to the fundamentally different na-
+ture of the problem for different strain values, as illustrated by
+Fig. 6, showing that different features are important for differ-
+ent strains. Hence, the "generalist" CNN might get exhausted
+and not be able to optimally learn the entire stress–strain curve
+at once.
+Thus, we consider also a "specialist" CNN which is trained
+separately for each strain value to learn the corresponding
+value of stress.
+The result is shown as yellow circles in
+Fig. 7(b). Indeed, as compared to the generalist model, the
+specialist model is able to learn the deformation dynamics
+of the pileup model much better, especially for intermediate
+strains, where the generalist CNN exhibits a deep dip in the
+correlation coefficient, presumably due to the importance of
+hard to predict dislocation avalanches for those strains. It is
+interesting that the specialist model is able to reach a correla-
+tion coefficient exceeding 0.8 also in this regime.
+Notably, neither of the models discussed above is able to
+predict the flow stress much better than by just considering
+the correlation with the 5% quantile of the pinning force F
+(see Fig. 2). We therefore try to further improve the specialist
+CNN by switching on L1-regularization and using only the
+pinning force F as the input field (this was shown above to be
+the most informative quantity for flow stress prediction). The
+individual purple point at a large strain value in Fig. 7(b) is the
+resulting flow stress prediction, with a correlation coefficient
+of 0.89, i.e., significantly better correlation than using any of
+the other models considered.
+
+C.
+Predictability of strain bursts
+
+Finally, we explore the possibility of predicting individual
+strain bursts along the stress–strain curves. First, we need
+to formulate a problem that is suitable for analysis using the
+predictive models at hand.
+To this end, we generalize the
+bivariate avalanche histograms (left panels of Fig. 4) to the
+case of individual samples. As such, these would be rather
+sparse sets of points in the space spanned by avalanche size
+and stress.
+We therefore smooth out these maps by con-
+volving with a Gaussian with a standard deviation of 0.03
+units of stress in the vertical direction, and of 0.15 units of
+log10(avalanche size) in the horizontal direction; both corre-
+spond to 3 times the bin size used in Figs. 4 and 8. The studied
+region is limited to bins where at least one avalanche appears
+within the dataset, so that the Gaussian smoothing does not
+cause distribution boundaries to extend to impossible areas.
+
+
+8
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 1
+
+Target
+-2
+
+0
+
+2
+
+4
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 1
+Prediction
+-2
+
+0
+
+2
+
+4
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 2
+
+Target
+-2
+
+0
+
+2
+
+4
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 2
+Prediction
+-2
+
+0
+
+2
+
+4
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 3
+
+Target
+-2
+
+0
+
+2
+
+4
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+Example 3
+Prediction
+-2
+
+0
+
+2
+
+4
+
+(a)
+(b)
+
+FIG. 8. Three examples (rows) of strain burst maps of individual
+systems for N=512. Left column (a) shows 3 target maps, and on
+the right (b) are the corresponding predictions of a simple neural net-
+work.
+
+Lastly, the maps are standardized by removing the mean and
+dividing by the standard deviation at each bin. We then em-
+ploy a simple neural network with 64 hidden units to find a
+mapping from the hand-picked input features to the smoothed
+sample-specific bivariate avalanche histograms.
+Three different examples of smoothed avalanche maps are
+shown in the left column of Fig. 8, with corresponding pre-
+dicted avalanche maps in the right column. While the pre-
+dictions are clearly not perfect, the algorithm is able to cap-
+ture some key features of these avalanche maps. Fig. 9 shows
+correlation maps between the predicted and actual avalanche
+densities at 4 different system sizes, averaged over 5 train-
+ing instances. These show a number of interesting features:
+(i) Large parts of the sample-specific avalanche histograms
+appear to be completely unpredictable, with the correlation
+coefficient assuming a value very close to zero (shown in
+black in Fig. 9). This is especially true for most of the re-
+gions corresponding to the power-law scaling regime of the
+avalanche size distribution, in agreement with the idea that
+critical avalanches should be intrinsically hard to predict.38
+
+(ii) Avalanches with the largest size for each stress value (i.e.,
+those belonging to the cutoff of the stress-resolved avalanche
+size distribution) appear to exhibit some degree of predictabil-
+ity, although the related correlation coefficient values are
+somewhat lower than those found for predictability of the
+stress–strain curves.
+This is agreement with the idea that
+avalanches in the cutoff are not critical and hence somewhat
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+64
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+128
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+256
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+512
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+(a)
+(b)
+
+(c)
+(d)
+
+FIG. 9. Correlation maps between the predicted and actual sample-
+specific avalanche maps for different system sizes, (a) N = 64, (b)
+N = 128, (c) N = 256 and (d) N = 512. Notice the positive cor-
+relations for the largest avalanches for each stress value (avalanche
+cut-off) and for most of the avalanches very close to the flow stress,
+as well as the approximately zero correlation for avalanches belong-
+ing to the power law scaling regime (see Fig. 4).
+
+predictable. (iii) Surprisingly, we also find non-vanishing pre-
+dictability of avalanches of any size occurring in the immedi-
+ate proximity of the flow stress (bright horizontal segments in
+the upper parts of the panels of Fig. 9). This is surprising be-
+cause those events are expected to be critical and hence should
+be unpredictable.
+
+In order to shed some light on the origin of the key fea-
+tures of avalanche predictability discussed above, we finish by
+considering the correlation between the avalanche count and
+flow stress. The logic here is that since we have demonstrated
+above that the sample-specific flow stress can be predicted
+quite well, if the avalanche maps are correlated with the flow
+stress, these should be predictable as well. Fig. 10 reveals two
+stand-out features: (i) The avalanches taking place in the im-
+mediate proximity of the flow stress exhibit clear positive cor-
+relation with the flow stress, and (ii) the largest avalanches for
+stresses smaller than the flow stress (i.e., avalanches belong-
+ing to the stress-dependent cut-off of the avalanche size dis-
+tribution) are negatively correlated with the flow stress. This
+means that both a higher than average number of avalanches
+very close to the flow stress and a lower than average num-
+ber of large avalanches at smaller stresses imply a higher than
+average flow stress value. The good level of predictability of
+the flow stress demonstrated above thus translates into rea-
+sonable predictability of these features of the sample-specific
+bivariate avalanche histograms. Notice that the widths of the
+predictable bands in the avalanche maps (Fig. 9) appear to
+become thinner with increasing system size, so we cannot ex-
+clude the possibility that this avalanche predictability would
+be a finite size effect.
+
+
+9
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+64
+-0.5
+
+0
+
+0.5
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+128
+-0.5
+
+0
+
+0.5
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+256
+
+-0.5
+
+0
+
+0.5
+
+10-2 10-1 100 101 102
+
+Avalanche Size (Strain Units)
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Stress 
+
+512
+
+-0.5
+
+0
+
+0.5
+
+(a)
+(b)
+
+(c)
+(d)
+
+FIG. 10. Correlation maps between the avalanche count and flow
+stress for the avalanche maps considered in Fig. 8. (a) N = 64, (b)
+N = 128, (c) N = 256 and (d) N = 512. Notice the positive correla-
+tion between the flow stress and avalanches close to the flow stress,
+as well as the negative correlation between the flow stress and the
+largest avalanches occurring for smaller stresses.
+
+V.
+DISCUSSION AND CONCLUSIONS
+
+We have established that predictive models ranging from
+linear regression to CNNs can be used to predict the stress–
+strain curves of the pileup model with a good accuracy. While
+the different models employed give rise to somewhat differ-
+ent results, a practical conclusion is that the model giving the
+highest correlation coefficient for a given strain provides a
+lower limit for deformation predictability of the pileup sys-
+tem. Notably the "specialist" CNN discussed above results in
+correlation coefficients exceeding 0.8 over the entire range of
+strains considered, and adding regularization further improves
+the correlation coefficient of the flow stress prediction to 0.89.
+These should be interpreted as lower limits of deformation
+predictability as we obviously cannot exclude the possibility
+that a hypothetical predictive model not considered here might
+outperform our models.
+While the predictability of the stress–strain curves turns
+out to be quite good, it is not perfect.
+This is to be ex-
+pected because the stress–strain curves consist of critical-like
+strain bursts which are expected to be inherently hard to pre-
+dict. Indeed, our attempts to predict the sample-level bivariate
+avalanche count resulted in essentially zero predictability for
+most of the "critical" dislocation avalanches belonging to the
+power-law distributed part of the avalanche size distribution.
+On the other hand, these sample-level avalanche distributions
+also showed an interesting regularity: A larger than average
+flow stress value indicates lower than average number of the
+largest avalanches for stresses below the flow stress, and larger
+than average number of avalanches in the immediate vicinity
+of the flow stress. It would be interesting to extend such analy-
+sis from our stress-controlled simulations to strain-controlled
+
+ones.
+The pileup model studied here has the advantage that the
+dislocation system will sample the entire one-dimensional
+random energy landscape, and hence extracting relevant
+descriptors of the sample-specific quenched disorder is
+straightforward. This is in contrast to other systems exhibit-
+ing a depinning phase transition such as magnetic domain
+walls in disordered ferromagnetic thin films,39 planar crack
+fronts in disordered solids,36,37,40 or individual dislocation
+lines interacting with point defects.41 In such systems,
+driven by an external force in a direction perpendicular to
+the average elastic line direction, the disorder sampled by
+a given realization is not known a priori. Nevertheless, it
+would be interesting to extend the present study to consider
+the predictability of depinning dynamics in such systems.
+Finally, we point out two crucial outstanding questions
+related to deformation predictability: The problem remains to
+be addressed in realistic three-dimensional DDD simulations,
+with28,42 or without25 additional defects interfering with dis-
+location motion, as well as in experiments where descriptors
+of the initial sample microstructure could be extracted, e.g.,
+by X-ray measurement techniques.43–45
+
+ACKNOWLEDGMENTS
+
+The authors wish to thank Henri Salmenjoki for techni-
+cal help on machine learning. We acknowledge the financial
+support of the Academy of Finland via the Academy Project
+COPLAST (Project no. 322405).
+
+DATA AVAILABILITY
+
+The data that support the findings of this study are available
+from the corresponding author upon reasonable request.
+
+REFERENCES
+
+1Y. Cheng and E. Ma, “Atomic-level structure and structure–property re-
+lationship in metallic glasses,” Progress in materials science 56, 379–473
+(2011).
+2M. Delincé, Y. Bréchet, J. D. Embury, M. Geers, P. Jacques,
+and
+T. Pardoen, “Structure–property optimization of ultrafine-grained dual-
+phase steels using a microstructure-based strain hardening model,” Acta
+Materialia 55, 2337–2350 (2007).
+3A. Ardell, “Precipitation hardening,” Metallurgical Transactions A 16,
+2131–2165 (1985).
+4M. D. Uchic, D. M. Dimiduk, J. N. Florando, and W. D. Nix, “Sample
+dimensions influence strength and crystal plasticity,” Science 305, 986–989
+(2004).
+5D. M. Dimiduk, C. Woodward, R. LeSar, and M. D. Uchic, “Scale-free
+intermittent flow in crystal plasticity,” Science 312, 1188–1190 (2006).
+6D. Dimiduk, M. Uchic,
+and T. Parthasarathy, “Size-affected single-slip
+behavior of pure nickel microcrystals,” Acta Materialia 53, 4065–4077
+(2005).
+7L. Zdeborová, “Machine learning: New tool in the box,” Nature Physics 13,
+420–421 (2017).
+
+
+10
+
+8S. Papanikolaou, M. Tzimas, A. C. Reid, and S. A. Langer, “Spatial strain
+correlations, machine learning, and deformation history in crystal plastic-
+ity,” Physical Review E 99, 053003 (2019).
+9M. Raissi and G. E. Karniadakis, “Hidden physics models: Machine learn-
+ing of nonlinear partial differential equations,” Journal of Computational
+Physics 357, 125–141 (2018).
+10P. Baldi, P. Sadowski, and D. Whiteson, “Searching for exotic particles in
+high-energy physics with deep learning,” Nature communications 5, 4308
+(2014).
+11K. T. Butler, D. W. Davies, H. Cartwright, O. Isayev, and A. Walsh, “Ma-
+chine learning for molecular and materials science,” Nature 559, 547–555
+(2018).
+12P. Raccuglia, K. C. Elbert, P. D. Adler, C. Falk, M. B. Wenny, A. Mollo,
+M. Zeller, S. A. Friedler, J. Schrier, and A. J. Norquist, “Machine-learning-
+assisted materials discovery using failed experiments,” Nature 533, 73–76
+(2016).
+13G. Pilania, C. Wang, X. Jiang, S. Rajasekaran, and R. Ramprasad, “Accel-
+erating materials property predictions using machine learning,” Scientific
+reports 3, 1–6 (2013).
+14Z.-L. Liu, P. Kang, Y. Zhu, L. Liu, and H. Guo, “Material informatics for
+layered high-tc superconductors,” APL Materials 8, 061104 (2020).
+15R. Ramprasad, R. Batra, G. Pilania, A. Mannodi-Kanakkithodi,
+and
+C. Kim, “Machine learning in materials informatics: recent applications
+and prospects,” npj Computational Materials 3, 1–13 (2017).
+16H. Salmenjoki, M. J. Alava, and L. Laurson, “Machine learning plastic
+deformation of crystals,” Nature communications 9, 1–7 (2018).
+17Z. Yang, S. Papanikolaou, A. C. Reid, W.-k. Liao, A. N. Choudhary,
+C. Campbell, and A. Agrawal, “Learning to predict crystal plasticity at the
+nanoscale: Deep residual networks and size effects in uniaxial compression
+discrete dislocation simulations,” Scientific Reports 10, 1–14 (2020).
+18H. Salmenjoki, M. J. Alava, and L. Laurson, “Mimicking complex dislo-
+cation dynamics by interaction networks,” The European Physical Journal
+B 91, 275 (2018).
+19L. Viitanen, J. R. Mac Intyre, J. Koivisto, A. Puisto, and M. Alava, “Ma-
+chine learning and predicting the time dependent dynamics of local yielding
+in dry foams,” arXiv preprint arXiv:2005.13265 (2020).
+20S. Biswas, D. F. Castellanos, and M. Zaiser, “Prediction of creep failure
+time using machine learning,” arXiv preprint arXiv:2005.03514 (2020).
+21B. Rouet-Leduc, C. Hulbert, N. Lubbers, K. Barros, C. J. Humphreys, and
+P. A. Johnson, “Machine learning predicts laboratory earthquakes,” Geo-
+physical Research Letters 44, 9276–9282 (2017).
+22M.-C. Miguel, A. Vespignani, M. Zaiser, and S. Zapperi, “Dislocation jam-
+ming and Andrade creep,” Physical review letters 89, 165501 (2002).
+23L. Laurson, M.-C. Miguel, and M. J. Alava, “Dynamical correlations near
+dislocation jamming,” Physical review letters 105, 015501 (2010).
+24P. D. Ispánovity, L. Laurson, M. Zaiser, I. Groma, S. Zapperi, and M. J.
+Alava, “Avalanches in 2d dislocation systems: Plastic yielding is not depin-
+ning,” Physical review letters 112, 235501 (2014).
+25A. Lehtinen, G. Costantini, M. J. Alava, S. Zapperi,
+and L. Laurson,
+“Glassy features of crystal plasticity,” Physical Review B 94, 064101
+(2016).
+26M. Ovaska, A. Lehtinen, M. J. Alava, L. Laurson, and S. Zapperi, “Ex-
+citation spectra in crystal plasticity,” Physical review letters 119, 265501
+(2017).
+27M. Ovaska, L. Laurson, and M. J. Alava, “Quenched pinning and collective
+dislocation dynamics,” Scientific reports 5, 1–8 (2015).
+
+28H. Salmenjoki, A. Lehtinen, L. Laurson, and M. J. Alava, “Plastic yielding
+and deformation bursts in the presence of disorder from coherent precipi-
+tates,” submitted (2020).
+29P. Moretti, M.-C. Miguel, M. Zaiser, and S. Zapperi, “Depinning transi-
+tion of dislocation assemblies: Pileups and low-angle grain boundaries,”
+Physical Review B 69, 214103 (2004).
+30F. Leoni and S. Zapperi, “Slip line growth as a critical phenomenon,” Phys-
+ical review letters 102, 115502 (2009).
+31F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel,
+M. Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos,
+D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay, “Scikit-learn:
+Machine learning in Python,” Journal of Machine Learning Research 12,
+2825–2830 (2011).
+32F. Chollet et al., “Keras,” https://keras.io (2015).
+33R. Tibshirani, “Regression shrinkage and selection via the lasso,” Journal
+of the Royal Statistical Society: Series B (Methodological) 58, 267–288
+(1996).
+34D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+arXiv preprint arXiv:1412.6980 (2014).
+35J. Joanny and P.-G. De Gennes, “A model for contact angle hysteresis,” The
+journal of chemical physics 81, 552–562 (1984).
+36D. Bonamy, S. Santucci, and L. Ponson, “Crackling dynamics in mate-
+rial failure as the signature of a self-organized dynamic phase transition,”
+Physical review letters 101, 045501 (2008).
+37L. Laurson, S. Santucci, and S. Zapperi, “Avalanches and clusters in planar
+crack front propagation,” Physical Review E 81, 046116 (2010).
+38C.-K. Pun, S. Matin, W. Klein,
+and H. Gould, “Prediction in a driven-
+dissipative system displaying a continuous phase transition using machine
+learning,” Physical Review E 101, 022102 (2020).
+39S. Zapperi, P. Cizeau, G. Durin,
+and H. E. Stanley, “Dynamics of a
+ferromagnetic domain wall: Avalanches, depinning transition, and the
+barkhausen effect,” Physical Review B 58, 6353 (1998).
+40L. Laurson, X. Illa, S. Santucci, K. T. Tallakstad, K. J. Måløy, and M. J.
+Alava, “Evolution of the average avalanche shape with the universality
+class,” Nature communications 4, 1–6 (2013).
+41S. Zapperi and M. Zaiser, “Depinning of a dislocation: the influence of
+long-range interactions,” Materials Science and Engineering: A 309, 348–
+351 (2001).
+42A. Lehtinen, L. Laurson, F. Granberg, K. Nordlund, and M. J. Alava, “Ef-
+fects of precipitates and dislocation loops on the yield stress of irradiated
+iron,” Scientific reports 8, 6914 (2018).
+43W. Ludwig, P. Cloetens, J. Härtwig, J. Baruchel, B. Hamelin, and P. Bastie,
+“Three-dimensional imaging of crystal defects bytopo-tomography’,” Jour-
+nal of applied crystallography 34, 602–607 (2001).
+44L. E. Levine, B. C. Larson, W. Yang, M. E. Kassner, J. Z. Tischler, M. A.
+Delos-Reyes, R. J. Fields, and W. Liu, “X-ray microbeam measurements of
+individual dislocation cell elastic strains in deformed single-crystal copper,”
+Nature materials 5, 619–622 (2006).
+45E. Schafler, K. Simon, S. Bernstorff, P. Hanák, G. Tichy, T. Ungár, and
+M. Zehetbauer, “A second-order phase-transformation of the dislocation
+structure during plastic deformation determined by in situ synchrotron x-
+ray diffraction,” Acta materialia 53, 315–322 (2005).
+
+

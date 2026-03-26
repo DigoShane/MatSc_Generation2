@@ -11,7 +11,7 @@ from tqdm import tqdm        # For progress bars during processing
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Directory containing cleaned text files (output from clean_text.py)
-clean_dir = BASE_DIR / "data/cleaned_text"
+clean_dir = BASE_DIR / "data_v2/cleaned_text"
 
 # Path to the trained tokenizer (output from train_tokenizer.py)
 tokenizer_path = BASE_DIR / "tokenizer/tokenizer.json"
@@ -26,7 +26,7 @@ output_dir.mkdir(exist_ok=True)  # Create if doesn't exist (though it should alr
 
 print("Loading tokenizer...")
 # Load the custom tokenizer we trained on materials science text
-# This tokenizer knows our 32,000 token vocabulary
+# This tokenizer knows our 50,000 token vocabulary
 tokenizer = Tokenizer.from_file(str(tokenizer_path))
 
 # ============================================================================

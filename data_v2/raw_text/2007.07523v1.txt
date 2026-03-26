@@ -1,0 +1,1137 @@
+Atomistic Structure Learning Algorithm with surrogate energy model relaxation
+
+Henrik Lund Mortensen, Søren Ager Meldgaard, Malthe Kjær Bisbo, Mads-Peter V. Christiansen, and Bjørk Hammer∗
+
+Department of Physics and Astronomy, Aarhus University, DK-8000 Aarhus C, Denmark.
+(Dated: July 16, 2020)
+
+The recently proposed Atomistic Structure Learning Algorithm (ASLA) builds on neural network
+enabled image recognition and reinforcement learning.
+It enables fully autonomous structure
+determination when used in combination with a first-principles total energy calculator, e.g. a density
+functional theory (DFT) program. To save on the computational requirements, ASLA utilizes
+the DFT program in a single-point mode, i.e. without allowing for relaxation of the structural
+candidates according to the force information at the DFT level. In this work, we augment ASLA to
+establish a surrogate energy model concurrently with its structure search. This enables approximative
+but computationally cheap relaxation of the structural candidates before the single-point energy
+evaluation with the computationally expensive DFT program.
+We demonstrate a significantly
+increased performance of ASLA for building benzene while utilizing a surrogate energy landscape.
+Further we apply this model-enhanced ASLA in a thorough investigation of the c(4 × 8) phase of the
+Ag(111) surface oxide. ASLA successfully identifies a surface reconstruction which has previously
+only been guessed on the basis of scanning tunnelling microscopy images.
+
+I.
+INTRODUCTION
+
+Structure determination is a cornerstone in the de-
+velopment of new functional materials for applications
+as photo-voltaics, thermoelectrics, electrolytes, and het-
+erogeneous catalysts1. Often, advances in creating new
+such materials are lead by experimental discoveries and
+subsequent characterization of the compounds serve to
+identify their precise structure and composition at the
+atomic scale. Once the structure of a material is known,
+its physico-chemical properties may be rationalized on
+theoretical grounds providing a basis for further improve-
+ments. The process of structure determination is highly
+non-trivial and is hampered by the rapid growth with
+problem size of both the configurational space and the
+cost of the individual first principles quantum mechanical
+computer calculations required.
+A number of strategies for automated structural search
+have emerged. These include simulated annealing based
+on molecular dynamics (MD)2 and stochastic search based
+on e.g. basin hopping3 or even evolutionary algorithms4–9.
+The recent developments in machine learning (ML) tech-
+niques in chemical physics10 have successfully been in-
+troduced to lower the computational demands for these
+search strategies. One method has been to model the
+potential energy landscape accurately with kernel based
+methods11–13 or neural networks14–17 so that many expen-
+sive energy and force evaluations necessary for the MD
+and the local relaxations can be circumvented. Typically,
+the machine learning models are trained on-the-fly with
+active learning protocols18–37 and improved as more and
+more first-principles datapoints are accumulated. Other
+means for speeding up structural searches with machine
+learning have been the introduction of acquisition func-
+tions, based on Bayesian statistics, balancing exploration
+and exploitation38,39, the clustering analysis in the selec-
+tion of evolutionary populations40, the estimation of local
+energies to guide mutation and cross-over operations in
+evolutionary searches41–43, and the construction of artifi-
+
+cially convex energy landscapes for initial relaxation of
+evolutionary candidates44,45.
+Notwithstanding
+the
+considerable
+computational
+speedups that ML techniques have lead to in structural
+determination, the underlying search paradigm remains of
+stochastic nature. This means that as a catalogue of more
+and more likely structural candidates is constructed, no
+knowledge or understanding of the bonding mechanism
+is developed and identifying more candidates still relies
+on the element of chance. To tackle this issue, we have
+recently proposed the Atomistic Structure Learning Algo-
+rithm (ASLA)46, which uses neural network based image
+recognition and reinforcement learning to iteratively con-
+struct the most stable atomic structure given only the cell
+and the stoichiometry. ASLA is designed to develop a ra-
+tional search strategy in which interatomic arrangements
+are introduced because they appear plausible based on
+prior data. ASLA reads discretized 2D or 3D image rep-
+resentations of molecular compounds and solids. It builds
+the next promising structure, conducts a single-point, i.e.
+an unrelaxed, first-principles energy calculation, and uses
+this new structure-stability datapoint to train the neural
+network.
+In this work, we extend ASLA to include a surrogate
+energy landscape that is constructed on-the-fly. When-
+ever ASLA proposes a new structure, the structure is
+subjected to a computationally inexpensive local relax-
+ation in the model before the computationally expensive
+first-principles single-point calculation is conducted. The
+method is shown to dramatically increase the performance
+of ASLA when applied to solving for the most stable
+C6H6-isomer, which is benzene. We further apply ASLA
+with surrogate model relaxations to the problem of find-
+ing the most stable geometry and stoichiometry of the
+Ag(111) c(4 × 8)-phase surface, which has been experi-
+mentally and theoretically investigated in Refs. 47 and
+48. Ag(111) oxide surfaces are known to be catalysts for
+the important ethene epoxidation reaction and have been
+studied for decades. Yet the structure of such systems
+
+arXiv:2007.07523v1  [cond-mat.mtrl-sci]  15 Jul 2020
+
+
+2
+
+Train surrogate model
+
+Train CNN
+
+Store in memory
+
+Evaluate Etot
+
+Relax in surrogate model
+
+Candidate from policy
+
+One episode
+
+Building phase
+Evaluation phase
+Training phase
+
+Energy
+
+Structure feature
+
+Energy
+
+Structure feature
+
+FIG. 1. Flowchart showing the three phases of ASLA. The
+green nodes highlight the contributions from this paper. The
+blue polygon represents the CNN producing the Q-value map,
+while the surrogate energy model, in which the relaxation is
+performed, is schematically represented as the blue curve in
+the structure-energy plot. The true energy curve is shown in
+black and black dots are training points, while the shaded area
+marks the model uncertainty. Both the CNN and the surrogate
+energy model improve in each episode, leaving ASLA better
+equipped for building low-energy structures in later episodes.
+
+continue to surprise49. The important catalytic proper-
+ties together with the rich structural diversity calls for
+reliable, automated global search algorithms for structure
+determination.
+The paper is outlined as follows. In the first section, we
+introduce the details of the model. In the second section,
+we demonstrate the performance increase for a simple
+benzene system, where many restarts can be made and
+good statistics obtained. Lastly, in the the final section,
+we employ our algorithm to identify the aforementioned
+Ag(111) oxide surface structure. Doing so, we employ
+the method for a large number of different silver oxide
+stoichiometries. The most stable structure is identified
+and discussed.
+
+II.
+ASLA
+
+In
+the
+Atomistic
+Structure
+Learning
+Algorithm
+(ASLA)46,50,51, the global optimization problem of struc-
+ture search is formulated as a reinforcement learning
+
+problem, where an agent learns to build the most stable
+atomistic structure. The learning appears in episodes, in
+each of which, the agent itself creates a new prospective
+atomistic structure whose total energy is provided by an
+external density functional theory (DFT) program52,53.
+Each learning episode contains three distinct phases, the
+building phase, the evaluation phase, and the training
+phase as illustrated in the flowchart given in Fig. 1.
+In the building phase, ASLA commences by construct-
+ing a new structural candidate by following the policy as
+guided by the current state of the agent. It starts from a
+template structure, s0, (possibly an empty computational
+cell) and proceeds iteratively to a final state, sT , such
+that a total of Natom atoms have been placed, as further
+detailed in Fig. 2 a. In each iteration the intermediate
+state, st, is given to the agent equipped with a convo-
+lutional neural network (CNN), that responds with its
+expectation, Q(st, at), of the reward for the most stable
+final structure attainable if action, at, is taken. An action
+is the combined information about position and type of
+the next atom to be placed, and a reward is a function
+whose maximum coincides with the most stable final struc-
+ture found at any time, see Refs.46,50 for details. With
+discretization of space, all possible actions for each type
+of atom can be represented on a 2D or 3D grid depending
+on the problem being solved. The expected rewards for
+all possible actions can hence be represented as Q-value
+maps on such grids. Discretized atomistic structures and
+Q-value maps thus share the same data structure as il-
+lustrated in Fig. 2 b. The Q-value maps form together
+with a policy the basis for a decision process regarding
+the actual action, at, taken at state st leading to state
+st+1. We employ a modified epsilon-greedy policy. This
+means that ordinarily it is the expected most rewarding
+action (greedy), which is chosen, but occasionally with
+some small likelihood (epsilon) a stochastic element is
+used in choosing the action46.
+After constructing a candidate from the policy we add
+in the present version of ASLA a new element, namely
+a structural relaxation. The changes that a structural
+candidate undergoes during this are illustrated in Fig. 2 c.
+The structure relaxation seeks to identify the nearest local
+minimum energy structure in the vicinity of the structure
+just built. To avoid any significant computational expense
+of this operation, it is carried out in a surrogate energy
+landscape described in the next section. After completing
+the relaxation, the atom positions are adjusted slightly
+(snapped to grid) to ensure that the relaxed structure,
+now ˜sT , can be represented on the grid used for training
+the agent.
+The reinforcement learning episode proceeds with the
+evaluation phase which is a single-point DFT calculation
+of the total energy, Etot, of structure, ˜sT . This is the
+presumed computationally most intensive operation of
+the learning episode. Once finished, a set of state-action-
+energy datapoints for each iteration of the candidate-from-
+policy construction of this episode may be stored in the
+memory in the store-in-memory event. Since the candi-
+
+
+3
+
+a
+c
+d
+
+s0
+
+st
+
+st+1
+
+sT
+
+˜s0
+
+˜st
+
+˜st+1
+
+˜sT
+
+sT
+
+Candidate from policy
+
+Relax in model
+
+˜sT
+
+Snap to grid
+
+b
+
+C
+
+H
+
+C
+
+H
+
+FIG. 2. a A candidate structure is constructed atom-by-atom in the candidate-from-policy operation by iteratively consulting
+a CNN (shown in b) and following the modified epsilon-greedy policy described in the text. This results in the sequence of
+structures, s0, . . . , sT . c The final structure, sT , is relaxed in the surrogate energy model, resulting in the ˜sT -structure, for
+which the total energy is evaluated. d The ˜sT -structure is decomposed atom-by-atom to obtain the sequence, ˜s0, . . . , ˜sT , which
+is stored in the ASLA memory together with the energy, and used for training of both the CNN and the surrogate energy model.
+
+date construction was proceeded by some relaxation, the
+state-action pairs will most likely deviate from the actual
+states, st, visited and actual actions, at, taken during the
+build action. Assuming, however, that atoms are placed
+in the same order, the state-action pairs, (˜st, ˜at), that
+would have led directly to the snapped, relaxed structure,
+˜sT , can be determined, cf. Fig. 2 d, and stored with Etot
+in the memory.
+The reinforcement learning episode continues with a
+training phase, where the CNN and surrogate energy
+model are updated. The CNN is trained by first extracting
+a batch of state-action-energy pairs from the most recent,
+most-favorable and random episodes from the memory,
+such that the batch comprises 5 × Natom state-action-
+energy pairs. The energies are transformed to reward
+values, r ∈ [−1, 1], and the batch is expanded by rotated
+and mirrored versions of the state-action-energy pairs.
+The weights of the CNN are updated by a backpropagation
+step with a learning rate of 10−3 that decreases the total
+mean squared error between the predicted value and the
+reward for state-action-energy pairs in the batch.
+In the present work, we employ the same architecture
+for the neural network as in Refs.46,50,51. It is thus a con-
+volutional neural network (CNN) with three hidden layers
+
+and 10 kernels per layer, all with the leaky-ReLU activa-
+tion function, except for the output, where a hyperbolic
+tangent function is applied. The structure is represented
+as a one-hot encoded matrix, which represents the xy- or
+xyz-coordinates in the first two or three dimensions, and
+the atom type in a final dimension. Penalizing terms are
+employed following Refs.46,50.
+As a final operation during the learning phase of a
+reinforcement learning episode, an improved surrogate
+energy model is prepared for the next episode.
+This
+is done in the train-surrogate-model operation, which
+represents the final new element introduced to ASLA in
+this work. The surrogate energy model extracts from the
+memory (˜sT , Etot) datapoints and constructs a structure-
+energy model. The details of the model are given in the
+next section.
+Upon starting the reinforcement learning cycle, the
+neural network representing the agent can be initial-
+ized randomly meaning that ASLA learns completely
+autonomously from its interaction with the DFT program
+with no other input than the template, s0, and the stoi-
+chiometry of the final structure, sT . It may, however, ben-
+efit largely in a transfer learning setting, where network
+weights are inherited from a prior ASLA run solving a sim-
+
+
+4
+
+pler problem. Initially, before sufficient structure-energy
+datapoints have been collected and stored in memory, a
+sufficiently reliable surrogate model cannot be established,
+and the relax operation is simply skipped.
+
+III.
+SURROGATE MODEL
+
+For the surrogate model, a Gaussian process (GP) re-
+gression model54 is used. The model is trained on feature
+representations of the final structures and their total ener-
+gies. The use of a feature representation means that the
+GP model incorporates e.g. rotational and translational
+energy invariances directly, unlike the CNN model used
+for the agent, which has to learn that via the applied data
+augmentation. The GP regression model, thus learns the
+underlying energy landscape more efficiently from the
+training data compared to what would be expected from
+using a CNN model. However, contrary to using a CNN
+for the Q-value map evaluation, using a GP model would
+be computationally expensive owing to the cost of evalu-
+ating the feature representation at every pixel in the map.
+It can therefore not form the basis for the policy guided
+building step in ASLA, where a CNN with its inexpensive
+image representation is preferred. A further reason why a
+CNN is preferred for the Q-value map prediction is that
+Q-values depend on the final structures that can be built
+from incomplete ones. Thus the Q-value evaluation must
+predict the consequences of future actions, something
+which is better done with the deep learning capabilities
+of the CNN.
+A GP is specified by its prior mean, µ(x), and co-
+variance function (the kernel), k(x, x′), which expresses
+the beliefs about the system prior to any observations.
+The training consists of inferring the posterior distribu-
+tion, which takes into account the observed training data,
+D = {X, E}. The posterior can be analytically expressed
+due to the well-behaved marginalization properties of
+the GP. Namely, the posterior is also a GP with mean
+function given by
+
+E(x∗) = kT
+∗ (K + σ2
+nI)−1[E − µ(x)] + µ(x).
+(1)
+
+where K = k(X, X) is the kernel matrix, k∗ = k(X, x∗)
+and σn is a regularization hyperparameter that acts to
+prevent overfitting (we use σn = 3.2·10−3). The posterior
+mean is taken as the model prediction of the energy. Com-
+putationally, the training is dominated by the inversion of
+the kernel matrix, which scales with the number of data
+points as O(n3).
+To take advantage of the rotational, translational and
+permutation symmetries of quantum chemistry, struc-
+tures are represented by feature vectors that exhibit these
+symmetries. In this work, we choose the fingerprint de-
+scriptors of Oganov and Valle55.
+The kernel is chosen to be a sum of two Gaussians with
+different length scales, similar to that proposed in56
+
+k(x, x′) = θ0
+�
+(1 − β)e−|x−x′|2/2λ2
+1 + βe−|x−x′|2/2λ2
+2�
+(2)
+
+where x are the feature vectors and θ0 is the maximal co-
+variance. Using two length scales, λ1 and λ2, improves the
+model by allowing the kernel to capture trends in a large,
+sparsely sampled configuration space, while maintaining
+resolution in smaller, more densely sampled regions. The
+prior mean is chosen to be a short-ranged repulsive po-
+tential, which is generally present between atoms. This
+naturally prohibit atoms to get too close during structure
+relaxations with the model, which may cause convergence
+problems when the total energy is evaluated. The fea-
+ture vector is analytically differentiable with respect to
+the Cartesian coordinates, which allows us to obtain the
+predicted force according to the model. The relaxation is
+performed by iteratively moving the atoms based on the
+predicted force.
+In training the model, the hyperparameters, (θ0, λ1, λ2),
+are optimized by maximizing the log marginal likelihood57.
+For the training data, only the 500 lowest energy struc-
+tures from the ASLA memory is used. This ensures that
+the model resolves the low-energy part of the configu-
+ration space, while keeping the computational training
+time small. No effort is thus made to capture high-energy
+structures in irrelevant parts of the configuration space.
+The model is not meant to reproduce total energies
+with high accuracy. Rather, the purpose of the model
+is to guide ASLA into local minima of the configuration
+space in order to aid the global search. Therefore, we
+measure the models performance by the improvement in
+the number of ASLA episodes needed to solve a global
+optimization problem, instead of an error with respect to
+a test set.
+
+IV.
+BENZENE EXAMPLE
+
+Having introduced to ASLA that candidates built from
+the policy may be relaxed in a surrogate energy landscape,
+we now turn to probe how it affects the overall perfor-
+mance of ASLA. In order to be able to make convincing
+statistics we choose to have ASLA solve the problem of
+building the most stable molecule given six carbon atoms
+and six hydrogen atoms, i.e. C6H6. The total energy
+expression is provided by a density functional based tight
+binding (DFTB) energy expression using the DFTB+
+implementation58, since this provides a sufficiently ac-
+curate description that the correct chemical bonds are
+formed, yet at a much reduced computational cost com-
+pared to a DFT energy expression. As the solution turns
+out to be the planar molecule benzene, we address this
+problem with a 2D space. For this a grid spacing of 0.25
+˚A is used.
+The performance of ASLA is gauged by restarting the
+structural search a great number of times with no data in
+the memory and with random initialization of the CNN.
+By compiling as a function of episode count, the share
+of search runs that have found the benzene molecule, we
+arrive at the success curves displayed in Fig. 3. The blue
+curve shows the performance of standard ASLA without
+
+
+5
+
+0
+2000
+4000
+6000
+8000
+Episode
+
+0%
+
+20%
+
+40%
+
+60%
+
+80%
+
+100%
+
+Success rate
+
+Standard
+Model relaxations
+DFTB relaxations
+
+FIG. 3. Success curves based on 200 restarts. The standard
+ASLA (blue curve) is outperformed by ASLA augmented with
+model relaxations (green curve), without any additional energy
+evaluations.
+The grey curve shows the performance when
+DFTB relaxations are used in place of the model relaxations,
+imitating a perfectly trained model.
+
+model relaxations, while the green curve shows the per-
+formance when the model relaxations are included. The
+here-proposed ASLA with model relaxations outperforms
+the standard ASLA by a wide margin. While standard
+ASLA needs ≈ 7000 episodes for 10% of the restarts to
+identify benzene, ASLA with model relaxations attains
+this after less than 1000 episodes.
+The green success curve for the model-relaxed ASLA
+shows, however, one convergence issue. The fact that it
+levels off at about 60% success after about 2000 episodes
+means that the 40% of the restarts that have not found
+benzene within the first 2000 episodes stand a small chance
+of doing so in the remaining 6000 episodes of the runs.
+To probe the origin of this, we conducted a set of search
+runs, in which the relaxations of the policy-built candidate
+structures were done in the full DFTB energy landscape
+rather than with the on-the-fly learnt surrogate energy
+landscape. The grey curve in Fig. 3 shows the resulting
+success curve, which evidences that when relaxing can-
+didates in the DFTB energy landscape, the stagnation
+almost vanishes. About 80% of the restarts have found
+benzene after 2000 episodes, and in the following 6000
+episodes about half of the remaining restarts do so.
+We consequently attribute the stagnation of the model-
+relaxed ASLA to errors in the surrogate energy model.
+Note, however, that the DFTB relaxation scheme uses
+several order of magnitudes more DFTB energy evalua-
+tions per episode, than does the model relaxation scheme,
+where one episode corresponds to one DFTB single-point
+energy evaluation. This renders the model relaxation
+scheme far superior when more refined and computation-
+ally expensive DFT or quantum chemistry methods are
+used as the total energy expression.
+
+Candidate from policy
+
+Episode: 100
+
+After model relaxation
+
+Episode: 200
+
+Episode: 500
+
+Episode: 900
+
+FIG. 4. The structures built according to the Q-value directed
+policy (left) and their appearance being relaxed in the model
+and snapped to the grid (right) for different stages of a search.
+The model potential quickly learns to locally optimize the
+structure that ASLA produces. In turn, ASLA learns more
+quickly to build stable structures (cf. Fig. 3).
+
+Possible solutions to the stagnation issue could be
+the introduction of more advanced model energy expres-
+sions than the presently used one, or the development
+of schemes to reset the surrogate model upon detection
+of stagnation. Note that a single restart will not know
+if it has ceased to find better structures because it has
+identified the global minimum energy structure or because
+it uses an insufficiently accurate model for the relaxation
+and finds a higher lying energy structure. In practice,
+when searching for an unknown global minimum energy
+structure, all restarts would therefore need to have their
+model reset once they consistently produce the same best
+
+
+6
+
+a
+b
+
+c
+d
+
+FIG. 5. The experimental STM images and conjectured atom-
+istic structures. a and c reprinted with permission from Mar-
+tin et al The Journal of Physical Chemistry C 118, 15324
+(2014). Copyright (2020) American Chemical Society. b and
+d adapted from Ref. 47.
+
+structure over and over again.
+Having seen that ASLA improves significantly upon
+adding the presently proposed model-relaxation, it is in-
+structive to inspect the degree of relaxation as a function
+of reinforcement episodes. Figure 4 presents one such
+study for a randomly chosen restart. It shows the policy-
+built structure and the corresponding model-relaxed struc-
+ture after 100, 200, 500, and 900 episodes. After 100 and
+200 episodes, the agents CNN has not developed suffi-
+ciently yet as to consistently build molecules with chemical
+meaningful coordinations. However, the surrogate energy
+model has learnt enough to provide for relaxation of the
+atoms into having more proper interatomic distances. Af-
+ter 500 episodes, the policy-built structure still lacks a bit
+on C-C coordination and C-H bond lengths and it leaves
+some H as isolated atoms. All of these deficiencies are
+remedied by the model-relaxation and by 900 episodes,
+the agents starts to know how to build benzene in need
+of only very minor bond adjustments, mainly pertain-
+ing to the large grid spacing used. Note, that the CNN
+benefits from the improved training examples provided
+by the model relaxations, and learns to build reasonable
+structures faster than in the standard ASLA scheme.
+
+V.
+AG(111) OXIDE SURFACE
+
+We now turn to apply ASLA with model relaxation to
+an outstanding problem in materials science. Specifically,
+we will be concerned with the oxidation of the Ag(111)-
+
+FIG. 6. The ASLA setup. Starting from above, an incomplete
+surface oxide structure on a two-layer Ag(111) template is
+shown. Red spheres are oxygen atoms, and grey spheres are
+silver atoms. The transparent box highlights the c(4 × 8) unit
+cell. The two lowest layers of Ag atoms, two Ag(111) layers,
+are part of the template, while the upper most Ag atoms and
+all O atoms are being placed by ASLA. The convolutional
+neural network is fed with seven layers of allowed O positions
+(the brown grids) and with three layers of possible Ag positions
+(the grey grids). It outputs Q-values for all available oxygen
+atomic positions and for silver positions in the upper layer. In
+the final lower structure, an extra O atom has been added at
+the position of highest Q-value following a greedy policy.
+
+surface, which has been shown to exhibit a rich variety
+of stoichiometries and phases during growth of surface
+oxide layers. Schnadt and co-workers47,48 have reported
+scanning tunneling microscopy (STM) topographs of a
+number of such phases, one of which, the c(4 × 8)-phase,
+is reproduced in Fig. 5. To the best of our knowledge,
+
+
+7
+
+Ag3O6 Ag4O6 Ag5O6 Ag6O6 Ag7O6
+
+Ag3O5 Ag4O5 Ag5O5 Ag6O5 Ag7O5
+
+Ag3O4 Ag4O4 Ag5O4 Ag6O4 Ag7O4
+
+Ag3O3 Ag4O3 Ag5O3 Ag6O3 Ag7O3
+
+Ag3O2 Ag4O2 Ag5O2 Ag6O2 Ag7O2
+
+−1.6
+
+−1.4
+
+−1.2
+
+−1.0
+
+−0.8
+
+−0.6
+
+−0.4
+
+∆G [eV]
+
+FIG. 7. Free energy, ∆G evaluated at ∆µO = −0.5 eV, for
+the most stable Ag(111)-c(4 × 8)-AgXOY surface oxides found
+by ASLA.
+
+no systematic structural search has been carried out for
+this particular surface oxide phase on Ag(111), yet in
+the original paper a structural model was put forward47.
+By having ASLA perform the structural search given the
+experimentally determined surface unit cell, but covering
+a large range of Ag-O stoichiometries for the surface oxide,
+we confirm below the originally conjectured model in a
+set of ASLA runs.
+In our search for the Ag(111)-c(4×8) silver oxide phase,
+ASLA is used to identify the best possible structure of a
+mono-layer silver oxide on top of a bulk truncated Ag(111)
+template. For the surface oxide, it is assumed that all
+Ag atoms occupy positions whose heights coincide with
+that of an extra unrelaxed Ag(111) layer, z0, while all
+O atoms occupy some of seven different heights evenly
+distributed around such a Ag(111) layer, i.e. ranging from
+1.6 to 3.1 ˚A above the Ag(111) template. For the in-plane
+positions of the Ag and O atoms, any values on a 2D grid
+with grid spacing 0.255 ˚A are allowed. Figure 6 depicts
+these discretized positions as they are fed into the neural
+network. The seven brown layers hold the O atoms, while
+the three grey layers hold the Ag atoms. As a template
+of preplaced Ag atoms, the bottom two grey layers are
+prepopulated with two Ag(111) layers. The CNN, shown
+schematically as the blue polygon in Fig. 6, outputs Q-
+values for all oxygen layers and for the upper Ag layer
+as shown by the bluish raster plots in the figure. The
+network does not need to output any Q-values for the
+lower two Ag layers, since these are already fully occupied.
+During the model relaxation the silver atoms are con-
+strained to move in the xy-plane, while the oxygen atoms
+are constrained to move freely between z = 1.6 ˚A and
+z = 3.1 ˚A, which does not represent any further approx-
+imation given that the atomic position are snapped to
+the grid heights within these bounds at the end of the
+building phase.
+
+−2.0
+−1.5
+−1.0
+−0.5
+0.0
+∆µO
+
+−4
+
+−2
+
+0
+
+2
+
+4
+
+6
+
+8
+
+∆G [eV]
+
+Ag4O2
+Ag6O3
+Ag5O4
+Ag6O5
+Ag4O6
+
+FIG. 8. Free energy, ∆G as a function of ∆µO for the most
+stable Ag(111)-c(4×8)-AgXOY surface oxides found by ASLA
+for Y = 2, 3, 4, 5 and 6 when varying X from 3 to 7.
+
+The evaluation phase is conducted using DFT. The
+structures are handled with the atomic simulation envi-
+ronment (ASE)59 and the DFT based total energies are
+evaluated with the grid-based projector augmented wave
+package gpaw53. For the exchange-correlation functional,
+the Perdew-Burke-Ernzerhof (PBE) expression is used60.
+
+ASLA was used to build AgXOY structures on top of
+Ag(111)-c(4 × 8) for 3 ≤ X ≤ 7 and 2 ≤ Y ≤ 6. For each
+combination of (X, Y ) ASLA was restarted at least 10
+times until the best structure found agreed in at least 5
+of the restarts, except for some of the Ag7OY runs, where
+only a few restarts agreed on the best structure before
+the allocated resources were spent. Once identified by
+ASLA, the best surface oxide structure ever found for
+each restart was transferred to 5 layered Ag(111) slabs
+and relaxed unconstrained. The structure and stability of
+these surface oxide models are discussed in the following.
+
+We compare the different stoichiometries by their Gibbs
+free energy according to61:
+
+∆G(T, p) = EDFT − EDFT
+slab − XµAg − Y µO(T, p),
+(3)
+
+where EDFT is the DFT energy of the full structure, EDFT
+slab
+is the DFT energy of the Ag(111)-c(4 × 8) five layer slab
+without the surface oxide, and where µAg and µO are
+the chemical potentials of silver and oxygen, respectively.
+Note, that we neglect the small vibrational and config-
+urational contributions to the Gibbs free energy of the
+surface structures. The silver chemical potential, µAg,
+is taken to be the chemical potential of a silver atom
+situated in the bulk position, calculated as the difference
+per Ag atom of 6 and 5 layer thick Ag(111) slabs. The
+oxygen chemical potential is a function of the di-oxygen
+
+
+8
+
+FIG. 9. Top and side view of the most stable AgXOY structures for each value of Y investigated in this work.
+
+pressure, p, and the temperature, T 61:
+
+µO(T, p) = 1
+
+2
+
+�
+EDFT
+O2
++ ˜µO2(T, p0) + kBT ln
+� p
+
+p0
+
+��
+
+(4)
+where EDFT
+O2
+is the DFT total energy of the di-oxygen
+molecule, ˜µO2(T, p0) is the translational, rotational, and
+vibrational contributions to the free energy of an O2
+gas at a reference pressure, p0, and kB is Boltzmanns
+constant. It is seen that the absolute value of µO(T, p)
+depends on the specific computational settings through
+EDFT
+O2
+. To circumvent that, it is convenient to quote only
+the (T, p)-dependent part of the chemical potential:
+
+∆µO(T, p) = µO(T, p) − 1
+
+2EDFT
+O2
+(5)
+
+whenever a chemical potential is specified.
+With the thermodynamic considerations in place, it is
+now possible to compare the stability of the most stable
+structures found by ASLA. Figure 7 does so in the form
+of a raster plot of the free energy, ∆G, evaluated at an
+oxygen chemical potential of ∆µO = −0.5 eV, correspond-
+ing approximately to ambient conditions, i.e. a pressure
+of 1 atm and a temperature of 300 K61. The plot shows
+a clear optimal stability for a surface oxide of Ag5O4
+stoichiometry, and it brings evidence that sufficient varia-
+tion in the stoichiometry has been considered to call this
+the thermodynamic most stable state at this chemical
+potential for oxygen.
+In Fig. 8 a diagram of the free energy as a function of
+∆µO is shown. The diagram builds on the most stable
+AgXOY structure for every considered value of Y , i.e.
+Ag4O2, Ag6O3, Ag5O4, Ag6O5, and Ag4O6 surface oxides.
+The diagram shows that over a wide range of chemical
+potential for oxygen, the Ag5O4 surface oxide remains
+the most stable.
+
+FIG. 10. Structures with similar motifs found for different
+stoichometries. a-c show network-like structures for Ag3O2,
+Ag4O2 and Ag5O2. d-f show structures for Ag5O3, Ag5O4
+and Ag5O5. Here, identical motifs are found for the Ag-atoms,
+while the oxygen sites are filled as more oxygen are intro-
+duced. Note that all structures above are found in separate,
+independent ASLA runs.
+
+The structures leading to the free energy diagram in
+Fig. 8 are shown in Fig. 9. They expose a rich variety of
+chemical bonding motifs involving the Ag and O atoms
+within the surface oxide. Inspecting the structures in Fig.
+9, the first one appears network type with voids, the next
+one resembles the first, but with reduced Ag3 islands in the
+voids, while the remaining three structures appear to have
+both Ag and and O atoms highly dispersed in the surface
+oxide layer. As the oxygen content increases from left to
+right in the figure, ASLA eventually identifies the need
+for including O2 motifs when tasked with accommodating
+a large amount of oxygen within the surface oxide.
+
+
+9
+
+FIG. 11. a The Ag5O4 structure and b the corresponding
+simulated STM image. The simulated STM agrees well with
+the experimental STM image (see Fig. 5 a and b).
+
+The large diversity in the optimal structures shown
+in Fig. 9 testifies to ASLAs ability to identify a highly
+diverse set of chemically meaningful structures as the sto-
+ichiometry is varied. Conversely, collecting series of some
+of the sub-optimal structures found, it can be realized
+that ASLA often finds the same structural skeleton for
+different stoichiometries. This is illustrated in Fig. 10a-c,
+where it is seen that ASLA in independent searches for
+Ag3O2 and Ag5O2 stoichiometries finds again the opti-
+mal Ag4O2 structure only with one Ag atom removed
+or added. Likewise, Fig. 10d-f shows how Ag5O3 and
+Ag5O5 structures are identified by ASLA that either lack
+one O or contain an extra O compared to the optimal
+
+Ag5O4. A full account of all structures found is given in
+the supplementary material.
+Focusing on the Ag5O4 surface oxide that we identify
+as the preferred structure, we note that ASLA has indeed
+found the same structure that was proposed by Schnadt
+et al47. In Fig. 11 we present a Tersoff-Hermann type
+simulated STM topograph, that indeed matches the ex-
+perimental STM one shown in Fig. 5. We thus conclude
+that ASLA with very little input (i.e. the surface unit
+cell and some choice for discretization of space) is capa-
+ble of deducing the structure of a complicated surface
+oxide. It does so without requiring any human input of
+expected structural motifs or other presumed knowledge
+of chemical bonding within the surface oxide.
+
+VI.
+CONCLUSION
+
+We have augmented ASLA with relaxations in a model
+potential, dramatically increasing the performance. The
+improvements come with no need for extra electronic-
+structure energy evaluations, and little overhead due to
+training the model and the relaxation procedure itself. We
+applied the improved ASLA to a Ag(111) oxide surface,
+where a proposed structure was confirmed by a thorough
+search.
+VII.
+ACKNOWLEDGEMENTS
+
+We acknowledge support from VILLUM FONDEN (In-
+vestigator grant, Project No. 16562).
+
+∗ hammer@phys.au.dk
+1 A. R. Oganov, C. J. Pickard, Q. Zhu,
+and R. J. Needs,
+Nature Reviews Materials 4, 331 (2019).
+
+2 S. Kirkpatrick, C. D. Gelatt, and M. P. Vecchi, Science
+220, 671 (1983).
+
+3 D. J. Wales and J. P. K. Doye, The Journal of Physical
+Chemistry A 101, 5111 (1997).
+
+4 B. Hartke, The Journal of Physical Chemistry 97, 9973
+(1993).
+
+5 D. M. Deaven and K. M. Ho, Phys. Rev. Lett. 75, 288
+(1995).
+
+6 A. R. Oganov and C. W. Glass, The Journal of Chemical
+Physics 124, 244704 (2006).
+
+7 L. B. Vilhelmsen and B. Hammer, Phys. Rev. Lett. 108,
+126101 (2012).
+
+8 L. B. Vilhelmsen and B. Hammer, The Journal of Chemical
+Physics 141, 044711 (2014).
+
+9 T. Ishikawa, T. Miyake,
+and K. Shimizu, Phys. Rev. B
+100, 174506 (2019).
+
+10 J. Schmidt, M. R. G. Marques, S. Botti,
+and M. A. L.
+Marques, npj Computational Materials 5, 83 (2019).
+
+11 A. P. Bart´ok, M. C. Payne, R. Kondor, and G. Cs´anyi,
+Phys. Rev. Lett. 104, 136403 (2010).
+
+12 M. Rupp, A. Tkatchenko, K.-R. M¨uller, and O. A. von
+Lilienfeld, Phys. Rev. Lett. 108, 058301 (2012).
+
+13 A. P. Bart´ok, R. Kondor, and G. Cs´anyi, Phys. Rev. B 87,
+184115 (2013).
+
+14 J. Behler and M. Parrinello, Phys. Rev. Lett. 98, 146401
+(2007).
+
+15 K.
+T.
+Sch¨utt,
+H.
+E.
+Sauceda,
+P.-J.
+Kindermans,
+A. Tkatchenko, and K.-R. M¨uller, The Journal of Chemical
+Physics 148, 241722 (2018).
+
+16 J. S. Smith, B. T. Nebgen, R. Zubatyuk, N. Lubbers, C. De-
+vereux, K. Barros, S. Tretiak, O. Isayev, and A. E. Roitberg,
+Nature Communications 10, 2903 (2019).
+
+17 K. T. Sch¨utt, M. Gastegger, A. Tkatchenko, K. R. M¨uller,
+and R. J. Maurer, Nature Communications 10, 5024 (2019).
+
+18 H. Zhai, M.-A. Ha,
+and A. N. Alexandrova, J. Chem.
+Theory Comput. 11, 2385 (2015).
+
+19 M. Todorovi´c, M. Gutmann, J. Corander, and P. Rinke,
+npj Computational Materials 5, 35 (2017).
+
+20 T. Yamashita, N. Sato, H. Kino, T. Miyake, K. Tsuda, and
+T. Oguchi, Phys. Rev. Materials 2, 013803 (2018).
+
+21 G. Schmitz and O. Christiansen, The Journal of Chemical
+Physics 148, 241704 (2018).
+
+22 V. L. Deringer, C. J. Pickard, and G. Cs´anyi, Phys. Rev.
+Lett. 120, 156001 (2018).
+
+23 V. L. Deringer, D. M. Proserpio, G. Cs´anyi,
+and C. J.
+Pickard, Faraday Discuss. 211, 45 (2018).
+
+24 Q. Tong, L. Xue, J. Lv, Y. Wang, and Y. Ma, Faraday
+Discussions 211, 31 (2018).
+
+
+10
+
+25 K. Gubaev, E. Podryabinkin, G. Hart, and A. Shapeev,
+Comput. Mater. Sci. 156, 148 (2019).
+
+26 M. Van den Bossche, J. Phys. Chem. A 123, 3038 (2019).
+27 J. S. Smith, B. Nebgen, N. Lubbers, O. Isayev, and A. E.
+Roitberg, J. Chem. Phys. 148, 241733 (2018).
+
+28 L. Zhang, D.-Y. Lin, H. Wang, R. Car, and W. E, Physical
+Review Materials 3, 023804 (2019).
+
+29 E. L. Kolsbjerg, A. A. Peterson, and B. Hammer, Phys.
+Rev. B 97, 195424 (2018).
+
+30 Z. Li, J. R. Kermode, and A. De Vita, Phys. Rev. Lett.
+114, 096405 (2015).
+
+31 A. A. Peterson, R. Christensen, and A. Khorshidi, Phys.
+Chem. Chem. Phys. 19, 10978 (2017).
+
+32 K. Miwa and H. Ohno, Phys. Rev. Materials 1, 053801
+(2017).
+
+33 E. V. Podryabinkin and A. V. Shapeev, Comput. Mater.
+Sci. 140, 171 (2017).
+
+34 R. Jinnouchi, F. Karsai, and G. Kresse, Phys. Rev. B 100,
+014105 (2019).
+
+35 N. Bernstein, G. Cs´anyi, and V. L. Deringer, npj Compu-
+tational Materials 5, 99 (2019).
+
+36 O.-P. Koistinen, F. B. Dagbjartsd´ottir, V. ´Asgeirsson,
+A. Vehtari, and H. J´onsson, J. Chem. Phys. 147, 152720
+(2017).
+
+37 E. Garijo del R´ıo, J. J. Mortensen, and K. W. Jacobsen,
+Phys. Rev. B 100, 104103 (2019).
+
+38 M. S. Jørgensen, U. F. Larsen, K. W. Jacobsen,
+and
+B. Hammer, The Journal of Physical Chemistry A 122,
+1504 (2018).
+
+39 M. Todorovi´c, M. U. Gutmann, J. Corander, and P. Rinke,
+npj Computational Materials 5, 35 (2019).
+
+40 M. S. Jørgensen, M. N. Groves, and B. Hammer, Journal
+of Chemical Theory and Computation 13, 1486 (2017).
+
+41 T. L. Jacobsen, M. S. Jørgensen, and B. Hammer, Phys.
+Rev. Lett. 120, 026102 (2018).
+
+42 X. Chen, M. S. Jørgensen, J. Li, and B. Hammer, Journal
+of Chemical Theory and Computation 14, 3933 (2018).
+
+43 S. A. Meldgaard, E. L. Kolsbjerg, and B. Hammer, The
+Journal of Chemical Physics 149, 134104 (2018).
+
+44 S. Chiriki, M.-P. V. Christiansen, and B. Hammer, Phys.
+Rev. B 100, 235436 (2019).
+
+45 K. H. Sørensen, M. S. Jørgensen, A. Bruix, and B. Hammer,
+The Journal of Chemical Physics 148, 241734 (2018).
+
+46 M. S. Jørgensen, H. L. Mortensen, S. A. Meldgaard, E. L.
+Kolsbjerg, T. L. Jacobsen, K. H. Sørensen, and B. Hammer,
+The Journal of Chemical Physics 151, 054111 (2019).
+
+47 J. Schnadt, J. Knudsen, X. L. Hu, A. Michaelides, R. T.
+Vang, K. Reuter, Z. Li, E. Lægsgaard, M. Scheffler, and
+
+F. Besenbacher, Phys. Rev. B 80, 075424 (2009).
+
+48 N. M. Martin, S. Klacar, H. Gr¨onbeck, J. Knudsen,
+J. Schnadt, S. Blomberg, J. Gustafson, and E. Lundgren,
+The Journal of Physical Chemistry C 118, 15324 (2014).
+
+49 A. Michaelides, K. Reuter,
+and M. Scheffler, Journal
+of Vacuum Science & Technology A 23, 1487 (2005),
+https://doi.org/10.1116/1.2049302.
+
+50 S. A. Meldgaard, H. L. Mortensen, M. S. Jørgensen, and
+B. Hammer, Journal of Physics: Condensed Matter 32,
+404005 (2020).
+
+51 M.-P. V. Christiansen, H. L. Mortensen, S. A. Meldgaard,
+and B. Hammer, Submitted to J. Chem. Phys.
+
+52 J. J. Mortensen, L. B. Hansen, and K. W. Jacobsen, Phys.
+Rev. B 71, 035109 (2005).
+
+53 J. Enkovaara, C. Rostgaard, J. J. Mortensen, J. Chen,
+M. Du�lak, L. Ferrighi, J. Gavnholt, C. Glinsvad, V. Haikola,
+H. A. Hansen, H. H. Kristoffersen, M. Kuisma, A. H. Larsen,
+L. Lehtovaara, M. Ljungberg, O. Lopez-Acevedo, P. G.
+Moses, J. Ojanen, T. Olsen, V. Petzold, N. A. Romero,
+J. Stausholm-Møller, M. Strange, G. A. Tritsaris, M. Vanin,
+M. Walter, B. Hammer, H. H¨akkinen, G. K. H. Madsen,
+R. M. Nieminen, J. K. Nørskov, M. Puska, T. T. Rantala,
+J. Schiøtz, K. S. Thygesen, and K. W. Jacobsen, Journal
+of Physics: Condensed Matter 22, 253202 (2010).
+
+54 C. E. Rasmussen and C. K. I. Williams, Gaussian Processes
+for Machine Learning (The MIT Press, 2005).
+
+55 A. R. Oganov and M. Valle, The Journal of Chemical
+Physics 130, 104504 (2009).
+
+56 M. K. Bisbo and B. Hammer, Phys. Rev. Lett. 124, 086102
+(2020).
+
+57 C. E. Rasmussen and C. K. I. Williams, Gaussian Processes
+for Machine Learning (The MIT Press, 2005).
+
+58 B. Aradi, B. Hourahine, and T. Frauenheim, The Journal
+of Physical Chemistry A 111, 5678 (2007).
+
+59 A. H. Larsen, J. J. Mortensen, J. Blomqvist, I. E. Castelli,
+R. Christensen, M. Duak, J. Friis, M. N. Groves, B. Ham-
+mer, C. Hargus, E. D. Hermes, P. C. Jennings, P. B. Jensen,
+J. Kermode, J. R. Kitchin, E. L. Kolsbjerg, J. Kubal,
+K. Kaasbjerg, S. Lysgaard, J. B. Maronsson, T. Max-
+son, T. Olsen, L. Pastewka, A. Peterson, C. Rostgaard,
+J. Schiøtz, O. Sch¨utt, M. Strange, K. S. Thygesen, T. Vegge,
+L. Vilhelmsen, M. Walter, Z. Zeng, and K. W. Jacobsen,
+J. Phys. Condens. Matter 29, 273002 (2017).
+
+60 J. P. Perdew, K. Burke,
+and M. Ernzerhof, Phys. Rev.
+Lett. 77, 3865 (1996).
+
+61 K. Reuter and M. Scheffler, Phys. Rev. B 68, 045407 (2003).
+
+

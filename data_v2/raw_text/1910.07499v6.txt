@@ -1,0 +1,2303 @@
+Decreasing the uncertainty of classical laser flash analysis using numerical
+algorithms robust to noise and systematic errors
+Artem Lunev1, a) and Robert Heymer1
+
+United Kingdom Atomic Energy Authority (UKAEA), Culham Science Centre, Abingdon, Oxfordshire OX14 3DB,
+United Kingdom
+
+(Dated: 5 June 2020)
+
+The laser flash method is highly regarded due to its applicability to a wide temperature range, from cryogenic tem-
+peratures to the melting point of refractory metals, and to extreme environments involving radioactive or hazardous
+materials. Although instruments implementing this method are mostly produced on a commercial basis by major
+manufacturers, there is always room for improvement both in terms of experimental methods and data treatment pro-
+cedures. The measurement noise, either due to the detector performance or electromagnetic interferences, presents a
+significant problem when accurate determination of thermal properties is desired. Noise resilience of the laser flash
+method is rarely mentioned in published literature; there are currently no data treatment procedures which could guar-
+antee adequate performance under any operating conditions. In this paper, a computational framework combining
+finite-difference solutions of the heat conduction problem with nonlinear optimization techniques based on the use of
+quasi-Newton direction search and stochastic linear search with the Wolfe conditions is presented. The application of
+this framework to data with varying level of noise is considered. Finally, cross-verification and validation using an
+external standard, a commercial and an in-house built laser flash instrument are presented. The open-source software
+implementing the described computational method is benchmarked against its industrial counterpart.
+
+I.
+INTRODUCTION
+
+Nearly sixty years have passed since Parker et al. 1 first pro-
+posed the flash method for determination of thermal prop-
+erties.
+Unlike other methods, e.g.
+the transient hot-strip
+method2, the transient hot wire method3, and the recently re-
+visited guarded hot plate method4–6, which suffer from an in-
+herent thermal contact resistance between the heater and the
+sample, the flash method implements a scheme for contact-
+less heating by a pulsed laser source. The latter induces a
+time-dependent temperature response measured typically at
+the rear-surface of a cylindrical sample (although other detec-
+tion concepts have been considered by Pavlov et al. 7 and pre-
+viously by Ronchi et al. 8) either by an infrared detector or by
+a thermocouple (currently, the use of immersive thermocou-
+ples is discouraged due to the extra contact resistance intro-
+duced in the weld region9) and used to infer the thermal prop-
+erties from a mathematical model of the experiment. Due to
+its many advantages, such as requiring only small samples, re-
+ducing measurement time, and being extendable to very high
+temperatures (above 3000 K8,10,11), the flash method soon be-
+came a standard in its field. It is truly indispensable for studies
+of radioactive or hazardous materials (e.g., low-active proton-
+irradiated tungsten samples12 and mildly-radioactive neutron-
+irradiated beryllides13), especially for a highly-radioactive
+material that requires remote access (Walker et al. 14 on the
+thermal conductivity of a 100 MWd/kgHM spent oxide fuel
+from a commercial PWR nuclear reactor), due to the versatil-
+ity of sample mounting required for a pre-programmed robotic
+arm, for the use of a manipulator or, more commonly, for a
+glovebox environment.
+
+a)Electronic address:
+artem.lunev@ukaea.uk;
+Download PULsE from:
+https://kotik-coder.github.io/
+
+The ASTM standard E1461 – 139 sets out the applicability
+of the laser flash method to ‘essentially fully dense (preferably,
+but low porosity would be acceptable), homogeneous, and
+isotropic solid materials that are opaque to the applied energy
+pulse’. The measurement procedure corresponding to these
+conditions is henceforth referred to as the ‘classical laser flash
+analysis’ to distinguish it from more sophisticated cases, such
+as when analyzing liquids and melts15, semi-transparent and
+diathermic samples, etc. Assuming ideal operation of the in-
+strument and correct handling of the samples, a simple heat
+transfer model accounting for the true shape of the laser pulse
+and the radiative losses at the sample boundaries should per-
+fectly describe raw data. In some cases, the experimental un-
+certainties add up to the systematic and random errors in input
+time-temperature profiles to such an extent that the conven-
+tional algorithms produce systematically biased or randomly
+scattered output values. These uncertainties include (but are
+not limited to) those of the ‘detector performance and of the
+data acquisition system’, which should deliver a ‘linear elec-
+trical output proportional to the temperature rise’.
+Assuming perfect delivery of the laser pulse to the sample’s
+front surface, the performance of a laser flash instrument is
+influenced by the following factors:
+
+(i) The theoretical detector performance is given by its spe-
+cific detectivity, a parameter equal to the output cur-
+rent (or voltage) per watt of incident thermal power per
+unit area of the active surface. The detectivity may vary
+over several orders of magnitude depending on the de-
+tector material and the spectral characteristics of the in-
+cident thermal radiation. For instance, when compar-
+ing near-infrared Peltier-cooled detectors, photovoltaic
+MCT (mercury cadmium telluride) are generally much
+better in terms of detectivity than the photoconductive
+PbSe detectors; however, Peltier-cooled detectors per-
+form worse in general than the liquid-nitrogen cooled
+InSb detectors. When doing measurements at cryogenic
+
+
+2
+
+or very high temperatures, even the best near-infrared
+detectors yield inherently noisy data, and detectors suit-
+able for a different spectral range are desired;
+
+(ii) The analog signal generated by the detector is processed
+with a (cooled) pre-amplifier unit mounted within the
+detector assembly.
+The preamplified signal is then
+transmitted to the main amplifier in the processing unit,
+and later converted to a digital output with the digital-
+to-analog convertor. Additional electromagnetic noise
+may arise from the technological process involved in
+making the electrical connections (commonly solder-
+ing);
+
+(iii) As pointed out by Baba and Ono 16, the synchroniza-
+tion of the laser pulse with the start of data acquisition
+by the detector may be challenging. This is generally
+accomplished with the use of a pulse monitor, and if
+faulty the latter may yield an erroneous systematic shift
+in the time sequence;
+
+(iv) A poorly transmitting optical window, e.g. separating
+the detector assembly from the furnace interior, may
+lead to a drop in the signal quality. This sometimes hap-
+pens due to the re-deposition of the material released
+from the sample, e.g. due to a decomposition process at
+high temperatures;
+
+Considering the systematic nature of most occurrences
+above, it would be impossible to correct them using repeat
+measurements.
+Some other uncertainties are intermittent:
+Sheindlin et al. 17 mention baseline drift as one possibility;
+Šrámková and Log 18 considered oscillations in the mains
+current (‘hum’) and a shift in the baseline when perform-
+ing a Levenberg-Marquardt minimization procedure.
+Syn-
+thetic high-noise time-temperature profiles were considered
+by Carr 19 and Carr and Wood 20 to show that the standard
+half-rise time procedure is not always applicable under other-
+wise ideal experimental condition.
+To the best of authors’ knowledge, the listed experimen-
+tal uncertainties have not been studied with regard to their
+effect on the output of classical laser flash analysis. Like-
+wise, neither does the ASTM standard set any acceptance
+criteria for the quality of the instrumental time-temperature
+profiles, which prevents effective quality control for com-
+mercially built instruments. Depending on the design solu-
+tions chosen by the manufacturer, the output signal may be
+of lower quality than required for reliable operation of the
+conventional data treatment procedures. The goal of this pa-
+per is to present a universal and easily verifiable method of
+data analysis that would: (a) not use cumbersome analytic
+expressions; (b) be independent of general-purpose commer-
+cially distributed mathematical packages and software; (c) be
+highly resilient to the experimental uncertainties of the clas-
+sical laser flash analysis. This method would then be used
+to process data from a laser flash experiment in a commer-
+cial instrument using an external standard. Ultimately, the re-
+sults would be benchmarked with the industrial software to
+asses its capabilities. The algorithm and procedures outlined
+in this work are part of the PULsE (Processing Unit for Laser
+
+Flash Experiments) software, which is an open-source, cross-
+platform Java code freely distributed under the Apache 2.0
+license21.
+
+II.
+GENERAL REMARKS ON EXPERIMENTAL DATA
+TREATMENT
+
+The computational framework described in this paper im-
+plements finite-difference schemes for solving a heat transfer
+problem, rather than relying on existing semi-analytical solu-
+tions by previous authors. Some of the remarks below may be
+specific to the way this solution is obtained.
+
+A.
+Calculation of the objective function
+
+In the reverse heat conduction problem, two enumerated
+collections are compared against each other: the experimental
+data sequence ∆T(�ti), i = 0,1,...,nexp, where nexp ≃ 1,000 −
+5,000 is the number of experimental data points; and the cal-
+culated dataset (containing only unique elements) represent-
+ing the heating curve ∆�T(tj), j = 0,1,...,ns, where an arbi-
+trary ns ≃ 100 is chosen. Here we assume fixed time sampling
+for the latter, so that ∃ ∆ts ∈ R, ∀ j = 0,...,ns −1 : t j+1 − ji =
+∆ts. Note that generally �ti ̸= t j, i.e. the time values for the
+experimental and calculated data points may not overlap.
+To define a computational algorithm for the objective
+function, it is thus necessary to implement an interpolation
+procedure.
+Instead of interpolating over the experimental
+dataset ∆T(�ti), which is guaranteed to produce interpolation
+errors (especially in the case of noisy detector data), the idea
+is to interpolate over the solution values ∆�T(tj) (Fig. 1). With
+linear interpolation using nearest adjacent points, the value of
+the solution at time �ti, i = 1,...,ns −1 can be calculated as:
+
+∆�T(�ti) = tk+1 −�ti
+
+∆ts
+×∆�T(tk)+
+
+�ti −tk
+
+∆ts
+×∆�T(tk+1), k =
+� �ti
+
+∆ts
+
+�
+,
+(1)
+
+where square brackets denote the floor function, i.e.
+the
+greatest integer less than or equal to the argument, and k ∈
+[0,ns] ∩ Z is the index of the greatest element tk in the calcu-
+lated dataset such that tk ≤ �ti.
+The objective function f can then be calculated as the sum
+of squared residuals (SSR) as follows:
+
+f =
+b
+∑
+i=a
+
+�
+∆T(�ti)−∆�T(�ti)
+�2
+,
+(2)
+
+where a,b ∈ [0,nexp]∩Z are the lower and higher sum limits,
+respectively, defining the time domain for calculation.
+
+B.
+Conversion of the detector voltage to relative heating
+
+The voltage U(t) transmitted from the infrared detector
+to the data acquisition module determines the spectral radi-
+
+
+3
+
+∆T(�ti)
+
+∆�T(tk)
+
+∆�T(tk+1)
+
+∆�T(tk+2)
+
+∆�T(�ti)
+
+Time, t
+
+Temperature rise, ∆T
+
+Experimental data
+Model solution
+Interpolated points
+
+FIG. 1. An illustration of calculating the sum of squared residu-
+als (SSR) using data from two enumerated collections of different
+size: the experimental data points ∆T(�ti) (i = 0,1,...,nexp) and the
+model solution ∆�T(tj) ( j = 0,1,...,ns). Eq. 1 is used to calculate the
+interpolated value ∆�T(�ti) at tk < �t < tk+1 using the nearest points of
+the model solution ∆�T(tk) and ∆�T(tk+1) and the experimental time�ti.
+
+ance [W×sr−1 ×m−3], which is used to estimate the temper-
+ature rise of the sample’s rear surface. Alternatively, the volt-
+age U(t) from a thermocouple generated due to the Seebeck
+effect is converted to temperature via a characteristic function
+of the thermocouple. Whatever the tool used to measure the
+temperature, hereinafter it is referred to as the detector, and
+the voltage it measures is referred to as the signal.
+
+A linear relation between the signal U(t) and the heat-
+ing ∆T(t) = T(t)−T0, where T0 is the baseline test tempera-
+ture measured by a separate detector, is assumed: ∆T(t)/C2 =
+U(t) −C1, where the constant C1 can be determined as the
+baseline level Umin and C2 – as the maximum relative heat-
+ing ∆Tmax ∝ ∆Umax (Fig. 2). To calculate the absolute tem-
+perature in degrees, a further conversion is necessary, e.g. for
+infrared detectors using Planck’s equation and the emissiv-
+ity ε(T) of the sample. When a nonlinear dependence of tem-
+perature on the spectral radiance may be neglected, e.g. at
+high temperatures for infrared detectors (Baba and Ono 16) or
+when using a thermocouple, thermal diffusivity may be cal-
+culated without introducing additional error utilizing just the
+heating values measured in arbitrary units.
+
+It is important though to correctly estimate the baseline
+signal Ub(t) and the maximum change of voltage ∆Umax, as-
+sumed to be proportional to the maximum heating ∆Tmax. This
+becomes challenging for some experimental assemblies with
+noisy (see Fig. 2) and/or drifting signal (e.g. due to unstable
+detector current or imperfect temperature regulation). A linear
+baseline ∆Tb(t) = ∆Tlin+klin·t is usually enough to accommo-
+date the drift, with ∆Tlin and klin determined using a simple lin-
+ear regression for the detector signal acquired at �ti < �ti0 := 0,
+
+i.e. before the laser pulse:
+
+∆Tlin = ⟨T⟩−klin ·⟨t⟩,
+(3a)
+
+klin =
+
+i0−1
+∑
+i=0
+
+��ti −⟨t⟩
+�
+·
+�
+Tb(�ti)−⟨T⟩
+�
+
+��ti −⟨t⟩
+�2
+(3b)
+
+⟨T⟩ = 1
+
+i0
+
+i0−1
+∑
+i=0
+Tb(�ti), ⟨t⟩ = 1
+
+i0
+
+i0−1
+∑
+i=0
+�ti.
+(3c)
+
+As seen from Fig. 2, a constant-baseline approach (klin = 0)
+is sometimes preferred when fitting to a limited data sample
+with no obvious drift, as the random spread of data may be
+too large for an accurate estimation of the slope.
+
+The outliers in Fig. 2 present measurement artefacts and
+prevent a simple estimation of the maximum heating ∆Tmax
+based on the absolute maximum value of the measured signal.
+An outlier-robust procedure based on data binning and coars-
+ening (i.e., calculation of a running average of large chunks
+of data) has been implemented. Fig. 2 shows how effective
+this procedure is in terms of finding the peak in the probabil-
+ity density of the signal distribution with negligible drift of
+the measured signal, compared to simply finding the absolute
+maximum of the signal.
+
+III.
+HEAT TRANSFER MODEL FOR THE LASER FLASH
+EXPERIMENT
+
+The idealized heat transfer model introduced by Parker
+et al. 1 refers to the adiabatic heating of the sample material
+by an infinitesimal laser pulse. The two latter conditions are
+rarely observed in practice, and hence more sophisticated heat
+conduction models had been proposed by Cowan 22, Cape and
+Lehman 23, Clark III and Taylor 24, and Thermitus and Lau-
+rent 25 who focused on heat losses (linearized with respect
+to the temperature rise due to it being small), while Larson
+and Koyama 26, Azumi and Takahashi 27, and Lechner and
+Hahne 28 considered primarily the effect of finite pulse widths.
+In this section, a dimensionless heat conduction model is for-
+mulated and justified based on the previous analysis.
+
+When the laser spot uniformly covers the sample’s front
+surface and the sample diameter is much larger than its thick-
+ness (l ≪ d, but typically l/d ≈ 0.1−0.2), the heat transfer is
+effectively one-dimensional. Assuming that heating is small,
+so that the thermal conductivity does not change across the
+sample’s x coordinate (λ ̸= λ(x)) and ∆T/T0 ≪ 1, the bound-
+ary problem may be linearized. Finally, it becomes possible to
+convert the heat equation and the boundary conditions to a di-
+mensionless form by introducing the Biot (Bi) number, which
+determines the heat transfer resistance at sample’s surface, and
+the Fourier (Fo) number, which characterizes transient heat
+conduction, as dimensionless quantities, thus allowing to sim-
+plify the solution by reducing the number of variables.
+
+
+4
+
+−50
+0
+50
+−10
+
+−5
+
+0
+
+∆Umax
+
+Time, t (ms)
+
+Detector signal (mV)
+
+−10
+−5
+0
+5
+
+0
+
+0.2
+
+0.4
+
+0.6
+Up
+
+Umin
+
+Probability density
+
+Experimental data
+Constant baseline
+Linear baseline
+Averaged maximum
+Running average
+
+FIG. 2. An example pre-processing of the experimental data (PbSe detector), showing: the baseline calculated by least-squares fitting to
+experimental data at t < 0; a running average curve generated by coarsening of experimental data using a default reduction factor of 32 and
+thus ensuring relative robustness to outliers; and the maximum Umax of the running average, which roughly corresponds to the Up peak in the
+probability density function.
+
+A.
+Boundary problem
+
+A one-dimensional heat conduction problem for the laser
+flash experiment must include:
+
+(i) a heat source term QP(t)/(πd2/4), where Q is the heat
+current, P(t) ∼ 1/tlas is the normalized time distribution
+of the laser pulse, and d is the sample diameter;
+
+(ii) the heat sink terms at both the front x = 0 and the
+rear x = l surfaces due to the radiant heat flux q12 =
+S1ε1(T)σ0T 4(x,t) − S2ε2(T)σ0T 4
+0 from the sample’s
+non-concave surface S1 to the surrounding surface S2
+of the furnace interior (assuming the latter is kept at a
+stable temperature T0), where ε1 and ε2 are the emis-
+sivities of the sample and the surrounding ‘shell’ of an
+arbitrary shape.
+
+In addition, heat flow is assumed to be axial, meaning
+radial heat fluxes of any kind are neglected.
+Under cer-
+tain assumptions (Avduevskii et al. 29), the heat flux q12 ≈
+εσ0
+�
+T 4(x,t)−T 4
+0
+�
+H12, where H12 is the mutual radiant sur-
+
+face and ε =
+�
+ε−1
+1
++(S1/S2)(ε−1
+2
+−1)
+�−1 is the reduced
+emissivity. Considering that S2 ≫ S1, the latter expression re-
+duces to simply ε ≃ ε1, so that the boundary problem is writ-
+ten as:
+
+Cpρ ∂T
+
+∂t = ∂
+
+∂x
+
+�
+λ ∂T
+
+∂x
+
+�
+,
+0 < x < l,
+t > 0,
+(4a)
+
+λ ∂T
+
+∂x
+
+����
+x=0
+= − 4Q
+
+πd2 P(t)+ε1(T0)σ0
+�
+T 4(0,t)−T 4
+0
+�
+,
+(4b)
+
+λ
+∂T
+
+∂(−x)
+
+����
+x=l
+= ε1(T0)σ0
+�
+T 4(l,t)−T 4
+0
+�
+,
+(4c)
+
+T(0,x) = T0,
+(4d)
+
+where Cp is the specific heat at constant pressure and ρ is the
+material density.
+The dimensionless quantities are then introduced as fol-
+lows:
+
+Fo := at/l2,
+(5a)
+
+Bi := 4σ0ε1T 3
+0 l/λ,
+(5b)
+θ := (T −T0)/δTm,
+(5c)
+
+δTm := 4Q/
+�
+Cρπd2l
+�
+,
+(5d)
+
+y := x/l.
+(5e)
+
+Assuming that λ ̸= λ(x) and (T −T0)/T0 ≪ 1, linearization
+of Eqs. (4) results in an alternative boundary problem:
+
+∂θ
+∂Fo = ∂ 2θ
+
+∂y2 ,
+0 < y < 1,
+Fo > 0,
+(6a)
+
+∂θ
+∂y
+
+����
+y=0
+= Bi·θ −Φ(Fo),
+(6b)
+
+∂θ
+
+∂(−y)
+
+����
+y=1
+= Bi·θ,
+(6c)
+
+θ(0,y) = 0.
+(6d)
+
+B.
+Laser pulse function
+
+The laser pulse functions can be changed programmatically
+during the experiment and can take various forms, including
+the following as example (a rectangular, a triangular, and a
+Gaussian pulse functions – previously considered by Baranov
+
+
+5
+
+et al. 30):
+
+P1(t) =
+�
+t−1
+las ,
+t ≤ tlas
+0,
+t > tlas ,
+(7a)
+
+P2(t) = 2
+
+tlas
+·
+�
+2t/tlas,
+t ≤ tlas/2
+2(t −tlas)/tlas,
+tlas/2 < t < tlas ,
+(7b)
+
+P3(t) =
+5
+√πtlas
+·exp
+�
+−25[t/tlas −0.5]2�
+(7c)
+
+After changing the variables to dimensionless numbers and
+introducing a computationally efficient sign function sgn(x),
+a quantity Φ(Fo) := P(Fo)·l2/a may be defined, and Eqs. (7)
+can then be re-written:
+
+Φ1(Fo) = 0.5/Fo×[1+sgn(Folas −Fo)]
+(8a)
+
+Φ2(Fo) =
+1
+
+Folas
+×[1+sgn(Folas −Fo)]×
+
+×[1−|Folas −2Fo|/Folas]
+(8b)
+
+Φ3(Fo) = 5/
+�√πFolas
+�
+×
+�
+−25[Fo/Folas −0.5]2�
+(8c)
+
+C.
+Spatial and temporal domains
+
+The spatial domain of Eqs. (6) is simply y = [0,1]; the tem-
+poral domain depends on the actual data acquisition time tmax,
+which is chosen by an algorithm implemented in the instru-
+ment software or – when the latter fails – by the operator
+manually. A bad choice of tmax can not only result in ad-
+ditional computational costs, but may also lead to a biased
+estimate of the thermal properties if the accumulated exper-
+imental data points are too few, or if the statistics for the
+temperature rise region of the experimental T(�t) profile are
+under-represented. In addition, the signal registered at the
+sample’s rear surface often shows a brief excursion during
+the pulse 0 ≤ t ≤ tlas – an event which cannot be described
+by a simple model such as that introduced in Sect. III A.
+These two aspects can be partially addressed by implement-
+ing a data truncation procedure, which would help in estab-
+lishing a temporal domain suitable for solving the reverse
+heat conduction problem. The θ(y = 1,Fo) solution of Eqs. 6
+and the subsequent conversion of that function to a �T(t j)
+dataset (see Sect. II A) need to be defined at a temporal do-
+main 0 ≤ t ≤ �tmax, where �tmax ensures adequately represented
+statistics. The �tmax value may be chosen based on the char-
+acteristic thermal transfer time �tmax ≃ l2/a (this corresponds
+to Fo = 1 in Eq. (5a)), which in turn can be defined in terms of
+the half-rise time t1/2 = 1.370l2/(π2a) (Heckman 31) first in-
+troduced by Parker et al. 1. This yields �tmax ≃ π2/1.370t1/2 ≈
+7.2t1/2. Note that the radial heat fluxes have a different char-
+acteristic time d2/a defined by the sample diameter d. Since
+typically d/l ≈ 0.1 − 0.2, the radiative heat transfer may oc-
+cur at the same timescale as the radial temperature equili-
+bration. Therefore, estimating the heat losses from a com-
+parison between the experimental and the calculated heating
+curve at times longer than �tmax presents an ill-posed prob-
+lem without explicitly accounting for the radial heat fluxes.
+
+Even though the laser beam might not cover the sample com-
+pletely, these difficulties can be avoided, and the effect of
+potential signal drift minimized, if the measurement time
+is kept as short as practically possible – which is precisely
+what the above-described truncation procedure does automat-
+ically. Thus, the rectangular domain of Eqs. (4) is defined as:
+D =
+�
+0 ≤ x ≤ l, 0 ≤ t ≤ �tmax
+�
+, and the domain of Eqs. (6) –
+as D = (0 ≤ y ≤ 1, 0 ≤ Fo ≤ 1).
+
+IV.
+FINITE-DIFFERENCE SCHEMES FOR THE HEAT
+CONDUCTION PROBLEM
+
+The (semi)analytical solutions considered in22–28 with cor-
+rections by Josell, Warren, and Cezairliyan 32 and Blumm
+and Opfermann 33 are the ones referenced in the commer-
+cial software for the laser flash instruments.
+Some new
+corrections have only recently been proposed by Philipp
+et al. 34. Instead of pursuing the classical approach, it seems
+more sensible to propose a purely numerical solution. Some
+steps in this direction have already been taken previously
+by Baranov et al. 30 (with the use of MATLAB) and Pavlov
+et al. 7 (FlexPDE). This section describes how to implement
+finite-difference schemes for the solution of boundary prob-
+lem described in Sect. III A without having to use external
+software packages.
+The domain D (Sect. III C) is divided into a uniform grid by
+introducing the coordinate step size h = 1/(N − 1), where N
+is the number of individual coordinate points on the grid,
+and the discrete time step τ = τFh2, τF ∈ R.
+The grid is
+used to discretize θ(y,Fo), which becomes θ(ξj,�
+Fom) = θ m
+j ,
+j = 0,...,N − 1, m = 0,...,m0, called the grid function. This
+section shows different ways to calculate θ m
+j , which can later
+be converted to �T(tj) (see Sect. II B).
+
+A.
+Application to the boundary problem (Eq. (6))
+
+If σ ∈ [0,1] ∩ R,
+the finite-difference representation
+of Eq. (6a) on a six-point pattern may be written as35:
+
+θ m+1
+j
+−θ m
+j
+
+τ
+= Λ
+�
+σθ m+1
+j
++(1−σ)θ m
+j
+�
+,
+
+1 ≤ j < N −1, 0 ≤ m ≤ m0.
+(9)
+
+Three special cases of Eq. (9) will be considered: (a) the
+fully implicit scheme (σ = 1), (b) the forward-time central-s-
+pace (FTCS) scheme (σ = 0), and (c) the Crank-Nicolson
+scheme (σ = 0.5). When σ = 0, Eqs. 9 can be explicitly
+solved against θ m+1
+j
+. The solution is straightforward and will
+be skipped here. If σ ̸= 0, a sweep algorithm35 may be used
+to solve the tridiagonal set of linear equations (9):
+
+ajθ m+1
+j−1 −bjθ m+1
+j
++c jθ m+1
+j+1 = Fj,
+(10)
+
+where aj = cj = 1/h2. For the fully implicit scheme: bj =
+1/τ + 2/h2, Fj = −θ m
+j /τ. For the Crank-Nicolson scheme:
+bj = 2/τ +2/h2, Fj = −2θ m
+j /τ −Λθ m
+j .
+
+
+6
+
+In the sweep algorithm, the following recurrent expression
+is introduced:
+
+θj = α j+1θj+1 +β j+1.
+(11)
+
+Let Lφ(ξα) = (φα+1 −φα−1)/2h. The order of approxi-
+mation for Eq. (9) is O(τ + h2) for either σ = 0 or σ = 1
+and O(τ2 + h2) for e.g. σ = 0.5. On the other hand, the fol-
+lowing finite-difference representation of the boundary con-
+ditions (see Eqs. (6b) and (6c)) has an order of approxima-
+tion O(h):
+
+Lθ0 = Bi·θ0 −Ξ,
+(12a)
+LθN−1 = −Bi·θN−1,
+(12b)
+
+where Ξ = Ξm+1 is the discretized pulse function defined by
+substituting Folas, e.g. in Eqs. (8), with the discrete pulse
+
+width �
+Folas =
+�
+Folas
+�
+{l2a−1}
+τ
+
+�
+· τ (square brackets denote the
+
+floor function). Note this effectively changes the magnitude
+of the heat source term in Eq. (12a) by ∼ O(τ), which only
+slightly affects the maximum heating (see Eq. (5d)); this is
+compensated automatically when re-scaling the solution to
+match the experimental heating ∆Tmax value (see Sect. II B).
+Additionally, the numerical solution described here is valid for
+any type of the Ξ(�
+Fom+1) function, which can be given either
+in analytic (e.g. Eqs. (8)) or tabular form (i.e., directly mea-
+sured using a laser power sensor) – without having to select
+a fitting function for the pulse shape (e.g. as done by Blumm
+and Opfermann 33).
+To obtain the same order of approximation for the bound-
+ary conditions as for Eq. (9), a Taylor expansion in the h-
+vicinity of ξ = ξ0 and ξ = ξN−1 may be used to define virtual
+nodes ξ = ξ−1 and ξ = ξN:
+
+θ−1 ≃ θ0 −Lθ0 ·h+Λθ0 ·h2/2,
+(13a)
+
+θN ≃ θN−1 +LθN−1 ·h+ΛθN−1 ·h2/2.
+(13b)
+
+Noticing
+that
+Λθ m+1
+j
+=
+(θ m+1
+j
+− θ m
+j )/τ · σ −
+Λθ m
+j (1−σ)/σ
+and
+combining
+Eqs.
+(12)–(13)
+yields
+the α1 and β 1 values for Eq. (11) as well as the grid function
+value at ξN−1.
+
+(i) Fully implicit scheme (σ = 1):
+
+α1 =
+2τ
+
+h2 +2τ(1+hBi),
+(14a)
+
+β1 = h2θ m
+0 +2hτΞm+1
+
+h2 +2τ(1+hBi) ,
+(14b)
+
+θ m+1
+N−1 =
+h2θ m
+N−1 +2τβ N−1
+
+h2 +2hτBi+2τ(1−αN−1)
+(14c)
+
+(ii) Crank-Nicolson scheme (σ = 0.5):
+
+α1 =
+τ
+
+h2 +τ(1+hBi),
+(15a)
+
+β1 = (Ξm+1 +Ξm)−(θ m
+0 −θ m
+1 )/h+(h/τ −Bi)θ m
+0
+
+h/τ +1/h+Bi
+, (15b)
+
+θ m+1
+N−1 = −hθ m
+N−1(τBi−h)−τβ N−1 +τ(θ m
+N−1 −θ m
+N−2)
+
+h2 +hτBi+τ (1−αN−1)
+.
+
+(15c)
+
+Eqs. (14c) and (15c) are used to initiate the calculation
+of θj, j = N − 2,...,0 with the recurrent expression given by
+Eq. (11) where the α j and β j are calculated using standard
+expressions35 – in addition to the α1 and β 1 values given
+by Eqs. (14a), (14b), (15a), and (15b). When the grid func-
+tion θ m+1
+j
+has been fully calculated for j = 0,...,N − 1, the
+above-described process repeats at the next time step m +
+2, m + 3, etc.
+– until just above the time limit mmax =
+Fomax/τ (so that the calculated solution is always defined on
+a slightly wider temporal domain than the experimental data
+– this helps the correct operation of the interpolation proce-
+dure as described in Sect. II A). Further, the number of com-
+puted θ m data points is reduced to a pre-set value ns with equal
+spacing between points; hence, only every ⌊Fomax/(nsτ)⌋
+point form up the calculated heating curve stored in mem-
+ory (square brackets denote the floor function). Finally, the
+calculated curve is scaled by a factor of Tmax/max(θ m
+N ) (see
+Sect. II B).
+
+B.
+Cross-verification
+
+To verify whether the finite-difference scheme (Sect. IV A)
+and the boundary problem (Sect. III A) have been composed
+correctly, the numerical solution θ(y = 1,Fo) calculated us-
+ing the described procedure is compared to the previously
+published analytical solutions by Parker et al. 1, Cape and
+Lehman 23 and Josell, Warren, and Cezairliyan 32 for two ex-
+treme cases. In both cases the heating of a thin, wide cylinder
+by an infinitesimal laser pulse is considered. The sample is
+either (a) thermally-insulated (Bi = 0) or (b) cooled down by
+the radiative heat transfer with an efficiency Bi = 0.5. The
+results of this comparison are shown in Figs. 3 and 4.
+In
+each
+case,
+cross-verification
+of
+the
+different
+schemes (σ = 0.0, σ = 0.5, σ = 1.0) was performed.
+The probability density of residuals ∆�T − ∆�TParker in Fig. 3
+has been plotted for different grid parameters N and τF. The
+highest accuracy for a very short laser pulse is achieved with
+the fully implicit scheme (σ = 1.0) on a dense (N = 80,
+τF = 0.05) grid, where the maximum deviation from the
+analytical solution (Fig. 3) is less than 0.01%, and with the
+Crank-Nicolson scheme (σ = 0.5) on a loose grid (N = 30,
+τF = 6.25 × 10−3).
+Overall, both σ = 0.0 and σ = 1.0
+schemes with an increased order of approximation O(τ +h2)
+show good numeric stability and high accuracy down
+to N = 15 and even lower – compared to a conditionally-
+stable FTCS scheme with an O(h) approximation of the
+
+
+7
+
+0
+0.2
+0.4
+0.6
+0.8
+1
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Time, Fo
+
+Heating, ∆�T
+
+σ = 0.0, N = 250, τF ≈ 0.5
+σ = 0.5, N = 80, τF ≈ 0.05
+σ = 1.0, N = 80, τF ≈ 0.05
+
+Parker et al. 1
+
+−5
+0
+5
+
+σ = 0.0, N = 250
+
+−1
+0
+1
+
+σ = 0.5, N = 80
+
+−0.1
+0
+0.1
+
+σ = 1.0, N = 80
+
+−5
+0
+5
+
+σ = 0.0, N = 80
+
+−1
+0
+1
+
+Deviation from analytical solution,
+�
+∆�T −∆�TParker
+�
+×103
+
+σ = 0.5, N = 30
+
+−1
+0
+1
+
+σ = 1.0, N = 30
+
+FIG. 3. Comparison of the finite-difference solution of the bound-
+ary problem in Eq. (6) using various different schemes (FTCS, fully
+implicit and Crank-Nicolson) with the analytic solution by Parker
+et al. 1, which describes the laser heating of a thermally-insulated
+wide, thin sample by an infinitely short laser pulse (Bi = 0.0). For
+the numeric solution, the pulse shape has been chosen as rectangular
+with the pulse duration Folas ≈ 1.41×10−5. The deviation from the
+analytical solution is shown using probability density histograms of
+the residuals, plotted for different grid parameters.
+
+boundary conditions. For the second comparison (Bi = 0.5)
+a very close agreement to the corrected two-dimensional
+Cape-Lehman model (Josell, Warren, and Cezairliyan 32)
+is shown in Fig. 4 (a).
+Fig. 4 (b) shows the solutions for
+different pulse widths Folas.
+
+V.
+REVERSE-ENGINEERING OF THE
+TIME-TEMPERATURE PROFILES TO INFER THERMAL
+PROPERTIES
+
+Thermal properties in a laser flash experiment are deter-
+mined from the minimum of the objective function f(S) cal-
+culated using Eq. (2) on a curve-to-curve basis.
+The ar-
+
+0
+0.2
+0.4
+0.6
+0.8
+1
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Heating, ∆�T
+
+(a)
+
+σ = 0.5, τF ≈ 0.25
+σ = 1.0, τF ≈ 0.25
+
+Ref.32 (Y = 0.5)
+
+0
+0.2
+0.4
+0.6
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Time, Fo
+
+Heating, ∆�T
+
+(b)
+
+Folas ≈ 0.0004
+Folas ≈ 0.02
+Folas ≈ 0.07
+
+FIG. 4. The effect of (a) heat losses (l/d = 0.1) and (b) finite pulse
+width of a rectangular wave (σ = 1.0, N = 30). Comparison of the
+finite-difference solution of the boundary problem in Eq. (6) using
+various different schemes (FTCS, fully implicit and Crank-Nicolson)
+with the model by Cape and Lehman 23 corrected by Josell, Warren,
+and Cezairliyan 32. The latter model describes the two-dimensional
+laser heating of a wide, thin disc by an infinitely short laser pulse uni-
+formly covering its front surface; the heating arising from the pulse
+is followed by cooling through thermal radiation from the front and
+rear surfaces only characterized by an efficiency factor Y = 0.5 (note
+that Y = Bi in current notations).
+For the numeric solution, the
+pulse shape has been chosen as rectangular with the pulse dura-
+tion Folas ≈ 4×10−4.
+
+gument S is defined as a variable-size search vector con-
+structed from the values of material-dependant thermal prop-
+erties (a/l2, Bi and ∆Tmax) plus from the parameters klin, Tlin,
+and t0, where t0 is the time shift between the start of data ac-
+quisition and the laser pulse. In cases when noise is large and
+heat losses are expected to be negligible, to avoid situations
+where Bi may turn negative, it may be explicitly excluded
+from the search. Thus, the dimension of S may vary from
+two (a/l2 and Tmax) to six in the current implementation.
+
+
+8
+
+A.
+Nonlinear optimization algorithms
+
+To find S, a nonlinear optimization algorithm is used to de-
+termine the minimum direction Smin. Once it is found, a linear
+search determines the optimal magnitude of the step in the S
+direction. These actions are repeated iteratively. If proper al-
+gorithms are chosen, with each iteration the objective func-
+tion f(S) is brought closer to the global minimum. If the
+model (given by Eqs. 6) is adequate, an unbiased estimate of
+thermal properties is produced at the global minimum of f(S).
+
+1.
+Quasi-Newton method with approximated Hessian
+
+The calculation of the objective function gradient takes one
+of the central parts in the direction search routine. If ∆Si is a
+small variation of the i-th component of the search vector, the
+associated component of the gradient is ∆ f(Si + ∆Si)∆Si, or
+more precisely (Gill, Murray, and Wright 36):
+
+gi = f(Si +∆Si)− f(Si −∆Si)
+
+2∆Si
+,
+(16)
+
+where a central-difference approximation is used; f(Si +∆Si)
+is the value of the objective function calculated at a new search
+vector S, all components of which are identical to S except for
+the i-th component, which is defined as Si = Si +∆Si. Eq. (16)
+introduces a calculation error ∼ O(∆Si).
+Consider the following Taylor expansion to the second or-
+der of f(xk) in the γkpk vicinity of xk = Sk: f(Sk + γkpk) ≃
+f(Sk) + γkgT
+k pk + pT
+k Gkpk. The minimum of this quadratic
+form then corresponds to the Newtonian condition: pk =
+−G−1
+k gk. If the Hessian matrix Gk is approximated by Hk,
+the direction to minimum is then defined as:
+
+pk ≈ −H−1
+k gk,
+(17)
+
+where Hk is a positive definite matrix containing the curvature
+information for the objective function.
+A
+Broyden–Fletcher–Goldfarb–Shanno
+(BFGS)
+(Gill,
+Murray, and Wright 36) algorithm is used to calculate Hk+1
+at the next iteration k + 1 using the gradient value gk and the
+increment uk = gk+1 −gk:
+
+Hk+1 = Hk +
+1
+
+gT
+k pk
+gkgT
+k +
+1
+
+γkuT
+k pk
+ukuT
+k ,
+(18a)
+
+H0 = I,
+(18b)
+
+where I is a r × r identity matrix, r is the dimension of the
+search vector. Thus, the direction to the minimum at the first
+iteration coincides with the inverted gradient, same as in the
+gradient descent algorithm, which searches for a stationary
+point of f(S). The inverse of the approximated Hessian ma-
+trix Hk is computed using a recursive procedure based on the
+Laplace expansion.
+Note Eq. (18) is extremely sensitive36 to the selection of γk,
+which is chosen via a linear search algorithm.
+If the line
+search fails even by a small margin, H−1
+k+1 can end up being
+non-positive definite, which will send the optimizer going up-
+hill instead of downhill.
+
+2.
+Inexact stochastic linear search based on the Wolfe
+conditions
+
+After the vector pk is calculated, the search vector Sk+1
+at the next iteration may be expressed as Sk+1 = Sk + γkpk.
+If γk ∈ [0,γmax], a linear search may be applied to calculate γk,
+which minimizes the objective function f(Sk +γkpk). In prac-
+tice, it is convenient to choose
+
+γmax = min
+pi
+k̸=0
+Li/pi
+k,
+(19)
+
+where Li is a safety margin pre-set for Si prior to calculation.
+The Wolfe conditions are used to asses whether Sk+1 is
+likely to be the minimum point. Here the strong Wolfe condi-
+tions are considered (Wolfe 37, Wolfe 38):
+
+f(Sk+1)−(Sk) ≤ c1γkpT
+k gk,
+(20a)
+
+|pT
+k gk+1| ≤ c2|pT
+k gk|,
+(20b)
+
+where c1 = 0.05, c2 = 0.8.
+The computational procedure utilizing inequalities (20)
+starts by generating a random point αk = z internal to the [a,b]
+segment.
+The objective function is then calculated at this
+point, and if inequality (20a) is not satisfied, the segment is
+then reduced to [a,z]. Otherwise the second condition (in-
+equality (20b)) is evaluated. If the latter is satisfied, then z
+is considered to be the minimum point, otherwise the compu-
+tational domain is reduced to [z,b]. The procedure continues
+while the segment length is greater than Elin.
+The algorithm described above works particularly well with
+the quasi-Newton direction solver.
+
+B.
+Initial conditions and stopping criteria
+
+An initial value S0 is required and allows to reduce the
+computational costs if chosen reasonably. Fortunately, this
+is easy to do once the half-rise time (Sect. II B) has been es-
+timated from the experimental data. The initial thermal diffu-
+sivity value is determined using the classic solution by Parker
+et al. 1 with the corrected coefficient reported by Heckman 31,
+Josell, Warren, and Cezairliyan 32 and Carr 19: a0 = 1.370 ×
+l2/π2t1/2. The maximum heating and initial baseline values
+are determined as described in Sect. II B, the initial value of
+the Biot number is set to zero.
+After starting the search, a fixed-size buffer (the default
+is eight entries) is filled successively with Sk values at each
+new iteration k; this is complemented by the SSR value (see
+Eq. (2) for a definition). When the buffer is full, the stan-
+dard deviation of those values δSω is calculated for each ω-
+th component plus for the SSR. The relative error, calculated
+as δSω/⟨Sω⟩ is then compared to a constant Egen. If ∀ω ∈
+Z : δSω/⟨Sω⟩ ≤ Egen, the search completes normally. Other-
+wise, the buffer is cleared and the search continues until the
+criterion is finally satisfied or if the iteration limit is reached.
+
+
+9
+
+C.
+Example applications and convergence tests
+
+A few previously measured time-temperature profiles were
+selected to represent a gradual deviation from the perfect ex-
+perimental conditions. These deviations are introduced by dif-
+ferent experimental factors, which affect either the perceived
+temperature rise or the actual heat transfer in the sample. The
+pre-selected data is then reverse-engineered following the pro-
+cedure described above to produce an optimal Sk. The perfor-
+mance of this procedure under real-world conditions is judged
+and the convergence is tested.
+The raw data was collected using two experimental instal-
+lations:
+
+(a) the Kvant laser flash analyzer designed at the Moscow
+Engineering Physics Institute equipped with two tem-
+perature detection capabilities:
+(i) a thermocou-
+ple (pre-welded onto the rear surface of the sample
+coated with platinum black prior to each experiment)
+connected to a scalable amplifier with automatic con-
+stant-voltage subtraction providing rapid detection of
+heating with an error of less than 2.5 × 10−3 K and
+(ii) an in-house designed InGaAs pyrometer (field of
+view dFOV = 6 mm). A combination of a rotary pump
+and a diffusion pump ensure high vacuum (0.01 Pa
+or 10−4 mbar).
+An additional capability of con-
+trolling the oxygen partial pressure is provided by a
+solid-electrolyte galvanic cell; the oxygen partial pres-
+sure can be changed on-the-fly. A ruby laser (wave-
+length 694.3 nm) delivers 1.5 ms fixed-width pulses
+with an energy of 5−7 J per pulse;
+
+(b) the Linseis Culham LFA, a prototype based on the Lin-
+seis LFA 1600 instrument, modified by the manufac-
+turer to allow integration in a research room in the Ma-
+terials Research Facility (MRF) at UKAEA for test-
+ing of mildly-radioactive samples.
+The furnace am-
+bient temperature is measured using a low-resolution
+pyrometer, while a PbSe-based Peltier-cooled detector
+is used to register the rear-surface heating of the sam-
+ple. A simple rotary pump is capable of pumping the
+chamber down to 0.1−0.01 mbar. The pulse width and
+pulse energy (up to 31 J) of the Nd:YAG laser (wave-
+length 1064 nm), as well as the the detector gain and
+aperture can be changed by the operator during the ex-
+perimental run.
+
+The materials under study were the following: a sintered sam-
+ple of nearly-stoichiometric uranium dioxide (l = 1.7118 mm,
+d = 10.061 mm) with a porosity of about 8.5 %, an MPG-6
+graphite sample (l = 2.9302 mm, d = 9.9654 mm), and two
+10-mm Zr-1%Nb E110 alloy discs cut by electrical discharge
+machining (l = 0.414 mm and l = 0.199 mm). The raw heat-
+ing curve analyzed here for the uranium dioxide pellet was re-
+ported previously (e.g., Baranov et al. 39). The measurements
+of the E110 alloy samples were conducted with the Linseis
+Culham LFA, graphite-spraying both surfaces of the samples
+prior to tests with a Graphit 33 Contact Chemie™ coating.
+Thermal properties are reverse-engineered from experi-
+mental data using the heat transfer model given by Eqs. (6).
+
+A quasi-Newton direction search (Sect. V A 1) with a linear
+stochastic search algorithm based on the Wolfe conditions
+(Sect. V A 2) was applied to reach the minimum of the objec-
+tive function (gradient resolution ∆Si/Si = 10−4, linear search
+error Elin = 10−7, overall search error Egen = 10−3).
+The
+model solution was calculated using a fully implicit (σ = 1.0)
+difference scheme (see Eq. (9)) with the default grid set-
+tings N = 30, τF = 0.25 (total number of points for the model
+curve ns = 100).
+
+1.
+Uniform low noise
+
+Fig. 5 shows a heating curve for a nearly-stoichiometric
+UO2 sample at a test temperature T0 = 1829.7 K. Due to a
+poor thermal conductivity, which is especially low at high
+temperatures, the characteristic heat conduction time is high.
+Conversely, the heat losses due to radiation are huge. The
+heat transfer model (defined by Eqs. (6)) perfectly describes
+the experimental data, except for the initial segment, which is
+perhaps attributed to the special optical properties of the ma-
+terial (Baranov et al. 39). Since the baseline was accurately
+determined by the instrument software, only the thermal dif-
+fusivity a, the Biot number Bi, and the maximum tempera-
+ture ∆Tmax were included in the search vector. Excellent con-
+vergence is obtained already after 16 iterations, with the mean
+deviation per point |∆�Ti −∆Ti| ≈ 1.5 ×10−2 K. Interestingly,
+the first iteration (same as for the gradient descent method)
+results in a shift of the search vector to a different local mini-
+mum, but the numerical procedure quickly escapes it and gets
+to the right track to the global minimum.
+
+2.
+Synchronization errors
+
+When the data acquisition from the detector is slightly
+ahead or behind the laser pulse, the standard processing pro-
+cedure will show systematic errors. This is illustrated in Fig. 6
+for an MPG-6 graphite sample (measurements with an In-
+GaAs detector / Kvant). The loss of synchronization error can
+be easily identified by looking at the distribution of residu-
+als (inset in Fig. 6). As per the central limit theorem, the latter
+should follow a Gaussian distribution if only random noise is
+present in raw data. A deviation from this rule means a source
+of systematic error needs to be accounted for; in this case,
+this is done by including the time shift t0 and the baseline in-
+tercept Tlin in the search vector. The solution to the reverse
+problem results in a near-perfect distribution of the residuals,
+meaning the systematic error has now been completely ex-
+cluded and the results are therefore more accurate.
+
+3.
+Non-uniform high noise
+
+Fig. 7 shows a heating curve for a l = 0.414 mm E110 al-
+loy sample at a test temperature T0 = 1024 K. The material
+tested with the Linseis Culham LFA is a fair thermal conduc-
+tor and the sample is sufficiently thin so that the heat wave
+
+
+10
+
+0
+0.5
+1
+1.5
+2
+2.5
+0
+
+1
+
+2
+
+3
+
+Time, t (s)
+
+Heating, ∆T (K)
+
+Experiment
+
+Model solution
+
+1
+
+1.5
+
+a (mm2s−1)
+
+0
+
+0.2
+0.4
+0.6
+0.8
+
+Bi
+
+0
+8
+16
+24
+
+2.8
+
+3
+
+3.2
+
+Iteration
+
+∆Umax (mV)
+
+0
+8
+16
+24
+
+0.1
+
+1
+10
+
+Iteration
+
+SSR ×102 (mV2)
+
+FIG. 5. An example run of the reverse-engineering procedure for an
+experimental time-temperature profile measured with an InGaAs de-
+tector (total number of data points nexp = 4,800) of a 91.5 % dense
+UO2 sample at T0 = 1829 K, showing the final heating curve corre-
+sponding to the optimized set of model parameters and the compo-
+nents of the search vector, fully converged after 24 iterations. Note
+the small plateau on the SSR plot, which is likely attributed to a local
+minimum of the objective function.
+
+reaches the rear surface of the sample relatively fast. Because
+of this, the heat losses are negligible at this and even higher
+temperature, hence they can be excluded from the search vec-
+tor. On the other hand, the baseline (initially defined at klin = 0
+as explained in Sect. II B needs to be adjusted due to the in-
+accurate baseline estimation based on the under-represented
+statistics at t < 0 from noisy data. Same as previously, full
+convergence is obtained after 24 iterations, with the average
+data spread of ≈ 0.25 mV. The search for the optimal baseline
+slope seems to be taking the longest time.
+
+4.
+Pathological data
+
+Fig. 8 shows a heating curve for a l = 0.199 mm E110 al-
+loy sample at a test temperature T0 = 1024 K measured with
+the Linseis Culham LFA. The low thickness of the sample
+leads to rapid heat conduction, with the acquisition time less
+than 5 ms. At this time the baseline intercept estimated at t < 0
+seemed to be sufficiently accurate as it was measured over
+a longer time interval than the actual heating curve. On the
+
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+
+0
+
+1
+
+2
+
+3
+
+Time, t (s)
+
+Heating, ∆T (K)
+
+Residuals, ∆�Ti −∆Ti (K)
+
+Probability density
+
+(1)
+(2)
+
+Raw data
+(1)
+(2)
+
+FIG. 6. An illustration of the systematic error caused by a loss of
+synchronization in timing of the data acquisition and the laser pulse.
+The reverse heat problem is first solved using three variables (a, Tmax,
+and Bi), giving rise to the heating curve (1), which corresponds
+to R2 = 0.99943 and a thermal diffusivity value a = a0. The distribu-
+tion of residuals in this case differs from the ideal Gaussian function
+with a zero mean. When the time shift t0 and the baseline inter-
+cept Tlin are included in the search, the heating curve (2) is obtained
+as a result, which yields a Gaussian-type distribution of residuals and
+a markedly higher R2 = 0.99993 value ((a−a0)/a0 = 9.73%).
+
+other hand, the data obviously showed either a detector sig-
+nal drift or an ambient temperature instability, which needed
+to be corrected for by adjusting the baseline slope. Addition-
+ally, the data in Fig. 8 shows anomalies with pronounced low-
+frequency, high-amplitude noise, which distorts the heating
+curve so that it becomes nearly impossible to asses its true
+shape. However, applying the nonlinear optimization proce-
+dure described in this section allows reaching a global mini-
+mum of the objective function in less than 24 iterations, with
+an average data spread of ≈ 0.45 mV.
+
+VI.
+CROSS-VALIDATION WITH EXTERNAL REFERENCE
+AND COMMERCIAL SOFTWARE
+
+An attested reference tungsten sample (l = 2.034 mm, d =
+9.88 mm) was purchased from Netzsch to conduct an indepen-
+dent validation study. The sample arrived with a printed copy
+of a reference table listing the pre-measured thermal diffusiv-
+ity values in accordance with the ASTM standard9. The sam-
+ple was then prepared for laser flash measurements follow-
+ing the manufacturer and ASTM recommendations by coating
+both sides with a thin layer of high-emissivity carbon. As pre-
+viously, a Graphit 33 Contact Chemie™ spray was used on the
+sample pre-heated at 100 °C. The coated tungsten sample had
+its thickness measured with a micrometer and then was placed
+in a graphite sample holder on top of a graphite thermal shield
+of the Linseis Culham LFA. The system was evacuated to a
+pressure below 10−1 mbar and filled with a Grade Zero argon
+
+
+11
+
+0
+5
+10
+15
+−1
+
+0
+
+1
+
+2
+
+3
+
+Time, t (ms)
+
+Heating, ∆T (mV)
+
+Experiment
+
+Model solution
+
+9
+
+9.2
+
+9.4
+
+9.6
+
+a (mm2s−1)
+
+−0.9
+
+−0.8
+
+Tlin, mV
+
+0
+8
+16
+24
+
+−8
+−6
+−4
+−2
+
+0
+
+Iteration
+
+klin
+
+0
+8
+16
+24
+
+3.2
+
+3.3
+
+3.4
+
+Iteration
+
+∆Umax (mV)
+
+0
+8
+16
+24
+
+6.4
+
+6.6
+
+6.8
+
+Iteration
+
+SSR ×10 (mV2)
+
+FIG. 7. An example run of the reverse-engineering procedure for
+an experimental time-temperature profile with a high non-uniform
+noise (likely consisting of several noise harmonics) measured with a
+PbSe detector (total number of data points nexp = 864) of a graphite-
+coated l = 0.414 mm E110 alloy sample at T0 = 1024 K, showing
+the final heating curve corresponding to the optimized set of model
+parameters and the components of the search vector, fully converged
+after 24 iterations.
+
+gas. This process was repeated three times, after which the
+gas flow was set to 8 l/h. The heating curves were measured
+in a range of temperatures T0 = 473 − 2273 K (heating and
+cooling rates were 20°C/min) with a PbSe detector. At each
+temperature, the detector parameters (gain, iris, and acquisi-
+tion time), as well as the laser power and pulse duration, were
+changed manually by the operator to deliver the best signal-
+to-noise ratio and recorded in a metadata file separately. Mea-
+surements and data processing using the “Combined model”
+and baseline subtraction were controlled from the commercial
+Linseis Aprosoft v1.06 software adapted specifically for the
+Linseis Culham LFA. Default settings were used for the tem-
+perature and detector current stability controls, and a constant
+delay of 90 s was used between shots. The resulting thermal
+
+0
+1
+2
+3
+4
+
+−8
+
+−4
+
+0
+
+4
+
+Time, t (ms)
+
+Heating, ∆T (mV)
+
+Experiment
+
+Model solution
+
+8.2
+8.4
+8.6
+8.8
+
+9
+
+a (mm2s−1)
+
+0
+
+1
+
+2
+
+klin ×102
+
+0
+8
+16
+24
+
+7.5
+
+8
+
+8.5
+
+Iteration
+
+∆Umax (mV)
+
+0
+8
+16
+24
+2
+
+2.5
+
+3
+
+3.5
+
+4
+
+Iteration
+
+SSR ×102 (mV2)
+
+FIG. 8. An example run of the reverse-engineering procedure for
+an experimental time-temperature profile with a highly-inaccurate
+temperature measurement combined with a detector signal drift mea-
+sured with a PbSe detector (total number of data points nexp = 1,050)
+of a graphite-coated l = 0.199 mm E110 alloy sample at T0 = 674 K,
+showing the final heating curve corresponding to the optimized set
+of model parameters and the components of the search vector, fully
+converged after 24 iterations.
+
+diffusivity data from the first run (to reduce the formation of
+tungsten carbide) is plotted in Fig. 9.
+The recorded detector signal exported in ASCII-format and
+metadata files prepared by the operator were used as input
+when running PULsE. Again, as previously, a quasi-Newton
+direction search (Sect. V A 1) with a linear stochastic search
+algorithm based on the Wolfe conditions (Sect. V A 2) were
+adopted for data treatment (a gradient resolution ∆Si/Si =
+10−4, a linear search error Elin = 10−7 and a global search er-
+ror Egen = 10−3). A fully implicit (σ = 1.0) difference scheme
+was used to calculate �T(t) (see Eq. (9)) with the default grid
+settings N = 30, τF = 0.25 (total number of points for the
+model curve ns = 100).
+Experimental data was processed individually for each
+curve, adjusting the time range only when such intervention
+was necessary; an example of this is shown in Fig. 10 (a), and
+a standard truncation routine was applied automatically (see
+Sect. III C).
+The default search variables were: the thermal diffusiv-
+ity a, the maximum heating ∆Umax, and the baseline inter-
+cept Tlin. A linear negative drift of the detector signal could
+
+
+12
+
+400
+800
+1,200
+1,600
+2,000
+2,400
+
+30
+
+40
+
+50
+
+60
+
+Temperature, T0 (K)
+
+Thermal diffusivity, a (mm2s−1)
+
+Netzsch reference
+
+PULsE
+
+Linseis Aprosoft
+
+FIG. 9. Cross-validation results for PULsE (manual processing of
+each individual curve) and Linseis AproSoft (batch processing) using
+the same dataset acquired with a PbSe detector / Linseis Culham LFA
+on a standard tungsten sample supplied by Netzsch, pre-coated with
+graphite. The solid line is plotted using the reference values provided
+in the documentation for the standard sample (no information on the
+error values or the type of detector is available).
+
+be observed at T0 = 473 K (see e.g. Fig. 10 (a)), which re-
+quired including the baseline slope as a search variable at that
+temperature.
+This drift likely originates from the heat ex-
+change between the sample and the sample holder34 (either
+by conduction, radiation, or both). If included in the search
+vector, the latter would have been poorly estimated due to a
+low signal-to-noise ratio (see Fig. 11 (a)). At T0 ≤ 1073 K
+and T0 > 1873 K the heat losses were indistinguishable from
+the detector noise (e.g. Fig. 10 (b)). Likewise, at medium
+temperatures (1273 ≤ T0 ≤ 1873 K) the accuracy of detec-
+tor measurements was sufficiently high and the temperature-
+dependent heat losses pronounced. All of these factors had
+to be taken into account manually when performing the fi-
+nal calculations (see supplementary material). Unfortunately,
+PULsE still requires manual input based on the recommenda-
+tions above to produce the most accurate results. Work is cur-
+rently undergoing to deliver a fully-automatic procedure for
+determining the most important independent variables based
+on a statistical data analysis.
+Finally, a residual analysis was conducted for the thermal
+diffusivity datasets from the Linseis Aprosoft and PULsE
+software (shown in Fig. 11 (b)).
+A large number of out-
+liers characteristic to the Aprosoft results (Fig. 9) was due
+to an intermittent detector failure, with the signal saturat-
+ing at either the lower (−10 mV) or higher (+10 mV) de-
+tection limits (this could have also been due to an opera-
+tor error when selecting the detector gain). PULsE, on the
+other hand, was able to reconstruct the heating curve based
+on these incomplete measurements by limiting the search
+range, hence the error distribution is localized near zero for
+PULsE data (Fig. 11). Quite importantly, even though the
+commercial software was able to deliver meaningful values
+
+in many cases, the associated error distribution had a median
+at 0.867 mm2s−1, meaning that an uncompensated systematic
+error was present. The median error for the PULsE data was
+significantly lower (−0.18 mm2s−1), suggesting a better qual-
+ity of the search procedure, a better thermal transfer model, or
+both.
+
+VII.
+CURRENT LIMITATIONS OF THE
+COMPUTATIONAL METHOD
+
+The following list of problems will be addressed in future
+publications.
+
+• A source of uncertainty associated with non-uniform
+heating has not been considered in the present study,
+but is listed in the ASTM document9. If the diame-
+ter of the laser spot dlas is smaller than the diameter of
+the sample d, radial heat fluxes will induce a change to
+the heating curve (e.g. as shown by Baba and Ono 16).
+Hence, a fully two-dimensional heat conduction prob-
+lem should be used instead;
+
+• An automated procedure for selecting an optimal num-
+ber of variables to achieve the least influence of the
+systematic experimental errors on the values of ther-
+mal properties is currently lacking; instead, some pa-
+rameters are selected manually. A better procedure will
+likely involve a constrained version of nonlinear opti-
+mization (to limit Bi ≥ 0) and a variable time domain.
+The latter will need to rely on a different statistic than
+the χ2 – a possible solution would be using a Bayeseian
+information criterion, which has proven to be effective
+for a different problem considered recently by Fulton
+and Lunev 40;
+
+• Parker et al. 1 have originally estimated that in the
+adiabatic case the maximum front surface temperature
+of the sample after a laser pulse is Tmax(x = 0) =
+38Tmax(x = l) · l/a1/2, where [l] = cm, [a] = cm2s−1.
+When heat dissipates by radiative transfer, the front-
+surface heating will be lower; however, it is clear that
+for sufficiently low test temperatures ∆T/T0 may no
+longer be considered small. The other side of the prob-
+lem consists in the intrinsic nonlinear dependence of
+heating on the spectral radiance, which is especially
+pronounced when ∆T > 30−40 K (Wang and Dinwid-
+die 41). This means that both the nonlinear detector out-
+put and the nonlinear heat losses may need to be taken
+into account for some cases, e.g. for the setup used
+by Pavlov et al. 7 and Ronchi et al. 8;
+
+• Current analysis does not cover: multi-layered heat
+transfer, a distributed heat source, and possible modi-
+fications to the original temperature detection concept.
+
+It is hoped that some of the limitations may be resolved in
+collaboration with other researchers.
+
+
+13
+
+0
+20
+40
+60
+80
+
+−15
+
+−10
+
+−5
+
+0
+
+0
+20
+40
+60
+
+0
+
+1
+
+2
+
+3
+
+Detection limit
+
+Time, t (ms)
+
+Heating, ∆T (mV)
+
+(a) T0 = 469 K
+
+Time, t (ms)
+
+Heating, ∆T (mV)
+
+(b) T0 = 973 K
+
+Linseis
+PULsE
+
+FIG. 10. Example benchmarking of PULsE on two datasets: (a) an experiment at T0 = 469 K. Due to a detector failure, the signal saturated
+at −10 mV for the first ≈ 12 ms after the laser shot. PULsE was capable of correcting for that error after manually limiting the time range to
+exclude problematic values, resulting in a value of thermal diffusivity a = 56.03 mm2s−1, while Linseis Aprosoft (a = 39.1 mm2s−1) lacks
+that capability; (b) an experiment at T0 = 973 K. Although the curves look similar, the model calculations in PULsE (a = 41.1 mm2s−1) are
+in closer agreement with the measured data compared to Linseis Aprosoft (a = 43.2 mm2s−1).
+
+600
+1,200
+1,800
+2,400
+
+0.94
+
+0.96
+
+0.98
+
+1
+
+Temperature, T0 (K)
+
+Coef. of determination, R2
+
+(a)
+
+−20
+−10
+0
+
+0
+
+0.2
+
+0.4
+
+Error, a−aref (mm2s−1)
+
+Probability density
+
+(b)
+
+Linseis
+PULsE
+
+FIG. 11. Statistical analysis of the thermal diffusivity data: (a) the coefficient of determination R2 calculated with PULsE and averaged at each
+test temperature, showing a correlation with the detector signal-to-noise ratio; (b) the probability density of error ai −ai,ref, where ai,ref are the
+Netzsch reference values, with the median values 0.867 and −0.18 mm2s−1 for thermal diffusivity data obtained with the Linseis Aprosoft
+and PULsE software respectively.
+
+VIII.
+CONCLUSIONS
+
+The following typical errors have been identified by
+analysing a large array of experimental data from two differ-
+ent instruments:
+
+(a) Partial interruption of data acquisition from the detec-
+tor, e.g. due to an electromagnetic fault or because of
+the wrong gain setting, resulting in an incomplete mea-
+surement;
+
+(b) Synchronization failure causing a time shift in the raw
+data;
+
+(c) Periodically-occurring outliers, which are suspected to
+originate from the imperfect soldering used for electric
+connections;
+
+(d) Superimposed noise harmonics caused by a combina-
+tion of factors including e.g. laser reflections due to a
+
+cracked sample holder cap, mains hum, mechanical vi-
+brations, etc.;
+
+(e) High-amplitude white noise caused by low specific de-
+tectivity of the detector or a poorly transmitting optical
+window;
+
+(f) Unstable data acquisition (e.g. due to overheating of
+electric connections to the main amplifier) causing a lin-
+ear baseline drift;
+
+(g) Conductive or radiative heat transfer between the sam-
+ple and the sample holder.
+
+A computational method based on nonlinear optimization
+and finite-difference schemes (verified against some standard
+analytical solutions) has been designed specifically to han-
+dle data processing in experiments showing the above-listed
+problems. The implementation of this method in the PULsE
+software allows to control the search vector for data process-
+ing (by including or excluding search variables) and to target
+
+
+14
+
+specific parts of the raw data – features not commonly present
+in the commercial software. A built-in tool for the residual
+analysis helps to identify systematic errors in the processed
+data.
+A cross-validation study has been conducted with data gen-
+erated using Linseis equipment at the Materials Research Fa-
+cility (UKAEA) on a Netzsch reference sample by bench-
+marking against the packaged Linseis software. Generally,
+PULsE outperforms Linseis Aprosoft due to wider data treat-
+ment capabilities and fine tuning. Future work will focus on
+extending its capabilities and improving batch-processing of
+data.
+
+ACKNOWLEDGMENTS
+
+This work was partially funded by the RCUK Energy Pro-
+gramme (Grant No.
+EP/T012250/1).
+The research used
+UKAEA’s Materials Research Facility, which has been funded
+by EPSRC and is part of the UK’s National Nuclear User Fa-
+cility and Henry Royce Institute for Advanced Materials.
+
+SUPPLEMENTARY MATERIAL
+
+See supplementary material for a complete set of experi-
+mental data and calculation results using PULsE and Linseis
+Aprosoft.
+
+DATA AVAILABILITY STATEMENT
+
+The data that supports the findings of this study are available
+within the article and its supplementary material. The soft-
+ware incorporating the algorithms described in this work is
+openly available at https://doi.org/10.5281/zenodo.3708077.
+
+1W. J. Parker, R. J. Jenkins, C. P. Butler, and G. L. Abbott, “Flash method
+of determining thermal diffusivity, heat capacity, and thermal conductivity,”
+Journal of Applied Physics 32, 1679–1684 (1961).
+
+2S. E. Gustafsson, E. Karawacki,
+and M. N. Khan, “Transient hot-strip
+method for simultaneously measuring thermal conductivity and thermal dif-
+fusivity of solids and fluids,” Journal of Physics D: Applied Physics 12,
+1411–1421 (1979).
+
+3U. Hammerschmidt and W. Sabuga, “Transient hot wire (thw) method: Un-
+certainty assessment,” International Journal of Thermophysics 21, 1255–
+1278 (2000).
+
+4D. Salmon, “Thermal conductivity of insulations using guarded hot plates,
+including recent developments and sources of reference materials,” Mea-
+surement Science and Technology 12, R89–R98 (2001).
+
+5Y. Jannot, V. Felix, and A. Degiovanni, “A centered hot plate method for
+measurement of thermal properties of thin insulating materials,” Measure-
+ment Science and Technology 21, 035106 (2010).
+
+6V. Scoarnec, J. Hameury, and B. Hay, “A new guarded hot plate designed
+for thermal-conductivity measurements at high temperature,” International
+Journal of Thermophysics 36, 540–556 (2015).
+
+7T. Pavlov, L. Vlahovic, D. Staicu, R. Konings, M. Wenman, P. V. Uffe-
+len, and R. Grimes, “A new numerical method and modified apparatus for
+the simultaneous evaluation of thermo-physical properties above 1500K: A
+case study on isostatically pressed graphite,” Thermochimica Acta 652, 39
+– 52 (2017).
+
+8C. Ronchi, W. Heinz, M. Musella, R. Selfslag,
+and M. Sheindlin, “A
+universal laser-pulse apparatus for thermophysical measurements in refrac-
+tory materials at very high temperatures,” International Journal of Thermo-
+physics 20, 987–996 (1999).
+
+9S. E37.05, “Standard test method for thermal diffusivity by the flash
+method,” Standard ASTM E1461-13 (ASTM International, West Con-
+shohocken, PA, 2013).
+
+10T. Pavlov, T. Wangle, M. Wenman, V. Tyrpekl, L. Vlahovic, D. Robba,
+P. Van Uffelen, R. Konings, and R. Grimes, “High temperature measure-
+ments and condensed matter analysis of the thermo-physical properties of
+ThO2,” Scientific reports 8, 5038 (2018).
+
+11B. Hay, S. Barré, J.-R. Filtz, M. Jurion, D. Rochais, and P. Sollet, “New
+apparatus for thermal diffusivity and specific heat measurements at very
+high temperature,” International Journal of Thermophysics 27, 1803–1815
+(2006).
+
+12J. Habainy, Y. Dai, Y. Lee, and S. Iyengar, “Thermal diffusivity of tungsten
+irradiated with protons up to 5.8 dpa,” Journal of Nuclear Materials 509,
+152 – 157 (2018).
+
+13M. Uchida, E. Ishitsuka,
+and H. Kawamura, “Thermal conductivity of
+neutron irradiated Be12Ti,” Fusion Engineering and Design 69, 499 – 503
+(2003), 22nd Symposium on Fusion Technology.
+
+14C. Walker, D. Staicu, M. Sheindlin, D. Papaioannou, W. Goll, and F. Son-
+theimer, “On the thermal conductivity of uo2 nuclear fuel at a high burn-
+up of around 100MWd/kgHM,” Journal of Nuclear Materials 350, 19 – 39
+(2006).
+
+15J. Blumm and A. Lindemann, “Characterization of the thermophysical
+properties of molten polymers and liquids using the flash technique,” High
+Temp. High Press 35, 627 (2003).
+
+16T. Baba and A. Ono, “Improvement of the laser flash method to reduce un-
+certainty in thermal diffusivity measurements,” Measurement Science and
+Technology 12, 2046–2057 (2001).
+
+17M. Sheindlin, D. Halton, M. Musella, and C. Ronchi, “Advances in the use
+of laser-flash techniques for thermal diffusivity measurement,” Review of
+Scientific Instruments 69, 1426–1436 (1998).
+
+18T. Šrámková and T. Log, “Using non-linear χ2 fit in flash method,” Inter-
+national journal of heat and mass transfer 38, 2885–2891 (1995).
+
+19E. J. Carr, “Rear-surface integral method for calculating thermal diffusivity
+from laser flash experiments,” Chemical Engineering Science 199, 546 –
+551 (2019).
+
+20E. J. Carr and C. J. Wood, “Rear-surface integral method for calculating
+thermal diffusivity: Finite pulse time correction and two-layer samples,”
+International Journal of Heat and Mass Transfer 144, 118609 (2019).
+
+21A. Lunev, “Processing unit for laser flash analysis,” (2020).
+22R. D. Cowan, “Pulse method of measuring thermal diffusivity at high tem-
+peratures,” Journal of Applied Physics 34, 926–927 (1963).
+
+23J. A. Cape and G. W. Lehman, “Temperature and finite pulse-time effects
+in the flash method for measuring thermal diffusivity,” Journal of Applied
+Physics 34, 1909–1913 (1963).
+
+24L. M. Clark III and R. E. Taylor, “Radiation loss in the flash method for
+thermal diffusivity,” Journal of Applied Physics 46, 714–719 (1975).
+
+25M.-A. Thermitus and M. Laurent, “New logarithmic technique in the flash
+method,” International Journal of Heat and Mass Transfer 40, 4183 – 4190
+(1997).
+
+26K. B. Larson and K. Koyama, “Correction for finite-pulse-time effects in
+very thin samples using the flash method of measuring thermal diffusivity,”
+Journal of Applied Physics 38, 465–474 (1967).
+
+27T. Azumi and Y. Takahashi, “Novel finite pulse-width correction in flash
+thermal diffusivity measurement,” Review of Scientific Instruments 52,
+1411–1413 (1981).
+
+28T. Lechner and E. Hahne, “Finite pulse time effects in flash diffusivity mea-
+surements,” Thermochimica Acta 218, 341 – 350 (1993).
+
+29V. Avduevskii, Y. I. Danilov, V. Koshkin, I. Kutyrin, M. Mikhailova, Y. S.
+Mikheev, and O. Sergel, “Fundamentals of heat transfer in aeronautics and
+rocket technology,” Mashinostroenie, Moscow (1975).
+
+30V. G. Baranov, Y. N. Devyatko, A. V. Tenishev, A. V. Khlunov, and O. V.
+Khomyakov, “New method for determining the temperature dependence of
+the thermal conductivity coefficient of dielectrics in a pulse experiment,”
+Inorganic Materials: Applied Research 1, 167–173 (2010).
+
+31R. C. Heckman, “Finite pulse-time and heat-loss effects in pulse ther-
+mal diffusivity measurements,” Journal of Applied Physics 44, 1455–1460
+
+
+15
+
+(1973).
+
+32D. Josell, J. Warren, and A. Cezairliyan, “Comment on “Analysis for de-
+termining thermal diffusivity from thermal pulse experiments”,” Journal of
+Applied Physics 78, 6867–6869 (1995).
+
+33J. Blumm and J. Opfermann, “Improvement of the mathematical modeling
+of flash measurements,” High Temperatures. High Pressures 34, 515–521
+(2002).
+
+34A. Philipp, J. F. Eichinger, R. C. Aydin, A. Georgiadis, C. J. Cyron, and
+M. Retsch, “The accuracy of laser flash analysis explored by finite element
+method and numerical fitting,” Heat and Mass Transfer , 1–13 (2019).
+
+35A. A. Samarskii, The theory of difference schemes (CRC Press, 2001).
+36P. E. Gill, W. Murray, and M. H. Wright, “Practical optimization,” London:
+Academic Press, 1981 (1981).
+
+37P. Wolfe, “Convergence conditions for ascent methods,” SIAM review 11,
+226–235 (1969).
+
+38P. Wolfe, “Convergence conditions for ascent methods. ii: Some correc-
+tions,” SIAM review 13, 185–188 (1971).
+
+39V. Baranov, A. Tenishev, A. Lunev, S. Pokrovskii, and A. Khlunov, “High-
+temperature measurements of the thermal conductivity of reactor materials
+by the laser flash method,” Yad. Fiz. Inzhin 2, 291–302 (2011).
+
+40G. Fulton and A. Lunev, “Probing the correlation between phase evolu-
+tion and growth kinetics in the oxide layers of tungsten using Raman spec-
+troscopy and EBSD,” Corrosion Science , 108221 (2019).
+
+41H. Wang and R. B. Dinwiddie, “Reliability of laser flash thermal diffusivity
+measurements of the thermal barrier coatings,” Journal of Thermal Spray
+Technology 9, 210–214 (2000).
+
+

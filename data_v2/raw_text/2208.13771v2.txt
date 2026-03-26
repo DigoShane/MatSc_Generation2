@@ -1,0 +1,1552 @@
+FAST BAYESIAN OPTIMIZATION OF NEEDLE-IN-A-HAYSTACK
+PROBLEMS USING ZOOMING MEMORY-BASED INITIALIZATION
+(ZOMBI)
+
+Alexander E. Siemenn∗
+Department of Mechanical Engineering
+Massachusetts Institute of Technology
+Cambridge, MA 02139, USA
+asiemenn@mit.edu
+
+Zekun Ren
+Department of Electrical and Computer Engineering
+Singapore-MIT Alliance for Research and Technology
+Singapore 138602, Singapore
+Xinterra
+Singapore 139949, Singapore
+
+Qianxiao Li
+Department of Mathematics
+National University of Singapore
+Singapore 138602, Singapore
+
+Tonio Buonassisi
+Department of Mechanical Engineering
+Massachusetts Institute of Technology
+Cambridge, MA 02139, USA
+
+ABSTRACT
+
+Needle-in-a-Haystack problems exist across a wide range of applications including rare disease
+prediction, ecological resource management, fraud detection, and material property optimization. A
+Needle-in-a-Haystack problem arises when there is an extreme imbalance of optimum conditions
+relative to the size of the dataset. For example, only 0.82% out of 146k total materials in the
+open-access Materials Project database have a negative Poisson’s ratio. However, current state-
+of-the-art optimization algorithms are not designed with the capabilities to find solutions to these
+challenging multidimensional Needle-in-a-Haystack problems, resulting in slow convergence to a
+global optimum or pigeonholing into a local minimum. In this paper, we present a Zooming Memory-
+Based Initialization algorithm, entitled ZoMBI, that builds on conventional Bayesian optimization
+principles to quickly and efficiently optimize Needle-in-a-Haystack problems in both less time and
+fewer experiments by addressing the common convergence and pigeonholing issues. ZoMBI actively
+extracts knowledge from the previously best-performing evaluated experiments to iteratively zoom
+in the sampling search bounds towards the global optimum "needle" and then prunes the memory
+of low-performing historical experiments to accelerate compute times by reducing the algorithm
+time complexity from O(n3) to O(φ3) for φ forward experiments per activation, which trends to
+a constant O(1) over several activations. Additionally, ZoMBI implements two custom adaptive
+acquisition functions to further guide the sampling of new experiments toward the global optimum.
+We validate the algorithm’s optimization performance on three real-world datasets exhibiting Needle-
+in-a-Haystack problems that vary in dimensionality from 6D to 11D and further stress-test the
+algorithm’s performance across an additional 174 analytical datasets that vary in optimum needle
+width, optimum distance to edges, dimensionality, and initialization conditions. The ZoMBI algorithm
+demonstrates compute time speed-ups of 400x compared to traditional Bayesian optimization as well
+as efficiently discovering optima in under 100 experiments that are up to 3x more highly optimized
+than those discovered by similar methods MiP-EGO, TuRBO, and HEBO.
+
+Keywords rare materials discovery · efficient algorithms · adaptive acquisition functions · trust regions · optimization ·
+extremely imbalance data · auxetic materials · thermoelectric materials, · active learning
+
+arXiv:2208.13771v2  [cs.LG]  3 Feb 2023
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+1
+Introduction
+
+Current optimization algorithms achieve good results on low-dimensional problems that are smooth and have wide basins
+of attraction. Examples of smooth manifolds with wide basins of attraction within material science include process-
+and recipe-optimization problems such as tuning perovskite manufacturing variables to achieve higher efficiency [1],
+optimizing microfluidics flow parameters to achieve ideal droplet formation [2], optimizing silver nanoparticle recipes
+for optical properties [3], and tuning perovskite compositions with physics-based constraints to maximize stability
+[4]. Optimization techniques like Bayesian optimization (BO) are well-suited to model these simple manifolds using a
+Gaussian Process (GP) surrogate [5, 6, 7, 8, 9]. However, the performance of this BO with a GP breaks down as the
+manifold complexity increases. Material property optimization problems that have high technological significance,
+such as discovering materials with rare properties or materials with a specific combination of properties, have search
+space manifolds that more closely resemble a Needle-in-a-Haystack [10], shown in Figure 1(b), rather than a smooth or
+convex space.
+
+(a) Process Optimization Manifold
+(b) Materials Optimization Manifold
+
+Figure 1: Archetypal Manifolds in Materials Science Optimization. (a) In process optimization, there often exists a
+real and continuous path between each condition. This 3D projected manifold is adapted from the 6D perovskite process
+optimization problem by Liu et al., where X1 is spray flow rate, X2 is plasma voltage, and f(X) is cell efficiency [1].
+(b) However, in materials optimization, there are often only discrete combinations of properties that define real materials,
+resulting in a rough topology with extreme outliers. For example, Li2NbF6 and Li2ZrF6 lay close to each other in
+space because they have similar density, formation energy, and structure, however, they have vastly different target
+properties: Li2NbF6 has a Poisson’s ratio of −1.7 while Li2ZrF6 has a Poisson’s ratio of 0.3 [11]. Extreme outliers,
+such as Li2NbF6, consist of only a small fraction of the manifold hypervolume, resulting in a Needle-in-a-Haystack
+regime arising. This 3D projected manifold is obtained from the 6D Poisson’s ratio optimization problem presented in
+this paper, where X1 is density, X2 is formation energy, and f(X) is negative Poisson’s ratio [12].
+
+This Needle-in-a-Haystack (NiaH) problem arises when only few optimum conditions exist within the entire dataset,
+resulting in an extreme imbalance. Interpolating the parameter space of an imbalanced dataset with an estimation
+function, such as a GP, results in smoothing over the optimum or over-predicting the properties of the materials
+found near the optimum [13, 14, 15]. Examples of NiaH materials optimization problems include discovering auxetic
+materials (i.e., materials that have a highly negative Poisson’s ratio, ν) for energy absorptive medical devices or
+protective armor [16, 17, 18] and discovering materials that have a combination of high electrical conductivity and low
+thermal conductivity (i.e., a highly positive thermoelectric figure of merit, ZT) used for improving sensor technology
+to enable ubiquitous solid-state cooling [19, 20, 21]. Optimization of these rare material properties illustrates examples
+where an extreme data balance exists in the dataset because only a fraction of the total number of materials exhibit
+these rare properties [16, 12, 11, 22, 23]. This NiaH optimization challenge of extremely imbalanced datasets is largely
+applicable to many fields, not just materials science, including the fields of ecological resource management [24, 25],
+fraud detection [26, 27], and rare diseases [28, 27].
+
+2
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Several challenges exist for the current landscape of computational tools that inhibit effective optimization of these
+complex NiaH problems. Firstly, the "needle" makes up only a small percentage of the total manifold search space,
+resulting in a weak correlation between the measured input parameters and the target property of interest, inhibiting
+discovery of the region containing the needle [29, 30, 13]. This challenge requires the development of an algorithm that
+can more quickly determine the plausible region of the manifold where the needle exists. The second challenge for
+algorithms, such as BO, to optimize NiaH manifolds is in the nature of the acquisition function to pigeonhole sampling
+into local minima because of the narrowness of the needle’s basin of attraction [31, 32]. Standard BO acquisition
+functions, including expected improvement (EI) [33] and lower confidence bound (LCB) [7, 14], are static sampling
+techniques that only adjust sampling based on the output of the surrogate model, which enacts smoothing of the needle
+[13, 5, 6]. To overcome this challenge, active learning-based tuning of the acquisition function hyperparameters can be
+implemented to improve the sampling quality and avoid pigeonholing. Lastly, there exists a computing challenge for
+NiaH problems where, typically, several thousands of samples must be observed to find an optimum when using an
+algorithm that is poorly suited to tackle NiaH manifolds [10]. The compute time of BO using a GP surrogate scales
+with the complexity O(n3), where n is the number of experiments sampled, hence, the compute time of traditional BO
+blows up as more data is required to find the optimum [34, 35, 36, 5, 6, 37, 38]. To solve this computing challenge, an
+algorithm must be designed that both efficiently optimizes the space in as few experiments as possible and reduces the
+effect of compounding compute times over the length of the optimization procedure.
+
+In recent literature, algorithms have been developed to address some of these challenges individually, but not all of them
+together. The first class of solutions bound the search space using a trust region approach to sample regions with higher
+probability of containing the optimum. Eriksson et al. develop TuRBO [39] that compiles a set of independent model
+runs, using separate GP surrogate models to compute a new, smaller search region, narrowed in on the target optimum.
+Regis develops TRIKE [40] that utilizes maximization of the EI acquisition function to bound a trust region containing
+the global optimum. Diouane et al. develop TREGO [41], which interleaves sampling between global and local search
+regions, where the local search regions are defined by the single best historical experiment sampled. Although these
+methods offer solutions to one of the three challenges presented, each method has its downfalls when optimizing NiaH
+problems. For example, TuRBO requires the computation of several GP model runs, which increases compute time
+and also does not guarantee that the needle will be resolved due to interpolation effects; TRIKE is inflexible to the
+use of other acquisition functions as it locks the user in to only using EI, which may pigeonhole into local minima;
+TREGO uses only the best sampled experiment to define its search regions, which will yield inconsistent or sub-optimal
+results when the needle consists of a fractional region of the manifold and single point is unlikely to land in its basin of
+attraction. The second class of solutions to the challenges presented in this paper are designed to decrease the computing
+time required to run an optimization procedure. A common method for reducing the compute time of BO with a GP
+surrogate is to introduce a sparse GP [5, 42, 37]. A sparse GP uses a small subset of pseudo data, often denoted as
+m, to reduce the GP time complexity from O(n3) to O(nm2) [43]. However, the process of selecting a useful subset
+requires minimizing the Kullback-Leibler divergence between the sparse GP and true posterior GP, which is often a
+computationally intensive procedure of using variational inference [44]. In addition to sparse GPs, new algorithms have
+been developed in literature to improve the compute time of optimization in various ways. Van Stein et al. develop
+MiP-EGO [45], which parallelizes the function evaluations of efficient global optimization (EGO) to discover optima
+faster and in fewer experiments using derivative-free computation [46]. Joy et al. [47] use directional derivatives to
+accelerate hyperparameter tuning by 100x and achieve higher accuracy than the FABOLAS baseline by Klein et al. [48].
+Zhang et al. develop FLASH [49] to achieve optimization speed-ups of 50% by using a linear parametric model to guide
+algorithm search within high-dimensional spaces. Snoek et al. [15] design a neural network-based parametric model
+that reduces the overall time complexity of BO to O(n) compared to the complexity of O(n3) of standard BO with a GP
+surrogate model. These existing methods from literature within the class of solutions for accelerating compute time are
+generally introducing external models necessary to perform optimization, such as neural networks, variational inference,
+or parametric models. While these external models do speed up compute time, they often lack the predictive capabilities
+to capture the weak correlation between measured input parameters and the target property of interest in NiaH problems.
+We illustrate this mechanism later in the paper when comparing the optimization results on two materials science NiaH
+problems of a fast algorithm MiP-EGO with that of TuRBO, an algorithm better suited for discovering optima within
+narrow basins of attraction.
+
+Although these methods from existing literature address some of the challenges in optimizing NiaH problems, none of
+them have been designed specifically to quickly and efficiently discover a needle-like optimum within a haystack of sub-
+optimal points, resulting in all of them falling short of a full solution. Therefore, in this paper, we design an algorithm
+that addresses all three of the challenges faced when optimizing NiaH problems by (1) zooming in the manifold
+search bounds iteratively and independently for each dimension based on m number of best memory points to quickly
+converge to the plausible region containing the global optimum needle, (2) relieving compute utilization by pruning the
+low-performing and redundant memory points not being used to zoom in the search bounds, (3) anti-pigeonholing into
+local minima by using actively learned acquisition function hyperparameters to tune the exploitation-to-exploration
+
+3
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure 2: Accelerated Convergence to True Target using ZoMBI. Using a standard Bayesian optimization procedure,
+the discovery of a Needle-in-a-Haystack condition does not progress significantly after 10 additional experiments from
+the initial GP guess. However, using ZoMBI to zoom the bounds inward and prune redundant memory points, the
+needle-like optimum region is resolved to be accurately aligned with the true target. (a) The true target to optimize,
+which is a slice from the 6D Poisson’s Ratio dataset, (b) The initial guess of the target function using a GP surrogate
+with 20 randomly sampled experiments, (c) (top) The estimated target resolved by standard BO after 10 additional
+experiments sampled using a greedy LCB acquisition function (β = 0.1); (bottom) the estimated target resolved by
+ZoMBI after 10 additional experiments sampled using the same greedy LCB acquisition function. The red memory
+points do not assist in resolving this target after zooming in the bounds, hence, they are pruned from memory by ZoMBI.
+
+ratio. The proposed algorithm, entitled [Zo]oming [M]emory-[B]ased [I]nitialization (ZoMBI), combines these three
+contributions into a method that efficiently optimizes NiaH problems quickly. Figure 2 demonstrates the accelerated
+convergence ability of the proposed (ZoMBI) algorithm compared to standard BO. In essence, this process of scanning
+broadly and then focusing in on points of interest based on memory was inspired by the way we humans solve similar
+problems, but stands in contrast to the way standard BO methods with static acquisition functions solve problems.
+We demonstrate the performance of this algorithm on three vastly different NiaH problems in materials science and
+ecological resource management: (1) discovery of materials with negative Poisson’s ratio, (2) discovery of materials
+with both high electrical conductivity and low thermal conductivity, and (3) detection of environmental conditions
+conducive of sustaining wildfires. The performance of the proposed ZoMBI algorithm is compared against standard
+BO with static acquisition functions as well as against three more algorithms: (1) HEBO, the winning submission of
+the NeurIPS 2020 Black-Box optimization challenge [50] and one algorithm from each of the two classes of partial
+NiaH solutions (2) TuRBO (bounded search space) [39] and (3) MiP-EGO (faster compute) [45]. Finally, we stress-test
+the proposed ZoMBI algorithm across 174 additional datasets varying the optimum needle width, optimum distance to
+edges, dimensionality, and initialization conditions.
+
+2
+Methodology
+
+In this paper, we develop two major contributions: (1) the ZoMBI algorithm and (2) adaptive learning acquisition
+functions. Through the combination of these two contributions, the optimum region of a NiaH manifold can be quickly
+discovered in fewer experiments without pigeonholing into local minima. Thus, the three challenges of optimizing NiaH
+problems are addressed: (1) the challenge of finding a hypervolume within the manifold that contains the needle-like
+optimum [29, 30, 13], (2) the challenge of the polynomially increasing compute times of BO using a GP surrogate
+[35, 36, 5, 6, 37, 38], (3) the challenge of avoiding pigeonholing into local minima [9, 1, 31, 32]. We demonstrate the
+implementation of ZoMBI on a 6D analytical Ackley function, a 6D dataset of materials with Poisson’s ratios, a 6D
+dataset of thermoelectric materials, and an 11D dataset for wildfire detection, all of which exhibit an extreme data
+imbalance and a NiaH regime, and compare the performance to that of MiP-EGO [45], TuRBO [39], and HEBO [50]. For
+each of the three problems, the objective is to find the target value, y, with either the lowest or highest value depending
+on if the problem is minimization or maximization. This optimum y-value resembles a needle for each problem because
+
+4
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+it is located within a narrow and steep basin of attraction. Precisely, the needle optimum for each problem has a value
+of y = 0 for the Ackley function (minimization), y = −1.7 for Poisson’s ratio dataset (minimization), y = 1.9 for
+the thermoelectric merit dataset (maximization), and y = −12 for the wildfire detection dataset (minimization). To
+extend the applicability of ZoMBI optimization performance results to a wider array of applications, additional stress
+tests are conducted on 174 analytical datasets. First, a set of 144 analytical datasets are optimized to assess the failure
+and success conditions of ZoMBI on problems with extremely narrow optima and few initialization data points. Then, in
+the Supplemental Information, a set of 30 analytical datasets are optimized to assess the failure and success conditions
+of ZoMBI on problems with insufficient initialization data and cases where the global optimum is near the edge of the
+manifold.
+
+2.1
+Zooming Memory-Based Initialization (ZoMBI) Algorithm
+
+The ZoMBI algorithm has two key features: (1) iterative inward bounding of proceeding search spaces using the m
+number of best-performing memory points within the prior search space and (2) iterative pruning of low-performing
+historical search space memory. The newly computed search space bounds are unique for each dimension, such that the
+optimum basin of attraction of complex, non-convex NiaH manifolds can be discovered. This algorithm leverages these
+two key features to guide the acquisition of new data towards more optimal regions while only fitting the surrogate
+within the suggested optimum region to resolve more detail of the space of interest, as shown in Figure 3 and Figure 2.
+This process subsequently reduces the compute time significantly compared to the compute of a GP in a standard BO
+procedure, as shown in Figure 4.
+
+Algorithm 1: Zooming Memory-Based Initialization (ZoMBI)
+
+Input
+:
+X: Set of data points {X1, X2, . . . , Xn}, where Xj ∈ Rd,
+y: Set of target values {y1, y2, . . . , yn}, where yj ∈ R,
+α: Number of ZoMBI activations,
+φ: Number of forward experiments per activation,
+γ: Set of acquisition function hyperparameters {β, ξ, ϵ, η},
+AF: An acquisition function selected by the user
+
+Output :
+The next experimental condition Xn+1 ∈ Rd and measured target value yn+1 ∈ R
+
+1 for α activations do
+
+2
+Compute bounds {Bl
+d, Bu
+d} ← {min, max}X∈X(m){Xd}
+
+3
+Initialize with i LHS data points {X} := {X1, X2, . . . , Xi}, where Xj ∈ Rd, [Bl
+d, Bu
+d]
+and target values {y} := {y1, y2, . . . , yi}, where yj ∈ R
+
+4
+Overwrite memory X ← {X} and y ← {y}
+
+5
+for f in range(1, φ) forward experiments do
+
+6
+Let n = i + f
+
+7
+Retrain surrogate model GP(X) using target values y
+
+8
+Extract set of surrogate means µ and variances σ
+
+9
+Compute set of acquisition values a ← AF(µ, σ; γ)
+
+10
+Find the best new experimental condition Xn+1 ← arg max(a)
+
+11
+Measure target value of new experimental condition yn+1
+12
+Append outputs to sets X.append(Xn+1) and y.append(yn+1)
+
+13
+end
+
+14 end
+
+We define m as the number of retained memory points during an activation of ZoMBI. The m memory points are saved
+to memory while all other data are erased from memory. These are the historical data points that achieve the m lowest
+(for minimization) target values, y, and they are used to zoom in the search bounds. Using these memory points, the
+multi-dimensional upper and lower bounds of the zoomed search space are computed for each dimension, d. Let
+X := {X1, X2, . . . , Xn} be a set of data points, where Xj ∈ Rd. Let f : Rd → R be the objective function. We first
+assume that the points in X are in general position so that f(X) contains unique elements. Then, for each m ≤ n
+define X(m) = {Xπ(1), . . . , Xπ(m)} where π is a permutation on {1, . . . , n} so that {f(Xπ(j))} is in ascending order.
+If f(X) contains repeated elements, we may first remove the points with repeated f values and apply the definition
+
+5
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+above. Then, for each d, the bounds are defined as:
+
+Bl
+d =
+min
+X∈X(m){Xd}
+
+Bu
+d =
+max
+X∈X(m){Xd},
+(1)
+
+where Bl
+d and Bu
+d computed lower and lower bounds for each dimension, d, respectively. The bounds [Bl
+d, Bu
+d] constrain
+the proceeding acquisition of new data as well as the computation of a GP, such that sampling cannot occur outsides of
+the bounded region. This constraining process operates independently for each dimension, such that each dimension
+has a unique lower and upper bound. To initialize the algorithm with data from the constrained space, i data points
+are sampled from the bounded region using Latin Hypercube Sampling (LHS). LHS splits a d-dimensional space
+into i ∗ d equally spaced strata, where i is the number of points to sample uniformly over d dimensions with low
+variability, unlike random sampling that has high sampling variability [51]. A GP surrogate model is retrained on
+these i LHS points sampled from the constrained space and then for every proceeding experiment sampled from the
+space, denoted as a forward experiment, the surrogate model is retrained. Thus, the GP is only being trained on
+information within the constrained region and as the constrained region iteratively zooms inward and decreases in
+hypervolume, so does the region computed by the GP. This process allows for more information to be resolve within
+regions plausibly containing the global optimum basin of attraction. Up to φ forward experiments are sampled in serial,
+where {Xi} ∪ {Xφ} ⊆ {Xn}. These forward experiments are sampled by maximizing an acquisition value, a ∈ [0, 1],
+computed by a user-selected acquisition function from one of the four functions EI, EI Abrupt, LCB, and LCB Adaptive,
+introduced in Section 2.2. Once i + φ number of experiments are sampled, the bounds are re-constrained using the
+m best performing experiments, i new experiments are sampled from the zoomed-in space using LHS, and then the
+memory is pruned. The process of collecting φ forward experiments is repeated. A complete constraining-resetting
+iteration is denoted as an activation, α. This iterative zooming and pruning process over several α significantly speeds
+up compute time, discussed further in Section 3.2. Implementation of ZoMBI is shown in Algorithm 1.
+
+2.2
+Adapative Acquisition Functions
+
+Traditional BO acquisition functions, such as EI [52] and LCB [53], use the computed means and variances from a
+surrogate model to compute an acquisition value; maximizing this acquisition value guides sampling of the manifold
+[7, 33, 14]. However, these traditional acquisition functions are static, such that they do not actively use any information
+about the performance of previously sampled experiments to guide sampling. Hence, we implement an adaptive learning
+approach into the acquisition functions to develop two novel functions, EI Abrupt and LCB Adaptive, that dynamically
+adapt their sampling based on the quantity and quality of previously sampled experiments. In contrast to a static
+acquisition function, these adaptive acquisition functions are initialized with an initial set of hyperparameter values
+to guide their search but then tune these values as sampling progresses. The developed EI Abrupt and LCB Adaptive
+functions are used within the ZoMBI framework to further accelerate optimization and avoid pigeonholing, see line 9 of
+Algorithm 1.
+
+LCB Adaptive builds off of previous work that also tune sampling based on the number of experiments collected, n
+[54, 55, 56]. In this paper, we design LCB Adaptive to tune its hyperparameter to become less explorative as more
+samples are collected. For example, as the n increases, LCB Adaptive decays its β hyperparameter value to become
+less explorative and more exploitative. Specifically, this information feedback received by the function determines the
+contribution of both µ(X) and σ(X) to the acquisition value, a. Similar to EI Abrupt, LCB Adaptive computes an
+acquisition value, a ∈ [0, 1], for a given X, wherein the X with the highest a is selected by the acquisition function as
+the next suggested experiment to measure. LCB Adaptive is implemented for a minimization problem as:
+
+aLCB Adaptive(X, n; β, ϵ) = µ(X) − ϵnβσ(X),
+(2)
+where n is the number of experiments sampled, and β = 3 and ϵ = 0.9 are hand-tuned initialization hyperparameters
+selected based on a priori domain knowledge of the function’s performance on a variety of different problems. Having a
+large β and an ϵ close to 1 supports a gradual decay from very explorative to very exploitative, rather than a rapid decay.
+In the following section (Section 3.3), the dynamic EI Abrupt and LCB Adaptive are shown to both discover optima
+faster and avoid pigeonholing into local minima better than their static counterparts by actively balancing the ratio of
+exploitation to exploration using learned information about the quality and quantity of previously sampled experiments.
+
+EI Abrupt is a novel implementation that flips between the exploitative EI [52] and explorative LCB [53] acquisition
+functions based on the computed finite differences of recently evaluated experiments. For example, if the evaluated
+experiment y-values plateaus for three or more experiments in a row, EI Abrupt will abruptly switch from a greedy
+sampling policy to a more explorative sampling policy. Specifically, this information feedback received by the function
+determines if the current round of sampling should exploit the surrogate mean values, µ(X), or explore the surrogate
+
+6
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+variances, σ(X). EI Abrupt computes an acquisition value, a ∈ [0, 1], for a given X, wherein the X with the highest a
+is selected by the acquisition function as the next suggested experiment to measure. EI Abrupt is implemented for a
+minimization problems as:
+
+aEI Abrupt(X, y; β, ξ, η) =
+
+��
+µ(X) − y∗ − ξ
+�
+Φ(Z) + σ(X)ψ(Z),
+if |∆{yn−3...n}| ≤ η
+µ(X) − βσ(X),
+otherwise
+
+Z =µ(X) − y∗ − ξ
+
+σ(X)
+,
+
+(3)
+
+where y∗ is the lowest measured target value thus far (i.e., the running minimum), Φ(·) is the cumulative density
+function of the normal distribution, ψ(·) is the probability density function of the normal distribution, and |∆{yn−3...n}|
+is the absolute value of the finite differences of the set of target values of the last three sampled experiments. Moreover,
+β = 0.1, ξ = 0.1, and η = 0 are hand-tuned initialization hyperparameters used for the rest of the paper for EI Abrupt.
+Moreover, for standard LCB and EI, β = 1 and ξ = 0.1 hyperparameters are used, respectively. These hyperparameters
+were selected based on a priori domain knowledge of EI Abrupt performance on a variety of different problems. The
+most important hyperparameter for efficient sampling is β, whose ideal value is non-obvious, but it is found that β = 0.1
+allows EI Abrupt to switch into an explorative sampling policy while still having a strong weight on the surrogate
+means, implying that exploration does not veer far.
+
+3
+Demonstration of ZoMBI Mechanics
+
+3.1
+Zooming Bounds
+
+Figure 3: Zooming Search Bounds. For every activation of ZoMBI, the search bounds are zoomed inward based on the
+prior best-performing memory points. A 4D Ackley function manifold is projected in 2D. The bounding regions of each
+2D slice are illustrated by the red and orange boxes. The φ number forward experiments sampled for each activation, α,
+are illustrated as black markers. The global optimum is indicated by the red region of the heatmap.
+
+Zooming in the search bounds on the manifold addresses challenge number one of optimizing NiaH problems, which is
+the challenge of finding the general hypervolume region that contains the needle-like optimum. Figure 3 illustrates how
+the ZoMBI algorithm iteratively zooms in the search bounds based on the number of activations, α. An Ackley function
+is used as a simulated example due to its non-convexity and needle-like global optimum [57, 58]. For each activation,
+m prior points that achieved the lowest target values, y, are retained in memory and used to zoom the search bounds in.
+This zooming occurs independently across each dimension and is based on the minimum and maximum values of the m
+memory points along each dimension, as shown in Equation 1. The red and orange rectangles illustrate the evolution
+
+7
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+of the bounds over space and time. Initially, sampling occurs across the entire manifold for φ forward experiments
+per activation, shown by the black markers. However, by using the best-performing memory points to zoom in the
+search bounds, pigeonholing into local minima can also be avoided as the search bounds are pulled away from these
+trap minima and move closer towards the global minimum basin of attraction. The iterative zooming of ZoMBI does
+not guarantee convergence on the global optimum, but if a sufficient initialization set is obtained, convergence often
+gets close to the global optimum as shown across several examples in Figure 5 and Figures 8, 9, 10. Furthermore, we
+comprehensively demonstrate the performance limitations of ZoMBI where initializations miss extreme needle-like
+optima in Figure 6 and where optima are near the edges of a manifold in Figure S-4.
+
+3.2
+Memory Pruning
+
+Figure 4: Wall-clock Compute Time. The compute time per experiment is illustrated for traditional BO with a GP
+surrogate (orange) and for ZoMBI with a GP surrogate (blue) with the y-axis in log-scale. Four independent trials of
+each method were run to optimize a 6D Ackley function with a narrow basin of attraction using an NVIDIA Tesla
+Volta V100 GPU [59]. Each trial of standard BO and ZoMBI is run using one of the four acquisition functions: LCB,
+LCB Adaptive, EI, and EI Abrupt. The averages of the trials are shown as solid orange and blue lines while the shaded
+regions indicate the maximum and minimum compute times bounds. The red dashed line indicates the trend of the
+ZoMBI compute times. The measured compute time includes the time to compute the GP surrogate model and the time
+to acquire an experiment from the surrogate.
+
+As more experiments are amassed and committed to memory to run traditional BO by computing the GP surrogate, the
+compute time increases polynomially, following the O(n3) time complexity of GP matrix inversion [34, 5, 6, 60, 37, 38].
+This complexity is unfavorable as it leads to compounding compute times as more experiments are run. Therefore,
+we implement a memory pruning feature into the ZoMBI algorithm that iteratively selects which prior data points to
+keep and which to prune from the memory during each activation, α. Memory pruning is demonstrated to remove
+redundant features during the optimization procedure. Figure 2 illustrates how ZoMBI accelerates the convergence of a
+GP prediction to the precise location of the true. However, only data within the newly computed bounds of ZoMBI are
+used prediction of the true target, hence, all data outside this boundary becomes redundant and is pruned to decrease
+compute time.
+
+Through memory pruning, the number of experiments used to train the GP surrogate varies between [i, i + φ] for every
+α, rather than being proportional to n, where the number of initialization samples is fixed at i = 5. In this paper, we
+use φ ∈ [0, 10], i.e., once φ = 10, the activation is complete and resets to φ = 0. This is computationally favorable
+because {Xi} ∪ {Xφ} ⊆ {Xn}. Thus, for a single α, the time complexity is O((i + φ)3) ≈ O(φ3), since i is fixed.
+Furthermore, since the range of φ is capped, a non-increasing sawtooth pattern in compute time is exhibited, illustrated
+in Figure 4. Therefore, the compute complexity of ZoMBI trends towards O(1) for α > 1 as a result of the efficient
+memory pruning process. After collecting 1000 experiments, the compute time of traditional BO trends towards > 400
+seconds per experiment, whereas for ZoMBI the compute time maintains a constant trend of approximately 1 second per
+experiment. Therefore, the memory pruning feature of ZoMBI accelerates the optimization compute time by over 400x
+at n = 1000 and achieves further relative acceleration as n increases.
+
+8
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+3.3
+Anti-pigeonholing
+
+Pigeonholing into the local minima of a function occurs when an optimization algorithm has insufficient learned
+knowledge of the manifold topology to continue exploring potentially profitable regions or when the algorithm’s
+hyperparameters are improperly tuned, leading to overly exploitative tendencies [1, 9]. The ZoMBI algorithm’s anti-
+pigeonholing capabilities are two-fold: (1) the zooming search bounds help the acquisition function to quickly stop
+sampling local minima once a better performing data point is found and (2) actively learned acquisition function
+hyperparameters use knowledge about the domain to help exit a local minimum. Figure 5 demonstrates the anti-
+pigeonholing capabilities of ZoMBI on optimizing a 6D Ackley function with both static and dynamic acquisition
+functions, compared to that of traditional BO.
+
+(a) LCB
+(b) LCB Adaptive
+(c) EI
+(d) EI Abrupt
+
+Figure 5: Acquisition Function Sampling Density. The colored heatmaps indicate the regions of a 2D slice from a 6D
+Ackley function where sampling density is high for each respective acquisition function: (a) LCB, (b) LCB Adaptive,
+(c) EI, and (d) EI Abrupt. The contour lines indicate the manifold topology with local minima as the circular and
+pointed regions of the contours. The red "x" indicates the global minimum. For each acquisition function, the left panel
+shows the sampling density after n = {20, 40, 80} evaluated experiments without the use of ZoMBI while the right
+panel shows the sampling density after n = {20, 40, 80} evaluated experiments with the use of ZoMBI.
+
+The needle-like global minimum is indicated by the red "x" and the local minima are indicated by the circular and
+pointed regions of the contour lines. The sampling density of each acquisition function is illustrated by the heatmap,
+where the darker colors indicate higher sampling density regions. The goal is to get high sampling density near the red
+"x". It is shown that without ZoMBI being activated, the LCB, LCB Adaptive, and EI acquisition functions all end up
+pigeonholing into local minima. However, EI Abrupt initially pigeonholes into a local minima but then switches from
+an exploitative to an explorative mode to jump out of the local minimum and converge closer to the global. Conversely,
+when running the optimization procedure with ZoMBI active, all of the acquisition functions except the most exploitative,
+EI, converge onto the global minimum fast. LCB Adaptive and EI are shown to initially start sampling towards a local
+minima, but as ZoMBI is iteratively activated, the search bounds zoom in closer to the global minimum. Thus, with the
+combination of dynamic acquisition functions and zooming search bounds, pigeonholing into sub-optimal local minima
+can be more readily avoided while optimizing NiaH problems, although avoidance is not guaranteed, as shown by the
+sampling density of EI. The combination of the three foundational features of ZoMBI, (1) zooming bounds, (2) memory
+pruning, and (3) anti-pigeonholing drives fast optimization of NiaH problems and in most cases, does not sacrifice the
+ability to converge on the global optimum.
+
+4
+Experiments
+
+4.1
+Large-scale Optimum Hypervolume Analysis via Ackley Permutations
+
+Before assessing the performance of ZoMBI on the three real-world datasets, we use 144 permutations of the Ackley
+function to stress-test the capability of ZoMBI to discover the global optimum basin of attraction, given two varying
+dataset hyperparameters: (1) basin of attraction width and (2) dimensionality. The basin of attraction hypervolume is
+determined by both the width of the basin and the dimensionality of the manifold, hence, as the basin becomes narrower
+in width and as the dimensionality increases, the percentage of hypervolume space taken up by the basin decreases,
+
+9
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+i.e. the optimum becomes more needle-like. The Ackley permutations have varying basin hypervolumes from 0.001%
+to 100% and varying manifold dimensionalities from 2D to 10D. For this experiment, we aim to determine types of
+manifold topologies that ZoMBI best optimizes while quantifying those limits with the Pareto front.
+
+Figure 6: Varying Optimum Hypervolume. (left) Depiction of decreasing optimum basin of attraction hypervolume
+in 1D. (right) The Pareto-optimal dataset hyperparameters for usage with the ZoMBI algorithm over 144 analytical
+datasets with 48 independent trials each: 12 trials for each of the four acquisition functions, LCB, LCB Adaptive, EI, and
+EI Abrupt, for a total of 6912 independent trials. Each analytical dataset is a permutation of the Ackley function with a
+different optimum basin of attraction width and manifold dimensionality. Hypervolume percent makeup is synthetically
+decreased both by decreasing the basin of attraction width and by increasing the manifold dimensionality. Each scatter
+point represents the median final minimum function evaluation after 1000 experiments across the 48 independent trials
+initialized with a fixed set of i = 5 samples. The colorbar of the scatter point represents the dimensionality of the
+manifold tested and the error bars represent the variance across the 48 trials. The possible function values for every
+dataset vary between [0, 25], hence, for the Ackley function as further described in the supplemental Section S-1, trials
+achieving minimum function values < 10 are considered to have found the optimum basin of attraction while trials
+with function values ≥ 10 after 1000 experiments are considered to be trapped in local minima. Both the x- and y-axes
+are in log-scale.
+
+Figure 6 shows the results of this large-scale optimization experiment of 48 independent trials of ZoMBI across each of
+the 144 unique permutations of the Ackley function dataset with varying optimum hypervolumes and dimensionality.
+All points below the grey-shaded region fall within the optimum basin of attraction. The red trace of the Pareto front
+indicates the narrowest optimum hypervolume and dimensionality conditions of a dataset that result in the best minimum
+function value being discovered. We show that with an initialization set of i = 5, ZoMBI can reliably discover the global
+minimum region for needles as narrow as 0.05% of total hypervolume space. Moreover, as the optimum becomes
+narrower than 0.05% of the total hypervolume, the initialization set is no longer sufficient and ZoMBI gets trapped
+in local minima, as indicated by the greyed-out region. Conversely, as the optimum becomes wider than 5% of the
+total hypervolume, the manifold becomes flatter, expressing the greedy nature of ZoMBI to falsely zoom inward to less
+ideal function values than it would for narrower optimum conditions. This experiment quantifies the range of ZoMBI’s
+Goldilocks zone to be between 0.05% and 5% optimum hypervolume. Therefore, for ideal performance, ZoMBI is best
+used on datasets with optimum conditions consisting of between 0.05% and 5% of the total number of conditions. This
+optimum hypervolume trade-off of ZoMBI is further assessed relative to other optimization methods in Figure S-3.
+
+In the next section, three real-world datasets are optimized using ZoMBI – each of these datasets have extreme data
+imbalances, illustrated in 7 within the specified ideal ranges of ZoMBI performance. The 6D Poisson’s Ratio dataset
+has an imbalance of 0.82% optimum conditions, the 6D Thermoelectric Figure of Merit dataset has an imbalance
+of roughly 1.32% optimum conditions, and the 11D wildfire detection dataset has an imbalance of 4.16% optimum
+conditions. This range of ideal performance of ZoMBI between 0.05% and 5% optimum hypervolume is facilitated by
+the initialization set. Hence, to improve performance for narrower optima, either the number of initialization samples
+must be increased, or initialization conditions should be adjusted. Additional initialization conditions experiments of
+ZoMBI are shown in supplemental Section S-5.
+
+4.2
+6D Poisson’s Ratio
+
+The first experimental dataset is 6-dimensional and consists of 146k materials from the publicly available Materials
+Project database with different mechanical properties, described by Poisson’s Ratio, ν [12]. Only 0.82% of the total
+146k materials have a negative Poisson’s Ratio, ν < 0 [16, 12, 11, 17]. Hence, for this experiment, we aim to minimize
+
+10
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure 7: Data Distributions of Real-world Needle-in-a-Haystack Datasets (top) The histogram distributions of the
+full real-world datasets with callouts for optimum conditions: (a) Poisson’s Ratio with 146k materials in the dataset
+and νmin = {−1.7, −1.2}, (b) Thermoelectric Figure of Merit with 1k materials in the dataset computed by BoltzTraP
+[61] and ZTmax = {1.4, 1.9}, (c) Wildfire Detection with 128k meteorological conditions collected over 33 months
+from January 2018 to September 2020 from CIMIS [62] and ψ < 0 conditions indicating those with a high likelihood
+of wildfire outbreaks. (bottom) The noisy, non-convex manifold topologies of each dataset generated by a random
+forest regression with 500 trees. Each manifold is a projected 3D slice of higher dimensional space with the z-axis and
+colorbar indicating the target property, where (a) X1 is density and X2 is formation energy, (b) X1 is formation energy
+and X2 is band gap, (c) X1 is evapotranspiration and X2 is precipitation.
+
+ν. A positive ν > 0, describes a material that expands when a compressive load is applied to the orthogonal direction
+[63, 64]. Conversely, a negative ν < 0 describes a material that contracts rather than expands when compressed in
+the orthogonal direction, denoted as an auxetic material – a rare phenomenon [16, 23]. Auxetic materials with highly
+negative Poisson’s ratios have energy absorptive properties that are ideal materials for wearable medical devices and
+protective armor that must absorb the energy of large impacts to keep bones from shifting or to inhibit the penetration
+of the protective layer [17, 18].
+
+Figure 8 demonstrates the optimization performance of ZoMBI on the Poisson’s Ratio dataset compared to MiP-EGO,
+TuRBO, and HEBO. The ZoMBI algorithm is run with each of the four acquisition functions: LCB, LCB Adaptive, EI, and
+EI Abrupt. In under 100 evaluated experiments, LCB and LCB Adaptive discover the global minimum NiaH material,
+Li2NbF6 (ν ≈ −1.7). The variance of ν values for the final experiment across all ensemble runs is illustrated as a
+KDE plot for each method to highlight the sampling density and general rate of success. HEBO discovers the global
+minimum after ZoMBI with LCB and LCB Adaptive, however, the spread of runs for ZoMBI is narrower than that of
+HEBO, which indicates that for this problem, ZoMBI can more consistently discover the minimum, that is 3x lower than
+those discovered by MiP-EGO and TuRBO. Furthermore, the rate of convergence on Needle 1 is faster for ZoMBI than
+HEBO.
+
+Figure 7(a) illustrates the distribution of ν values within the full dataset. The ground truth "needle" materials with the
+lowest ν values are Li2NbF6 with ν ≈ −1.7 and Na2CO3 with ν ≈ −1.2. ZoMBI with the LCB and LCB Adaptive
+acquisition functions and HEBO discover Li2NbF6, while ZoMBI with the EI Abrupt acquisition function discovers
+Na2CO3.
+
+11
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure 8: Discovery of Rare Negative Poisson’s Ratio Materials. The optimization objective is to find the material
+with the minimum Poisson’s ratio in 100 experiments from the dataset presented in Figure 7(a). The green, blue, red,
+and orange lines indicate the median best running evaluated sample of ZoMBI using the LCB, LCB Adaptive, EI, and EI
+Abrupt acquisition functions, respectively. The pink, black, and teal lines indicate the median best running evaluated
+sample of the methods MiP-EGO, TuRBO, and HEBO respectively. Random sampling is illustrated as a dashed grey line
+for benchmarking. The median for each method is taken over the best 12 independent model runs. The shaded regions
+indicate the variance between model runs. The cross-hatched region indicates the space discovered by standard BO
+methods, without the use of ZoMBI, which use the same hyperparameters as described in Section 2.2. The distribution
+across all 12 model runs of the final sampled experiment for each method is shown as a kernel density estimation (KDE)
+along the y-axis. The y-values for the needle-like optima are indicated by dashed black lines.
+
+4.3
+6D Thermoelectric Figure of Merit
+
+The second experimental dataset is 6-dimensional and consists of 1k materials with different thermal and electrical
+properties, described by the Thermoelectric Figure of Merit, ZT. Since ZT values are always positive, there is no
+clear cutoff for what "optimum" conditions are, but with a threshold of ZT > 0.8, 1.32% of the total 1k materials
+are considered optimum. A higher ZT indicates that the material is better able to convert a thermal gradient into an
+electrical current [65]. Hence for this experiment, we aim to maximize ZT. Unlike Poisson’s Ratio, Thermoelectric
+Merit is determined by a combination of several variables, rather than a single variable [65]:
+
+ZT = S2σ
+
+κ T,
+(4)
+
+where S is the Seebeck coefficient, σ is electrical conductivity, T is the average temperature, and κ is thermal
+conductivity. The ZT is computed for each material with valid thermal and electrical properties in the Materials
+Project database using BoltzTraP [61]. ZT is a common figure of merit used to describe the thermal-to-electrical or
+electrical-to-thermal conversion efficiency of thermoelectric materials [66, 67, 68, 69]. Materials with high ZT values
+have a range of applications from usage as solid-state cooling devices to being used as sensors that when heated up, will
+produce an electrical signal [19, 20, 21].
+
+12
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure 9: Discovery of Rare Positive Thermoelectric Figure of Merit Materials. The optimization objective is to
+find the material with the maximum Thermoelectric Figure of Merit in 100 experiments from the dataset presented in
+Figure 7(b). The green, blue, red, and orange lines indicate the median best running evaluated sample of ZoMBI using
+the LCB, LCB Adaptive, EI, and EI Abrupt acquisition functions, respectively. The pink, black, and teal lines indicate
+the median best running evaluated sample of the methods MiP-EGO, TuRBO, and HEBO respectively. Random sampling
+is illustrated as a dashed grey line for benchmarking. The median for each method is taken over the best 12 independent
+model runs. The shaded regions indicate the variance between model runs. The cross-hatched region indicates the space
+discovered by standard BO methods, without the use of ZoMBI, which use the same hyperparameters as described in
+Section 2.2. The distribution across all 12 model runs of the final sampled experiment for each method is shown as
+a kernel density estimation (KDE) along the y-axis. The y-values for the needle-like optima are indicated by dashed
+black lines.
+
+Figure 9 demonstrates the optimization performance of ZoMBI on the Thermoelectric Figure of Merit dataset compared
+to MiP-EGO, TuRBO, and HEBO. In this experiment, although none of the tested methods are able to discover the maximum
+needle, LCB Adaptive discovers the second highest needle-in-a-haystack material, Na4Al3Ge3IO12 (ZT ≈ 1.4) in
+under 100 experiments. Neither HEBO, TuRBO, nor MiP-EGO are capable of discovering any needle-like ZT optima and
+MiP-EGO performs worse than random sampling in this experiment. The wide variance across runs for ZoMBI and HEBO,
+shown in the KDE plots, indicate that both methods operate relatively explorative to discover maxima in this topology.
+Ultimately, this experiment demonstrates that ZoMBI can optimize material objective functions that have a complex
+combination of variables (Equation 4) with roughly 2x better performance than HEBO.
+
+Figure 7(b) illustrates the distribution of ZT values within the full dataset. The ground truth "needle" materials with
+the highest ZT values are Sr4Al6SO12 with ZT ≈ 1.9 and Na4Al3Ge3IO12 with ZT ≈ 1.4. ZoMBI with the LCB
+Adaptive acquisition function is the only method that discovers one of these needles, Na4Al3Ge3IO12.
+
+4.4
+11D Wildfire Detection
+
+The third experimental dataset is 11-dimensional and consists of 128k meteorological conditions and an index, ψ,
+that determines whether the set of conditions has a high likelihood of generating or sustaining a wildfire in the state
+of California – publicly available from the California Irrigation Management Information System (CIMIS) weather
+stations [62]. Only 4.16% of the total 128k meteorological conditions have a negative wildfire detection index, ψ < 0.
+A highly negative ψ indicates a high risk of wildfires. Hence, for this experiment, we aim to minimize ψ, to best detect
+
+13
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure 10: Detection of Environmental Conditions with Wildfire Risk. The optimization objective is to find the
+meteorological conditions with the minimum wildfire detection index, ψ, in 100 experiments from the dataset presented
+in Figure 7(c). Conditions with ψ < 0 have the highest risk of sustaining wildfire. The green, blue, red, and orange
+lines indicate the median best running evaluated sample of ZoMBI using the LCB, LCB Adaptive, EI, and EI Abrupt
+acquisition functions, respectively. The pink, black, and teal lines indicate the median best running evaluated sample
+of the methods MiP-EGO, TuRBO, and HEBO respectively. Random sampling is illustrated as a dashed grey line for
+benchmarking. The median for each method is taken over the best 12 independent model runs. The shaded regions
+indicate the variance between model runs. The cross-hatched region indicates the space discovered by standard BO
+methods, without the use of ZoMBI, which use the same hyperparameters as described in Section 2.2. The distribution
+across all 12 model runs of the final sampled experiment for each method is shown as a kernel density estimation (KDE)
+along the y-axis. The y-values for the needle-like optima are indicated by dashed black lines.
+
+meteorological conditions at high risk of wildfires. The dataset spans over two years of data collected from 2018 to 2020,
+during which over 2500 wildfires have occurred, burning over 24 million acres of land [70]. In California, temperature
+and precipitation alone are poor indicators for wildfire outbreaks (see Figure S-1(c)), resulting in researchers using
+computer-vision methods or convolutions of many meteorological variables to reliably detect wildfire conditions instead
+[25, 70]. Thus, there is a high need for algorithmic support to aid humans in early wildfire detection.
+
+Figure 10 demonstrates the optimization performance of ZoMBI on the Wildfire Detection dataset compared to MiP-EGO,
+TuRBO, and HEBO. In this experiment, LCB Adaptive, EI, and HEBO discover the lowest index value, ψ ≈ −3.5, for
+detecting wildfires based on a high-dimensional convolution of ten meteorological variables. TuRBO and MiP-EGO
+also discover a low index value, ψ ≈ −2.5, however, these methods have widely distributed variances, as shown by
+the KDE plots, indicating inconsistent optimization results given only 100 sampled experiments. Similarly, HEBO has
+high variance across model runs while the LCB Adaptive and EI ZoMBI methods have a tight distribution, indicating
+more reliable optimization results with a higher rate of success. Furthermore, ZoMBI methods achieve a faster rate of
+convergence than HEBO onto the Needle 1 optimum, similar to the optimization results on the Poisson’s Ratio dataset in
+Section 4.2.
+
+Figure 7(c) illustrates the distribution of ψ values within the full dataset. The ground truth "needle" conditions for
+detecting wildfires are those with the most negative detection index values, ψ. Although ZoMBI with the LCB Adaptive
+and EI acquisition functions as well as HEBO discover the lowest needle-like ψ conditions after 100 sampled experiments,
+none of the tested methods are able to find the global ψmin ≈ −12. These results imply that, even for ZoMBI, with a
+narrow enough needle-like optimum, the LHS initialization of i = 5 experiments, may not be sufficient. In the next
+section, we stress-test this hypothesis on ZoMBI.
+
+14
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+5
+Summary & Conclusions
+
+In this paper, we proposed the [Zo]oming [M]emory-[B]ased [I]nitialization (ZoMBI) algorithm that builds on the
+principles of Bayesian optimization to accelerate the optimization of Needle-in-a-Haystack problems by two-fold,
+firstly by requiring fewer experiments to achieve better optimum faster than existing MiP-EGO [45], TuRBO [39], and
+HEBO [50] on a variety of real-world applications, and secondly by pruning the memory of low-performing historical
+experiments to speed-up compute time. The ZoMBI algorithm convergences onto narrow and sharp optima quickly in
+Needle-in-a-Haystack datasets by (1) using the values of the m best performing previously sampled memory points
+to iteratively zoom in the search bounds of the manifold uniquely on each dimension and (2) implementing two
+custom acquisition functions, LCB Adaptive and EI Abrupt, that adapt their hyperparameters to tune sampling of
+new experimental conditions based on learned information from the surrogate model. The main contributions of
+this algorithm solve three fundamental challenges of optimizing non-convex Needle-in-a-Haystack problems: (1)
+the challenge of locating the hypervolume region of the manifold containing the narrow global optimum basin of
+attraction [29, 30, 13] is alleviated by introducing iterative search bounds based on learned knowledge of the manifold;
+(2) the challenge of polynomially increasing compute times of BO using a GP surrogate [34, 35, 36, 5, 6, 37, 38] is
+addressed by actively pruning the retained memory of the algorithm after each activation, α, in turn, reducing the
+time complexity from O(n3) to O(φ3) for φ forward experiments per activation, α, which trends to a constant O(1)
+when α > 1; (3) unwanted pigeonholing into local minima [31, 32, 5, 6] is avoided by both the zooming mechanics
+of ZoMBI as well as using the two acquisition functions developed in this paper, LCB Adaptive and EI Abrupt, that
+tune their hyperparameters through adaptive learning. By developing the ZoMBI algorithm to solve these challenges, it
+becomes possible to quickly and efficiently find optimal solutions to complex Needle-in-a-Haystack problems in fewer
+experiments.
+
+Solving a Needle-in-a-Haystack problem that arises from extremely imbalanced data is a significant challenge that
+has important implications in science and engineering, especially within the field of materials science [10, 29]. In
+this paper, we use ZoMBI to discover the optimum materials in two real-world materials science Needle-in-a-Haystack
+datasets where only a small fraction of the entire search space consists of the target optimum conditions. For breadth,
+we also extend our analysis to a third real-world dataset but for ecological resource management with the objective
+of discovering the environmental conditions that have a high likelihood of sustaining wildfires for early detection
+of wildfires. In the first materials dataset, we discover a material with a highly negative Poisson’s ratio, ν, [12, 11];
+in the second materials dataset, we discover a material with a highly positive thermoelectric figure of merit, ZT
+[61, 12], both rare material properties; and in the third dataset for ecological resource management, we discover a set of
+environmental conditions with a highly negative wildfire detection index, ψ [62, 25, 70]. For the first dataset, both the
+ZoMBI algorithm with the LCB and LCB Adaptive custom acquisition functions and HEBO [50] discover the material
+with the minimum ν ≈ −1.7, however, the ZoMBI methods converge on this minimum in only 70 experiments while
+HEBO takes 90 experiments. TuRBO [39] and MiP-EGO [45] only discover materials with ν ≈ −0.55 and ν ≈ −0.20,
+respectively. For the second dataset, the ZoMBI algorithm with the LCB Adaptive custom acquisition function discovers
+the material with the maximum ZT ≈ 1.4, while HEBO [50], TuRBO [39], and MiP-EGO [45] only discover ZT ≈ 0.78,
+ZT ≈ 0.65, and ZT ≈ 0.45, respectively. For the third dataset the ZoMBI algorithm with all acquisition functions
+and HEBO [50] discover a minimum ψ ≈ −3, while TuRBO [39] and MiP-EGO [45] both only discover ψ ≈ −2.
+However, the ZoMBI methods converge on the minimum faster and with less variance. In general, we note HEBO [50]
+outperforms the other benchmark methods, TuRBO [39] and MiP-EGO [45]. Thus, for future investigation, we believe
+the performance of ZoMBI may be further improved by running optimization within the latent space of a variational
+autoencoder, similar to HEBO [71, 72]. Overall, these results demonstrate that the ZoMBI algorithm is more well-suited
+to tackle various real-world Needle-in-a-Haystack optimization problems than current methods, however, ZoMBI has
+performance limitations for extremely narrow optima when instantiated with an insufficient initialization set. Therefore
+to assess these limitations, we stress tested ZoMBI on an additional 174 analytical datasets with varying optimum needle
+widths, optimum distance to edges, dimensionality, and initialization conditions. These results concluded that with a
+fixed initialization set of 5 samples, ZoMBI has ideal performance on datasets with needle-like optima consisting of
+between 0.05%–5% of total hypervolume space. Furthermore, by extending the range of the initialization set, ZoMBI is
+capable of discovering global minima that lay on the absolute edge of a manifold’s limits. Thus, in these certain cases,
+convergence to a global optimum using ZoMBI is not guaranteed, but with slight modifications based on some a priori
+domain knowledge of the optimization landscape, ZoMBI produces high-performance and low-variance results.
+
+Ultimately, the significance of developing the ZoMBI algorithm is to quickly and efficiently tackle difficult Needle-in-
+a-Haystack optimization problems in extremely imbalanced datasets. In this paper, we showcased the ability of the
+developed algorithm to discover rare materials and conditions with highly-optimized properties in a short period of
+time using few experiments. Discovering rare materials quickly and efficiently enables widespread access to a new
+range of materials applications from engineering high-performance medical devices to ubiquitous solid-state cooling
+systems [17, 18, 19, 20, 10, 21]. However, the application space for ZoMBI to accelerate the efficient discovery of
+
+15
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+highly-optimized solutions extends past materials science and is generally applicable for many Needle-in-a-Haystack
+problems, including those found in ecological resource management [24, 25], fraud detection [26, 27], and rare disease
+prediction [28, 27]. We aim for this contribution to support the elimination of the time and resource barriers previously
+inhibiting the throughput of optimizing complex and challenging Needle-in-a-Haystack problems across a broad range
+of application spaces.
+
+Acknowledgements
+
+Basita Das is thanked for help in naming the algorithm. Xiaonan Wang is thanked for initial discussions for this study.
+John Dagdelen, Hongbin Zhang, and Shyam Dwaraknath are thanked for discussion of and reference to different
+Needle-in-a-Haystack problems within materials science. The authors acknowledge the MIT SuperCloud and Lincoln
+Laboratory Supercomputing Center for providing HPC resources that have contributed to the research results reported
+within this paper. This material is based upon the work supported by the U.S. Department of Energy’s Office of
+Energy Efficiency and Renewable Energy (EERE) under the Solar Energy Technology Office (SETO) award number
+DE-EE0009366.
+
+Data Availability
+
+Implementation of the ZoMBI algorithm, the experimental dataset analyzed during the current study, the simulated data
+and labeled data supporting the findings of this study, and the data comprising the figures in this paper are all available
+in the following GitHub repository: https://github.com/PV-Lab/ZoMBI.
+
+Author Contributions
+
+A.E.S., Z.R., and T.B. conceived of and designed the study. Q.L. and T.B. provided guidance on machine learning
+methods, benchmark functions, and datasets. A.E.S. and Z.R. wrote the code. A.E.S. performed the machine learning
+modeling and analysis. A.E.S. wrote the paper, while all co-authors reviewed the manuscript.
+
+Conflicts of Interest
+
+Although our laboratory has IP filed covering photovoltaic technologies and materials informatics broadly, we do not
+envision a direct COI with this study, the content of which is open sourced. Two of the authors (Z.R. and T.B.) own
+equity in Xinterra Pte Ltd, which applies machine learning to accelerate novel materials development.
+
+References
+
+[1] Zhe Liu, Nicholas Rolston, Austin C. Flick, Thomas W. Colburn, Zekun Ren, Reinhold H. Dauskardt, and Tonio
+Buonassisi. Machine learning with knowledge constraints for process optimization of open-air perovskite solar
+cell manufacturing. Joule, 6(4):834–849, 2022.
+
+[2] Alexander E. Siemenn, Evyatar Shaulsky, Matthew Beveridge, Tonio Buonassisi, Sara M. Hashmi, and Iddo Drori.
+A Machine Learning and Computer Vision Approach to Rapidly Optimize Multiscale Droplet Generation. ACS
+Applied Materials & Interfaces, 14(3):4668–4679, 2022.
+
+[3] Flore Mekki-Berrada, Zekun Ren, Tan Huang, Wai Kuan Wong, Fang Zheng, Jiaxun Xie, Isaac Parker Siyu
+Tian, Senthilnath Jayavelu, Zackaria Mahfoud, Daniil Bash, Kedar Hippalgaonkar, Saif Khan, Tonio Buonassisi,
+Qianxiao Li, and Xiaonan Wang. Two-step machine learning enables optimized nanoparticle synthesis. npj
+Computational Materials 2021 7:1, 7(1):1–10, 2021.
+
+[4] Shijing Sun, Armi Tiihonen, Felipe Oviedo, Zhe Liu, Janak Thapa, Yicheng Zhao, Noor Titan P. Hartono, Anuj
+Goyal, Thomas Heumueller, Clio Batali, Alex Encinas, Jason J. Yoo, Ruipeng Li, Zekun Ren, I. Marius Peters,
+Christoph J. Brabec, Moungi G. Bawendi, Vladan Stevanovic, John Fisher, and Tonio Buonassisi. A data fusion
+approach to optimize compositional stability of halide perovskites. Matter, 4(4):1305–1322, 2021.
+
+[5] Edward Snelson and Zoubin Ghahramani.
+Sparse Gaussian Processes using Pseudo-inputs.
+In Y Weiss,
+B Schölkopf, and J Platt, editors, Advances in Neural Information Processing Systems, volume 18. MIT Press,
+2005.
+
+16
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+[6] Carl Edward Rasmussen and Christopher K. I. Williams. Gaussian Processes for Machine Learning. The MIT
+Press, 2005.
+
+[7] Eric Brochu, Vlad M. Cora, and Nando de Freitas. A Tutorial on Bayesian Optimization of Expensive Cost
+Functions, with Application to Active User Modeling and Hierarchical Reinforcement Learning. 2010.
+
+[8] Jasper Snoek, Hugo Larochelle, and Ryan P Adams. Practical Bayesian Optimization Of Machine Learning
+Algorithms. pages 1–12, 2001.
+
+[9] Qiaohao Liang, Aldair E. Gongora, Zekun Ren, Armi Tiihonen, Zhe Liu, Shijing Sun, James R. Deneault, Daniil
+Bash, Flore Mekki-Berrada, Saif A. Khan, Kedar Hippalgaonkar, Benji Maruyama, Keith A. Brown, John Fisher,
+and Tonio Buonassisi. Benchmarking the performance of Bayesian optimization across multiple experimental
+materials science domains. npj Computational Materials 2021 7:1, 7(1):1–10, 2021.
+
+[10] Yoolhee Kim, Edward Kim, Erin Antono, Bryce Meredig, and Julia Ling. Machine-learned metrics for predicting
+the likelihood of success in materials discovery. npj Computational Materials, 6(131), 2020.
+
+[11] Maarten De Jong, Wei Chen, Thomas Angsten, Anubhav Jain, Randy Notestine, Anthony Gamst, Marcel Sluiter,
+Chaitanya Krishna Ande, Sybrand Van Der Zwaag, Jose J. Plata, Cormac Toher, Stefano Curtarolo, Gerbrand
+Ceder, Kristin A. Persson, and Mark Asta. Charting the complete elastic properties of inorganic crystalline
+compounds. Scientific Data, 2(1):1–13, 2015.
+
+[12] Anubhav Jain, Shyue Ping Ong, Geoffroy Hautier, Wei Chen, William Davidson Richards, Stephen Dacek, Shreyas
+Cholia, Dan Gunter, David Skinner, Gerbrand Ceder, and Kristin A. Persson. Commentary: The Materials Project:
+A materials genome approach to accelerating materials innovation. APL Materials, 1(1):011002, 2013.
+
+[13] Ioan Andricioaei and John E Straub.
+Finding the needle in the haystack: Algorithms for conformational
+optimization. Computers in Physics, 10:449, 1996.
+
+[14] Matthias Seeger. Gaussian processes for machine learning. International journal of neural systems, 14(2):69–106,
+2004.
+
+[15] Jasper Snoek, Oren Ripped, Kevin Swersky, Ryan Kiros, Nadathur Satish, Narayanan Sundaram, Md Mostofa Ali
+Patwary, Prabhat, and Ryan P. Adams. Scalable Bayesian optimization using deep neural networks. 32nd
+International Conference on Machine Learning, ICML 2015, 3:2161–2170, 2015.
+
+[16] John Dagdelen, Joseph Montoya, Maarten De Jong, and Kristin Persson. Computational prediction of new auxetic
+materials. Nature Communications, 8(1):1–8, 2017.
+
+[17] Krishna Kumar Saxena, Raj Das, and Emilio P. Calius. Three Decades of Auxetics Research Materials with
+Negative Poisson’s Ratio: A Review. Advanced Engineering Materials, 18(11):1847–1870, 2016.
+
+[18] Q Liu. Literature Review: Materials with Negative Poisson’s Ratios and Potential Applications to Aerospace and
+Defense. Technical report, Australian Government Department of Defense, 2006.
+
+[19] Wael A Salah and Mai Abuhelwa. Review of Thermoelectric Cooling Devices Recent Applications. Journal of
+Engineering Science and Technology, 15(1):455–476, 2020.
+
+[20] Ran He, Gabi Schierning, and Kornelius Nielsch. Thermoelectric Devices: A Review of Devices, Architectures,
+and Contact Optimization. Advanced Materials Technologies, 3(4):1700256, 2018.
+
+[21] Jun Mao, Gang Chen, and Zhifeng Ren. Thermoelectric cooling materials. Nature Materials, 20(4):454–461,
+2020.
+
+[22] Amir Yeganeh-Haeri, Donald J. Weidner, and John B. Parise. Elasticity of α-Cristobalite: A Silicon Dioxide with
+a Negative Poisson’s Ratio. Science, 257(5070):650–652, 1992.
+
+[23] Rod Lakes and K. W. Wojciechowski. Negative compressibility, negative Poisson’s ratio, and stability. Physica
+Status Solidi (B) Basic Research, 245(3):545–551, 2008.
+
+[24] Lisa J Rew, Bruce D Maxwell, Frank L Dougher, and Richard Aspinall. Searching for a needle in a haystack:
+evaluating survey methods for non-indigenous plant species. National Park Biological Invasions, 8:523–539,
+2006.
+
+[25] Abdelmalek Bouguettaya, Hafed Zarzour, Amine Mohammed Taberkit, and Ahmed Kechida. A review on early
+wildfire detection from unmanned aerial vehicles using deep learning-based computer vision algorithms. Signal
+Processing, 190:108309, 2022.
+
+[26] Wei Wei, Jinjiu Li, Longbing Cao, Yuming Ou, Jiahang Chen, W Wei, J Li, L Cao, Y Ou, and J Chen. Effective
+detection of sophisticated online banking fraud on extremely imbalanced data. World Wide Web, 16(4):449–475,
+2012.
+
+17
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+[27] Neil G Marchant and Benjamin I P Rubinstein. Needle in a Haystack: Label-Efficient Evaluation under Extreme
+Class Imbalance. KDD ’21, August 14–18, 2021, Virtual Event, Singapore, page 11, 2021.
+
+[28] Mohammed Khalilia, Sounak Chakraborty, and Mihail Popescu. Predicting disease risks from highly imbalanced
+data using random forest. BMC Medical Informatics and Decision Making, 11(1):1–13, 2011.
+
+[29] Koby Crammer and Gal Chechik. A Needle in a Haystack: Local One-Class Optimization. Proceedings of the
+21st International Conference on Machine Learning, Banff, Canada, 2004.
+
+[30] Haixiang Liu, Yuanming Hu, Bo Zhu, Wojciech Matusik, and Eftychios Sifakis.
+Narrow-Band Topology
+Optimization on a Sparsely Populated Grid. ACM Transactions on Graphics, 37(6):1–14, 2018.
+
+[31] Helena E. Nusse and James A. Yorke. Basins of Attraction. Science, 271(5254):1376–1380, 1996.
+[32] George Datseris and Alexandre Wagemakers. Effortless estimation of basins of attraction. Chaos: An Interdisci-
+plinary Journal of Nonlinear Science, 32(2):023104, 2022.
+
+[33] Philipp Hennig and Christian J. Schuler. Entropy search for information-efficient global optimization. Journal of
+Machine Learning Research, 13:1809–1837, 2012.
+
+[34] Belyaev Mikhail, Burnaev Evgeny, and Kapushev Yermek. Exact Inference for Gaussian Process Regression in
+case of Big Data with the Cartesian Product Structure. 2014.
+
+[35] Cheng Li, Sunil Gupta, Santu Rana, Vu Nguyen, Svetha Venkatesh, and Alistair Shilton. High Dimensional
+Bayesian Optimization Using Dropout. Proceedings of the 26th International Joint Conference on Artificial
+Intelligence, IJCAI, 2017.
+
+[36] Zi Wang, Chengtao Li, Stefanie Jegelka, and Pushmeet Kohli. Batched High-dimensional Bayesian Optimization
+via Structural Kernel Learning. Proceedings of the 34th International Conference on Machine Learning, Sydney,
+Australia, PMLR, 70, 2017.
+
+[37] Thang D Bui, Josiah Yan, and Richard E Turner. A Unifying Framework for Gaussian Process Pseudo-Point
+Approximations using Power Expectation Propagation. Journal of Machine Learning Research, 18:1–72, 2017.
+
+[38] Gongjin Lan, Jakub M Tomczak, Diederik M Roijers, and A E Eiben. Time Efficiency in Optimization with a
+Bayesian-Evolutionary Algorithm. 2020.
+
+[39] David Eriksson, Michael Pearce, Jacob R Gardner, Ryan Turner, and Matthias Poloczek. Scalable Global
+Optimization via Local Bayesian Optimization. 2020.
+
+[40] Rommel G. Regis. Trust regions in Kriging-based optimization with expected improvement. Engineering
+Optimization, 48(6):1037–1059, 2015.
+
+[41] Y Diouane, V Picheny, R Le Riche, A Scotto, and Di Perrotolo. TREGO: a Trust-Region Framework for Efficient
+Global Optimization. 2021.
+
+[42] Michalis Titsias. Variational learning of inducing variables in sparse gaussian processes. In David van Dyk
+and Max Welling, editors, Proceedings of the Twelth International Conference on Artificial Intelligence and
+Statistics, volume 5 of Proceedings of Machine Learning Research, pages 567–574, Hilton Clearwater Beach
+Resort, Clearwater Beach, Florida USA, 16–18 Apr 2009. PMLR.
+
+[43] Felix Leibfried, Vincent Dutordoir, S T John, and Nicolas Durrande. A Tutorial on Sparse Gaussian Processes and
+Variational Inference. 2021.
+
+[44] R. E. Turner and M. Sahani. Two problems with variational expectation maximisation for time-series models. In
+D. Barber, T. Cemgil, and S. Chiappa, editors, Bayesian Time series models, chapter 5, pages 109–130. Cambridge
+University Press, 2011.
+
+[45] Bas van Stein, Hao Wang, and Thomas Back. Automatic configuration of deep neural networks with parallel
+efficient global optimization. In 2019 International Joint Conference on Neural Networks (IJCNN), pages 1–7.
+IEEE, 2019.
+
+[46] Donald R Jones, Matthias Schonlau, and William J Welch. Efficient Global Optimization of Expensive Black-Box
+Functions. Journal of Global Optimization, 13:455–492, 1998.
+
+[47] Tinu Theckel Joy, Santu Rana, Sunil Gupta, and Svetha Venkatesh. Fast hyperparameter tuning using Bayesian
+optimization with directional derivatives. Knowledge-Based Systems, 205:106247, 2020.
+
+[48] Aaron Klein, Stefan Falkner, Simon Bartels, Philipp Hennig, and Frank Hutter. Fast Bayesian Optimization of
+Machine Learning Hyperparameters on Large Datasets. 2017.
+
+[49] Yuyu Zhang, Mohammad Taha Bahadori, Hang Su, and Jimeng Sun. FLASH: Fast Bayesian Optimization for Data
+Analytic Pipelines. Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery
+and Data Mining, 2016.
+
+18
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+[50] Alexander I Cowen-Rivers, Wenlong Lyu, Rasul Tutunov, Zhi Wang, Antoine Grosnit, Ryan Rhys Griffiths,
+Alexandre Max Maravel, Hao Jianye, Jun Wang, Jan Peters, and Haitham Bou-Ammar. Hebo: Pushing the limits
+of sample-efficient hyperparameter optimisation honorary position. Journal of Artificial Intelligence Research,
+70:1–15, 2021.
+
+[51] M. D. McKay, R. J. Beckman, and W. J. Conover. A comparison of three methods for selecting values of input
+variables in the analysis of output from a computer code. Technometrics, 42(1):55–61, 2000.
+
+[52] V. R. Šaltenis. One method of multiextremum optimization. Avtomatika i Vychislitel’naya Tekhnika (Automatic
+Control and Computer Sciences), pages 33–38, 1971.
+
+[53] Peter Auer. Using confidence bounds for exploitation-exploration trade-offs. Journal of Machine Learning
+Research, 3:397–422, 2002.
+
+[54] Niranjan Srinivas, Andreas Krause, Sham Kakade, and Matthias Seeger. Gaussian process optimization in the
+bandit setting: No regret and experimental design. Proceedings of the 27th International Conference on Machine
+Learning, Haifa, Israel, 2010, pages 1015–1022, 2010.
+
+[55] Florian Häse, Loïc M. Roch, Christoph Kreisbeck, and Alán Aspuru-Guzik. Phoenics: A bayesian optimizer for
+chemistry. ACS Central Science, 4:1134–1145, 2018.
+
+[56] Florian Häse, Matteo Aldeghi, Riley J. Hickman, Loïc M. Roch, and Alán Aspuru-Guzik. Gryffin: An algorithm
+for bayesian optimization of categorical variables informed by expert knowledge. Applied Physics Reviews,
+8:031406, 7 2021.
+
+[57] D H Ackley. A connectionist machine for genetic hillclimbing. 1987.
+
+[58] E P Adorio. MVF - Multivariate Test Functions Library in C for Unconstrained Global Optimization , 2005.
+
+[59] Albert Reuther, Jeremy Kepner, Chansup Byun, Siddharth Samsi, William Arcand, David Bestor, Bill Bergeron,
+Vijay Gadepally, Michael Houle, Matthew Hubbell, Michael Jones, Anna Klein, Lauren Milechin, Julia Mullen,
+Andrew Prout, Antonio Rosa, Charles Yee, and Peter Michaleas. Interactive supercomputing on 40,000 cores for
+machine learning and data analysis. In 2018 IEEE High Performance extreme Computing Conference (HPEC),
+pages 1–6. IEEE, 2018.
+
+[60] Elon S Correa and Jonathan L Shapiro. Model Complexity vs. Performance in the Bayesian Optimization
+Algorithm. In T P Runarsson, H-G Beyer, E Burke, J J Merelo-Guervos, L D Whitley, and X Yao, editors, Parallel
+Problem Solving from Nature, pages 998–1007. Springer, 2006.
+
+[61] Georg K.H. Madsen and David J. Singh. BoltzTraP. A code for calculating band-structure dependent quantities.
+Computer Physics Communications, 175(1):67–71, 2006.
+
+[62] Gurjot Kohli, Christine M. Lee, Joshua B. Fisher, Gregory Halverson, Evan Variano, Yufang Jin, Daniel Carney,
+Brenton A. Wilder, and Alicia M. Kinoshita. Ecostress and cimis: A comparison of potential and reference
+evapotranspiration in riverside county, california. Remote Sensing 2020, Vol. 12, Page 4126, 12:4126, 2020.
+
+[63] Hoss Belyadi, Ebrahim Fathi, and Fatemeh Belyadi. Rock mechanical properties and in situ stresses. Hydraulic
+Fracturing in Unconventional Reservoirs, pages 215–231, 2019.
+
+[64] Yuriy M. Poplavko. Mechanical properties of solids. Electronic Materials, pages 71–93, 2019.
+
+[65] B. Hinterleitner, I. Knapp, M. Poneder, Yongpeng Shi, H. Müller, G. Eguchi, C. Eisenmenger-Sittner, M. Stöger-
+Pollach, Y. Kakefuda, N. Kawamoto, Q. Guo, T. Baba, T. Mori, Sami Ullah, Xing Qiu Chen, and E. Bauer.
+Thermoelectric performance of a metastable thin-film Heusler alloy. Nature, 576(7785):85–90, 2019.
+
+[66] Hee Seok Kim, Weishu Liu, Gang Chen, Ching Wu Chu, and Zhifeng Ren. Relationship between thermoelectric
+figure of merit and energy conversion efficiency. Proceedings of the National Academy of Sciences of the United
+States of America, 112(27):8205–8210, 2015.
+
+[67] Wei Hsin Chen, Po Hua Wu, Xiao Dong Wang, and Yu Li Lin. Power output and efficiency of a thermoelectric
+generator under temperature control. Energy Conversion and Management, 127:404–415, 2016.
+
+[68] H. Julian Goldsmid. Bismuth telluride and its alloys as materials for thermoelectric generation. Materials,
+7(4):2577–2592, 2014.
+
+[69] Pedro M. Rodrigo, Alvaro Valera, Eduardo F. Fernandez, and Florencia M. Almonacid. Annual Energy Harvesting
+of Passively Cooled Hybrid Thermoelectric Generator-Concentrator Photovoltaic Modules. IEEE Journal of
+Photovoltaics, 9(6):1652–1660, 2019.
+
+[70] Ankita Mohapatra and Timothy Trinh. Early wildfire detection technologies in practice - a review. Sustainability
+2022, Vol. 14, Page 12270, 14:12270, 2022.
+
+19
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+[71] Natalie Maus, Haydn T. Jones, Juston S. Moore, Matt J. Kusner, John Bradshaw, and Jacob R. Gardner. Local
+latent space bayesian optimization over structured inputs. 2022.
+
+[72] Antoine Grosnit, Alexandre Max Maraval, Rasul Tutunov, Ryan-Rhys Griffiths, Huawei Noah, Ark Lab, Alexan-
+der I Cowen-Rivers, Lin Yang Huawei Noah, Ark Lab Lin Zhu Huawei Noah, Ark Lab Wenlong Lyu Huawei Noah,
+Ark Lab Zhitang Chen Huawei Noah, Ark Lab Jun Wang, Jan Peters, and Haitham Bou Ammar. High-dimensional
+bayesian optimisation with variational autoencoders and deep metric learning. 2021.
+
+20
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Supporting Information:
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems
+using Zooming Memory-Based Initialization (ZoMBI)
+
+Alexander E. Siemenn∗,†, Zekun Ren‡, Qianxiao Li¶, Tonio Buonassisi†
+
+†Department of Mechanical Engineering, Massachusetts Institute of Technology, Cambridge, MA 02139, USA
+
+‡Department of Electrical and Computer Engineering, Singapore-MIT Alliance for Research and Technology,
+Singapore 138602, Singapore
+
+¶ Department of Mathematics, National University of Singapore, Singapore 138602, Singapore
+
+∗Corresponding author: asiemenn@mit.edu
+
+S-1
+Ackley Function Description
+
+The Ackley function is an analytical function used in this paper to simulate a Needle-in-a-Haystack problem and is
+capable of having dimensionality between 1-dimension and d-dimensions. The global minimum or "the needle" is
+challenging to discover in few experiments because the percentage of space made up by the global basin of attraction
+decreases exponentially with dimensionality. The basin of attraction is the region containing the global minimum that
+once discovered, can be simply descended to the discover the global minimum. As the b value of the Ackley function
+increases, the basin of attraction region narrows. In addition to having this needle-like global minimum, the Ackley
+function also has many local minima, generating a non-convex response surface. This response surface of the Ackley
+function is quantified through the following equation [57]:
+
+f(X) = −a exp
+
+
+
+
+−b
+
+�
+�
+�
+�1
+
+d
+
+d
+�
+
+i=1
+X2
+i
+
+
+
+
+ − exp
+
+
+
+1
+
+d
+
+d
+�
+
+i=1
+cos(cXi)
+
+
+
+ + a + exp(1),
+(5)
+
+where a determines the connectivity of local minima, b determines the width of the global minimum basin of attraction,
+c determines the periodicity of the local minima, and d is the number of dimensions. For this paper, the Ackley
+functions used have minima connectivity of a = 20 and high minima periodicity of c = π with b and d varying for
+most applications, but generally b = 0.5, d = 5. The response variable, f(X) ∈ R : [0, 25] with the global minimum at
+f(X) = 0 and the basin of attraction existing between 0 ≤ f(X) < 10.
+
+S-2
+Dataset Variables and Descriptions
+
+In this paper, we provide analyses of three real-world datasets: (1) Poisson’s Ratio [12, 11], (2) Thermoelectric Merit
+[61], and (3) Wildfire Detection [62]. The Poisson’s Ratio dataset has a sample size of N = 146, 232 experimental
+and simulated materials, publicly available from the Materials Project database [12]. For this paper, we select five
+real-valued material variables to optimize Poisson’s Ratio over, these variables are shown in Table S-1. The feature
+importance ranking of these variables with the target variable is shown in Figure S-1(a). The target variable, Poisson’s
+Ratio is measured directly or computed using Density Functional Theory (DFT) from the stress, elasticity, and strain
+tensors, σij, Cijkl, and ϵkl [11]:
+
+
+
+
+
+σ1
+σ2
+σ3
+σ4
+σ5
+σ6
+
+
+
+
+=
+
+
+
+
+
+C11
+C12
+C13
+C14
+C15
+C16
+C12
+C22
+C23
+C24
+C25
+C26
+C13
+C23
+C33
+C34
+C35
+C36
+C14
+C24
+C34
+C44
+C45
+C46
+C15
+C25
+C35
+C45
+C55
+C56
+C16
+C26
+C36
+C46
+C56
+C66
+
+
+
+
+
+
+
+
+
+ϵ1
+ϵ2
+ϵ3
+2ϵ4
+2ϵ5
+2ϵ6
+
+
+
+
+(6)
+
+The Thermoelectric Merit dataset has a sample size of N = 1, 063 experimental and simulated materials, publicly
+available from the Materials Project database [12]. For this paper, we select five real-valued material variables to
+optimize Thermoelectric Merit over, these variables are shown in Table S-2. The feature importance ranking of these
+variables with the target variable is shown in Figure S-1(b). The target variable, Thermoelectric Merit is computed from
+
+S-1
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+a combination of several variables as described in Equation 4 using the BoltztraP software [61]. The Wildfire Detection
+dataset has a sample size of N = 128, 009 meteorological conditions measured on a daily basis across several weather
+stations in California in the CIMIS network [62]. For this paper, we select ten real-valued meteorological variables to
+optimize the Wildfire Detection Index over, these variables are shown in Table S-3. The feature importance ranking
+of these variables with the target variable is shown in Figure S-1(c). The target variable, Wildfire Detection Index is
+obtained from the OpenML database.
+
+Table S-1: Poisson’s ratio dataset variables and description.
+
+Training Variable
+Units
+Description
+
+Density
+g/cm3
+Density of the entire molecule.
+Formation Energy
+eV/atom
+Normalized change of energy to form target phase.
+Energy Above Hull
+eV/atom
+Normalized energy to decompose into stable phase.
+Fermi Energy
+eV
+Highest energy level at absolute zero.
+Band Gap
+eV
+Valence to conduction band electron excitation energy.
+
+Target Variable
+Units
+Description
+
+Poisson’s Ratio, ν
+Unitless
+Mechanical deformation perpendicular to the loading direction.
+
+Table S-2: Thermoelectric Merit dataset variables and description.
+
+Training Variable
+Units
+Description
+
+Density
+g/cm3
+Density of the entire molecule.
+Formation Energy
+eV/atom
+Normalized change of energy to form target phase.
+Energy Above Hull
+eV/atom
+Normalized energy to decompose into stable phase.
+Fermi Energy
+eV
+Highest energy level at absolute zero.
+Band Gap
+eV
+Valence to conduction band electron excitation energy.
+
+Target Variable
+Units
+Description
+
+Thermoelectric Merit, ZT
+Unitless
+Electrical and thermal potential of a material to produce current.
+
+Table S-3: Wildfire detection dataset variables and description.
+
+Training Variable
+Units
+Description
+
+Average Soil Temperature
+◦F
+Daily average measurement of the warmth in the soil.
+Solar Radiation
+Ly/day
+Amount of solar electromagnetic radiation received.
+Max Air Temperature
+◦F
+Daily maximum measurement of warmth in the air.
+Dew Point
+◦F
+Daily air temperature at which water condenses.
+Min Air Temperature
+◦F
+Daily minimum measurement of warmth in the air.
+Min Relative Humidity
+%
+Daily minimum percentage of water vapor in air from saturation point.
+Average Vapor Pressure
+mbar
+Daily average partial pressure of water vapor in air.
+Average Wind Speed
+mph
+Daily average velocity of wind.
+Evapotranspiration
+in
+Amount of water lost from soil and plants to the atmosphere.
+Precipitation
+in
+Amount of rainwater received.
+
+Target Variable
+Units
+Description
+
+Wildfire Detection Index, ψ
+Unitless
+Metric for determining an environment’s ability to sustain a wildfire.
+
+S-2
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+(a) Poisson’s Ratio
+
+(b) Thermoelectric Merit
+
+(c) Wildfire Detection
+
+Figure S-1: SHAP Feature Importance Ranking. Each of the training variables for each real-world dataset have their
+importances ranked based on which variable has the highest impact on the output target variable. Variables with a
+higher spread of points have a higher impact on the target variable. Red scatter points are training variable values that
+increase the target variable output, while blue scatter points are training variable values that decrease the target variable
+output. The SHAP analysis was conducted by training a random forest regressor with an 80/20 training/testing split on
+the raw data points from each dataset.
+
+S-3
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+S-3
+Cumulative Compute Time
+
+Figure S-2: Cumulative Wall-clock Compute Time and Function Evaluations. The median total cumulative
+compute time to sample 1,000 experiments of a 6D Ackley function is compared for four independent trials of standard
+BO (solid yellow line) and ZoMBI (solid blue line). Wall-clock compute time is measured on an NVIDIA Tesla Volta
+V100 GPU [59]. The black dotted line indicates the cumulative sum of a constant 1 second compute per experiment
+– the compute time of ZoMBI lies below this line. The yellow and blue dashed lines correspond to the minimum
+evaluated point of the Ackley function for standard BO and ZoMBI, respectively, where zero is the global minimum.
+The cumulative compute times are plotted on a log-scale, whereas the function evaluations are plotted on a linear scale.
+
+In addition to showing the instantaneous compute times for both standard BO and ZoMBI in Figure 4, we show the
+cumulative compute times and the function evaluations achieved on the 6D Ackley function in Figure S-2. Each
+trace shows the average compute across four trials for both standard BO and ZoMBI, with each trial using one of the
+four acquisition functions: LCB, LCB Adaptive, EI, and EI Abrupt. The cumulative compute times give a sense of
+how long each algorithm took to complete the full optimization procedure of 1000 experiments. To complete 1000
+experiments, standard BO took over 1000 minutes, whereas ZoMBI took only 10 minutes, two orders of magnitude
+shorter, with φ = 10 per activation. The black dotted line indicates the cumulative sum of a constant 1-second compute
+per experiment, we note that the compute time for ZoMBI is beneath that line, indicating that, on average, ZoMBI takes
+less than 1 second per experiment to compute. Furthermore, the minimum function evaluations are shown for both
+standard BO and ZoMBI. We show that with standard BO, the function evaluations plateau very early on, however, with
+ZoMBI, the function evaluations continue to decrease until the global minimum is discovered at around 900 experiments.
+
+S-4
+Varying Basin of Attraction Width
+
+The ZoMBI algorithm is designed specifically to tackle NiaH problems where the basin of attraction containing a global
+minimum is narrow [31, 32]. In this experiment, we explore the question, how does basin of attraction width affect the
+ability of ZoMBI to find the global minimum? We present a synthetic example of a 6D noisy and non-convex dataset
+with a global minimum of fmin = −2 whereby applying a Gaussian smoothing function to the dataset, the basin of
+attraction width is synthetically widened. The original, unmodified 6D manifold is based on the Poisson’s Ratio dataset
+[12, 11]. Figure S-3 illustrates the trend lines of optimization performance of ZoMBI with each of its possible acquisition
+functions, relative to TuRBO [39] and MiP-EGO [45]. The trend lines show that for wider basin of attraction problems,
+TuRBO and MiP-EGO outperform ZoMBI with its various acquisition functions. However, as the basin of attraction
+narrows, the problem becomes a NiaH. The trend in performance of ZoMBI improves as the basin width decreases, the
+algorithm becomes more capable of finding the global minimum. Conversely, TuRBO and MiP-EGO become less capable
+of discovering the global minimum as the manifold transitions into a NiaH problem. As the Gaussian smoothing is
+lessened, all global and local minima basins narrow, resulting in less of the manifold space containing optimal regions,
+which accelerates the inward zooming of the search bounds using ZoMBI. Additionally, the more explorative acquisition
+
+S-4
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+Figure S-3: Synthetically Varying Basin of Attraction Width. The colored lines indicate the median trend lines of
+12 independent runs for the final experimental evaluation of each algorithm after 100 sampled experiments for a given
+basin width. The spread of the data from the trend line is indicated by the shaded regions. The datasets with different
+width basins are obtained by synthetically convolving the original 6D Poisson’s ratio dataset topology with Gaussian
+noise of increasing magnitudes. The objective is to find the minimum function value, fmin = −2. In wide basin datasets,
+TuRBO and MiP-EGO, perform the best. However, for NiaH problems with narrow basins, the ZoMBI implementations
+perform better.
+
+functions are shown to perform better than the exploitative functions, such as EI, because pigeonholing is more readily
+avoided, as shown previously in Figure 5.
+
+S-5
+Optima Near Edges
+
+A dataset with a global minimum near an edge is a challenge for ZoMBI to optimize unless the initialization set is altered.
+In this experiment, we evaluate the performance of ZoMBI across fifteen datasets, where each dataset moves the global
+optimum closer to an edge region of the manifold. All fifteen experiments are repeated but with an initialization set
+extending beyond the limiting edge of the manifold. Figure S-4(a) illustrates the minimum function values discovered
+by ZoMBI over 100 experiments for each of the fifteen 6D datasets with varying optimum distances from the center,
+using an initialization set of i = 5 with bounds [0, 1]6 for each run. It is shown that once the optima begin to approach
+the corner (between distance 12-15 from the center), ZoMBI is no longer able to discover the minimum and plateaus
+performance across 100 sampled experiments. These results are explained by the intertwined nature of the iterative
+zooming feature of ZoMBI and the initialization set used to instantiate the optimization procedure. If the initialization is
+at the edge of a small initialization set, an edge-bounded optimum may be easily excluded from the internal initialization
+hypervolume. Hence, when ZoMBI computes a GP surrogate and zooms in its bounds, the global minimum is excluded
+because it was not contained sufficiently within the initialization bounds. To surmount this unfavorable mechanic, one
+may either increase the number of initialization points or extend the bounds of LHS sampling if known a priori that the
+global minimum of the manifold lies close to a boundary.
+
+Figure S-4(b) demonstrates that by extending the LHS sampling bounds during only the initialization of ZoMBI,
+performance degradation of edge-bounded optima is avoided entirely. Extending the initialization bounds allows the GP
+surrogate to extrapolate edge feature information, which ZoMBI can more reliably zoom inward on than features at the
+edge of the bounds. Since it was known a priori that the global minimum of the tested datasets existed at the upper
+limit of the manifold hypervolume, the upper limit of the LHS initialization set was extended. For an arbitrary and
+normalized d-dimensional manifold with an optimum existing at the upper limit of the manifold, LHS bounds are simply
+extended from [0, 1]d to [0, 1 + γ]d, where γ < 0. Although ZoMBI does not work out-of-the-box for every application,
+simple modifications can be made to a single step within the procedure to significantly improve optimization results for
+a breadth of dataset topologies without increasing the required number of sampled experiments.
+
+S-5
+
+
+Fast Bayesian Optimization of Needle-in-a-Haystack Problems using Zooming Memory-Based Initialization
+
+(a) Optima Distance from Center
+
+(b) Optima Distance from Center with Extended Initialization
+
+Figure S-4: Varying Optimum Edge Distance and Initialization Conditions. (a) The performance of ZoMBI is
+shown to degrade if the global optimum needle of a manifold exists near a boundary with a constant initialization
+set. (b) However, by simply extending the initialization bounds for LHS sampling, this unfavorable degradation in
+performance is avoided. Each trace represents the median and variance of four independent trials of ZoMBI with the
+LCB Adaptive acquisition function over 100 evaluated experiments of a 6D Ackley function with hundreds of trap local
+minima. The colorbar of the traces represents the optimum distance from the center of the manifold. A distance of 15
+represents an optimum at the upper limit of the hypervolume corner. The final variance across all trials is illustrated as a
+KDE plot along the y-axis.
+
+S-6
+
+

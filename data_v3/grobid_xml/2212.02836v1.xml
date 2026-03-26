@@ -1,0 +1,660 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Robust Simulation of Poisson&apos;s Equation in a P-N Diode Down to 1 µK</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2022-12-06">6 Dec 2022</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Arnout</forename><surname>Beckers</surname></persName>
+						</author>
+						<title level="a" type="main">Robust Simulation of Poisson&apos;s Equation in a P-N Diode Down to 1 µK</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2022-12-06">6 Dec 2022</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">E2C7B4C931860FAF65D1833DFB8E87F7</idno>
+					<idno type="arXiv">arXiv:2212.02836v1[cond-mat.mes-hall]</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-04T01:59+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<textClass>
+				<keywords>
+					<term>Cryogenic Electronics</term>
+					<term>Device Simulation</term>
+					<term>Diode</term>
+					<term>Sub-Kelvin</term>
+					<term>TCAD</term>
+					<term>Millikelvin</term>
+					<term>Microkelvin</term>
+				</keywords>
+			</textClass>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Semiconductor devices are notoriously difficult to simulate at deep-cryogenic temperatures. The lowest temperature that can be simulated today in commercial TCAD is around 4.2 K, possibly 100 mK, while most experimental quantum science is performed at 10 mK or lower. Besides the challenges in transport solvers, one of the main bottlenecks is the non-convergence in the electrostatics due to the extreme sensitivity to small variations in the potential. This article proposes to reformulate Poisson's equation to take out this extreme sensitivity and improve convergence. We solve the reformulated Poisson equation for a p-n diode using an iterative Newton-Raphson scheme, demonstrating convergence for the first time down to a record low temperature of one microkelvin using the standard IEEE-754 arithmetic with double precision. We plot the potential diagrams and resolve the rapid variation of the carrier densities near the edges of the depletion layer. The main Python functions are presented in the Appendix.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>I. INTRODUCTION</head><p>C RYOGENIC temperatures have been posing challenges to device simulators since the 1980s <ref type="bibr" target="#b0">[1]</ref>- <ref type="bibr" target="#b3">[4]</ref>. The lowest simulate-able temperatures have improved today, but the problem remains essentially the same. The tail of the Fermi-Dirac (FD) distribution becomes almost abrupt at these temperatures, leading to (i) underflow, (ii) bad convergence, and (iii) sharp density variations requiring ever finer meshing.</p><p>Variable precision arithmetic is sometimes used to combat these issues, but it is not preferred given the runtime penalties and lack of support for exotic number formats <ref type="bibr" target="#b4">[5]</ref>- <ref type="bibr" target="#b6">[7]</ref>. More than octuple precision (256-bit) is required to simulate devices at 10 mK, e.g., for quantum applications. Furthermore, the abrupt 0-K approximation of the FD function has been applied <ref type="bibr" target="#b7">[8]</ref>, <ref type="bibr" target="#b8">[9]</ref>, but it cannot be used if electrothermal differences between, say, 4.2 K and 10 mK are to be resolved.</p><p>Recently, commercial TCAD vendors have started dedicated efforts to simulating semiconductor devices at deep-cryogenic temperatures <ref type="bibr" target="#b6">[7]</ref>, <ref type="bibr" target="#b9">[10]</ref>, <ref type="bibr" target="#b10">[11]</ref>. In one TCAD tool, specialized in quantum dots for qubits, it is possible to converge at 100 mK using a unique adaptive meshing strategy <ref type="bibr" target="#b9">[10]</ref>. In another tool, transport at 4 K is possible using a new Quasi-Fermi Transport solver that prevents numerical cancellation of small drift and diffusion currents <ref type="bibr" target="#b6">[7]</ref>. These are important leaps forward, but, to reach lower temperatures, more efforts are needed.</p><p>A. Beckers is with imec, Kapeldreef 75, 3001 Leuven, Belgium. (arnout.beckers@imec.be)</p><p>Here, we take a different approach, focusing on the onedimensional p-n diode as a toy problem for the electrostatics. We present a minimal working example at 1 µK written in Python code, to illustrate and sort out the numerical issues. The impact of various cryo-phenomena is omitted (e.g., dopant freeze-out, band tails, Boltzmann vs. FD statistics, etc.), which can be added later in a robust numerical solver. Section II describes the details of the p-n diode. Section III discusses the numerical challenges in Poisson's equation. Section IV reformulates Poisson's equation to improve convergence. Section V compares the performance of two different Poisson solvers:</p><p>• solve_poisson_standard solves the regular Poisson equation in double precision arithmetic; =⇒ fails to converge below 10 K (reference case) • solve_poisson_reform implements the reformulated Poisson equation in double precision; =⇒ converges down to 1 µK, possibly at lower temperatures, but this is currently sufficient for the typical quantum applications of today (≈ 10 mK), and also prepares for the upcoming microkelvin science <ref type="bibr" target="#b11">[12]</ref>, <ref type="bibr" target="#b12">[13]</ref>.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>II. SPECIFIC BACKGROUND &amp; DETAILS OF THE SIMULATED STRUCTURE</head><p>The low-temperature p-n junction is a fundamental part of cryo-CMOS devices and on-wafer test structures for the fabrication of silicon qubits <ref type="bibr" target="#b13">[14]</ref>. It is also an important device in its own right, e.g., p-n diodes were recently experimentally studied for their functioning as temperature sensors in quantum control ICs <ref type="bibr" target="#b14">[15]</ref>. On the other hand, the internal diode variables like charges and potentials, remain largely unexplored at these temperatures due to the lagging simulation support.</p><p>The state-of-the-art simulate-able temperature of the electrostatics in a diode using the standard double precision arithmetic is currently at 30 K (see Fig. <ref type="figure" target="#fig_1">2</ref> in <ref type="bibr" target="#b1">[2]</ref>). In this work, we will reduce this temperature with seven orders of magnitude while staying within double precision. To be precise, the diode simulated in <ref type="bibr" target="#b1">[2]</ref> is actually a p-i-n diode, but both diodes have sharp internal diffusion layers which are numerically problematic and thus both can serve as good examples.</p><p>Fig. <ref type="figure" target="#fig_0">1</ref> shows the details of the p-n diode to be simulated. The basic device is assumed to be made from silicon; nondegenerately doped, fully ionized, and in thermal equilibrium. The acceptor doping concentration on the left side of the junction is N A = 10 16 cm -3 . The donor doping concentration on the right side is N D = 10 16 cm -3 . The length of the diode is set to L = 1.2 µm. The grid size is then θ = L/m, where m is the number of discretization points inside the device. Charge neutrality is imposed at the boundaries on both sides of the junction (i.e., Neumann boundary conditions dψ/dx = 0), therefore ψ p = ψ 0 = ψ 1 and ψ m = ψ m+1 = ψ n ), where ψ p and ψ n are the known boundary potentials.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>III. CHALLENGES IN POISSON'S EQUATION</head><p>Poisson's equation for the diode in Fig. <ref type="figure" target="#fig_0">1</ref> reads</p><formula xml:id="formula_0">∂ 2 ψ ∂x 2 = -ρ(ψ) ε si ,<label>(1)</label></formula><p>where</p><formula xml:id="formula_1">ρ(ψ) = q • (-n + p -N A + N D ) ,<label>(2)</label></formula><p>is the charge density, q the electric charge, n the electron density, p the hole density, and ε si the permittivity of Si. The electrostatic potential is defined as ψ -(E i -E F )/q, where E i is the intrinsic energy, and E F is the Fermi level. Focusing purely on the numerical challenges, the Boltzmann approximation for n and p provides a good test case for our present purposes, because Boltzmann's exponential tail can both underflow above E F and overflow below E F . This makes it numerically more challenging than the FD distribution, which can only underflow above E F . The Boltzmann relation for the electron density is given by</p><formula xml:id="formula_2">n = n i • exp q • ψ k B T ,<label>(3)</label></formula><p>which brings a three-fold numerical challenge to Poisson's equation at deep-cryogenic temperatures:</p><p>• (i) the intrinsic carrier concentration, n i , can easily underflow at these temperatures, which is often mentioned in the literature <ref type="bibr" target="#b1">[2]</ref>, <ref type="bibr" target="#b5">[6]</ref>. The table in Fig. <ref type="figure" target="#fig_1">2</ref> shows the extremely low values that n i takes below 10 K, which were computed using variable precision arithmetic. These numbers are of limited practical value. • (ii) Since ψ can range up to a few volts during operation, and k B T /q can go below ∼mV, the used floating-point format cannot accommodate such large exponents in (3), causing arithmetic underflow and overflow when numbers fall outside the range of a given precision format (≈ 10 -a &lt; x &lt; 10 a ), where a = 308 for standard IEEE-754 double precision arithmetic. The exponential factor can both underflow and overflow depending on the sign of ψ during device operation. • (iii) n is extremely sensitive to small fluctuations in ψ, due to the small k B T in the exponent of (3). The same remarks also apply to p.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>IV. TRANSFORMATIONS IN POISSON'S EQUATION TO IMPROVE NUMERICS AND CONVERGENCE</head><p>Step-by-step transformations are applied to ( <ref type="formula" target="#formula_0">1</ref>)-( <ref type="formula" target="#formula_2">3</ref>) to improve numerical robustness and convergence at low T .</p><p>1) Avoid Using the Intrinsic Carrier Concentration: While the values of n i given in the table in Fig. <ref type="figure" target="#fig_1">2</ref> are numerically correct, they are far from being physically meaningful in realistically sized semiconductor devices. Using n i = 10 -656 cm -3 is an attempt to model one thermally generated electron in a piece of intrinsic Si with a volume of 10 650 m 3 at 4.2 K. Thus, it is recommended to avoid using n i and expand it in (3), i.e.,</p><formula xml:id="formula_3">n i = N c N v • exp -E g 2k B T ,<label>(4)</label></formula><p>which gives the safer expression,</p><formula xml:id="formula_4">n = N c • exp q • ψ -0.5 • E g k B T ,<label>(5)</label></formula><p>because the numerical challenges are now concentrated in one exponent, and N c ≈ N v are the regular effective density-ofstates which scale as ∝ T 3/2 and therefore are not challenging numerically. Eq. ( <ref type="formula" target="#formula_4">5</ref>) solves (i), but (ii) and (iii) are still active.</p><p>2) Avoid Entering into the Numerically Forbidden Range: To solve (ii), we must have that</p><formula xml:id="formula_5">-a • ln(10) q • ψ -0.5 • E g k B T a • ln(10)<label>(6)</label></formula><p>where a &lt; 308 to stay in double precision arithmetic. This is the same as preventing E F,n from straying too far from the conduction band edge (for n) and entering into the numerically forbidden range in the bandgap. This can be seen by using the definition of ψ from Sec. III in <ref type="bibr" target="#b5">(6)</ref>, which shows that</p><formula xml:id="formula_6">E F,n E c -a • k B T ln(10),<label>(7)</label></formula><p>is required to avoid underflow. Similarly, for holes we would find that <ref type="bibr" target="#b9">(10)</ref>. This creates the numerically forbidden ranges in the bandgap as shown in Fig. <ref type="figure" target="#fig_2">3</ref>. These forbidden energy windows for E F,n and E F,p are better avoided, because they can translate into forbidden simulation domains within the diode (or any other device). Such division between "allowed" and "forbidden" simulation domains will be especially cumbersome because the boundary between them might change with material composition, temperature, device architecture, etc. Therefore it is important to avoid the underflow and overflow immediately in the distribution functions before they have a chance to ripple to other semiconductor quantities. To this end, we can enclose the Boltzmann exponent of ( <ref type="formula" target="#formula_4">5</ref>) within a numerically safe sigmoid function S(η, a), i.e.,</p><formula xml:id="formula_7">E F,p E v + a • k B T ln</formula><formula xml:id="formula_8">n = N c • exp S q • ψ -0.5 • E g k B T , a<label>(8)</label></formula><p>where</p><formula xml:id="formula_9">S(η, a) = a • ln(10) • tanh η a • ln 10<label>(9)</label></formula><p>is the hyperbolic tangent function that goes from -a • ln <ref type="bibr" target="#b9">(10)</ref> to a • ln <ref type="bibr" target="#b9">(10)</ref>, limiting the exponential in (8) to 10 -a and 10 a , respectively. A different sigmoid function could also be used, as long as it does not re-introduce troublesome exponentials, and preferably it should be an invertible function.</p><p>Note that inserting S is physically insignificant if the precision parameter "a" is chosen high enough (e.g., a = 200), yet low enough to avoid numerical issues (a &lt; 308). For more details about S, and a semi-rigorous derivation, see <ref type="bibr" target="#b15">[16]</ref>. Fig. <ref type="figure" target="#fig_3">4</ref> plots the exponentials from (8) in logarithmic scale, at T = 10 mK, with and without S. As can be seen in this figure, for physical levels of the carrier concentration, we have the regular Boltzmann exponential that is active, while underflow and overflow are avoided in the unphysical ranges. However, we must note that there is still a steep slope in the physical range, which is directly related to temperature, and therefore difficult to avoid, producing a large sensitivity to changes in ψ, i.e., the final problem (iii) must still be overcome.</p><p>3) Avoid the Extreme Sensitivity by Normalizing: To overcome (iii), the temperature dependences in n and p must be taken out of their exponents by solving (1) for a newly declared variable that is normalized to temperature, e.g., solve for the dimensionless η (q • ψ -0.5 • E g ) /k B T instead of ψ, which gives the following transformed Poisson's equation,</p><formula xml:id="formula_10">∂ 2 η ∂x 2 = -ρ(η) ε si ,<label>(10)</label></formula><p>where</p><formula xml:id="formula_11">ρ(η) = q 2 k B T × -N c • e S(η,a) + N v • e -S η+ q•Eg k B T ,a -N A + N D .<label>(11)</label></formula><p>Note that this normalization strategy of the electrostatic potential to temperature is only effective in combination with S. Also note that the remaining temperature dependence in the second exponent of ( <ref type="formula" target="#formula_11">11</ref>) is not sensitive because there is no potential in the numerator anymore, only a fixed E g . In a Newton-Raphson scheme, one also needs the derivative of the charge density, which is given by</p><formula xml:id="formula_12">∂ρ(η) ∂η = -q 2 k B T • N c • e S(η,a) + N v • e -S η+ q•Eg k B T ,a ,<label>(12)</label></formula><p>where S was ignored in the chain rule.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>4) Modify the Neumann Boundary Conditions:</head><p>The standard boundary potentials, ψ p = (k B T /q) • ln(n i /N A ) and ψ n = (k B T /q)•ln(N D /n i ) in Fig. <ref type="figure" target="#fig_0">1</ref>, need to be modified accordingly to suit the newly formulated Poisson's equation in terms of η and including S. Using <ref type="bibr" target="#b10">(11)</ref>, charge neutrality on both sides of the junction imposes the following η's at the edges : which made use of the fact that S is an invertible function. Besides these changes to Poisson's equation, a progressively finer mesh and weaker convergence criterion are also required to reach low-temperature convergence. Most of the proposed transformations cannot be implemented through user-defined functions in commercial TCAD; therefore a small demonstrator will be set up in Python in the next section.</p><formula xml:id="formula_13">η n = a • ln(10) • atanh ln(N D /N c ) a • ln 10<label>(13)</label></formula><formula xml:id="formula_14">η p = -q • E g k B T + a ln(10) • atanh ln(N v /N A ) a • ln 10<label>(14)</label></formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>V. MICROKELVIN CONVERGENCE DEMONSTRATION</head><p>In this section, we compare the convergence of two Poisson solvers at low temperatures. The two Python functions implementing these Poisson solvers are presented in Appendix I. The first solver, solve_poisson_standard, is the reference Poisson solver using double precision arithmetic without any changes to Poisson's equation (see e.g., <ref type="bibr" target="#b16">[17]</ref>). The second one, solve_poisson_reform, implements all transformations that were discussed in Sec. IV, and also retains the double precision arithmetic. In both functions, Poisson's equation is discretized on a uniform grid (as shown in Fig. <ref type="figure" target="#fig_0">1</ref>), cast into a system of non-linear difference algebraic equations, and then solved iteratively using Newton-Raphson. The minimum grid size is set by the Debye length L D = ε si k B T /(q 2 N A ) <ref type="bibr" target="#b17">[18]</ref>, which reduces at lower temperatures, thus a sufficiently dense grid was used in all simulations (m = 75 000 grid points down to 1 K, and m = 600 000 down to 1 µK). Furthermore, we have used E g = 1.12 eV and a = 100. The Newton iteration is set to terminate when the error is less than 5.5 × 10 -7 . While the convergence criterion can easily reach machine precision at 300 K, it seems difficult to converge with a criterion smaller than 5.5×10 -7 at microkelvin temperatures. Even when including the bounded distribution function and variable transformation, sub-Kelvin simulation is still an ill-conditioned problem. As expected from Fig. <ref type="figure" target="#fig_1">2</ref>, solve_poisson_standard indeed fails to converge below 10 K in double precision arithmetic [shown in red in Fig. <ref type="figure" target="#fig_5">5(e)</ref>]. On the other hand, thanks to the reformulation of Poisson's equation, solve_poisson_reform succeeds in simulating down to 1 µK (possibly lower), which is an improvement over several orders of magnitude as compared to the latest electrostatic diode simulation at 30 K [Fig. <ref type="figure" target="#fig_1">2</ref>, <ref type="bibr" target="#b1">[2]</ref>]. Yet, despite these transformations, the number of required Newton iterations increases exponentially below 50 K, although the required number is still very reasonable around ≈ 10 mK (178 iterations), and ≈ 4.2 K (about 20 iterations), which are currently the most relevant temperatures for experimental quantum science and the development of deep-cryogenic electronic circuits.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>VI. CONCLUSIONS &amp; OUTLOOK</head><p>• Microkelvin temperature convergence was demonstrated for the electrostatics in a one-dimensional p-n diode using the IEEE-754 double precision format. • Poisson's equation was solved iteratively down to 1 µK, returning the potential and carrier densities without running into underflow, overflow, or convergence issues. Nevertheless, we observed a significant increase in the required number of Newton iterations. • To achieve this, step-by-step transformations were first presented for Poisson's equation to improve its numerical robustness and convergence. We discussed the forbidden energy ranges in the bandgap for the electron and hole Fermi levels. We suggested the use of a sigmoid function in the exponent to avoid entering these ranges. • Steepness of Boltzmann's exponential tail is a numerically dangerous yet indispensable feature of temperature causing an extreme sensitivity to small variations in the potential. It is therefore recommended to solve Poisson's equation for a dimensionless variable that normalizes the potential to the thermal voltage. However, normalization is only effective in combination with the numerically safe sigmoid function in the exponent. • The proposed 1 µK example written in Python can serve as a blueprint for further reducing the lowest achievable temperature in commercial TCAD and other device simulators, closing the gap with recent experimental progress.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX I STANDARD AND REFORMULATED POISSON SOLVERS IN PYTHON CODE FOR pn DIODE</head><p>The Python functions given below use the symbol V for the electrostatic potential (instead of ψ used in the main text) and E for η (normalized potential introduced in Section IV-.3). </p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>Fig. 1 .</head><label>1</label><figDesc>Fig. 1. Details of the silicon p-n diode (in 1-D) and discretization.</figDesc><graphic coords="2,63.97,54.07,221.05,117.30" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Fig. 2 .</head><label>2</label><figDesc>Fig. 2. Intrinsic carrier concentration (n i ) versus temperature (T ) for different materials, see (4). Extensions to quadruple or octuple precision formats do not suffice for reaching the lowest temperatures.</figDesc><graphic coords="2,347.54,54.07,179.93,137.33" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head>Fig. 3 .</head><label>3</label><figDesc>Fig. 3. Numerically forbidden ranges in the bandgap for E F,n (electrons) and E F,p (holes). At 300 K, the bandgap of most semiconductors is entirely numerically safe (308 • k B T • ln 10 ≈ 18 eV), but, at 4.2 K, almost the entire bandgap will be numerically forbidden, except for small energy ranges close to each band edge (308 • k B T • ln 10 ≈ 0.25 eV). At 1 µK, this range becomes exceptionally small (≈ 60 neV).</figDesc><graphic coords="3,84.53,54.07,179.93,130.94" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Fig. 4 .</head><label>4</label><figDesc>Fig. 4. Exponentials from (8) in logarithmic scale with no underflow nor overflow if S is included, but still a high sensitivity to variations in ψ. This sensitivity is intrinsic to T , and must be tackled with a normalization to temperature of the solution variable in Poisson's equation.</figDesc><graphic coords="3,319.26,54.07,236.48,256.77" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Fig. 5 .</head><label>5</label><figDesc>Fig. 5. (a) Electrostatic potential from 300 K down to 1 K using solve_poisson_reform (double precision + reformulated Poisson), (b) Electrostatic potential from 100 mK down to 1 µK using solve_poisson_reform, (c) Electron and hole density from 300 K down to 1 K using solve_poisson_reform, (d) The x-axis zooms in on the electron density on the n-side to better resolve the rapid density variation around 1 µK, (e) Number of Newton iterations required to reach convergence, and (f) Number of iterations increases rapidly below 1 K.</figDesc><graphic coords="4,61.81,54.07,488.38,348.12" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head>Fig. 5</head><label>5</label><figDesc>presents the simulation results obtained in Python. Figs.5(a) and 5(b) show the electrostatic potential diagram in the diode down to 1 K, and 1 µK, respectively, obtained using solve_poisson_reform. The built-in potential increases at lower temperatures, but the variation becomes minimal below 1 K. In Figs.5(c)-(d), we are able to resolve the rapid rise of the carrier densities at the edges of the depletion layer for the first time. Figs.5(e)-(f) show the number of Newton iterations required to reach convergence at each T .</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>1 6 n 8 V 11 Vb r u p t doping p r o f i l e 15 NA 6 E 9 E 3 4 5 r e t u r n 2 *</head><label>68111569352</label><figDesc>i m p o r t numpy as np 2 from s c i p y . c o n s t a n t s i m p o r t e , k , m e , h 3 from s c i p y i m p o r t sparse 4 from s c i p y . sparse i m p o r t l i n a l g 1 d e f s o l v e p o i s s o n s t a n d a r d ( T , NAp , NDn, Eg , L , m, number eps ) : # s t o p s c o n v e r g i n g below 10 K 2 e p s s i = 1.05 e-12 # s i l i c o n p e r m i t t i v i t y 3 UT = k * T / e # t h e r m a l v o l t a g e 4 t h e t a = L / m # d i s c r e t i z a t i o n s t e p 5 i = n i ( T , Eg ) * 1e-6 # i n t r i n s i c c a r r i e r d e n s i t y 7 = np . zeros (m + 2 ) # i n i t i a l guess 9 VN = UT * np . l o g (NDn / n i ) 10 VP = -UT * np . l o g (NAp / n i ) l e E r r o r &gt; number eps * eps : # convergence c r i t e r i o n 23 d2V by dx2 = ( V [ 0 :m] -2 * V [ 1 :m+1] + V [ 2 :m+ 2 ] ) / t h e t a * * 2 24 rho = e * (ND[ 1 :m+1] -NA [ 1 :m+1] -n i * np . exp (V [ 1 :m +1] / UT) + n i * np . exp ( -V [ 1 :m+1] / UT) ) 25 R = d2V by dx2 + rho / e p s s i 26 Mj = 2 / t h e t a * * 2 + ( e * n i / ( e p s s i * UT) ) * ( np . exp ( V [ 1 :m+ 1 ] /UT) + np . exp ( -V [ 1 :m+ 1 ] /UT) ) 27 l e f t d i a g = ( -1 / t h e t a * * 2 ) * np . ones (m-1) 28 r i g h t d i a g = ( -1 / t h e t a * * 2 ) * np . ones (m-1) 29 d i a g s = np . a r r a y ( [ l e f t d i a g , Mj , r i g h t d i a g ] ) 30 CM = sparse . d i a g s ( diags , np . a r r a y ( [ -1 , 0 , 1 ] ) , shape =(m, m) ) 31 DV = l i n a l g . s p s o l v e (CM, R) 32 V [ 1 :m+1] = V [ 1 :m+1] + DV # update p o t e n t i a l 33 E r r o r = np . l i n a l g . norm (DV, 2 ) / np . s q r t (m) 34 c o u n t e r = c o u n t e r + 1 35 r e t u r n V [ 1 :m + 1 ] , counter , E r r o r 1 d e f s o l v e p o i s s o n r e f o r m ( T , NAp , NDn, Eg , L , m, number eps , a ) : # converges down t o 1 uK ( p o s s i b l y l o w e r ) 2 e p s s i = 1.05 e-12 3 UT = k * T / e 4 t h e t a = L / m 5 = np . zeros (m+2) # m o d i f i e d Neumann c o n d i t i o n s 7 EN = a * np . l o g ( 1 0 ) * np . a r c t a n h ( np . l o g (NDn * 1e6 / r e t u r n N c ( T ) ) / ( a * np . l o g ( 1 0 ) ) ) # Eqs . ( 1 3 ) &amp; ( 1 4 ) 8 EP = -Eg / UT + a * np . l o g ( 1 0 ) * np . a r c t a n h ( np . l o g ( r e t u r n N v ( T ) / (NAp * 1e6 ) ) / ( a * np . l o g ( 1 0 ) ) ) e t u r n N c ( T ) * 1e-6 # use Nc &amp; Nv i n s t e a d o f n i 18 Nv = r e t u r n N v ( T ) * 1e-6 l e E r r o r &gt; number eps * eps : 24 d2E by dx2 = ( E [ 0 :m] -2 * E [ 1 :m+1] + E [ 2 :m+ 2 ] ) / t h e t a * * 2 25 # r e f o r m u l a t e d Poisson e q u a t i o n i n c l u d i n g S 26 rho = ( e / UT) * (ND[ 1 :m+1] -NA [ 1 :m+1] -Nc * np . exp ( S ( E [ 1 :m+ 1 ] , a ) ) + Nv * np . exp ( -S ( E [ 1 :m+1] + Eg / UT, a ) ) ) 27 R = d2E by dx2 + rho / e p s s i 28 Mj = 2 / t h e t a * * 2 + ( e / ( e p s s i * UT) ) * ( Nc * np . exp ( S ( E [ 1 :m+ 1 ] , a ) ) + Nv * np . exp ( -S ( E [ 1 :m+1] + Eg / UT, a ) ) ) 29 l e f t d i a g = ( -1 / t h e t a * * 2 ) * np . ones (m-1) 30 r i g h t d i a g = ( -1 / t h e t a * * 2 ) * np . ones (m-1) 31 d i a g s = np . a r r a y ( [ l e f t d i a g , Mj , r i g h t d i a g ] ) 32 CM = sparse . d i a g s ( diags , np . a r r a y ( [ -1 , 0 , 1 ] ) , shape =(m, m) ) 33 # s o l v e f o r n o r m a l i z e d p o t e n t i a l 34 DE = l i n a l g . s p s o l v e (CM, R) 35 E [ 1 :m+1] = E [ 1 :m+1] + DE 36 E r r o r = np . l i n a l g . norm (DE, 2 ) / np . s q r t (m) 37 c o u n t e r = c o u n t e r + 1 38 r e t u r n E [ 1 :m+ 1 ] , counter , E r r o r Auxiliary functions: 1 d e f r e t u r n N c ( t ) : # e f f e c t i v e c o n d u c t i o n band DOS [ # / (mˆ3 ) ] 2 r e t u r n 2 * ( ( 2 * np . p i * 1.182 * m e * k * t ) / ( h * * 2 ) ) * * ( 3 / 2 ) d e f r e t u r n N v ( t ) : # e f f e c t i v e valence band DOS [ # / (mˆ3 ) ] ( ( 2 * np . p i * 0.81 * m e * k * t ) / ( h * * 2 ) ) * * ( 3 / 2 ) 7 d e f S( eta , a ) : # n u m e r i c a l l y s a f e sigmoid f u n c t i o n r e t u r n a * np . l o g ( 1 0 ) * np . tanh ( e t a / ( a * np . l o g ( 1 0 ) ) ) 9 10 d e f n i ( t , Eg ) : # i n t r i n s i c c a r r i e r d e n s i t y [ # / (mˆ3 ) ] r e t u r n np . s q r t ( r e t u r n N c ( t ) * r e t u r n N v ( t ) ) * np . exp ( -Eg * e / ( 2 * k * t ) )</figDesc></figure>
+		</body>
+		<back>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">MOS device modeling at 77 K</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Selberherr</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/16.30960</idno>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE Transactions on Electron Devices</title>
+		<imprint>
+			<biblScope unit="volume">36</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="1464" to="1474" />
+			<date type="published" when="1989-08">Aug. 1989</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Numerical simulation of carrier transport in semiconductor devices at cryogenic temperatures</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Kantner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Koprucki</surname></persName>
+		</author>
+		<idno type="DOI">10.1007/s11082-016-0817-2</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Optical and Quantum Electronics</title>
+		<imprint>
+			<biblScope unit="volume">48</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<date type="published" when="2016-12">Dec. 2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Quantum computer aided design simulation and optimization of semiconductor quantum dots</title>
+		<author>
+			<persName><forename type="first">X</forename><surname>Gao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Nielsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">P</forename><surname>Muller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">W</forename><surname>Young</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">G</forename><surname>Salinger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><forename type="middle">C</forename><surname>Bishop</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">P</forename><surname>Lilly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">S</forename><surname>Carroll</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/1.4825209</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Physics</title>
+		<imprint>
+			<biblScope unit="volume">114</biblScope>
+			<biblScope unit="issue">16</biblScope>
+			<biblScope unit="page">164302</biblScope>
+			<date type="published" when="2013-10">Oct. 2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Multiphysics Simulation &amp; Design of Silicon Quantum Dot Qubit Devices</title>
+		<author>
+			<persName><forename type="first">F</forename><forename type="middle">A</forename><surname>Mohiyaddin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Chan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Ivanov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Spessot</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Matagne</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Govoreanu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><forename type="middle">P</forename><surname>Radu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Simion</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><forename type="middle">I D</forename><surname>Stuyck</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Ciubotaru</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Eneman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><forename type="middle">M</forename><surname>Bufler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Kubicek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Jussot</surname></persName>
+		</author>
+		<idno type="DOI">5.4,10.1109/IEDM19573.2019.8993541</idno>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE</title>
+		<imprint>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="1" to="39" />
+			<date type="published" when="2019-12">Dec. 2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Numerical simulation of SiGe HBT&apos;s at cryogenic temperatures</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">M</forename><surname>Richey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">D</forename><surname>Cressler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">C</forename><surname>Jaeger</surname></persName>
+		</author>
+		<idno type="DOI">10.1051/jp4:1994620</idno>
+		<ptr target="http://www.edpsciences.org/10.1051/jp4:1994620" />
+	</analytic>
+	<monogr>
+		<title level="j">Le Journal de Physique IV</title>
+		<imprint>
+			<biblScope unit="volume">04</biblScope>
+			<biblScope unit="page" from="6" to="127" />
+			<date type="published" when="1994-06">Jun. 1994</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Cryogenic MOS Transistor Model</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Beckers</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Jazaeri</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Enz</surname></persName>
+		</author>
+		<idno type="DOI">10.1109/TED.2018.2854701</idno>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE Transactions on Electron Devices</title>
+		<imprint>
+			<biblScope unit="volume">65</biblScope>
+			<biblScope unit="issue">9</biblScope>
+			<biblScope unit="page" from="3617" to="3625" />
+			<date type="published" when="2018-09">Sep. 2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<monogr>
+		<title level="m" type="main">Quasi-Fermi-Based Charge Transport Scheme for Device Simulation in Cryogenic, Wide-Band-Gap, and High-Voltage Applications</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Stanojevic</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">M</forename><surname>Gonzalez Medina</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Schanovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Karner</surname></persName>
+		</author>
+		<idno type="DOI">10.36227/techrxiv.21132637.v1</idno>
+		<ptr target="https://doi.org/10.36227/techrxiv.21132637.v1" />
+		<imprint/>
+	</monogr>
+	<note>Preprint Submitted to Transactions on Electron Devices</note>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">TCAD Simulations of FDSOI devices down to Deep Cryogenic Temperature</title>
+		<author>
+			<persName><forename type="first">E</forename><surname>Catapano</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Cassé</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Gaillard</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>De Franceschi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Meunier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Vinet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Ghibaudo</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/j.sse.2022.108319</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Solid-State Electronics</title>
+		<imprint>
+			<biblScope unit="page">108319</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Poisson-Schrödinger simulation and analytical modeling of inversion charge in FDSOI MOSFET down to 0 K -Towards compact modeling for cryo CMOS application</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Aouad</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Poiroux</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Martinie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Triozon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Vinet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Ghibaudo</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/j.sse.2021.108126</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Solid-State Electronics</title>
+		<imprint>
+			<biblScope unit="volume">186</biblScope>
+			<biblScope unit="page">108126</biblScope>
+			<date type="published" when="2021-12">Dec. 2021</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Robust technology computer-aided design of gated quantum dots at cryogenic temperature</title>
+		<author>
+			<persName><forename type="first">F</forename><surname>Beaudoin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Philippopoulos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zhou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>Kriekouki</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Pioro-H. Guo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Galy</surname></persName>
+		</author>
+		<idno type="DOI">10.1063/5.0097202</idno>
+		<ptr target="https://aip.scitation.org/doi/10.1063/5.0097202" />
+	</analytic>
+	<monogr>
+		<title level="j">Applied Physics Letters</title>
+		<imprint>
+			<biblScope unit="volume">120</biblScope>
+			<biblScope unit="issue">26</biblScope>
+			<biblScope unit="page">264001</biblScope>
+			<date type="published" when="2022-06">Jun. 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Challenges in Design and Modeling of Cold CMOS HPC Technology</title>
+		<author>
+			<persName><forename type="first">V</forename><surname>Moroz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X.-W</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">R</forename><surname>Brown</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Asenov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Bajaj</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Michalak</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Riddet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Svizhenko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Hentschke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Smidstrup</surname></persName>
+		</author>
+		<ptr target="https://ieeexplore.ieee.org/document/9592537/" />
+	</analytic>
+	<monogr>
+		<title level="m">2021 International Conference on Simulation of Semiconductor Processes and Devices (SISPAD)</title>
+		<meeting><address><addrLine>Dallas, TX, USA</addrLine></address></meeting>
+		<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2021-09">Sep. 2021</date>
+			<biblScope unit="page" from="107" to="110" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">The European Microkelvin Platform</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Pickett</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Enss</surname></persName>
+		</author>
+		<ptr target="http://www.nature.com/articles/natrevmats201812" />
+	</analytic>
+	<monogr>
+		<title level="j">Nature Reviews Materials</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<date type="published" when="2018-03">Mar. 2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Microkelvin electronics on a pulse-tube cryostat with a gate Coulomb-blockade thermometer</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Samani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">P</forename><surname>Scheller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">S</forename><surname>Sedeh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">M</forename><surname>Zumbühl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Yurttagül</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Grigoras</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Gunnarsson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Prunnila</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">T</forename><surname>Jones</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">R</forename><surname>Prance</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">P</forename><surname>Haley</surname></persName>
+		</author>
+		<idno type="DOI">10.1103/PhysRevResearch.4.033225</idno>
+		<ptr target="https://link.aps.org/doi/10.1103/PhysRevResearch.4.033225" />
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review Research</title>
+		<imprint>
+			<biblScope unit="volume">4</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page">33225</biblScope>
+			<date type="published" when="2022-09">Sep. 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Linking Room-and Low-Temperature Electrical Performance of MOS Gate Stacks for Cryogenic Applications</title>
+		<author>
+			<persName><forename type="first">K.-H</forename><surname>Kao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Godfrin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Elsayed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Simoen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Grill</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Kubicek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><forename type="middle">P</forename><surname>Radu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Govoreanu</surname></persName>
+		</author>
+		<ptr target="https://ieeexplore.ieee.org/document/9743910/" />
+	</analytic>
+	<monogr>
+		<title level="j">IEEE Electron Device Letters</title>
+		<imprint>
+			<biblScope unit="volume">43</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="674" to="677" />
+			<date type="published" when="2022-05">May 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Integrated Cryo-CMOS Temperature Sensors for Quantum Control ICs</title>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">A</forename><surname>Hart</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Huizinga</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Babaie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Vladimirescu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Sebastiano</surname></persName>
+		</author>
+		<ptr target="https://ieeexplore.ieee.org/document/9882600/" />
+	</analytic>
+	<monogr>
+		<title level="m">2022 IEEE 15th Workshop on Low Temperature Electronics (WOLTE)</title>
+		<meeting><address><addrLine>Matera, Italy</addrLine></address></meeting>
+		<imprint>
+			<publisher>IEEE</publisher>
+			<date type="published" when="2022-06">Jun. 2022</date>
+			<biblScope unit="page" from="1" to="4" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<monogr>
+		<title level="m" type="main">Bounded Distribution Functions for Applied Physics, Especially Electron Device Simulation at Deep-Cryogenic Temperatures</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Beckers</surname></persName>
+		</author>
+		<ptr target="https://arxiv.org/abs/2212.01786" />
+		<imprint>
+			<date type="published" when="2022-12">Dec. 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Newton-Raphson Solution of Poisson&apos;s Equation in a Pn Diode</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">A</forename><surname>Jabr</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Hamad</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><forename type="middle">M</forename><surname>Mohanna</surname></persName>
+		</author>
+		<idno type="DOI">10.7227/IJEEE.44.1.3</idno>
+		<ptr target="http://journals.sagepub.com/doi/10.7227/IJEEE.44.1.3" />
+	</analytic>
+	<monogr>
+		<title level="j">The International Journal of Electrical Engineering &amp; Education</title>
+		<imprint>
+			<biblScope unit="volume">44</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="23" to="33" />
+			<date type="published" when="2007-01">Jan. 2007</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<monogr>
+		<author>
+			<persName><forename type="first">D</forename><surname>Vasileska</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">M</forename><surname>Goodnick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Klimeck</surname></persName>
+		</author>
+		<ptr target="https://www.taylorfrancis.com/books/9781420064841" />
+		<title level="m">Computational Electronics: Semiclassical and Quantum Device Modeling and Simulation</title>
+		<imprint>
+			<publisher>CRC Press</publisher>
+			<date type="published" when="2017-12">Dec. 2017</date>
+		</imprint>
+	</monogr>
+	<note>1st ed</note>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

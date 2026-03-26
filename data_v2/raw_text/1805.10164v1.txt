@@ -1,0 +1,3898 @@
+arXiv:1805.10164v1  [physics.comp-ph]  25 May 2018
+
+A Monte Carlo method for solving the NEGF equations for
+
+electron transport
+
+Lars Musland and Joakim Bergli
+
+University of Oslo, Department of Physics,
+
+P.O. Box 1048 Blindern, NO-0316 Oslo, Norway
+
+Espen Flage-Larsen
+
+SINTEF Materials and Chemistry, P.O. Box 124 Blindern, NO-0314 Oslo, Norway and
+
+University of Stavanger, Department of Mechanical and Structural
+
+Engineering and Materials Science, Ullandhaug, N-4036 Stavanger
+
+Abstract
+
+We derive, by introducing restrictions to the lesser self energy, a Monte Carlo scheme that
+
+solves the NEGF equations for electron transport. In doing so we formally prove that the Monte
+
+Carlo estimator has an expectation value equal to the lead current of the NEGF solution, and we
+
+provide a simple test of the Monte Carlo scheme by calculating conductivity in nanowires within
+
+Buttiker’s approximation of scattering. Good agreement between the Monte Carlo simulations and
+
+the alternative approaches are obtained, and we also demonstrate the existence of a regime where
+
+the Monte Carlo method is the fastest method. In our tests this regime is to extreme to be of
+
+practical use. We discuss various ways in which to speed up our prototype and how it can be
+
+extended to include more physics. Although the full applicability range of our assumptions about
+
+the lesser self energy remains to be better understood, we argue that they should apply as long as
+
+the transport process can be considered stationary.
+
+1
+
+
+I.
+INTRODUCTION
+
+In the study of electron transport, the most commonly applied formalism is the Boltz-
+
+mann transport equation, which works well in most applications.
+However, effects that
+
+originate in the wave like nature of electrons are difficult to address with the semiclassi-
+
+cal Boltzmann equation. In order to include such effects, it is instead preferable to use a
+
+transport formalism derived from the Schr¨odinger equation. An example of such a formal-
+
+ism, is the Non-equilibrium Green’s functions (NEGF)1, a generalization of many particle
+
+perturbation theory to non-equilibrium. Due to reduction in size and increased complex-
+
+ity of combinations of different materials, recent years has brought significant interest in
+
+developing NEGF solvers2,3.
+
+However, a remaining challenge with NEGF is the computational burden.
+NEGF is
+
+formulated in terms of matrices of size N × N, where N is proportional to the spatial
+
+system size, and to the number of included states. In addition, these matrices are functions
+
+of energy E, and in many cases also of a Bloch vector k. To obtain acceptable accuracy, the
+
+continuous parameters E and k must be discretized in the form of a dense integration grid.
+
+Thus, without the introduction of approximations, NEGF calculations involve the solution
+
+of large equation sets.
+
+In fact, similar challenges also apply when solving the Boltzmann equation. The Boltz-
+
+mann distribution function, without approximations depends both on position and on Bloch
+
+vector. Thus, the number of parameters is still proportional to the system size and large
+
+integration grid. By introducing the relaxation time approximation, the procedure can be
+
+simplified, particularly in the linear response regime. However, in cases where this approxi-
+
+mation is not warranted one must instead solve the general Boltzmann equation. A common
+
+approach is to utilize Monte Carlo techniques, which involves the explicit simulation of elec-
+
+tron motion, with random scattering between k-points1,4.
+
+Such an approach avoids the explicit solution of large equation sets, and the required
+
+computation time is instead determined by the ratio between the estimators variance and
+
+the required accuracy. Through the use of such Boltzmann Monte Carlo (BMC) calculations,
+
+one has at moderate temperatures, obtained impressive agreement between experimental
+
+and theoretical values of transport coefficients in simple semiconductors1. Building on this
+
+success, is it possible that a similar approach can employed for NEGF? It can be shown
+
+2
+
+
+that the BMC method formally corresponds to a Monte Carlo evaluation of the Neumann
+
+expansion of the Boltzmann equation.
+This approach is in fact generalizable to several
+
+transport formalisms1.
+
+Monte Carlo simulations have been applied to the calculation of Green’s functions in
+
+the form of the Diagrammatic Monte Carlo (DMC) method. In this method, the Green’s
+
+function is estimated through Monte Carlo summation of an infinite series of Feynman
+
+diagrams5–7 and is also similar to a Neumann expansion.
+The DMC thus shares some
+
+features with the NEGF approach to be introduced in this work. However, an important
+
+difference is that DMC performs a Monte Carlo evaluation also on the self energy. In the
+
+case of electrical transport, typical NEGF solvers2,3 assume the self energies to be given
+
+explicitly.
+
+The evaluation of Monte Carlo estimators in quantum transport will generally result in
+
+opposite signs or phases. In a large sample one can thus expect partial cancellation1, leading
+
+to a variance which is greater than the expectation value. The Monte Carlo integral thus
+
+converges slowly. In the DMC method this is partially alleviated by performing some of the
+
+diagrammatic summations analytically7.
+
+In this work, we suggest a Monte Carlo scheme based on a Neumann expansion of the
+
+lesser Green’s function G< in the NEGF formalism. In the method suggested here, we will
+
+assume that the system is stationary. As will be shown, the Neumann expansion can be
+
+expressed in terms of positive quantities, and the “sign problem” is avoided. However, this
+
+is at the cost of increased computational complexity per estimate.
+
+Briefly, the suggested Monte Carlo method can be described as a process where electrons
+
+are randomly scattered from state to state. This is similar to the DMC method and to BMC
+
+simulations. However, while states in the BMC simulations are described by a combined
+
+position in physical space and k-space, we instead describe states using wave functions
+
+|ψ⟩. These wave functions are found by solving a modified Schr¨odinger equation with a
+
+source term |i⟩. The source term is picked randomly among the eigenvectors of the operator
+
+Λ(|ψ′⟩⟨ψ′|), where |ψ′⟩ is the previous state, and Λ is a function with the property that
+
+Λ(G<) = Σ<. G< being the lesser Green’s function and Σ< the lesser self energy. This
+
+process is described in more detail in section II D.
+
+As long as sparse matrices can be used to model the Hamiltonian and the scattering
+
+operators, the solution of the modified Schr¨oedinger equation will be a linearly scaling oper-
+
+3
+
+
+ation. Thus, since the calculation of N eigenvectors will always scale at least quadratically
+
+with the system size N, the bottleneck of the method will generally be the diagonalization
+
+of Λ(|ψ⟩⟨ψ|). In order for the method to be practical, it is likely that approximation must
+
+be applied in order to make the diagonalization tractable. Among such approximations, is
+
+B¨uttiker’s approximation, where Λ(|ψ⟩⟨ψ|) is diagonal in some basis {|i⟩}, independent of
+
+|ψ⟩. In this work, all calculations have been performed within this approximation in order
+
+to test the validity of the method.
+
+This work is organized as follows: Section II presents the method. Here we prove that
+
+the described Monte Carlo scheme solves the NEGF equations. A discussion of the linear
+
+limit of the procedure and a description of B¨uttiker’s approximation is also given. In section
+
+III we describe the prototype implementation in more detail.
+
+The results of the initial tests are presented in section IV, where we calculate the conduc-
+
+tance of nanowires. In particular, we study how the Monte Carlo computation time required
+
+for a fixed accuracy of one percent scales with the length of the wires, and how this compares
+
+to iterative and direct schemes of solution.
+
+Our prototype Monte Carlo solver is implemented in Python. Still, we demonstrate the
+
+existence of a regime where the Monte Carlo calculations are faster than the alternative ap-
+
+proaches. This regime is however not to be expected to be relevant in practical applications.
+
+Thus, in order for the presented Monte Carlo scheme to be useful, steps must be taken to
+
+further increase performance. We do expect a significant improvement upon transition to a
+
+compiled language. Further suggestions of how it is possible to reduce the computational
+
+burden are discussed in section V, where we also discuss how more general physics can be
+
+included. Finally, section VI summarizes and presents a few conclusions.
+
+II.
+THEORY
+
+This section is divided into the the following parts: Section II A gives a quick summary
+
+of the NEGF formalism, while in section II B we derive a Neumann expansion of the NEGF
+
+equation, which is needed to define the general Monte Carlo integration scheme. This scheme
+
+is derived in section II C, where the most general version of the method is described. This
+
+requires that we assume some probability distribution g, from which sequences of electron
+
+states |ψ⟩ can be drawn. In section II D we introduce a concrete procedure which specifies
+
+4
+
+
+the probability distribution g. Finally, in section II E we discuss the linear limit for elastic
+
+scattering, and in section II F B¨uttiker’s approximation.
+
+A.
+Summary of the NEGF formalism
+
+The Non-equilibrium Green’s function formalism for electrons takes its simplest form
+
+when expressed in terms of two correlation functions Gr and G<. These are respectively
+
+referred to as the retarded and lesser Green’s functions, and can be expressed as matrices
+
+with elements1
+
+Gr
+ij(t, t′) = − i
+
+¯h ⟨{ ai(t), a†
+j(t′) }⟩ θ(t − t′),
+(1)
+
+G<
+ij(t, t′) = + i
+
+¯h
+
+�
+a†
+i(t)aj(t′)
+�
+.
+(2)
+
+Here ai and a†
+i are fermionic annihilation and creation operators, operating on electrons
+
+in the single particle state i. θ(t) is the unit step function, curly brackets represents the
+
+anti-commutator, and the brackets represent the average with respect to the quantum state.
+
+If the Green’s functions describe a stationary process, then they will only depend on the
+
+difference between the time arguments, so that we may define the Fourier transforms8
+
+Gr(E) =
+�
+dt Gr(t, t′)eiE(t−t′)/¯h,
+(3)
+
+G<(E) =
+�
+dt G<(t, t′)eiE(t−t′)/¯h.
+(4)
+
+In addition, the formalism makes use of the advanced Green’s function Ga, which can be
+
+found through the relation Ga(E) = Gr(E)†, as well as the spectral density
+
+A(E) = i (Gr(E) − Ga(E)) .
+(5)
+
+The literature operates with multiple conventions regarding the definition of A(E), but in
+
+this work we follow the line of Datta8, and define this without additional prefactors.
+
+In equilibrium there is a simple relationship between the lesser Green’s function and the
+
+spectral density, namely1,8
+
+G<(E) = iA(E)f(E),
+(6)
+
+where f(E) is the Fermi distribution. Away from equilibrium however, there is no such
+
+simple relation, and accordingly G< and Gr must be calculated independently.
+Within
+
+5
+
+
+diagrammatic perturbation theory, it can be shown9,10 that for stationary processes this can
+
+be done by solving the equations
+
+Gr(E) = (E − H − Σr(E))−1 ,
+(7)
+
+G<(E) =Gr(E)Σ<(E)Ga(E),
+(8)
+
+where H is the single particle Hamiltonian of the electrons, while Σr and Σ< are respectively
+
+the retarded and the lesser self energies. These self energies will in general be functions of Gr
+
+and G<, and their form will depend on the particular perturbation used. Examples of such
+
+perturbative expressions can be found in the literature1,8,11, while a more heuristic model is
+
+discussed in section II F.
+
+In a typical electron transport problem, we are considering a device or material which is
+
+connected to a set of leads {p}. The leads are assumed to be internally close to equilibrium,
+
+at least compared to the device, so that their electronic occupations are described by Fermi
+
+distributions fp(E). It can then be shown8 that the effect these leads have on the device
+
+can be accounted for in terms of the self energies
+
+Σr(E) =
+�
+
+p
+Σr
+p(E) + Σr
+s(E),
+(9)
+
+Σ<(E) = i
+�
+
+p
+Γp(E)fp(E) + Σ<
+s (E).
+(10)
+
+Here Σr
+s and Σ<
+s are self energies due to scattering, while Σr
+p and iΓp(E)fp(E) are respectively
+
+the retarded and lesser self energies due to lead p. Expressions for Σr
+p can be found in the
+
+literature8, while Γp is defined as
+
+Γp(E) = i
+�
+Σr
+p(E) − Σa
+p(E)
+�
+,
+(11)
+
+where Σa
+p(E) = Σr
+p(E)†.
+
+In addition to Eq. (11), we also make the definitions
+
+Γs(E) =i (Σr
+s(E) − Σa
+s(E)) , and
+(12)
+
+Γ(E) =i (Σr(E) − Σa(E)) ,
+(13)
+
+where Σa(E) = Σr(E)† and Σa
+s(E) = Σr
+s(E)†. It can be shown8 that
+
+A(E) = Gr(E)Γ(E)Ga(E) = Ga(E)Γ(E)Gr(E).
+(14)
+
+6
+
+
+Finally, it can also be shown8 that the electric current Iq and heat current Qq at a lead q
+
+will be given respectively as Iq = −e
+�
+iq(E)dE and Qq =
+�
+(E − µq)iq(E)dE. Here e is the
+
+elementary charge, µq the electrochemical potential of lead q, while
+
+iq(E) = − i
+
+hTr Γq(E) (G<(E) − iA(E)fq(E)) .
+(15)
+
+B.
+Iterative expansion
+
+The starting point for general Monte Carlo solutions of the Boltzmann equation, is the
+
+definition of an iterative solution in the form of a Neumann series. This is possible since
+
+the integral form of the Boltzmann equation has the form f = Lf + f0, where f is the
+
+Boltzmann distribution function, L is a linear integral operator, and f0 is an independent
+
+source term which arises from the initial conditions1. We can put Eq. (8) into a similar form
+
+by introducing the following assumption about Σ<
+s :
+
+Assumption (i) The lesser scattering self energy can be written as
+
+Σ<
+s (E) =
+�
+dE′Λ(E, E′, G<(E′)),
+(16)
+
+where the function Λ(E, E′, G) is linear in G.
+
+This assumption holds at least in the self consistent Born approximation, except for
+
+electron-electron scattering. Further justification for the assumption is discussed in appendix
+
+A 1.
+
+Taking into account Eq. (10) and Eq. (16), Eq. (8) becomes
+
+G<(E) = Gr(E)
+
+�
+
+i
+�
+
+p
+Γp(E)fp(E) +
+�
+dE′Λ(E, E′, G<(E′))
+
+�
+
+Ga(E)
+(17)
+
+= i
+�
+
+p
+GrΓpGafp(E) +
+�
+dE′Ξ(E, E′, G<(E′)),
+
+where we have defined
+
+Ξ(E, E′, G) = Gr(E)Λ(E, E′, G)Ga(E).
+(18)
+
+The integral operator Ξ is now defined as
+
+ΞG(E) =
+�
+dE′Ξ(E, E′, G(E′)),
+(19)
+
+7
+
+
+and then we write Eq. (17) as
+
+G<(E) =ΞG<(E) + G<
+0 (E), where
+(20)
+
+G<
+0 (E) =i
+�
+
+p
+Gr(E)Γp(E)Ga(E)fp(E).
+(21)
+
+The expression for G<
+0 can be simplified by making the definitions
+
+Ap(E) = Gr(E)Γp(E)Ga(E), and
+(22)
+
+Gp(E) = Ap(E)fp(E) = Gr(E)Γp(E)Ga(E)fp(E),
+(23)
+
+so that Eq. (21) can be written
+
+G<
+0 (E) =i
+�
+
+p
+Gp(E) = i
+�
+
+p
+Ap(E)fp(E).
+(24)
+
+Eq. (20) has a form similar to the integral Boltzmann equation. A minor difference is that
+
+the source term G<
+0 arises from coupling to the leads rather than from initial conditions. A
+
+Neumann expansion of G<, similar to what is done with the Boltzmann equation1 can now
+
+be performed.
+
+However, before we proceed we note that Eq. (20) depends on the retarded Green’s func-
+
+tion Gr solving Eq. (7) through Eq. (18). In general, both of the scattering self energies Σr
+s
+
+and Σ<
+s will depend on both Greens’s functions Gr and G<, while H may also depend on G<
+
+through a Poisson potential. Thus, Eq. (7) and Eq. (8) are in fact coupled equations. Since
+
+a Neumann expansion based on Eq. (20) must involve Gr, it will generally not be applicable
+
+unless both equations have already been solved. This problem will be discussed further in
+
+section II E, and to some extent in section V B 3. Until then we will simply regard Gr as
+
+known.
+
+To find the Neumann expansion of Eq. (20), we begin by iteratively defining the functions
+
+G<
+n (E) = ΞG<
+n−1(E) + G<
+0 (E) =
+
+n
+�
+
+m=0
+ΞmG<
+0 (E),
+(25)
+
+where the last step makes use of assumption (i). Assuming that the series converges, the
+
+iteration of Eq. (25) will converge to
+
+G<(E) =
+
+∞
+�
+
+n=0
+ΞnG<
+0 (E).
+(26)
+
+8
+
+
+This function solves Eq. (20), as can be seen by the evaluation
+
+ΞG<(E) + G<
+0 (E) = Ξ
+
+∞
+�
+
+n=0
+ΞnG<
+0 (E) + G<
+0 (E)
+(27)
+
+=
+
+∞
+�
+
+n=0
+ΞnG<
+0 (E) = G<(E).
+
+Thus, as indicated by the notation, G<(E) is in fact the lesser Green’s function, and Eq. (26)
+
+its Neumann expansion.
+
+By now applying Eq. (26), we can then find the energy resolved current of Eq. (15) as
+
+iq(E) = − i
+
+h
+
+∞
+�
+
+n=0
+Tr Γq(E)ΞnG<
+0 (E) − 1
+
+hTr Γq(E)A(E)fq(E)
+(28)
+
+= 1
+
+h
+
+∞
+�
+
+n=0
+
+�
+
+p
+Tr Γq(E)ΞnGp(E) − 1
+
+hTr Γq(E)A(E)fq(E).
+
+Since we assume Gr and thus the operator Ξ to be known, Eq. (28) could in principle be
+
+evaluated directly. However, this is computationally demanding for the general case.
+
+C.
+General Monte Carlo method
+
+The expansion Eq. (28) is the starting point of the Monte Carlo method we here propose.
+
+There are several different ways in which this expression could be evaluated through a Monte
+
+Carlo process. Probably, the simplest such method would be to express the sum in terms of
+
+matrix elements as
+
+∞
+�
+
+n=0
+
+�
+
+p
+
+�
+
+i0j0···injn
+
+�
+dnE Γjnin
+q
+(E)Ξin−1jn−1
+injn
+(E, En−1) · · · Ξi0j0
+i1j1(E1, E0)Gi0j0
+p
+(E0),
+(29)
+
+where Γij
+q (E) = ⟨i|Γq(E)|j⟩, Gij
+p (E) = ⟨i|Gp(E)|j⟩, and Ξij
+kl(E, E′) = ⟨k|Ξ(E, E′, |i⟩⟨j|)|l⟩
+
+for some basis {|i⟩}. If a set of energies E0 · · · En−1 and indices i0j0 · · ·injn are picked at
+
+random from some probability distribution f, then the stochastic variable
+
+x = Γjnin
+q
+(E)Ξin−1jn−1
+injn
+(E, En−1) · · ·Ξi0j0
+i1j1(E1, E0)Gi0j0
+p
+(E0)
+
+f
+(30)
+
+will have Eq. (29) as its expectation value. Thus, the average of a large number of random
+
+values of x could be used as an estimate of the sum in Eq. (28).
+An advantage of this
+
+particular approach is that the calculation of each individual Monte Carlo estimate x is
+
+9
+
+
+numerically fast. It is simply the product of a series of scalar quantities. However, a major
+
+challenge is that x is in general a complex quantity. Consequently one can expect instances
+
+of x to cancel each other.
+
+Such “sign problems” as they are often referred to6, cause major issues in most quantum
+
+Monte Carlo methods. In our case, it makes the use of the estimator of Eq. (30) completely
+
+unfeasible, as all cancellations would make the estimate converge very slowly. If possible we
+
+should rather try to find an estimator which is always positive in order to remedy the sign
+
+problem. From an assumption which will be introduced in the next section, it will follow
+
+that the operators in Eq. (28) are positively definite. Thus, one possibility would be instead
+
+of x, to use the estimator
+
+y = Tr Γq(E)ΞnG<
+0 (E)
+
+pn
+,
+(31)
+
+where the number n is drawn randomly from the probability distribution pn. The estimator
+
+y also has an expectation value equal to the sum in Eq. (28), but is always positive. The
+
+estimator y however, has another problem. The calculation of each estimate is numerically
+
+expensive. This is partially because it requires integration over energy, but more importantly
+
+because each step of the calculation handles huge and potentially dense matrices ΞkG<
+0 , for
+
+k = 0, . . . , n.
+
+Thus, since Monte Carlo estimators expressed in terms of scalars and operators both have
+
+issues, we shall instead try to follow a middle ground. We seek an estimator expressed in
+
+terms of vectors. The easiest way to express Eq. (28) in terms of vectors, is to diagonalize
+
+the operators. For this purpose we introduce an additional assumption about the scattering
+
+operators:
+
+Assumption (ii) Λ preserves Hermiticity in G. That is, for all E and E′, and any
+
+Hermitian operator G, Λ(E, E′, G) is also Hermitian.
+
+The justification for this assumption is discussed in appendix A 2.
+
+Since it can be shown that the operators Gp(E) = Gr(E)Γp(E)Ga(E)fp(E) are Hermitian,
+
+it follows from assumption (ii) that all of the operators Ξ(E, En−1, Ξ(· · · Ξ(E1, E0, Gp(E0))
+
+· · · )) are also Hermitian and diagonalizable. The sum in Eq. (28) can thus be expressed as
+
+∞
+�
+
+n=0
+
+�
+
+p
+
+�
+dnE Tr Γq(E)
+�
+
+i
+λ(n)
+i |i(n)⟩⟨i(n)| =
+
+∞
+�
+
+n=0
+
+�
+
+p
+
+�
+
+i
+
+�
+dnE λ(n)
+i ⟨i(n)|Γq(E)|i(n)⟩,
+(32)
+
+10
+
+
+where λ(n)
+i
+and |i(n)⟩ are respectively the eigenvalues and eigenvectors of the operator
+
+Ξ(E, En−1, Ξ(· · · Ξ(E1, E0, Gp(E0)) · · · )). It follows from the assumed positive definiteness
+
+of these operators that an estimator λ(n)
+i ⟨i(n)|Γq(E)|i(n)⟩/f is positive.
+
+While this estimator is expressed in terms of vectors, handling the operators
+
+Ξ(Ek, Ek−1, Ξ(· · ·Ξ(E1, E0, Gp(E0)) · · ·)) for k = 0, . . . , n is still required during intermedi-
+
+ate steps of the calculation. However, this issue is easy to eliminate, since we can start the
+
+diagonalization at the innermost operator. Using Eq. (18) and the linearity of Λ, we get
+
+Ξ(E, En−1, Ξ(· · ·Ξ(E1, E0, Gp(E0)) · · · ))
+(33)
+
+=Ξ(E, En−1, Ξ(· · ·Ξ(E1, E0, Gr(E0)Γp(E0)Ga(E0)) · · ·))fp(E0)
+
+=
+�
+
+i0
+Ξ(E, En−1, Ξ(· · · Gr(E1)Λ(E1, E0, λi0Gr(E0)|i0⟩⟨i0|Ga(E0))Ga(E1) · · ·))fp(E0)
+
+=
+�
+
+i0,i1
+Ξ(E, En−1, Ξ(· · · λi1Gr(E1)|i1⟩⟨i1|Ga(E1) · · ·))λi0fp(E0)
+
+= · · ·
+
+=
+�
+
+i0,i1,...,in−1
+Gr(E)Λ (E, En−1, Gr(En−1)|in−1⟩⟨in−1|Ga(En−1)) Ga(E)λi0λi1 · · · λin−1fp(E0)
+
+=
+�
+
+i0,i1,...,in
+Gr(E)|in⟩⟨in|Ga(E)λi0λi1 · · · λinfp(E0),
+
+where λik and |ik⟩ are now respectively the eigenvalues and eigenvectors of the operators
+
+Λ(k), defined recursively as
+
+Λ(k) = Λ (Ek, Ek−1, Gr(Ek−1)|ik−1⟩⟨ik−1|Ga(Ek−1))
+(34)
+
+for k ≥ 1, and as Λ(0) = Γp(E0).
+
+Inserting Eq. (33) into Eq. (28), we get
+
+iq(E) =1
+
+h
+
+�
+
+p
+
+∞
+�
+
+n=0
+
+�
+
+i0,i1,...,in
+
+�
+dnE ⟨in|Ga(E)Γq(E)Gr(E)|in⟩λi0λi1 · · · λinfp(E0)
+(35)
+
+− 1
+
+hTr Γq(E)A(E)fq(E).
+
+Now consider a probability distribution g(p, n, φ, E, r) from which we draw an initial lead
+
+p, a final lead r, a number n, a vector of indices φ = [i0, i1, . . . , in], and a vector of energies
+
+11
+
+
+E = [E0, . . . , En−1, En]. We define a stochastic variable
+
+Xq = fp(E0)λi0λi1 · · · λin⟨in|Ga(En)Γr(En)Gr(En)|in⟩
+
+g(p, n, φ, E, r)
+δrq,
+(36)
+
+the expectation value of which will be
+
+⟨Xq⟩ =
+�
+
+prnφ
+
+�
+dn+1E Xq(p, n, φ, E, r)g(p, n, φ, E, r)
+(37)
+
+=
+�
+
+pnφ
+
+�
+dn+1E fp(E0)λi0λi1 · · · λin⟨in|Ga(En)Γq(En)Gr(En)|in⟩.
+
+Eq. (37) is seen to be identical to the sum of Eq. (35), except that the integral is also over
+
+the final energy En. Thus, we can estimate the current at lead q as
+
+Iq = −e
+�
+dEn iq(En) = −e
+
+h
+
+�
+¯
+Xq −
+�
+dE Tr A(E)Γqfq(E)
+�
+,
+(38)
+
+where ¯
+Xq denotes the average of Xq over the Monte Carlo ensemble. The heat current Qq
+
+can be evaluated by an analogous expression.
+
+The assumption of positive definiteness leads to a positive estimator Xq. We thus avoid
+
+the sign problem. In addition, the calculation of Xq has the desired property of mainly
+
+involving vector operations. The only exception to this is that one must diagonalize the
+
+operators Λ(k). However, given reasonable approximations one can assume these operators
+
+to be sparse. This approach is then still significantly more efficient compared to dealing with
+
+the operators ΞkG<
+0 , which are likely to be dense for sufficiently high k. In fact, by utilizing an
+
+additional approximation in section II F, we can avoid diagonalization all together. However,
+
+let us first define an algorithm which determines the probability distribution g.
+
+D.
+Scattering Monte Carlo method
+
+In the literature1,4 one will find described a particularly intuitive BMC method, where
+
+electrons are scattered from state to state with probabilities proportional to the physical
+
+scattering rates. While improvements in terms of convergence can be made using so called
+
+weighted Monte Carlo methods1, the benefit of the unweighted intuitive approach is that the
+
+estimators have particularly simple expressions. Generally, one should expect complicated
+
+estimators to have smaller variance than simpler ones only in carefully constructed cases.
+
+So as a starting point, we in this work seek to mimic the intuitive scattering Monte Carlo
+
+method, in the hope that this will result in a moderate variance.
+
+12
+
+
+We start by interpreting the function Λ as somewhat analogous to the scattering rate Γ
+
+in the Boltzmann equation, and seek to express the probability of scattering to new states
+
+in terms of Λ. The involved quantities need to be positive and we need to introduce an
+
+assumption about positive definiteness. While we have briefly mentioned such an assumption
+
+earlier, in relation to discussions of the sign problem, we now introduce it formally.
+
+Assumption (iii) Λ preserves positive definiteness in G. That is, for all E and E′, and
+
+any Hermitian positively definite operator G, Λ(E, E′, G) is also positively definite.
+
+The justification for this assumption is discussed in appendix A 3.
+We make use of
+
+assumption (iii), and define the following Monte Carlo procedure:
+
+Step 1. Draw a starting lead p, all leads having equal probability 1/N.
+
+Step 2. Draw a starting energy E0 from some probability distribution h(E).
+
+Step 3. Diagonalize Γp(E0) to find its eigenvectors |i⟩ and eigenvalues λi.
+
+Step 4. We construct a probability distribution
+
+pi =
+λi⟨i|A(E0)|i⟩
+
+Tr Γp(E0)A(E0),
+(39)
+
+From the expressions for Γp found in the literature8, we see that it is positive definite.
+
+Furthermore, the spectral density A must also be positively definite due to its relation to
+
+the density of states Di(E) = ⟨i|A(E)|i⟩. Thus, pi is positive and sums to one. Draw an
+
+index i0 from this probability distribution, and set n = 0.
+
+Heuristic justification: The probability that an electron coming from lead p will enter
+
+the system in state |i⟩, is proportional to the projected density of states in |i⟩, and to the
+
+strength of interaction between the state |i⟩ and lead p.
+The density of states in |i⟩ is
+
+given by Di(E) = ⟨i|A(E)|i⟩, while the mentioned interaction strength is represented by the
+
+eigenvalues λi. The requirement of summation to one gives Eq. (39).
+
+Step 5.
+Find the state vector |ψn⟩ = Gr(En)|in⟩.
+It can be found either by explic-
+
+itly calculating the retarded Green’s function Gr, or alternatively by solving the modified
+
+Schrodinger equation
+
+(En − H − Σr(En)) |ψn⟩ = |in⟩.
+(40)
+
+Heuristic justification: This step represents the free propagation of electrons between scat-
+
+tering events.
+
+13
+
+
+Step 6. Calculate the quantities Tr Γr|ψn⟩⟨ψn| = ⟨ψn|Γr|ψn⟩ for all leads r, and also
+
+Sn =
+�
+dE Tr A(E)Λ (E, En, |ψn⟩⟨ψn|) .
+(41)
+
+Step 7. From Eq. (34), we recognize
+
+Λ (E, En, |ψn⟩⟨ψn|) = Λ (E, En, Gr(En)|in⟩⟨in|Ga(En)) = Λ(n+1) =
+�
+
+i
+λi|i⟩⟨i|.
+(42)
+
+From assumption (iii), the eigenvalues λi are positive, so that
+
+Tr A(E)Λ (E, En, |ψn⟩⟨ψn|) =
+�
+
+i
+λi⟨i|A(E)|i⟩ ≥ 0.
+(43)
+
+Accordingly, Sn is also positive, so we can construct a probability distribution
+
+pr =
+⟨ψn|Γr(En)|ψn⟩
+�
+
+b⟨ψn|Γb(En)|ψn⟩ + Sn
+.
+(44)
+
+Attempt to draw a lead r from this distribution, which is positive, but does not sum to
+
+one. Since the distribution does not sum to one, a successful draw is not guaranteed. If the
+
+draw is successful and a lead r is drawn, stop the process and choose lead r as the end lead.
+
+Otherwise continue the process.
+
+Heuristic justification: After free propagation, the electron will either scatter to a new
+
+state, or exit the system through one of the leads. Following the reasoning behind step 4, the
+
+probability of exiting through a lead r should be proportional to Tr Γr|ψn⟩⟨ψn| = ⟨ψn|Γr|ψn⟩.
+
+By interpreting A(E) as the density of states, and the function Λ as describing the scattering
+
+interaction strength, one could argue that the scattering rate to energy E should be given by
+
+Tr A(E)Λ (E, En, |ψn⟩⟨ψn|). Thus, Sn given by Eq. (41) represents the total scattering rate.
+
+Since the probability of scattering is proportional to Sn, while the probabilities of exiting
+
+through a lead r is proportional to ⟨ψn|Γr|ψn⟩, the requirement of total summation to one
+
+gives Eq. (44).
+
+Step 8. Draw an energy En+1 from the probability distribution
+
+p(E) = Tr A(E)Λ (E, En, |ψn⟩⟨ψn|)
+
+Sn
+.
+(45)
+
+which integrates to 1, and is positive from Eq. (43).
+
+Heuristic justification: Tr A(E)Λ (E, En, |ψn⟩⟨ψn|) represents the scattering rate to energy
+
+E, while Sn represents the total scattering rate.
+
+14
+
+
+Step 9. Perform the diagonalization of Eq. (42) to find the eigenvectors |i⟩ and eigenvalues
+
+λi of Λ(n+1) = Λ (En+1, En, |ψn⟩⟨ψn|). By assumption (iii) these are all positive.
+
+Step 10. Draw an index in+1 from the distribution
+
+pi =
+λi⟨i|A(En+1)|i⟩
+Tr A(En+1)Λ(n+1) =
+λi⟨i|A(En+1)|i⟩
+
+Tr A(En+1)Λ (En+1, En, |ψn⟩⟨ψn|).
+(46)
+
+Heuristic justification: Following again the reasoning of step 4, the probability for an
+
+electron to scatter from state |ψn⟩ to |i⟩, is proportional to the projected density of states
+
+in |i⟩, and to the strength of interaction between |i⟩ and |ψn⟩. The density of states in |i⟩ is
+
+given by Di(E) = ⟨i|A(E)|i⟩, while the interaction strength is represented by the eigenvalues
+
+λi from step 9. Requiring summation to one we get Eq. (46).
+
+Step 11. Increment n by 1, and return to step 5. Continue the procedure from there.
+
+The steps 1 to 11 define the Monte Carlo procedure. The procedure is truncated only
+
+when an end lead r is drawn in step 7. At that point we will have selected start and end
+
+leads p and r, and a set of n + 1 energies and n + 1 indices. Thus, the procedure defines a
+
+probability distribution g(p, n, φ, E, r).
+
+We can evaluate this probability by taking the product of the probabilities associated
+
+with each step of the procedure. Clearly, steps 1 to 4 always give rise to a combined factor
+
+of
+
+h(E0)
+
+N
+λi0⟨i0|A(E0)|i0⟩
+Tr Γp(E0)A(E0).
+(47)
+
+The contributions from the remaining steps will depend on whether the electron scatters or
+
+exits at a lead in step 7. The probability of scattering is the same as the probability of not
+
+exiting at a lead, so that every scattering event will contribute a factor
+
+1 −
+�
+
+r
+pr =
+Sn
+�
+
+b⟨ψn|Γb(En)|ψn⟩ + Sn
+,
+(48)
+
+to the total probability, pr being given by Eq. (44). In addition, each scattering event will also
+
+contribute a factor p(E) from Eq. (45), and a factor pi from Eq. (46). Thus, assuming that
+
+the electron is scattered n times before exiting, the total contribution to g from scattering
+
+becomes
+
+n−1
+�
+
+k=0
+
+Sk
+�
+
+b⟨ψk|Γb(Ek)|ψk⟩ + Sk
+× Tr A(Ek+1)Λ (Ek+1, Ek, |ψk⟩⟨ψk|)
+
+Sk
+(49)
+
+×
+λik+1⟨ik+1|A(Ek+1)|ik+1⟩
+
+Tr A(Ek+1)Λ (Ek+1, Ek, |ψk⟩⟨ψk|) =
+
+n−1
+�
+
+k=0
+
+λik+1⟨ik+1|A(Ek+1)|ik+1⟩
+�
+
+b⟨ψk|Γb(Ek)|ψk⟩ + Sk
+
+15
+
+
+The probability of finally exiting at lead r after the n scattering events, is given by
+
+Eq. (44). Thus, taking the product of Eq. (47), Eq. (49) and Eq. (44), we obtain
+
+g(p, n, φ, E, r)
+(50)
+
+=h(E0)
+
+N
+λi0⟨i0|A(E0)|i0⟩
+Tr Γp(E0)A(E0) ×
+
+n−1
+�
+
+k=0
+
+λik+1⟨ik+1|A(Ek+1)|ik+1⟩
+�
+
+b⟨ψk|Γb(Ek)|ψk⟩ + Sk
+×
+⟨ψn|Γr(En)|ψn⟩
+�
+
+b⟨ψn|Γb(En)|ψn⟩ + Sn
+
+=h(E0)
+
+N
+⟨ψn|Γr(En)|ψn⟩
+Tr Γp(E0)A(E0)
+
+n
+�
+
+k=0
+
+λik⟨ik|A(Ek)|ik⟩
+�
+
+b⟨ψk|Γb(Ek)|ψk⟩ + Sk
+.
+
+Having found an explicit expression for the probability distribution g, we can find an ex-
+
+pression for the estimator Xq using Eq. (36). Inserting Eq. (50) in Eq. (36), we find that
+
+the eigenvalues and the quantity ⟨ψn|Γr(En)|ψn⟩ = ⟨in|Ga(En)Γr(En)Gr(En)|in⟩ cancel, and
+
+what remains is
+
+Xq = N · fp(E0)
+
+h(E0) · Tr Γp(E0)A(E0) ·
+
+n
+�
+
+k=0
+
+�
+
+b⟨ψk|Γb(Ek)|ψk⟩ + Sk
+
+⟨ik|A(Ek)|ik⟩
+δrq.
+(51)
+
+While these cancellations simplifies the expression, what remains is still fairly involved.
+
+However, as we will see, Eq. (51) can be simplified even further by making an additional
+
+assumption about Λ(E′, E, G):
+
+Assumption (iv) For any Hermitian and positively definite operator G,
+
+Tr Γs(E)G =
+�
+dE′ Tr A(E′)Λ(E′, E, G).
+(52)
+
+Assumption (iv) can be interpreted as an assumption of the scattering mechanism being
+
+charge conserving. This is more thoroughly discussed in appendix A 4.
+
+Employing assumption (iv), we first note that in step 6 above, we can calculate the
+
+quantity Sn of Eq. (41) simply as
+
+Sn = Tr Γs(En)|ψn⟩⟨ψn| = ⟨ψn|Γs(En)|ψn⟩,
+(53)
+
+so that we no longer need to perform the integral explicitly. Next, making use of Eq. (14)
+
+and Eq. (9), we see that
+
+�
+
+b
+⟨ψn|Γb(En)|ψn⟩ + Sn =
+�
+
+b
+⟨ψn|Γb(En)|ψn⟩ + ⟨ψn|Γs(En)|ψn⟩ = ⟨ψn|Γ(En)|ψn⟩
+(54)
+
+= ⟨in|Ga(En)Γ(En)Gr(En)|in⟩ = ⟨in|A(En)|in⟩.
+
+16
+
+
+Inserting this into Eq. (51), we see that the remaining terms in the product also cancel, so
+
+that Xq becomes simply
+
+Xq = N · f(E0) · Tr Γp(E0)A(E0)
+
+h(E0)
+δrq,
+(55)
+
+which has the simple form we were looking for.
+
+E.
+Linear elastic limit
+
+In the preceding discussions we assumed that either the retarded Green’s function Gr,
+
+or at least its inverse is known. In the previous section for instance, an expression for Gr
+
+or its inverse was required in step 5. But in reality Gr is rarely known beforehand, since
+
+the scattering self energy Σr
+s usually has a functional dependence on G<. In fact, even the
+
+Hamiltonian H may depend on G<, for instance through a Poisson potential. Thus, Eq. (7)
+
+and Eq. (8) must generally be solved self consistently with each other. The method presented
+
+above will thus not be applicable. In section V B 3 we briefly outline a possible approach for
+
+how to deal with this in the general case. In this section we restrict the discussion to linear
+
+transport.
+
+In the linear limit, the existence of Kubo expressions tells us that the currents should
+
+be expressible in terms of equilibrium quantities. If we could replace Gr above with its
+
+equilibrium value, then Eq. (7) and Eq. (8) would no longer be coupled, and the described
+
+method would thus be applicable.
+While it is difficult to show that this substitution is
+
+possible in the general case, it is rather straightforward if we also assume elastic scattering.
+
+In that case, we have
+
+Λ(E′, E, G) = Λ(E, G)δ(E − E′),
+(56)
+
+so that the operator Ξ is given simply by
+
+ΞG(E) = Gr(E)Λ(E, G(E))Ga(E)
+(57)
+
+In addition, we need one final assumption about the scattering mechanism, namely
+
+Assumption (v) When the scattering mechanism is elastic, the function Λ(E, G) satis-
+
+fies
+
+Tr FΛ(E, G) = Tr GΛ(E, F),
+(58)
+
+17
+
+
+where F and G are any two Hermitian and positively definite operators.
+
+Intuitively, this assumption can be interpreted as a statement of detailed balance. Its
+
+justification is discussed in appendix A 5.
+
+It follows from assumptions (v) and (iv) that the quantity Tr A(E)Γq(E) can be expanded
+
+as
+
+Tr A(E)Γq(E) =
+
+∞
+�
+
+n=0
+
+�
+
+p
+Tr Γq(E)ΞnAp(E).
+(59)
+
+The proof of this is given in appendix B. Inserting Eq. (59) into Eq. (28) yields
+
+iq(E) = 1
+
+h
+
+�
+
+p
+
+∞
+�
+
+n=0
+Tr Γq(E)ΞnAp(E) (fp(E) − fq(E))
+(60)
+
+≡ 1
+
+h
+
+�
+
+p
+Tqp(E) (fp(E) − fq(E)) ,
+
+where Tqp(E) = �∞
+n=0 Tr Γq(E)ΞnAp(E). Assume now that the the system’s offset from
+
+equilibrium is described by some parameter x, which could for instance be a voltage or a
+
+temperature difference between two of the leads. Then all functions in Eq. (60) are functions
+
+also of x. Expanding to first order in x yields
+
+iq(E) =
+�
+
+p
+
+∂Tqp
+∂x (E) (fp(E) − fq(E)) x +
+�
+
+p
+Tqp(E)
+�∂fp
+
+∂x (E) − ∂fq
+
+∂x (E)
+�
+x,
+(61)
+
+where all functions on the right are evaluated at equilibrium. But in equilibrium fp(E) =
+
+fq(E), so that in fact
+
+iq(E) =
+�
+
+p
+T Eq
+qp (E)∆fpq(E), where
+(62)
+
+∆fpq(E) =
+�∂fp
+
+∂x (E) − ∂fq
+
+∂x (E)
+�
+x.
+(63)
+
+Thus, all transport coefficients can be evaluated from the transmission functions T Eq
+qp (E) at
+
+equilibrium. The conductance Gqp for instance, are given by the expression
+
+Gqp = e2
+
+h
+
+�
+dE T Eq
+qp (E)Th(E),
+(64)
+
+where Th(E) = −∂f/∂E. This means that Gqp can be estimated as
+
+Gqp = e2
+
+h
+¯Xpq,
+(65)
+
+18
+
+
+where the stochastic variables Xpq are found using the Monte Carlo procedure described
+
+above with a few modifications; the initial lead p is kept fixed, f(E) is replaced by Th(E),
+
+and Gr and the function Λ are replaced with their respective equilibrium values. If we also
+
+choose the probability distribution as h(E) = Th(E), then Eq. (55) becomes simply
+
+Xpq = Tr Γp(E0)A(E0)δrq.
+(66)
+
+F.
+B¨uttiker’s Approximation
+
+In the general case, the bottleneck of the procedure described in section II D will be step
+
+9, which requires diagonalization of the operators Λ(n+1). In order for the procedure to be
+
+applicable in practice, one must probably always find some approximation which improves
+
+the calculation efficiency of this step.
+The simplest of such is to assume that Λ(n+1) is
+
+already diagonal in the adopted basis. In fact, the procedure can be simplified even further
+
+by making some additional assumptions. First, we assume the existence of a single basis set
+
+{|i⟩} which diagonalizes both Σr(E) and Λ(E, E′, G) for all E, E′ and all Hermitian and
+
+positively definite operators G. Then, that the eigenvalue λi of Λ(E, E′, G) corresponding
+
+to the basis vector |i⟩, is a function only of the matrix element ⟨i|G|i⟩. Or more compactly
+
+Σr(E) =
+�
+
+i
+σi(E)|i⟩⟨i|,
+(67)
+
+Λ(E, E′, G) =
+�
+
+i
+λi(E, E′, ⟨i|G|i⟩)|i⟩⟨i|.
+(68)
+
+We refer to Eq. (67) and Eq. (68) as B¨uttiker’s approximation. The reason for this is
+
+that these are the self energies we obtain if we model electron scattering as a set of floating
+
+voltage probes attached to the states |i⟩. The idea of modeling scattering with such probes
+
+was introduced by B¨uttiker12, and the probes are often referred to as B¨uttiker probes13.
+
+If the scattering model defined by Eq. (67) and Eq. (68) is to satisfy assumption (i),
+
+then the functions λi must be linear in the third argument, so that λi(E, E′, ⟨i|G|i⟩) =
+˜λi(E, E′)⟨i|G|i⟩. If assumptions (ii) and (iii) are also to be satisfied, the functions ˜λi must
+
+be real and positive: ˜λi(E, E′) ≥ 0. Finally, if the scattering model is to satisfy condition
+
+(iv), then we must have
+
+i(σi − σ⋆
+i ) ≡ γi(E) =
+�
+dE ˜λi(E′, E)⟨i|A(E′)|i⟩.
+(69)
+
+19
+
+
+If we in addition to B¨uttiker’s approximation also assume elastic scattering, then
+˜λi(E, E′) = ˜λ(E)δ(E − E′), and Eq. (69) becomes
+
+γi(E) = ˜λi(E)⟨i|A(E′)|i⟩.
+(70)
+
+In that case, we also see that
+
+Tr FΛ(E, G) =
+�
+
+i
+⟨i|F|i⟩˜λi(E)⟨i|G|i⟩ = Tr GΛ(E, F),
+(71)
+
+so that assumption (v) is satisfied automatically.
+
+We are now at a point where the procedure of section II D can be greatly simplified. First
+
+of all, since Λ (E, En, |ψn⟩⟨ψn|) is already diagonal in the basis {|i⟩}, step 9 can be omitted.
+
+Secondly, the total probability associated with steps 8 and 10 will be
+
+pi(E) =
+�
+
+i ˜λi(E, En)|⟨ψn|i⟩|2⟨i|A(E)|i⟩
+
+Sn
+×
+˜λi(E, En)|⟨ψn|i⟩|2⟨i|A(E)|i⟩
+�
+
+i ˜λi(E, En)|⟨ψn|i⟩|2⟨i|A(E)|i⟩
+(72)
+
+=
+˜λi(E, En)|⟨ψn|i⟩|2⟨i|A(E)|i⟩
+
+Sn
+.
+
+Accordingly, we can reverse the order of these two steps by first picking an index i with
+
+probability
+
+pi =
+γi|⟨ψn|i⟩|2
+
+�
+
+i γi|⟨ψn|i⟩|2 = γi|⟨ψi|i⟩|2
+
+Sn
+.
+(73)
+
+and then an energy E with probability
+
+p(E) =
+˜λi(E, En)⟨i|A(E)|i⟩
+
+γi
+=
+˜λi(E, En)⟨i|A(E)|i⟩
+�
+dE ˜λi(E, En)⟨i|A(E)|i⟩
+,
+(74)
+
+where we have used Eq. (69) and Eq. (53). The product of the two probabilities Eq. (73) and
+
+Eq. (74) results in the same total probability pi(E) as Eq. (72).
+
+Finally, the step of picking an exit lead r (step 7) or a new internal index i, can be
+
+combined into a single step where leads are still chosen according to Eq. (44), but internal
+
+indices are picked with probability
+
+pi =
+γi|⟨ψn|i⟩|2
+
+�
+
+r⟨ψn|Γr|ψn⟩ + �
+
+j γj|⟨ψn|j⟩|2.
+(75)
+
+The probability of picking a particular index i, given that a lead is not drawn, is then given
+
+precisely by Eq. (73).
+
+20
+
+
+Thus, steps 6 to 10 of section II D, can be replaced by the steps
+
+Step 6’ Draw an internal index in+1 with probabilities given by Eq. (75), or a lead r with
+
+probabilities
+
+pr =
+⟨ψn|Γr|ψn⟩
+�
+
+r⟨ψn|Γr|ψn⟩ + �
+
+j γj|⟨ψn|j⟩|2.
+(76)
+
+If a lead is drawn, stop the process. If an internal index is drawn, continue.
+
+Step 7’ Draw an energy En+1 from the probability distribution of Eq. (74).
+
+After step 7’, the process is continued from step 11.
+
+III.
+MODEL AND IMPLEMENTATION
+
+A.
+Model
+
+Our tests of the described method have been performed within B¨uttiker’s approximation,
+
+using the specialized method described in section II F. Application to more general scattering
+
+mechanisms, using the method of section II D, is postponed for future studies. In addition,
+
+the performed tests assume elastic scattering. Step 7’ of section II F is thus omitted, while
+
+the linear conductances Gqp are calculated using Eq. (65). The energies E0 of the Monte
+
+Carlo samples are chosen from the probability distribution h(E) = Th(E), so that the
+
+sampled variable Xpq is given by Eq. (66).
+
+In addition to the scattering operators Σr and Σ<, we need a model Hamiltonian H. For
+
+this purpose, we make use of an atomistic tight binding model of the material CdTe. The
+
+model is based on previous literature14 which parameterizes nearest neighbor interaction
+
+in sp3-hybridized fcc-structures in terms of seven parameters. We find these parameters by
+
+fitting against DFT calculations. The tight binding model and fitting procedure is described
+
+in more detail in our previous work15. The geometries are described in section IV.
+
+Since step 7’ is omitted, the only information we require of the scattering model, is the
+
+basis set {|i⟩} in which the scattering operators are diagonal, and the functions σi(E). The
+
+basis set {|i⟩} is chosen to be the s and p orbitals employed in the tight binding model,
+
+while we choose σi(E) to be purely imaginary, so that
+
+σi(E) = − i
+
+2γi(E) = − i¯h
+
+2τ .
+(77)
+
+21
+
+
+In general the lifetime τ could be a function of both E and i, but in our tests it is set to a
+
+constant.
+
+All tests are performed with only two leads p = 1 and p = 2. To simplify the procedure
+
+we write the lead self energies as
+
+Σr
+p(E) = − i
+
+2ΓlPp,
+(78)
+
+where Pp is a projection operator projecting onto orbitals on the boundary with lead p, and
+
+Γl is a constant describing the strength of coupling between the system and leads. This is
+
+an unrealistic model of Σr
+p(E), but the physics relevant to the tests remains correct.
+
+B.
+Monte Carlo implementation
+
+Our prototype implementation follows the approach described in section II F. It is written
+
+in Python, and makes use of the RGF algorithm11 to calculate Gr by solving Eq. (7). Since
+
+the basis set {|i⟩} is the tight binding basis set, we only need a single column of Gr for
+
+each execution of step 5. Thus, the diagonal of Gr is calculated in the beginning of each
+
+simulation, while the required columns of Gr are calculated as needed, upon execution of
+
+step 5.
+
+The instantiation of stochastic variables is done by transforming to a homogeneously
+
+distributed variables16, which are drawn using the Numpy rand function. In particular, the
+
+execution of step 6’ is done as follows:
+
+An array aj is defined, storing the values γi|⟨ψn|i⟩|2, and ⟨ψn|Γr|ψn⟩. The cumulative
+
+sum bj of the array aj is calculated. bj is then divided by its last element, which normalizes
+
+it to a cumulative probability distribution. A random number x is picked homogeneously in
+
+the range [0, 1], and the Numpy argmax function is used to find the first value in bj which
+
+is larger than x. If the index j corresponds to an element of aj given by γi|⟨ψn|i⟩|2, then
+
+the internal index in+1 = i is picked. If the index j corresponds to an element of aj given
+
+by ⟨ψn|Γr|ψn⟩, then the lead r is picked as an exit point.
+
+22
+
+
+C.
+Direct and iterative methods
+
+For comparison reasons we also implemented a scheme where Eq. (8) is solved directly.
+
+Within the elastic B¨uttiker approximation, Eq. (8) can be written
+
+ij(E) =
+�
+
+p
+⟨j|GrΣ<
+p Ga|j⟩ +
+�
+
+i
+γiγj
+��Gr
+ji(E)
+��2 ii(E),
+(79)
+
+where ij(E) = λi(E)⟨i|A(E)|i⟩ = ˜λi(E)Aii(E)G<
+ii(E). Eq. (79) can be solved directly or
+
+iteratively, and we test both of these against the Monte Carlo method. The direct method
+
+employs the Numpy solve function, while the iterative method employs the Scipy implemen-
+
+tation of the gmres method.
+
+To evaluate the transport coefficients Gpq, we must integrate the quantity ip(E) from
+
+Eq. (15). This is done by a midpoint integration scheme, using a regular integration grid of
+
+NE points in the range µ ± 10kBT.
+
+IV.
+RESULTS
+
+As an initial test of the Monte Carlo method we estimate the conductivity of nanowires.
+
+In this case of CdTe, with a square cross section of two by two unit cells. The conductivity
+
+is found by fitting against the conductances of wires, with lengths 10 × n unit cells, n being
+
+in the range 1 to 10. In all calculations the temperature is set to 300 K, and the chemical
+
+potential is set to µ = 4.5 eV, which is about 1 eV above the conduction band edge.
+
+The scattering models use B¨uttiker’s approximation. Different values of γ = ¯h/τ, namely
+
+0.02, 0.04 and 0.06 eV were sampled. This corresponds to life times of τ = 33, 16 and 11 fs,
+
+respectively. The coupling to the leads is set to Γl = 0.2 eV.
+
+The scaling of the Monte Carlo method is compared to that of the direct and iterative
+
+schemes described in section III C. We required an accuracy of at least one percent for
+
+each method. In the Monte Carlo method this is assured by ending the sampling when a
+
+relative deviation of 10−2 is achieved. In the other methods, the accuracy is controlled by
+
+the resolution NE of the energy integration grid. We use a resolution of NE = 13 in all
+
+cases. This grid was chosen since it results in an error of one percent when compared to the
+
+converged NE → ∞ result in the γ = 0.06 eV case.
+
+23
+
+
+10
+20
+30
+40
+50
+60
+70
+L (nm)
+
+40
+
+60
+
+80
+
+100
+
+120
+
+140
+
+R (kΩ)
+
+FIG. 1: Resistance R = 1/G of nanowires, as a function of wire length. Results of the
+
+iterative and direct methods are coinciding, and are shown as solid lines. Among these the
+
+results for γ = 0.06, 0.04 and 0.02 eV are shown in red, black and purple, respectively. The
+
+Monte Carlo results are shown as error bars. Among these the results for γ = 0.06, 0.04
+
+and 0.02 eV are shown in blue, orange and green, respectively. We also show the iterative
+
+result for γ = 0.02 eV with an extended integration grid of NE = 26. This is shown as a
+
+dashed purple line. The dotted lines represent linear functions fitted to the Monte Carlo
+
+results. These are shown in the same colors as the results to which they are fitted.
+
+A.
+Transport results
+
+The wire resistance as a function of wire length is shown in figure 1. The Monte Carlo
+
+calculations are consistent with the other results, except for γ = 0.02 eV. We located this to
+
+be the result of NE = 13 being to coarse for this particular case. To show that integration
+
+is in fact the source of this discrepancy, we also include a calculation with NE = 26, where
+
+the results at γ = 0.02 eV is indeed in better agreement.
+
+The discrepancy between the γ = 0.02 eV Monte Carlo and NE = 13 result is seen to be
+
+largest for short wire lengths. This indicates an increased sensitivity to the energy resolution
+
+due to edge effects penetrating further into the wires, which would be caused by the weaker
+
+scattering of γ = 0.02 eV. For the longer wires we thus expect NE = 13 to be sufficient, and
+
+24
+
+
+20
+40
+60
+80
+100
+L (unit cells)
+
+−0.04
+
+−0.03
+
+−0.02
+
+−0.01
+
+0.00
+
+0.01
+
+0.02
+
+0.03
+
+(Gmc-G)/G
+
+(a) Relative error
+
+20
+40
+60
+80
+100
+L (unit cells)
+
+0.0080
+
+0.0085
+
+0.0090
+
+0.0095
+
+0.0100
+
+0.0105
+
+ΔGmcΔG
+
+(b) Relative deviation
+
+FIG. 2: Relative error and relative deviation as a function of wire length in unit cells. The
+
+relative error is calculated as (Gmc − G)/G, and the relative deviation as ∆Gmc/G, where
+
+∆Gmc is the standard deviation of the Monte Carlo result. The results are shown in blue,
+
+orange and green for γ = 0.06, 0.04 and 0.02 eV, respectively.
+
+it is therefor used for the remaining analysis of the results.
+
+As expected, the relation between resistance and wire length is close to linear. From figure
+
+1 the resistivities of the wires can be estimated as the slope of linear fits. For the Monte Carlo
+
+method this yields 1570, 997.9 and 525.4 Ω/nm for γ = 0.06, 0.04 and 0.02 eV, respectively.
+
+The resistivities estimated from the direct/iterative solutions are correspondingly 1565, 1041
+
+and 520.4 Ω/nm.
+
+The error bars in figure 1 are estimated as ∆R = ∆(1/G) ≈ ∆G/G2.
+The relative
+
+deviation of R is thus equal to that of G. The deviation is studied more closely in figure
+
+2, where we note that the relative deviation of the results are all approximately 0.01 as
+
+was required. Next, we note that the relative error is always in the range [−0.03, 0.03].
+
+This means that the Monte Carlo results stay within three standard deviations from the
+
+direct/iterative solutions, as expected.
+
+25
+
+
+101
+102
+
+L (unit cells)
+
+100
+
+101
+
+102
+
+103
+
+t (s)
+
+FIG. 3: Computation time of the direct and iterative solution schemes. The blue stars and
+
+orange circles show the total computation time of the direct and iterative solutions,
+
+respectively. The green squares shows the time spent on executing the RGF algorithm,
+
+which coincides in the two methods. The purple circles and red squares show the time
+
+spent on solving Eq. (79), using the the direct and the iterative method, respectively.
+
+These results are shown for γ = 0.06 eV. Black stars show the computation time for the
+
+iterative solution using γ = 0.04 eV. The dotted lines are fitting functions. These are
+
+shown in the same color as the results to which they are fitted.
+
+B.
+Scaling
+
+1.
+Direct and iterative method
+
+In figure 3 we show the computation time of the direct and iterative methods described in
+
+section III C. The total computation time, the computation time devoted to the calculation
+
+of the Green’s function Gr using the RGF algorithm, and to the solution of Eq. (79) are
+
+shown. The total computation times of the direct and iterative methods are very similar.
+
+This is due to the fact that the computation time is dominated by the calculation of the
+
+Green’s functions.
+
+The computation time of the RGF algorithm, the direct solution of Eq. (79), and the
+
+iterative solution of Eq. (79) are all fitted by power functions, which are also shown in
+
+figure 3. The two first points are ignored in the fits, and the resulting fitting functions are
+
+26
+
+
+respectively trgf = 0.05258 · L1.961, tdir = 0.0003791 · L2.969 and titt = 0.001458 · L2.444.
+
+From the fits we see that the Green’s function calculation scales as L2, while the direct
+
+solution of Eq. (79) scales as L3, as expected. The iterative solution of Eq. (79) seems to
+
+scale close to L
+5
+2. The computation time of a single iteration should scale as L2, so this
+
+result can either be interpreted as not reaching the asymptotic behavior, or that the number
+
+of iterations scales as
+√
+
+L. Adopting the latter interpretation, we conclude that for large L
+
+the full direct solution method scales as L3, while the full iterative method scales as L
+5
+2.
+
+The operations required to calculate Gr, and for the direct solution of Eq. (79), are
+
+independent of model parameters. Thus, their computation times will not be affected by
+
+the value of γ. In the case of the iterative method however, the value of γ could in principle
+
+affect the required number of iterations. The computation times from the iterative method
+
+for γ = 0.04 and γ = 0.06 eV are also included in figure 3 to illustrate this. These are seen
+
+to coincide for large L, and we thus conclude that the scaling of the direct and iterative
+
+method is both unaffected by γ.
+
+To summarize, we obtain the following fitting functions for the total computation time
+
+of the direct and iterative methods, respectively:
+
+tdir = 0.04512 s · L2 + 0.0003356 s · L3, and
+(80)
+
+titt = 0.04512 s · L2 + 0.001162 s · L
+5
+2.
+(81)
+
+The coefficients of Eq. (80) and Eq. (81), which differ slightly from those of the fits in figure
+
+3, represent the fits obtained with fixed exponents.
+
+2.
+Monte Carlo method
+
+Figure 4 shows the number of samples acquired during the Monte Carlo calculations. The
+
+figure also shows the average number of scattering events per sample. That is, the average
+
+number of executions of step 6’ from section II F before exiting at a lead. Linear fits to the
+
+results are also included. The fitting parameters are summarized in table I.
+
+We observe that both the number of samples, and the number of scattering events per
+
+sample, have a linear behavior. For the number of samples, this can be explained as follows:
+
+The number of samples required to obtain an accuracy of 0.01 will be n = ∆X2/⟨X⟩2/0.012,
+
+where X is the estimator. X is given by Eq. (66), which with some approximation can be
+
+27
+
+
+20
+40
+60
+80
+100
+L (unit cells)
+
+50000
+
+100000
+
+150000
+
+200000
+
+250000
+
+300000
+
+350000
+
+Nmc
+
+(a) Number of samples
+
+20
+40
+60
+80
+100
+L (unit cells)
+
+2.5
+
+5.0
+
+7.5
+
+10.0
+
+12.5
+
+15.0
+
+17.5
+
+S
+
+(b) Scattering events per sample
+
+FIG. 4: (a) Number of Monte Carlo samples, and (b) scattering events per sample. Results
+
+with γ = 0.06, 0.04 and 0.02 eV are respectively shown as blue, orange and green squares.
+
+The results are fitted by linear functions. These are shown in the same colors as the results
+
+to which they are fitted.
+
+γ (eV) an
+bn
+as
+bs
+an/γ (eV−1) as/γ (eV−1)
+
+0.06
+2903. 73542. 0.1736
+1.583 48383.
+2.893
+
+0.04
+1495. 85826. 0.1230
+1.518 37375.
+3.075
+
+0.02
+828.2 53042. 0.06663 1.407 41410.
+3.331
+
+TABLE I: Parameters of the linear fits shown in figure 4. These model the number of
+
+samples Nmc = anL + bn, and the average number of electron steps per sample s = asL + bs.
+
+said to be binomially distributed, since most of the variation will originate from the delta
+
+function δrq. In that case, ⟨X⟩ = p and ∆X2 = p(1 − p), where the binomial probability
+
+p is given by the transmission function T = (A + L/λ)−1. Putting this together we get
+
+n = (A − 1 + L/λ) · 10000, which is a linear function in L.
+
+The linear behavior of the number of steps per sample can also be understood. The
+
+average number of steps per sample can be expressed as
+
+s =
+� L
+
+0
+dxp(x)s(x),
+(82)
+
+where p(x) is the probability that the electron reaches a distance x into the wire, and s(x)
+
+is the average number of steps taken by an electron reaching this distance. The probability
+
+28
+
+
+of reaching at least a distance x, is given by the transmission function T (x), which scales
+
+as λ/x. The probability p(x) of an electron reaching a distance of exactly x is then given
+
+by the derivative of T , and is thus proportional to λ/x2. Finally, the electron is undergoing
+
+a random diffusion type motion through the nanowire, which means the number of steps
+
+required to move a distance x scales as (x/λ)2. By inserting these estimates into Eq. (82)
+
+we get s ∼ L/λ.
+
+In fact, not only does the number of samples and the number of steps per sample show
+
+linear behavior, both are also proportional to 1/λ. Since the mean free path λ should be
+
+inversely proportional to the scattering rate γ, the slopes of the fitting functions in figure 4
+
+should be proportional to γ. Table I also shows the ratios a/γ, which is indeed seen to be
+
+roughly independent of γ. The average of all three ratios is respectively 42389 and 3.1 eV−1
+
+for the fits of figures 4a and 4b. The average constant term bn is found to be 70803. From
+
+this, we obtain
+
+Nmc = 42389 · γL
+
+eV + 70803,
+(83)
+
+s = 3.1 · γL
+
+eV,
+(84)
+
+which we assume is valid for all values of γ. We have here ignored the constant term bs,
+
+since this is too small to be of significance at the length scales of these calculations.
+
+The computation time of the Monte Carlo method depend on Nmc and s, but also on the
+
+average time ts spent per scattering event, and on the average time td required to calculate
+
+the diagonal of Gr, performed once per Monte Carlo sample. Estimates of these quantities
+
+obtained from our calculations are shown in figure 5. The figure also contains linear fits.
+
+These are td = 0.00824 s · L − 0.000445 s, and ts = 0.00148 s · L + 0.00438 s. The fits closely
+
+resemble the calculations, showing that these computation times have close to perfect linear
+
+scaling. This is reasonable since the most time consuming operation per scattering event is
+
+the calculation of a single column of Gr. The calculation of single columns as well as the
+
+diagonal of Gr are linearly scaling operations in the RGF algorithm.
+
+We adopt the following models for the computation times td and ts:
+
+td = 0.00824 s · L,
+(85)
+
+ts = 0.00148 s · L,
+(86)
+
+where the constant terms have been ignored due to their small size. The computation time
+
+29
+
+
+20
+40
+60
+80
+100
+L (unit cells)
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+t (s)
+
+FIG. 5: The time td required for a single calculation of the diagonal of Gr is shown as blue
+
+circles, while the time ts required for the execution of a single electron step is shown as
+
+orange squares. Only the calculation with γ = 0.06 eV is included. The other values of γ
+
+give nearly identical results and is not shown. The solid lines represent linear fits. These
+
+are in the same color as the results to which they are fitted.
+
+required for a single Monte Carlo sample will be td + sts. Thus, combining the expressions
+
+Eq. (83) to Eq. (86), we obtain the model
+
+t = (td + s ts) Nmc =
+�
+0.00824 s · L + 3.1 · γL
+
+eV · 0.00148 s · L
+�
+·
+�
+42389 · γL
+
+eV + 70803
+�
+
+(87)
+
+for the total computation time.
+
+3.
+Comparison between the methods
+
+The total computation times of all methods are shown in figure 6, where they are com-
+
+pared to their respective fitted models. These models are given by Eq. (87) in the case of the
+
+Monte Carlo calculations, and respectively by Eq. (80) and Eq. (81) in the case of the direct
+
+and iterative approaches. The computation time of the Monte Carlo method is roughly three
+
+orders of magnitude larger than that of the standard approaches. However, since the itera-
+
+tive method scales as L
+5
+2, direct solution as L3, and the Monte Carlo method as L(L/λ)2,
+
+the Monte Carlo method will in fact be faster if the mean free path λ is sufficiently large.
+
+30
+
+
+101
+102
+
+L (unit cells)
+
+101
+
+102
+
+103
+
+104
+
+105
+
+106
+
+t (s)
+
+FIG. 6: Total computation time. The purple circles and red squares represent the direct
+
+solution and the iterative method, respectively. These are compared to their scaling
+
+models given by Eq. (80) and Eq. (81), which are shown as dotted lines in the same colors.
+
+The black crosses show the iterative results where an energy integration grid of NE = 26
+
+rather than NE = 13 points is used. The blue, orange and green stars represent Monte
+
+Carlo calculations with γ = 0.06, 0.04 and 0.02 eV, respectively. These are compared to
+
+the scaling model given by Eq. (87), which are shown as dotted lines in the same colors as
+
+the corresponding results.
+
+Figure 7 shows the parameter region where the Monte Carlo method is faster than the
+
+iterative method, as predicted by the models Eq. (87) and Eq. (81). The figure shows that γ
+
+must be smaller than 70 µeV in order for the Monte Carlo method to be faster for any value
+
+of L. Figure 7 also makes reference to a third method, which will be discussed in section
+
+V A 5.
+
+By the arguments above, the relevant parameter determining the required computation
+
+time of the Monte Carlo method is actually the mean free path λ, rather than the scattering
+
+strength γ. We can obtain some very rough estimates of the mean free paths in our calcula-
+
+tions by utilizing the fact that edge effects will penetrate roughly a few mean free paths into
+
+the wires. Observing figure 1, we see that in the γ = 0.04 eV case, edge effects are causing a
+
+deviance from the linear behavior for wire lengths up to 20 nm, while the same edge effects
+
+31
+
+
+100
+101
+102
+103
+104
+105
+106
+107
+108
+109
+
+L (unit cells)
+
+10−6
+
+10−5
+
+10−4
+
+10−3
+
+10−2
+
+γ (eV)
+
+102
+
+103
+
+104
+
+105
+
+λ (nm)
+
+100
+101
+102
+103
+104
+105
+106
+107
+108
+
+L (nm)
+
+FIG. 7: Comparison of the predicted computation times of the Monte Carlo and iterative
+
+methods. The dark purple region shows where the Monte Carlo methods is faster than the
+
+iterative method. The iterative method is faster than our prototype implementation of the
+
+Monte Carlo method in both the yellow and the green region, but in the green region the
+
+Monte Carlo method is the fastest when combined with the interpolating technique
+
+discussed in section V A 5.
+
+cause deviations at wire lengths of 40 nm in the γ = 0.02 eV case.
+
+Assuming that edge effects are visible for wire lengths shorter than ∼ 2λ, we estimate
+
+the mean free paths in those two cases to be 10 and 20 nm. Since λ should be inversely
+
+proportional to the scattering rates, we obtain the model λ = 0.4 eVnm/γ. This would mean
+
+the charge carriers in our example nanowire have an approximate average group velocity of
+
+4 eV˚A, which is a reasonable number. Adopting this model, the condition γ < 70 µeV can
+
+be translated to the requirement that λ must be larger than approximately 6 µm. This is
+
+unlikely to be the case in most practical calculations.
+
+32
+
+
+V.
+DISCUSSION
+
+A.
+Performance
+
+Since the Monte Carlo method requires large mean free paths > 6 µm in order to be
+
+faster than the iterative method, our current implementation is not useful for the chosen
+
+example. This situation is unlikely to change for other finite size geometries. Thus, in order
+
+for the method to be useful, we are in need of an improved implementation. There are
+
+multiple ways in which both the method itself, and its implementation can be improved,
+
+performance wise. Some of these will be discussed in the following. Their implementation
+
+and verification will be postponed to future studies.
+
+1.
+Compiled solvers
+
+Our prototype tests make use of a straightforward Python implementation of the Monte
+
+Carlo solver. It is well known that there is some overhead, possibly orders of magnitude
+
+due to the non-compiled nature of Python.
+It is important to emphasize that also the
+
+other methods in our tests were implemented in Python. However, most of these made
+
+use of precompiled solvers, such as gmres in the case of the iterative method. Thus, a
+
+direct comparison between the methods is not entirely fair, and we can expect improved
+
+performance by writing the Monte Carlo solver in a compiled language.
+
+However, a significant improvement is not guarantied to follow from such conversion alone.
+
+While the RGF algorithm was also implemented in Python, it utilizes a large number of
+
+matrix inversions and products, functionality which is already precompiled through NumPy.
+
+Any expected improvements by switching the entire method to a compiled implementation
+
+will be limited by the ratio in cost between these matrix operations and the Python overhead.
+
+This will largely depend on the size of the matrices, which in the case tested here was only
+
+32 by 32.
+
+2.
+Systems with k-dependence
+
+The relative difference in performance between the Monte Carlo method and the other
+
+approaches can be expected to improve in systems with a k-dependence. If the nanowires
+
+33
+
+
+of section IV were replaced with thin-films of varying thickness, the Hamiltonian and other
+
+operators would then have a two dimensional k-dependence. If a 10 × 10 k-point grid was
+
+used for the Brillouin zone, then the number of unknowns in Eq. (79) would increase by a
+
+factor of 100. Accordingly, the direct and iterative solution schemes would respectively be
+
+slower by six and four orders of magnitude. On the other hand, the change in computation
+
+time of the Monte Carlo method would be determined by the change in the variance of the
+
+estimator. Although the variance can be expected to increase, a change by four orders of
+
+magnitude is unlikely.
+
+3.
+Parallelization
+
+One large benefit to Monte Carlo calculations, is that they are very easy to parallelize,
+
+and that they scale near perfectly with processor distribution. Thus, although what we
+
+refer to as the total computation time would not be reduced, the real time requirement of
+
+the calculations could be significantly improved by utilizing high throughput parallelization.
+
+In fact, we have already made use of parallelization in our test calculations, which were
+
+executed in parallel using 64 CPUs. The time shown in figure 6 is the total computation
+
+time, and the real execution times of the Monte Carlo calculations are thus in reality lower
+
+by a factor of 64.
+
+While the iterative and direct methods can also be parallelized, this is less efficient when
+
+the number of processors exceeds the number of integration points.
+The efficiency of a
+
+parallelized Monte Carlo calculations could possibly be increased even further by making
+
+use of Graphics Processing Units (GPUs).
+The use of GPUs requires that the memory
+
+requirements of each process are very small. Such small memory requirement is in fact one
+
+of the benefits of the Monte Carlo method.
+
+4.
+Wave function based solver
+
+Switching to a wave function based solver is another possibility. That is, instead of cal-
+
+culating Gr explicitly, the wave functions |ψn⟩ = Gr|in⟩ is calculated by solving Eq. (40). In
+
+the calculations of section IV a wave function based solver would not cause a very significant
+
+improvement. This is due to the utilization of the RGF algorithm, which scales linearly with
+
+34
+
+
+system size along one spatial dimension. However, for the other spatial dimensions the RGF
+
+algorithm has cubic scaling. It is thus best suited for long structures, such as thin nanowires.
+
+In more bulk like systems, wave function based methods utilizing efficient sparse linear
+
+solvers, such as those employed by the ballistic transport software Kwant17 are most likely
+
+better suited. Alternatively, iterative sparse solvers like the gmres method would be less
+
+memory demanding, and thus better suited for parallelization.
+
+5.
+Interpolation
+
+The most time consuming part of the Monte Carlo method of section II F, is the cal-
+
+culation of the wave functions |ψn⟩. These are primarily needed in the calculation of the
+
+probabilities pi of Eq. (75). Thus, we could speed up the calculations by interpolating these
+
+probabilities. Specifically, we tested this approach by checking whether two probabilities pi
+
+calculated at nearby energies differ by less than five percent. If this is the case, then all
+
+values of pi at energies between these two points are found by linear interpolation. This
+
+approach resulted in an order of magnitude reduction in computational time without any
+
+visible loss in accuracy of the conductance estimates.
+
+In figure 7 we also show the parameter range in which this interpolating Monte Carlo
+
+method is faster than the iterative method. The scaling estimate of the interpolating method
+
+was obtained using an analysis similar to that of section IV B 2. Figure 7 shows that the
+
+minimal mean free path requirement is reduced to about 200 nm when the interpolating
+
+method is used. This is a significant improvement, but still not quite in the range of prac-
+
+tical applicability. However, because the Monte Carlo method consists only of very simple
+
+operations when the wave function calculations are eliminated, we believe that the compu-
+
+tational time of the interpolating method is mainly determined by the Python overhead. We
+
+expect further reduction in efficiency when traversing this solution to a compiled language.
+
+6.
+Improved estimator
+
+Finally, the efficiency of the Monte Carlo method could also be improved by reducing
+
+the variance of the estimators. One way of approaching this is the use of weighted Monte
+
+Carlo methods, like those applied in Boltzmann calculations1. This would involve modifying
+
+35
+
+
+the probability distributions of section II D to new probabilities p′, and then weighting the
+
+estimator with the probability ratios p/p′. If this is done correctly, an estimator X′ will have
+
+smaller variance. Less samples will thus be required to achieve a particular accuracy.
+
+There is also another way in which the variance can be reduced for bulk quantities like the
+
+electrical conductivity. From Eq. (83) we see that the number of samples Nmc is increased
+
+significantly by the presence of a large constant term. This term stems from the constant
+
+term A in 1/T = A+L/λ, which reduces the binomial probability and increases the variance.
+
+The term A is related to the probability of transmission between the system and the leads.
+
+Thus, we could reduce the variance of the estimator by eliminating the leads from the
+
+expression. Intuitively, it should be possible to estimate conductivity from the distribution
+
+of electron step lengths |xn+1 −xn|, rather than from expressions like Xpq, which involve the
+
+leads p and q. Here xn = ⟨ψn|x|ψn⟩.
+
+B.
+Generalizations
+
+In addition to the suggested strategies to improve the computational efficiency of the
+
+calculations, it is also possible to incorporate additional physics in the Monte Carlo model.
+
+1.
+Generalizations of the scattering model
+
+The test calculations of this work utilize two approximations to the scattering model:
+
+1) B¨uttiker’s approximation, and 2) elastic scattering. In calculations intended to model
+
+material systems for technology applications, these approximations are likely to be too lim-
+
+iting. In particular, self energies derived from various perturbative schemes, e.g. modeling
+
+electron-phonon interaction and disorder scattering will rarely conform to B¨uttiker’s approx-
+
+imation.
+
+If such models are employed, it is necessary to use the more general method of section
+
+II D, rather than the simplified algorithm of section II F. This requires diagonalization of
+
+the operators Λ(n+1), which increases the memory requirements and the computation time of
+
+the method. However, since scattering is usually a local phenomenon, Λ(n+1) can most likely
+
+be approximated as a sparse matrix, possibly ordered, so that the increased computational
+
+requirements are manageable.
+
+36
+
+
+In addition, both electron-electron and electron-phonon interactions give rise to inelastic
+
+scattering. While acoustic phonon scattering can often be approximated as elastic, this is not
+
+the case with scattering of optical phonons. Also, in applications where energy relaxation,
+
+for instance thermalization of states is important, even acoustic scattering may need to
+
+be modeled as inelastic. In high field applications this is merely a question of finding a
+
+way to draw energies from the probability distributions of Eq. (45) or Eq. (74), followed by
+
+application of the algorithms in sections II D or II F.
+
+However, when one is interested in linear transport coefficients such as Gpq, this approach
+
+is not well suited. At low fields the currents Iq will be very small, so that the signal to noise
+
+ratio of the estimators Xq will also be low. Thus, in the linear limit we believe a better
+
+approach is to find an expression which generalizes Eq. (66) to inelastic scattering. This
+
+generalized expression is likely to be considerably more involved.
+
+2.
+Generalizations of the Hamiltonian
+
+The Hamiltonian employed in our calculations could also be generalized in various ways.
+
+Within a tight binding framework, one could improve the model either by including more
+
+orbitals per atom, or by including interactions of longer range than the nearest neighbor. In
+
+addition, one could also include effects such as a Poisson potential or strain dependent model
+
+parameters, and interface the Hamiltonian directly to some ab-initio software, employing for
+
+instance Density Functional Theory (DFT) or post DFT methods.
+
+3.
+Nonlinearities
+
+The Monte Carlo methods described in sections II C, II D and II F are all based on the
+
+assumption that the function Ξ(E, E′, G) defined in Eq. (18) is linear. There are two ways
+
+in which this linearity assumption could fail: 1) The scattering function Λ(E, E′, G) could
+
+itself be nonlinear, or 2) the Green’s functions Gr and Ga could be functions of G<.
+
+As discussed in appendix A 1, Λ will typically be nonlinear if one makes use of pertur-
+
+bation theory to orders higher than one, or if one includes electron-electron scattering to
+
+any order.
+Also, as discussed in section II E, Gr and Ga can be functions of G< either
+
+through the scattering mechanism, or for instance a Poisson potential. Thus, the function
+
+37
+
+
+Ξ(E, E′, G) will in most realistic cases be nonlinear in G.
+
+We will handle the nonlinearity by introducing an object x = F(G<), and write the
+
+function Ξ as Ξ(E, E′, G, x), where Ξ is now linear in the third argument. Note that this is
+
+always possible in principle, since we could choose x = G<. The reason for using the more
+
+general expression is that it will sometimes be more efficient to choose x differently. For
+
+instance, if the nonlinearity comes from a Poisson potential, one could choose x = ρ, where
+
+ρ is the charge distribution.
+
+Given any fixed value of x, Ξ is linear, and we can solve Eq. (17) using the Monte Carlo
+
+method. The solution is a lesser Green’s function ˜G<(x) which depends on the value used
+
+for x. ˜G<(x) will only equal the true solution G< if x is set to its true value x⋆. That is,
+
+G< = ˜G<(x⋆). Since x⋆ = F(G<), we can find x⋆ by solving the equation x = F( ˜G<(x)). In
+
+particular, if F( ˜G<(x)) can be estimated in the Monte Carlo method using some estimator
+
+X, then x⋆ is the solution of ⟨X|x = x⋆⟩ = x⋆. Here the notation X|x = x′ means that the
+
+estimator is calculated in a simulation where x = x′.
+
+One way of solving this equation is to construct a sequence of random estimates Xn =
+
+X|x = xn, where xn is always the average of all previous estimates. That is,
+
+xn = 1
+
+n
+
+n−1
+�
+
+k=0
+Xk
+(88)
+
+for k > 0, while x0 equals some initial guess. Intuitively, xn should approach the correct value
+
+of x as n → ∞. Such an approach is sometimes employed when Monte Carlo simulations are
+
+used to solve the Boltzmann equation in the presence of a Poisson potential. It is referred
+
+to as the incident flux approach4.
+
+4.
+Generalization to phonons
+
+In principle, the Monte Carlo method described here could also be applied to phonon
+
+transport. Since equations similar to Eq. (7) and Eq. (8) can be found also in phonon NEGF
+
+formalism, most of the expressions in section II should carry directly over to the phonon
+
+method. An important exception however, is assumption (iv), which is a consequence of
+
+charge conservation. Unless a similar conservation condition can be shown to hold also for
+
+phonons, Monte Carlo estimates must be based on Eq. (51) rather than Eq. (55).
+
+38
+
+
+VI.
+CONCLUSIONS
+
+We have shown that a Monte Carlo scheme similar to that used for the solution of the
+
+Boltzmann equation can also be used to solve the NEGF equations, as long as certain
+
+assumptions about the scattering self energies are satisfied. While the most general Monte
+
+Carlo method, described in section II C, requires only assumptions (i) and (ii) to be satisfied,
+
+the more specialized method described in section II D requires also assumption (iii).
+In
+
+addition, the simplified estimator of Eq. (55) is based upon assumption (iv).
+
+The described Monte Carlo scheme solves Eq. (8), the NEGF equation for G<. In the
+
+case of elastic scattering in the linear limit, we have shown that we can use the equilibrium
+
+value of Gr, so that Eq. (7) need not be solved self consistently with Eq. (8).
+Possibly,
+
+some generalization of this can be found also for inelastic scattering. In nonlinear transport
+
+problems, we suggest combining the Monte Carlo method with an iterative scheme, similar
+
+to what is done when Monte Carlo simulations are used to solve the Boltzmann equation in
+
+the presence of a Poisson potential.
+
+We tested the method with a scattering model conforming to B¨uttiker’s approximation.
+
+The tests show that at the level of accuracy required, the Monte Carlo method is faster than
+
+the alternative approaches in a specific regime. However, this regime involves mean free
+
+paths larger than what can be found in most applications. Our prototype implementation
+
+was performed to demonstrate the concept and present introductory performance numbers
+
+to guide future studies. As we have discussed, there are several ways in which the current
+
+implementation can be be improved to reduce the computation time. More work is thus
+
+needed to demonstrate how successful such improvements will be, and whether the discussed
+
+physical generalizations are applicable in practice.
+
+Appendix A: Justification for the scattering assumptions
+
+In this appendix, we try to provide some justification for the assumptions (i) - (v) intro-
+
+duced in the main text. A formal proof that these assumptions are always valid, is not the
+
+scope of this appendix, and this may not even be the case. Instead, we propose heuristic
+
+arguments, in an attempt to justify why these assumptions are reasonable, or at least why
+
+they are reasonable as approximations.
+
+39
+
+
+1.
+Assumption (i), Linearity
+
+In the case of electron-phonon scattering in the self consistent Born approximation, the
+
+self energy Σ<
+s can be expressed as1,8,11
+
+Σ<
+sij(E) =
+�
+
+kl
+
+�
+dE′ Dij
+kl(E′)G<
+kl(E − E′).
+(A1)
+
+This expression can be written on the form of Eq. (16), with
+
+Λ(E, E′, G)ij =
+�
+
+kl
+Dij
+kl(E − E′)Gkl,
+(A2)
+
+which is seen to be linear in G as required. Similar expressions apply for scattering on
+
+impurities and other forms of disorder, and indeed for self consistent Born approximations
+
+of scattering on any other field than the electron field itself.
+
+In the case of electron-electron scattering, the lowest order perturbation would instead
+
+take the form
+
+Σ<
+sij(E) =
+�
+
+klmn
+
+�
+dE′ F klmn
+ij
+(E′)G<
+kl(E − E′)G<
+mn(E′),
+(A3)
+
+and Λ would thus be second order in G. Clearly, other scattering mechanisms will also result
+
+in nonlinear Λ if higher order expansions than Eq. (A1) are used. However, in principle we
+
+can rewrite Λ as Λ(E, E′, G, G<), where Λ is still linear in the third argument. For instance,
+
+Eq. (A3) could be written on the form of Eq. (16) with
+
+Λ(E, E′, G, G<)ij =
+�
+
+klmn
+F klmn
+ij
+(E′)G<
+kl(E − E′)Gmn,
+(A4)
+
+which is now linear in G. However, this is only useful if the fourth argument of Λ can be
+
+approximated in some other way. One way of doing this is to expand it in terms of the
+
+unperturbed Green’s function g<. Alternatively, one could try the approach suggested in
+
+section V B 3.
+
+2.
+Assumption (ii), Hermiticity
+
+Both the Green’s function G<(E) and the self energy Σ<(E) are anti-Hermitian operators8.
+
+Since the lead contributions to Eq. (10) are Hermitian, so must Σ<
+s be.
+But this just
+
+means that the integral in Eq. (16) is anti-Hermitian, and does not necessarily mean that
+
+40
+
+
+Λ(E, E′, G) is Hermitian for arbitrary E′ and G. However, the only physical content of the
+
+function Λ is in fact the self energy resulting from Eq. (16). Thus, we are free to arbitrarily
+
+modify this function, as long as Σ<
+s is preserved. So if Λ does not conform to assumption
+
+(ii), we can simply define a new function Λ′ as
+
+Λ′(E, E′, G) = Λ(E, E′, G) + Λ(E, E′, G†)†
+
+2
+.
+(A5)
+
+We then have
+�
+dE′Λ′(E, E′, G<(E′)) = 1
+
+2
+
+�
+dE′Λ(E, E′, G<(E′)) + 1
+
+2
+
+�
+dE′Λ(E, E′, −G<(E′))† (A6)
+
+= Σ<
+s (E) − Σ<
+s (E)†
+
+2
+= Σ<
+s (E),
+
+as required. In addition, it is easily seen that if G is Hermitian, then so is Λ′(E, E′, G), and
+
+that if Λ is linear in G, then so is Λ′.
+
+3.
+Assumption (iii), Positivity
+
+We will first show that assumption (iii) holds for disorder scattering in the self consistent
+
+Born approximation. The self energy is then given by Eq. (A1), where Dij
+kl is given by
+
+Dij
+kl(E) = ⟨VikVlj⟩ δ(E),
+(A7)
+
+where V is the disorder potential, and the brackets denote an ensemble average. Inserting
+
+this in Eq. (A2), we find
+
+⟨ψ|Λ(E, E′, G)|ψ⟩ =
+�
+
+klij
+ψ⋆
+i ψj ⟨VikVlj⟩ Gklδ(E − E′) = ⟨⟨ψ|V GV |ψ⟩⟩ δ(E − E′).
+(A8)
+
+Since V is Hermitian, ⟨ψ|V GV |ψ⟩ is positive if G is positively definite.
+Thus, so is
+
+⟨ψ|Λ(E, E′, G)|ψ⟩, and accordingly assumption (iii) is satisfied.
+
+Next, will show that assumption (iii) holds for electron-phonon scattering in the self
+
+consistent Born approximation. The self energy is still given by Eq. (A1), but the function
+
+Dij
+kl(E) is now
+
+Dij
+kl(E) = 1
+
+¯h
+
+�
+
+rs
+Ur
+ikUs
+ljDrs(E),
+(A9)
+
+41
+
+
+where the potentials Ur
+ij describe perturbations to the electronic Hamiltonian introduced by
+
+lattice perturbations xr, and
+
+Drs(E) =
+�
+dt ⟨xr(t)xs(t′)⟩ eiE(t−t′)/¯h,
+(A10)
+
+where the brackets now denotes an average over the lattice state. Eq. (A10) makes use of
+
+the assumption of a stationary process, so that ⟨xr(t)xs(t′)⟩ is a function of t − t′ alone.
+
+The first step is to show that the matrix D(E) with elements given by Eq. (A10) is
+
+positively definite for all E. Consider a set of functions fr(t). We have
+
+�
+
+rs
+
+�
+dt
+�
+dt′ ⟨xr(t)xs(t′)⟩ fr(t)f ⋆
+s (t′) =
+
+������
+
+�
+
+r
+
+�
+dt xr(t)fr(t)
+
+�����
+
+2�
+
+≥ 0.
+(A11)
+
+We can also express the integral in the transformed variables T = (t + t′)/2 and ∆ = t′ − t.
+
+Making use of the fact that ⟨xr(t)xs(t′)⟩ is a function of ∆ alone, we get
+
+�
+
+rs
+
+�
+dt
+�
+dt′ ⟨xr(t)xs(t′)⟩ fr(t)f ⋆
+s (t′)
+(A12)
+
+=
+�
+
+rs
+
+�
+d∆ ⟨xr(t)xs(t′)⟩
+�
+dTfr
+
+�
+T − ∆
+
+2
+
+�
+f ⋆
+s
+
+�
+T + ∆
+
+2
+
+�
+
+Now introducing the Fourier transforms φr(ω) of the functions fr, we can write
+�
+dTfr
+
+�
+T − ∆
+
+2
+
+�
+f ⋆
+s
+
+�
+T + ∆
+
+2
+
+�
+=
+1
+
+(2π)2
+
+�
+dT
+�
+dω
+�
+dω′φr(ω)φ⋆
+s(ω′)e−iω(T−∆/2)+iω′(T+∆/2)
+
+(A13)
+
+= 1
+
+2π
+
+�
+dω
+�
+dω′φr(ω)φ⋆
+s(ω′)eiω∆/2+iω′∆/2δ(ω − ω′) = 1
+
+2π
+
+�
+dω φr(ω)φ⋆
+s(ω)eiω∆.
+
+Inserting this in Eq. (A12), we get
+
+�
+
+rs
+
+�
+dt
+�
+dt′ ⟨xr(t)x⋆
+s(t′)⟩ fr(t)fs(t′) = 1
+
+2π
+
+�
+
+rs
+
+�
+d∆
+�
+dω ⟨xr(t)xs(t′)⟩ φr(ω)φ⋆
+s(ω)eiω∆
+
+(A14)
+
+= 1
+
+2π
+
+�
+
+rs
+
+�
+dωφr(ω)φ⋆
+s(ω)Drs(ω/¯h).
+
+Let us now specify fr(t) = vrf(t), so that φr(ω) = vrφ(ω) for some vector v = [vr]. Com-
+
+paring Eq. (A14) to Eq. (A11), we see that
+
+�
+
+rs
+
+�
+dω |φ(ω)|2vrv⋆
+sDrs(ω/¯h) =
+�
+dω |φ(ω)|2v†D(ω/¯h)v ≥ 0.
+(A15)
+
+42
+
+
+Since this must hold for arbitrary functions f, and arbitrary vectors v, the matrix D(E)
+
+must be positively definite for all E.
+
+We can reexpress Eq. (A9) in terms of any basis of phonon modes ˜xρ. Thus, let us use a
+
+basis which diagonalizes D(E). Eq. (A9) then becomes
+
+Dij
+kl(E) = 1
+
+¯h
+
+�
+
+ρ
+˜Uρ
+ik ˜Uρ
+ljλρ(E),
+(A16)
+
+where the eigenvalues λρ(E) of D(E) are all positive. Inserting Eq. (A16) in Eq. (A2), we
+
+find
+
+⟨ψ|Λ(E, E′, G)|ψ⟩ = 1
+
+¯h
+
+�
+
+klijρ
+ψ⋆
+i ψj ˜Uρ
+ik ˜Uρ
+ljλρ(E − E′)Gkl = 1
+
+¯h
+
+�
+
+ρ
+⟨ψ| ˜UρG ˜Uρ|ψ⟩λρ(E − E′)
+
+(A17)
+
+Since the potentials ˜Uρ are again Hermitian, ⟨ψ| ˜UρG ˜Uρ|ψ⟩ is positive if G is positively
+
+definite. Thus, so is ⟨ψ|Λ(E, E′, G)|ψ⟩, and accordingly assumption (iii) is satisfied also for
+
+phonon scattering.
+
+This means that under the assumption of a stationary process, assumption (iii) is at least
+
+satisfied for two very common scattering models, namely self consistent Born approximations
+
+of disorder and phonon scattering. Generalizing to higher orders is more difficult, but we can
+
+make a heuristic argument. By an argument very similar to that of Eq. (A11) to Eq. (A15),
+
+one can also show that −iG<(E) is positively definite for stationary processes. Then, since
+
+⟨ψ|Σ<|ψ⟩ = ⟨ψ|(E −H −Σa)G<(E −H −Σr)|ψ⟩ > 0, −iΣ< must also be positively definite.
+
+Due to the fact that Σ< and G< are related by Eq. (10) and Eq. (16), it seems likely that
+
+Λ should preserve positive definiteness. First of all, although it is possible that −iΣ< is
+
+positively definite while −iΣ<
+s is not, this seems rather controversial, since the lead contri-
+
+bution to Eq. (10) can be chosen arbitrarily. Secondly, this same freedom suggests that any
+
+Greens’ function G< could in principle be a solution of Eq. (8), if the lead self energies were
+
+chosen appropriately. Thus, in order for −iΣ<
+s to always be positively definite, the integral
+
+of Λ(E, E′, G(E)) must be positively definite for any positively definite function G(E). This
+
+must also be the case for G(E) ∼ δ(E − E′), leading to a positive definite Λ(E, E′, G) for
+
+any G.
+
+43
+
+
+4.
+Assumption (iv), Charge conservation
+
+By combining Eq. (8) and Eq. (14), we see that
+
+Tr Γ(E)G<(E) = Tr Γ(E)Gr(E)Σ<(E)Ga(E)
+(A18)
+
+= Tr Ga(E)Γ(E)Gr(E)Σ<(E) = Tr A(E)Σ<(E),
+
+while from Eq. (15), the currents at the leads p are given by
+
+Ip = − i
+
+h
+
+�
+dE Tr Γp(E) (G<(E) − iA(E)fp(E)) .
+(A19)
+
+Due to charge conservation, the total current exiting/entering the system must be zero in a
+
+stationary process. With the assistance of Eq. (9), Eq. (10), and Eq. (A18), we get
+�
+
+p
+Ip = − i
+
+h
+
+�
+dE
+�
+
+p
+Tr Γp(E) (G<(E) − iA(E)fp(E))
+(A20)
+
+= − i
+
+h
+
+�
+dE (Tr [Γ(E) − Γs(E)] G<(E) − Tr [Σ<(E) − Σ<
+s (E)] A(E))
+
+= i
+
+h
+
+�
+dE (Tr Γs(E)G<(E) − Tr Σ<
+s (E)A(E)) = 0.
+
+Inserting Σ< from Eq. (16), this becomes
+�
+dE Tr Γs(E)G<(E) =
+�
+dE
+�
+dE′ Tr Λ(E, E′, G<(E′))A(E),
+(A21)
+
+which, on exchanging the integration variables on the right, becomes
+�
+dE
+�
+Tr Γs(E)G<(E) −
+�
+dE′ Tr A(E′)Λ(E′, E, G<(E))
+�
+= 0.
+(A22)
+
+Following the reasoning at the end of appendix A 3, it is reasonable that any Green’s function
+
+G< could in principle be a solution of Eq. (8), so that Eq. (A22) must apply also for G<(E)
+
+proportional to a delta function δ(E − E′). Thus, we must have
+
+Tr Γs(E)G =
+�
+dE′ Tr A(E′)Λ(E′, E, G),
+(A23)
+
+for any positively definite and Hermitian G.
+
+5.
+Assumption (v), Detailed balance
+
+With elastic scattering, Eq. (A1) becomes instead
+
+Σ<
+sij(E) =
+�
+
+kl
+Dij
+kl(E)G<
+kl(E),
+(A24)
+
+44
+
+
+and accordingly, Λ(E, G) becomes
+
+Λ(E, G)ij =
+�
+
+kl
+Dij
+kl(E)Gkl,
+(A25)
+
+so that
+
+Tr FΛ(E, G) =
+�
+
+ijkl
+Dij
+kl(E)GklFji =
+�
+
+ijkl
+Dlk
+ji(E)FklGji.
+(A26)
+
+Thus, assumption (v) would follow if we could say Dij
+kl(E) = Dlk
+ji(E).
+
+In the case of electron phonon interactions, we have from Eq. (A9) and Eq. (A10)
+
+Dij
+kl(E) = 1
+
+h
+
+�
+
+rs
+Ur
+ikUs
+lj ⟨xr(t)xs(t)⟩ = 1
+
+h
+
+�
+
+sr
+Us
+ikUr
+lj ⟨xs(t)xr(t)⟩ = Dlk
+ji(E),
+(A27)
+
+as required. Similar expressions apply for interactions with other fields, while for disorder
+
+scattering we have from Eq. (A7)
+
+Dij
+kl(E) = ⟨VikVlj⟩ = ⟨VljVik⟩ = Dlk
+ji(E)
+(A28)
+
+where V is now the disorder potential.
+Thus, assumption (v) applies at least to these
+
+commonly used scattering models.
+
+Appendix B: Expansion of the spectral density
+
+In addition to Eq. (57) and Eq. (22), we introduce the similar definitions
+
+ˆΞG(E) = Ga(E)Λ(E, G(E))Gr(E), and
+(B1)
+
+ˆAq = Ga(E)Γq(E)Gr(E).
+(B2)
+
+Using Eq. (14) we may then expand the quantity Tr A(E)Γq(E) as
+
+Tr A(E)Γq(E) = Tr Gr(E)Γ(E)Ga(E)Γq(E) = Tr Γ(E)Ga(E)Γq(E)Gr(E)
+(B3)
+
+=
+�
+
+p
+Tr Γp(E) ˆAq(E) + Tr Γs(E) ˆAq(E).
+
+With elastic scattering, assumption (iv) simplifies to
+
+Tr Γs(E)G = Tr A(E)Λ(E, G),
+(B4)
+
+45
+
+
+and using this we can rewrite the last term in Eq. (B3) as
+
+Tr Γs(E) ˆAq(E) = Tr A(E)Λ(E, ˆAq(E)).
+(B5)
+
+Using Eq. (14) again, we can expand Eq. (B5) as
+
+Tr Γs(E) ˆAq(E) = Tr Gr(E)Γ(E)Ga(E)Λ(E, ˆAq(E))
+(B6)
+
+= Tr Γ(E)Ga(E)Λ(E, ˆAq(E))Gr(E) = Tr Γ(E)ˆΞ ˆAq(E)
+
+=
+�
+
+p
+Tr Γp(E)ˆΞ ˆAq(E) + Tr Γs(E)ˆΞ ˆAq(E).
+
+Continuing this process, we can in general expand
+
+Tr Γs(E)ˆΞn ˆAq(E) = Tr A(E)Λ(E, ˆΞn ˆAq(E)) = Tr Γ(E)ˆΞn+1 ˆAq(E)
+(B7)
+
+=
+�
+
+p
+Tr Γp(E)ˆΞn+1 ˆAq(E) + Tr Γs(E)ˆΞn+1 ˆAq(E).
+
+and inserting all this back into Eq. (B3) we find
+
+Tr A(E)Γq(E) =
+
+m
+�
+
+n=0
+
+�
+
+p
+Tr Γp(E)ˆΞn ˆAq(E) + Tr Γs(E)ˆΞm ˆAq(E).
+(B8)
+
+Assuming that the last term goes to zero as m → ∞, this becomes
+
+Tr A(E)Γq(E) =
+
+∞
+�
+
+n=0
+
+�
+
+p
+Tr Γp(E)ˆΞn ˆAq(E).
+(B9)
+
+Using assumption (v) and Eq. (22), we can rewrite the terms of Eq. (B9) as
+
+Tr Γp(E)ˆΞn ˆAq(E) = Tr Γp(E)Ga(E)Λ(E, ˆΞn−1 ˆAq(E))Gr(E)
+(B10)
+
+= Tr Ap(E)Λ(E, ˆΞn−1 ˆAq(E)) = Tr ˆΞn−1 ˆAq(E)Λ(E, Ap(E))
+
+= Tr Ga(E)Λ(E, ˆΞn−2 ˆAq(E))Gr(E)Λ(E, Ap(E))
+
+= Tr Λ(E, ˆΞn−2 ˆAq(E))ΞAp(E) = Tr ˆΞn−2 ˆAq(E)Λ(E, ΞAp(E))
+
+= · · · = Tr ˆΞn−k−1 ˆAq(E)Λ(E, ΞkAp(E)) = · · ·
+
+= Tr ˆAq(E)Λ(E, Ξn−1Ap(E))
+
+= Tr Ga(E)Γq(E)Gr(E)Λ(E, Ξn−1Ap(E)) = Tr Γq(E)ΞnAp(E),
+
+and we thus finally obtain
+
+Tr A(E)Γq(E) =
+
+∞
+�
+
+n=0
+
+�
+
+p
+Tr Γq(E)ΞnAp(E).
+(B11)
+
+46
+
+
+ACKNOWLEDGMENTS
+
+We would like to acknowledge the Research Council of Norway (NANO2021 project
+
+Thelma, number 228854) for providing funding, and the Norwegian Metacenter for Compu-
+
+tational Resources (NOTUR) for providing computational resources.
+
+1 C. Jacoboni, Theory of Electron Transport in Semiconductors: A Pathway from Elementary Physics to Nonequ
+
+Springer Series in Solid-State Sciences (Springer, Berlin, Heidelberg, 2010).
+
+2 J. E. Fonseca, T. Kubis, M. Povolotskyi, B. Novakovic, A. Ajoy, G. Hegde, H. Ilatikhameneh,
+
+Z. Jiang, P. Sengupta, Y. Tan, et al., Journal of Computational Electronics 12, 592 (2013).
+
+3 Y.-M. Niquet, V.-H. Nguyen, F. Triozon, I. Duchemin, O. Nier, and D. Rideau, J. Appl. Phys.
+
+115, 054512 (2014).
+
+4 M. Lundstrom, Fundamentals of Carrier Transport, 2nd ed. (Cambridge University Press,
+
+2000).
+
+5 K. Van Houcke, E. Kozik, N. Prokofev, and B. Svistunov, Physics Procedia 6, 95 (2010).
+
+6 N. V. Prokof’ev and B. V. Svistunov, Phys. Rev. Lett. 81, 2514 (1998).
+
+7 N. Prokof’ev and B. Svistunov, Phys. Rev. Lett. 99, 250201 (2007).
+
+8 S. Datta, Electronic Transport in Mesoscopic Systems, Cambridge Studies in Semiconductor
+
+Physics (Cambridge University Press, 1997).
+
+9 L. V. Keldysh, Sov. Phys. JETP 20, 1018 (1965).
+
+10 F. S. Khan, J. H. Davies, and J. W. Wilkins, Physical Review B 36, 2578 (1987).
+
+11 R. Lake, G. Klimeck, R. C. Bowen, and D. Jovanovic, J. Appl. Phys. 81, 7845 (1997).
+
+12 M. Buttiker, IBM J. Res. Dev. 32, 63 (1988).
+
+13 A. Bulusu and D. G. Walker, Superlattice. Microst. 44, 1 (2008).
+
+14 Y.-C. Chang, Phys. Rev. B 37, 8215 (1988).
+
+15 L. Musland and E. Flage-Larsen, Computational Materials Science 132, 146 (2017).
+
+16 W.
+H.
+Press,
+S.
+A.
+Teukolsky,
+W.
+T.
+Vetterling,
+and
+B.
+P.
+Flannery,
+
+Numerical Recipes 3rd Edition: The Art of Scientific Computing
+(Cambridge
+University
+
+Press, 2007).
+
+17 C. W. Groth, M. Wimmer, A. R. Akhmerov, and X. Waintal, New J. Phys. 16, 063065 (2014).
+
+47
+
+

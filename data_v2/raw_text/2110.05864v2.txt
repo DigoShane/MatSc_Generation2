@@ -1,0 +1,1358 @@
+Disentangling intrinsic motion from neighbourhood effects in heterogeneous collective
+motion∗
+
+Arshed Nabeel
+Center for Ecological Sciences, Indian Institute of Science, Bengaluru†
+
+Danny Raj M.‡
+
+Department of Chemical Engineering, Indian Institute of Science, Bengaluru
+(Dated: March 8, 2022)
+
+Most real world collectives, including active particles, living cells, and grains, are heterogeneous,
+where individuals with differing properties interact. The differences among individuals in their intrin-
+sic properties have emergent effects at the group level. It is often of interest to infer how the intrinsic
+properties differ among the individuals, based on their observed movement patterns. However, the
+true individual properties may be masked by emergent effects in the collective. We investigate the
+inference problem in the context of a bidisperse collective with two types of agents, where the goal is
+to observe the motion of the collective and classify the agents according to their types. Since collec-
+tive effects such as jamming and clustering affect individual motion, an agent’s own movement does
+not have sufficient information to perform the classification well: a simple observer algorithm, based
+only on individual velocities cannot accurately estimate the level of heterogeneity of the system, and
+often misclassifies agents. We propose a novel approach to the classification problem, where collective
+effects on an agent’s motion is explicitly accounted for. We use insights about the physics of collective
+motion to quantify the effect of the neighbourhood on an agent using a neighbourhood parameter. Such
+an approach can distinguish between agents of two types, even when their observed motion is identi-
+cal. This approach estimates the level of heterogeneity much more accurately, and achieves significant
+improvements in classification. Our results demonstrate that explicitly accounting for neighbourhood
+effects is often necessary to correctly infer intrinsic properties of individuals.
+
+I.
+INTRODUCTION
+
+With the advent of sophisticated imaging techniques
+and machine learning algorithms, many experimental
+studies in the field of complex systems and complex
+flows turn to computer vision to investigate the un-
+derlying dynamics of the individuals (agents).
+Exam-
+ples include the study of the motion of an intruder and
+the flow of grains in granular flows [1–4], hydrody-
+namics of droplet interactions in a microchannel [5–9],
+cell migration studies[10–13], motion of synthetic ac-
+tive particles[14, 15], dynamics of traffic flows [16–18]
+and collectives [19], and flocking behaviour of social
+organisms[20–23]. The agents that make up the collec-
+tive are tracked and their velocities are computed from
+the measurements. The motion of these agents is a result
+of both self-propulsion (or external driving) and interac-
+tions between the agents. One of the primary goals in
+collective motion research is to understand the relation-
+ship between the observed dynamics, the intrinsic mo-
+tion and the interaction effects of the agents in the col-
+lective.
+Most studies of collective phenomena assume that the
+individual agents in a collective are identical.
+How-
+ever, in real-world systems, this is seldom the case. In
+
+∗ Supplementary videos available at: https://www.dannyraj.com/
+obsinf-supp-info
+† Also at Department of Chemical Engineering, Indian Institute of Sci-
+ence, Bengaluru
+‡ dannym@iisc.ac.in
+
+material-collectives like droplets driven through a mi-
+crochannel, differences in sizes could modify the level of
+confinement which alters the dynamics significantly[9].
+It is not always possible to synthesise active particles with
+homogeneous morphology. For example, in the case of
+Janus particles, the inhomogeneity in the gold coating
+on these particles could produce gravitational torques
+that affect how they cluster[14]. In cellular systems, one
+finds heterogeneity to arise dynamically in the form of
+leader–follower states that dictate the migration dynam-
+ics of these cells, especially during processes like wound
+closure[24].
+Moving beyond examples from soft mat-
+ter; in animal groups, heterogeneity can arise due to the
+differences in age, sex or behavioural tendencies of the
+individuals [25–27] all of which can reflect in the move-
+ment patterns of the individuals. In pedestrian dynamics,
+people in the crowd with different mobility, or with dif-
+ferent destinations could significantly alter the dynamics
+of the crowd [28, 29]. In all these systems, it is usually
+of interest to identify the individual differences among
+agents based on their movement information and under-
+stand the impact on collective motion.
+
+However, the question of how well one can make such
+inferences, and how the collective dynamics affect the
+inferences, is relatively unexplored, as the collective dy-
+namics of the system depend on the heterogeneity in in-
+teresting ways. Schumacher et. al. [30] demonstrate
+that it is hard to quantify the actual heterogeneity of the
+agents in the system: they find that higher inter-agent in-
+teractions could exaggerate the true level of heterogene-
+ity while confinement can do the opposite.
+
+arXiv:2110.05864v2  [cs.LG]  5 Mar 2022
+
+
+2
+
+The problem of inferring properties of a heterogeneous
+collective can be posed at three different levels:
+
+1. Estimating the level of heterogeneity: At the coars-
+est level, one may need to estimate some measure
+of the level of heterogeneity in the collective and
+characterize the system on a scale ranging from
+fully homogeneous to highly heterogeneous.
+
+2. Characterizing individual agents: A harder problem
+would be to characterize individual agents accord-
+ing to their properties. For example, it might be
+possible to classify individuals into different types
+according to some intrinsic characteristics.
+
+3. Recovering intrinsic properties and governing dy-
+namics: At the highest level, one would be wish
+to recover the full intrinsic properties the individ-
+ual agents or reconstruct the governing equations
+of motion for the individuals. This is a significantly
+harder problem.
+
+To investigate these questions, we turn to a simple
+heterogeneous collective: a bidisperse collective, which
+consists of two distinct groups of agents.
+The agent
+properties are set to be identical within a group but are
+distinct between groups. Although simple in principle,
+such bidisperse collectives come up in a variety of fields,
+examples including migrating cells [31, 32], oppositely
+driven systems like charged colloids or dusty plasmas
+[33–35] pedestrian crowds [36–38] and mixed-species
+animal groups [39, 40].
+We approach the problem of inferring a heterogeneous
+collective, by classifying agents into their groups in a
+bidisperse collective and estimating the group hetero-
+geneity from the identified group memberships. Depend-
+ing on the context, fast and accurate classification can be
+very crucial. For example, while working with densely
+packed agents, it may be very hard to retain the track-
+ing for long time windows and in problems like pre-
+dicting the onset of a stampede, timely classification is
+critical in employing prevention strategies. The classi-
+fication problem becomes particularly challenging when
+clean, labelled data is not readily available—as is often
+the case in real-world scenarios. In these situations, we
+cannot rely on the traditional supervised learning tech-
+niques [41] for classification.
+A physics-informed ap-
+proach, based on phenomenological understanding of
+the collective dynamics, is appealing in this context. By
+incorporating insights about the dynamics, such an ap-
+proach can reduce the dependence on labelled data.
+We begin with a description of a model for a bidisperse
+collective and show how, despite being simple, it gives
+rise to a wide range of collective phenomena which are
+interesting from the context of inferring the heterogene-
+ity of the collective. We first examine the performance
+of a simple observer that takes into account only the dy-
+namics of a focal agent; because it is reasonable to ex-
+pect that the information that aids the classification of a
+
+particular agent is encoded in the motion of that agent
+itself. However, since the dynamics of an agent is also
+driven by collective effects arising from interactions with
+other agents, this approach often produces misclassifica-
+tions. We address this problem by explicitly accounting
+for the collective effects on the movement of an individ-
+ual. Based on the physics of collective motion, we derive
+a neighbourhood parameter that quantifies the influence
+of neighbours on the movement of the focal agent; and
+classify agents based on how the agent’s velocity com-
+pares to the neighbourhood parameter. This enables us
+to distinguish between agents of different groups, even
+when their observed movement is identical. Our anal-
+ysis presents a physics-inspired approach to the infer-
+ence problem, instead of a supervised-learning approach
+which is reliant on the availability of labelled training-
+data.
+
+II.
+MODEL AND DYNAMICS
+
+A.
+A simple model of a bidisperse collective
+
+We use a simple model of bidisperse collectives (i.e.
+consisting of two distinct groups of agents), similar to
+the models previously used in literature [42, 43]. Circu-
+lar agents with radius R, are arranged in a 2D periodic
+domain, with a packing density ρ. Each agent has a de-
+sired direction of movement, which is same for all agents
+in the group but different between the groups (which we
+call Group 1 and Group 2). Group 1 agents have a de-
+sired velocity along the positive x-direction and Group
+2 agents in the negative x-direction. An agent is driven
+by two forces: a restitution force, denoting the intrinsic
+effort by the agent to move in the desired direction, and
+an inter-agent force, denoting the interactions between
+agents. The forces are designed such that the agents can-
+not overlap.
+The following equations govern the dynamics of the
+agents:
+
+mdvi
+
+dt = m
+
+τ (v0,i − vi) +
+�
+
+∀j̸=i
+Fij
+(1)
+
+v0,i =
+�
++s0ex i ∈ Group 1
+−s0ex i ∈ Group 2
+(2)
+
+Fij =
+�
+−γ(dij − 2R)−3ˆdij
+dij < lcr
+0
+otherwise
+(3)
+
+The intrinsic velocity v0,i has a magnitude s0, and is
+directed along the positive or negative x-direction de-
+pending on the group of the individual (see Equation 2).
+This is the source of heterogeneity in the model. The
+inter-individual force Fij is a repulsive force, and decays
+as a power-law with distance. To prevent collisions, Fij
+is chosen such that its magnitude blows up to infinity
+
+
+3
+
+Group 2 (Minority Group)
+
+Desires to move in -ve x-direction.
+
+Group 1 (Majority Group)
+
+Desires to move in +ve x-direction.
+
+(a)
+
+Model dynamics
+
+(b)
+
+FIG. 1. The bi-disperse collective system exhibits a wide range
+of dynamics. (a) The system consists of two different groups
+of agents, each with its own desired direction of motion. (b)
+Examples of dynamics exhibited by the model at different pa-
+rameter values. Plots show the horizontal velocities (vi,j · ex)
+for the two groups of agents from a single realization.
+The
+faint blue and red traces are the individual agent velocities
+for Group 1 and Group 2 agents respectively. The thick blue
+and red traces are the average velocities (averaged over all
+agents in the group) for Group 1 and Group 2 agents. The
+dotted grey lines show ±s0, the desired x-velocities for the two
+groups. Insets show snapshots of the model dynamics at dif-
+ferent time-points.
+The histograms show the distribution of
+agent velocities for the two groups, across all time-points, and
+across 100 realizations. Notice that the histograms have sig-
+nificant overlap, and histograms of the minority group (red in
+the top and bottom plots) are significantly shifted from their
+respective s0. (Also see Movie S1) Top: Example of clustering
+(Nr = 3/14, ρ = 0.46, s0 = 0.5. Middle:
+Example of lane
+formation (Nr = 1/2, ρ = 0.46, s0 = 1). Bottom: Example of
+jamming (Nr = 3/14, ρ = 0.58, s0 = 0.5).
+
+when the agent boundaries touch (dij = 2R). To avoid
+spurious interactions between far-off agents, Fij is set
+to 0 beyond a cut-off radius, lcr = 3R (see Equation 3).
+m is the mass of an individual agent (set to 1), τ is the
+inertial time-scale of the system (set to 0.2), and γ de-
+termines the strength of the inter-agent interactions (set
+to 0.2). ex denotes the unit vector along x-direction. We
+define the packing density ρ as the number of agents per
+unit area.
+Key parameters that determine the collective dynam-
+ics include the packing density ρ which we vary between
+[0.22, 0.58], the intrinsic speed s0 between [0.1, 3] and the
+number ratio, the fraction of agents in the minority, Nr
+between [1/42, 1/2], which quantifies the degree of het-
+erogeneity in the collective. We perform simulations for
+each combination of parameters {ρ, s0, Nr}. Since, phe-
+nomena observed in bidisperse collectives such as laning,
+clustering, jamming, etc. depend upon the initial condi-
+tions of the simulations, we perform 100 simulations for
+each set of parameter values where agent positions and
+their group-identities are assigned randomly.
+
+B.
+Model dynamics
+
+In the absence of any obstacles or collisions, an agent
+approaches its steady-state velocity v0,i with a timescale
+τ. However, when there are other agents present, the
+inter-agent interactions affect the movement in interest-
+ing ways. An agent can be blocked or pushed around
+by other agents in its path, which can result in diverse
+dynamics depending on the model parameters.
+When the packing density ρ is not too high (agents can
+freely move past each other), lateral migration due to in-
+teractions with other agents causes agents of the same
+group to find each other passively and form clusters (Fig-
+ure 1(b), top panel). The cluster of agents moves to-
+gether as a unit, and collisions with the opposite group
+appear only at its boundary. For these reasons, clustered
+state is an absorbing state: i.e., once a cluster is formed,
+it does not break easily, but new agents can join the clus-
+ter. Clustering improves mobility of the agents, as the
+cluster as a whole is able to better force its way through
+opposing agents. Here, the word mobility is used to qual-
+itatively describe the net movement of the agents in the
+collective: higher mobility implies larger movement of
+agents in their respective desired directions.
+When Nr is close to 1
+
+2 (symmetric or nearly symmet-
+ric regime), clustering can eventually lead to formation
+of system-spanning lanes (Figure 1(b), middle panel).
+Since each lane consists only of one group of agents, mo-
+bility is maximum (agent speeds are close to ±s0) in the
+laned state.
+When ρ is high and the intrinsic velocity s0 is relatively
+small, the collective can enter a jammed state, where
+agents meet head-on and do not have enough space to
+move past each other (Figure 1(b), bottom panel). For
+the symmetric case (Nr = 1
+
+2), this causes the entire as-
+
+
+4
+
+sembly to freeze. For asymmetric cases (Nr < 1
+
+2), due to
+an imbalance in the net force, the jammed assembly of
+agents slowly drifts in the direction dictated by the ma-
+jority group. (See Movie S1 for an animated visualization
+of these cases.)
+Shown alongside the velocity plots are the distribu-
+tions of the individual velocities for the two groups. For
+asymmetric cases, the minority group agents are often
+pushed in the opposite direction by the majority group.
+As a result, the velocity distribution for the minority
+group is shifted in the positive direction (see top and
+bottom panels). Besides, due to collective effects such
+as local jamming, there is a significant overlap between
+the velocity distributions of the two groups: for exam-
+ple, when mobility is very low, the two distributions are
+nearly indistinguishable (bottom panel). In other words,
+there can be agents of Group 1 and Group 2 moving with
+identical velocities.
+
+III.
+OBSERVER DESIGN AND CLASSIFICATION
+
+In the context of our model collective, the three levels
+of the inference problem become the following:
+
+• Group heterogeneity level: The number ratio Nr is
+a direct measure of the level of heterogeneity in
+the group: heterogeneity is maximum at Nr = 1/2,
+and low when Nr is low. Hence, at this level, our
+goal would be to estimate Nr.
+
+• Classification level: To classify agents into Group 1
+or Group 2, we only need to ascertain the direction
+of v0,i, the magnitude is irrelevant.
+
+• Discovering intrinsic drives: This involves precisely
+identifying both the magnitude and direction of
+v0,i.
+
+In this paper, we mainly focus on the first and second
+inference problems, and provide a broad discussion on
+how one could tackle the third, harder problem.
+An observer collects movement information about the
+agents, i.e.
+their positions and velocities, but has no
+other information about the details of the model. The
+observer then attempts to classify agents as Group 1 or
+Group 2 (Figure 2(a)).
+
+A.
+Observing agents with a simple observer model
+
+A straightforward approach for classification is to clas-
+sify agents based on their observed direction of motion.
+For a better estimate that eliminates transient fluctua-
+tions, one may use the average velocity computed over a
+time-window. Therefore, our simple observer algorithm
+proceeds as follows.
+First, the observer computes the
+average velocity vw
+i of the agents, averaged over a time-
+window of length w.
+
+vw
+i = ⟨vi.ex⟩w
+(4)
+
+The observer classifies an agent based on the net di-
+rection of motion during this window, i.e. the sign of
+vw
+i :
+
+vw
+i ≥ 0 : Group 1
+vw
+i < 0 : Group 2
+(5)
+
+Figure 2(b) is a visual representation of the algorithm.
+For a given window, the number of misclassifications is
+identified by comparing the labels of the agents predicted
+by the observer to the ground-truth labels (the actual de-
+sired directions for the agents, which are unknown to
+the observer). For each set of values for the parameters
+Nr and s0 we compute the probability of misclassifica-
+tions (pm), computed over multiple time windows and
+multiple independent realizations of the simulation. To
+estimate the level of heterogeneity in the system, we use
+the estimated value of Nr, i.e. the fraction of agents clas-
+sified as Group 1 by the observer.
+This simple observer algorithm is the most straightfor-
+ward way to classify agents. It assumes that the infor-
+mation necessary to classify an agent is fully contained
+in its own motion; and does not explicitly account for its
+interactions with the surroundings. The simple observer
+will serve as a baseline to study the effect of emergent
+collective dynamics on classification, before we develop
+improved classification models.
+In a real-world scenario, an observer has to tackle the
+problem of sensor noise that may corrupt the observa-
+tions.
+However, we make the simplifying assumption
+that the observer can observe the system perfectly with-
+out noise; the only unknown is the individual group iden-
+tities of the agents, which the observer desires to infer.
+In our analyses, we used a window-length w = 50.
+A shorter window corresponds to decision-making with
+fewer data points, while a larger window size may result
+in improved classification performance. The exact win-
+dow length does not qualitatively affect the results, we
+verified this by repeating our analysis with several win-
+dow sizes between 25 and 100.
+The
+simple
+observer
+mis-identifies
+minority
+group
+agents.
+The simple, velocity-based classification ap-
+proach is most effective when the mobility is high (s0
+is high and ρ is low) and agents are free to move in their
+own desired directions (Figure 2(c), top right panel). In
+general, however, agents will be pushed around by their
+neighbours and may not move in their desired directions
+at all times, which will lead to misclassifications. This
+effect is worse for the minority group—hence, the mis-
+classification probability for the minority group is higher
+for smaller group sizes (Figure 2(c), main panel). This
+effect is even more pronounced in the case of very low
+mobility (low s0 and high ρ) and low Nr, when almost
+all minority agents will be pushed in the wrong direc-
+tion.
+Until Nr reaches a critical threshold so that the
+
+
+5
+
+agents can start to form clusters, all minority agents will
+be misclassified.
+This effect is also visible in the estimated heterogene-
+ity, ˆNr. In general, the simple observer consistently un-
+derestimates the proportion of minority group agents ex-
+cept when the mobility is very high. When mobility is
+low, the observer estimates zero heterogeneity for small
+values of Nr; i.e. the observer cannot even detect the
+presence of minority agents.
+
+B.
+Correcting misclassifications with a
+neighbourhood-based observer
+
+The simple observer algorithm classifies agents based
+on their net velocity measured over a time window w.
+For instance, when the observed velocity vw
+x of a Group 2
+agent is positive, it will be classified as Group 1 incor-
+rectly by the observer. Thus, correcting a misclassifica-
+tion would require the observer to classify the agent as
+belonging to Group 1 even if it exhibits a net movement
+in the negative direction. From the perspective of an ob-
+server, this is a counter-intuitive step: the observer has
+to differentiate agents in Group 2 from those in Group 1
+that happen to move in the same x-direction. We need to
+ascertain the conditions under which an observer should
+swap the identified group-identity of the agent to correct
+a possible misclassification event.
+An agent’s neighbourhood encodes information about its
+intrinsic direction.
+In the absence of interactions, an
+agent moves in its desired direction of motion with ve-
+locity s0, and classification is a trivial task. However, an
+agent’s movement is influenced by both its own intrinsic
+motion, as well as interaction-effects from its neighbours
+which can aid or hinder the motion. For improved classi-
+fication performance, an observer needs to decouple the
+component of an agent’s motion due to its intrinsic drive
+and the component of motion caused by these interac-
+tion effects.
+In the current formulation of the classifier, the ob-
+server uses vi as a proxy for the agent’s desired velocity,
+v0,i. However, in reality, the observed vi is a combina-
+tion of the agent’s effort to move in v0,i and the support
+or resistance offered by the neighbourhood φi.
+
+vi = v0,i · ex + φi · ex
+(6)
+
+See Figure 3(a) for an illustration. With this definition
+(Equation 6), the new classification criterion becomes,
+
+v0,i · ex = vi − φi ≥ 0 : Group 1
+v0,i · ex = vi − φi < 0 : Group 2
+(7)
+
+where φi = φi · ex. In other words,
+
+vi ≥ φi : Group 1
+vi < φi : Group 2
+(8)
+
+We now discuss an approach to estimate φi. As men-
+tioned before, we use information from the local neigh-
+bourhood to compute a neighbourhood parameter �φi,
+which will serve as a surrogate for φi. To define �φi,
+we make the following observations and assumptions:
+
+(i) an agent’s motion is influenced predominantly by
+its immediate neighbours,
+
+(ii) a neighbour can either aid or oppose the intrinsic
+movement of the agent,
+
+(iii) the influence of a neighbour on an agent is depen-
+dent on the relative velocity of the neighbour, i.e.
+how fast the neighbour is approaching the position
+of the agent.
+
+Based on this, we define �φi as follows:
+
+�φi = µ ⟨(vj · eji) eji⟩j∈Ni
+(9)
+
+The parameter �φi is a vector capturing the net effect of
+neighbours (in the Voronoi neighbourhood Ni) on the fo-
+cal agent i. Agents interact as they approach each other;
+so the neighbour velocities are projected along the line
+joining the centres of i and j.
+The projected velocity
+vectors are then averaged to get the net neighbourhood
+effect. µ is a scaling factor that ensures that �φi is of the
+same scale as vi. See Figure 3(a) for an illustration.
+One can estimate µ using a very simple scaling argu-
+ment. Consider the case with the focal agent surrounded
+by 6 neighbours, in a regular hexagonal arrangement. In
+the extreme case, all of these neighbours are moving in
+the same direction, with the same velocity v. In this case,
+⟨(vj · eji) eji⟩j∈Ni will evaluate to 1
+
+6(2 + 4 cos π
+
+3 )v = 2
+
+3v,
+giving µ =
+3
+2.
+Although a crude approximation, this
+value of µ works well in practice. See Discussion sec-
+tion for a comparison with an alternative, data-driven
+approach to estimating µ.
+It is important to note that the neighbourhood parame-
+ter is independent of the details of the simulation model.
+We use relative velocities of the neighbours as a proxy
+for inter-agent interactions; in other words, the neigh-
+bourhood parameter only depends on the overall phe-
+nomenology of the collective, and not on specific mod-
+elling assumptions.
+Classifying agents with the neighbourhood observer.
+In
+addition to computing the movement characteristics of
+just the agent vi, the neighbourhood observer calculates
+φi, which is a characteristic of its neighbourhood. As be-
+fore, we use the time-window-averaged versions of these
+quantities.
+Figure 3(b) illustrates how the neighbourhood ob-
+server works.
+The plot shows the time-series of the
+(window-averaged) agent velocity vw
+i
+for a Group 1
+agent. When it encounters Group 2 agents in its path,
+it may get pushed, causing vw
+i
+to dip below 0.
+The
+agent-only observer would then classify the agent—
+incorrectly—as Group 2:
+see blue shaded regions in
+
+
+6
+
+(a)
+Observing a collective
+
+Model Crowd
+
+Positions 
+Velocities 
+
+xi
+vi
+
+Classify
+
+Prediction for  
+
+agent i
+
+Observer
+
+Observe
+
+ex
+
+ey
+
+Window size w
+
+Time
+
+vi
+
+ : Group 2
+vw
+i < 0
+ : Group 1
+vw
+i ≥ 0
+
+(b)
+Simple observer algorithm
+
+(c)
+(d)
+Classifying agents
+Estimating heterogeneity
+
+FIG. 2. Classifying agents with a simple observer: the simple observer algorithm systematically misclassifies minority group agents
+and under-estimates the level of heterogeneity. (a) Illustration of the observer framework: the observer observes the positions and
+velocities of agents in the collective, and employs a classifier to classify agents as Group 1/Group 2. (b) Classification algorithm
+for the simple observer: For each agent, the observer finds the average x-velocity of the agent within a short time window, and
+classifies the agent based on whether this velocity is positive or negative.
+(The box of the right shows a snapshot from the
+simulation, showing the Group 2 focal agent being pushed by Group 1 agents.) (c) The probability of misclassifying agents pm
+for the minority (red, closed circles) and majority (blue, open circles) groups, as a function of the number ratio Nr, for different
+levels of agent mobility (main: intermediate mobility, ρ = 0.46, s0 = 1, top right: high mobility, ρ = 0.31, s0 = 2, bottom right:
+low mobility, ρ = 0.58, s0 = 0.75). pm is higher for lower Nr, denoting poorer classification performance for smaller groups. (d)
+The estimated value of Nr, which is a measure of estimated heterogeneity, as a function of true Nr, for different levels of agent
+mobility. Except when mobility is high, simple observer systematically underestimates ˆ
+Nr.
+
+the plot.
+However, the classification threshold for the
+neighbourhood observer is φw
+i (blue dashed line in the
+plot), incorporates information about the neighbourhood
+of the agent, and can vary according to how much the
+agent is being pushed. Hence, the neighbourhood ob-
+server is able to correctly classify the agent as Group 1
+even when vw
+i < 0, i.e. the agent is moving in the nega-
+tive x-direction.
+
+The neighbourhood observer improves performance on
+minority agents.
+Accounting for neighbourhood effects
+significantly improves classification performance, espe-
+cially for the minority group (Figure 3(c), main panel).
+Even when only a single Group 2 agent is present, the
+neighbourhood observer can correctly classify the Group
+2 agent 60% of the time. On the other hand, since a
+lone Group 2 agent is prone to getting pushed by Group 1
+agents most of the time, simple observer almost always
+
+misclassifies it. There is a slight increase in the proba-
+bility of misclassifying the majority group agents; but is
+small relative to the improvement achieved for the mi-
+nority group.
+
+Even in the high mobility scenario, where the perfor-
+mance of the simple observer is already high, the neigh-
+bourhood observer achieves significant improvements.
+In the low mobility scenario, where the agents are mostly
+jammed and there is very little relative movement, the
+improvement is relatively minor—see Section III C for a
+discussion about why this happens.
+
+The neighbourhood observer can accurately estimate
+the level of heterogeneity across a wide range of param-
+eters, even in cases where the simple observer under-
+estimates it. (Figure 3(d), main panel). The heterogene-
+ity estimate suffers when the mobility is very low, but
+the estimates are overall better than that of the simple
+
+
+7
+
+(a)
+Estimating neighbourhood effect
+(b)
+Classification with ϕi
+
+(d)
+(e)
+Classifying agents
+Estimating heterogeneity
+
+v0,i
+
+vi
+
+φi
+
+vj
+
+j
+i
+
+FIG. 3.
+Classifying agents with a neighbourhood observer: an observer algorithm that accounts for neighbourhood effects
+significantly improves classification performance, and estimates heterogeneity more accurately. (a, box) The velocity vi of an
+agent can be decomposed into two components: v0,i, the intrinsic velocity of the agent, and φi, the influence of neighbours. As
+seen, v0,i and vi may have different directions. (a) The neighbourhood parameter �φi is an estimate of φi, using velocities of
+neighbours. �φi for an agent i (deep blue) is determined by the velocities of its neighbours (pale blue and red). The contribution
+of neighbour j is ˜vj, the component of the velocity vector vj towards i. �φi is the mean of ˜vj’s, scaled by an appropriate scaling
+factor. (b) Visualising the working of the neighbourhood classifier: In the top panel, the red solid line is the observed velocity vw
+i
+of a Group 2 agent. The shading corresponds to the predictions of the simple observer (Blue: Group 1, Red: Group 2). The simple
+observer misclassifies the agent as Group 1 whenever vw
+i > 0, which is often the case. In the bottom panel, the red solid line is
+the observed velocity vw
+i and the dotted line is the neighbourhood parameter φw
+i . The shading corresponds to the predictions of
+the neighbourhood observer. The neighbourhood observer misclassifies the agent as Group 1 only when vw
+i > φw
+i , which happens
+only rarely. (c) The probability of misclassifying agents pm for the minority (red, filled squares) and majority (blue, open squares)
+groups, as a function of the number ratio Nr, for different levels of agent mobility (main: intermediate mobility, ρ = 0.46, s0 = 1,
+top right: high mobility, ρ = 0.31, s0 = 2, bottom right: low mobility, ρ = 0.58, s0 = 0.75). The performance curves of the simple
+observer are shown as dotted lines. The neighbourhood observer drastically reduces misclassifications on the minority group.
+(d) The estimated value of Nr, which is a measure of estimated heterogeneity, as a function of true Nr, for different levels of
+agent mobility. The performance curves of the simple observer are shown as dotted lines. The neighbourhood observer estimates
+heterogeneity better than the simple observer, and can detect the presence of heterogeneity at a lower Nr.
+
+observer. In particular, the neighbourhood observer is
+able to detect the presence of Group 2 agents at much
+smaller values of Nr than the simple observer.
+
+C.
+Analysis of the observer algorithms
+
+Figure 4(a) illustrates why the simple, velocity-based
+classification approach often fails. The top panel shows
+the histograms of the observed horizontal velocities (vi =
+vi · ex) of the two groups, for a typical scenario (asym-
+metric, intermediate mobility).
+The minority group
+
+(Group 2) agents end up being pushed in the opposite
+direction frequently. As a result, the velocity distribution
+shifts to the right, with the bulk of the distribution lying
+on the positive sides. As a result, the simple observer,
+which classifies agents based on whether the observed
+velocity is positive or negative, misclassifies most of the
+minority group agents.
+
+The bottom panel of Figure 4(a) illustrates how the
+neighbourhood observer gets around this problem. The
+distribution of vi − φi for the minority group is more
+predominantly on the negative side, compared to the
+vi distribution. Therefore, the neighbourhood observer
+
+
+8
+
+(a)
+
+(b)
+
+Distributions of  and 
+ 
+vi
+vi − ϕi
+
+ joint distribution
+(vi, ϕi)
+
+FIG. 4. Illustration of how the neighbourhood classifier works.
+(a) Example distribution of individual horizontal velocities vi
+for Group 1 (blue) and Group 2 (red) agents. A large portion
+of the distribution for Group 2 (the minority group) lies on the
+positive side, leading to misclassifications. (b) Example dis-
+tribution of vi − φi, the classification parameter used by the
+neighbourhood observer. The distributions are shifted so that
+the majority of the Group 2 distribution lies on the negative
+side. (c) The joint distribution of vi and φi for the two groups
+of agents. The classification boundary for the simple observer
+is the vi = 0 vertical line, while the classification boundary for
+the neighbourhood observer is the vi = φi diagonal line.
+
+(which classifies agents based on vi ≶ φi i.e. vi − φ ≶ 0)
+is able to classify the minority group agents much more
+accurately. Notice that the distribution of the majority
+group, although moves closer to the origin, stays pre-
+dominantly on the positive side.
+The observers can alternatively be viewed as a lin-
+ear classifiers in the (φi, vi) plane, as illustrated by Fig-
+ure 4(b). The figure shows the joint distributions of φi
+and vi for the two different groups. The simple observer
+
+classifies agents based on vi and ignores φi altogether;
+so its decision boundary is the vi = 0 line, i.e. a vertical
+line through the origin. Since the bulk of the minority
+group distribution lies to the right of this line, misclas-
+sifications will be high. On the other hand, the decision
+boundary for the neighbourhood observer is the vi = φi
+line, i.e. a diagonal line with slope 1. The bulk of the
+minority group distribution is above this line, and will be
+classified correctly.
+Effect of mobility and heterogeneity.
+The (vi, φi) plane
+presents an elegant way to observe how mobility and het-
+erogeneity affects the classification performance of the
+two observers, as illustrated in Figure 5.
+The effect of mobility is quite clear: as mobility in-
+creases (s0 increases and/or ρ decreases), obstructions
+and jamming decreases and the agents move with higher
+velocities more often. This reflects as a separation of the
+Group 1 and Group 2 distributions on the vi, φi plane
+(Figure 5(a-c)). At low mobility, there is a large amount
+of overlap between the two distributions, and both clas-
+sifiers perform relatively poorly. On the other hand, at
+high mobility, the distributions are well separated and
+even the simple observer performs well.
+The effect of heterogeneity on the distributions is per-
+haps more interesting.
+In the symmetric case (Nr =
+1/2), there is no bias in the movement freedom for ei-
+ther group.
+This means that the distributions are ar-
+ranged symmetrically on either sides of the vi = 0 line,
+with their overlap determined by the level of mobility. As
+Nr decreases and the collective becomes more asymmet-
+ric, the minority agents gets pushed more and the mix-
+ture velocity (i.e. the average velocity computed over
+all the agents) increases in the positive direction, caus-
+ing both distributions to shift right. This degrades the
+performance of the simple observer.
+However, when an agent is being pushed with some
+velocity, φ, which is a proxy for the level of ‘push’ on
+an agent by its neighbours, also increases proportion-
+ately: this means that in the (vi, φi) plane, the shift hap-
+pens diagonally, along the classification boundary of the
+neighbourhood observer: the regions of the distributions
+that are above and below the classification boundary stay
+roughly the same.
+This is the reason why asymmetry
+does not degrade the performance of the neighbourhood
+observer too much.
+
+IV.
+DISCUSSION
+
+Summary.
+In this article, we set out to understand
+how well can we infer individual properties of agents in
+a heterogeneous collective by observing their movement.
+We used a bidisperse collective as a context and studied
+how the classification process of an observer is connected
+to the physics of collective motion.
+We began with a
+simple observation/classification technique based on the
+measured velocity of of the individual agents, indepen-
+dent of their neighbourhood. We found that the simple
+
+
+9
+
+(a)
+
+Effect of mobility
+
+Low Mobility
+Intermediate Mobility
+High Mobility
+
+(d)
+
+Effect of 
+ 
+Nr
+
+(b)
+
+(e)
+
+(c)
+
+(f)
+Symmetric
+Intermediate asymmetry
+High asymmetry
+
+FIG. 5. Effect of mobility and heterogeneity on the distributions and classification performance. (a-c) As mobility increases,
+the agents move more freely, causing the distributions to become well-separated, improving classification performance of both
+observers. (d-f) As asymmetry between the group sizes increases (i.e. Nr decreases), the distributions shift towards the right,
+resulting in higher misclassifications for the smaller group by the simple observer. However, the shift is along the diagonal; which
+ensures that the performance of the neighbourhood observer does not drop significantly.
+
+observer underestimates the level of heterogeneity of the
+collective, and systematically misclassifies the minority
+group agents more often than the majority group.
+To improve classification, we developed an observer
+that classifies an agent based on information not just
+about itself, but also about its neighbours.
+Although
+simple in principle, this neighbourhood observer does
+something quite non-trivial: it distinguishes between a
+Group 1 and a Group 2 agent even when they are mov-
+ing in the same direction with identical velocities. The
+fact that the neighbourhood observer takes into account
+the influence of the neighbouring agents for classifica-
+tion helps it to ‘read the mind’ of the focal agent by dis-
+tinguishing when it is moving on its own volition versus
+when it is being pushed. This resulted in better estimates
+of the level of heterogeneity, and improved classification
+for the minority group.
+Data-driven approaches to the classification problem.
+The (vi, φi) classifier that the neighbourhood observer
+employs is not data-driven: the classification boundary
+(which is decided by µ) is not obtained by a data fit,
+but is instead derived from scale considerations.
+This
+
+makes our approach applicable in scenarios where la-
+belled data is not easy to obtain. This also makes our
+classifier readily interpretable, as it is inspired by the
+physics of the problem. The assumptions the classifica-
+tion algorithm makes about the underlying governing dy-
+namics are minimal. Specifically, the neighbourhood pa-
+rameter is computed based on neighbour velocities only,
+and is independent of specific details of how the agents
+interact.
+If labelled data (i.e. data where the group member-
+ships of agents are known) is readily available, we can
+learn µ in a data-driven manner, by fitting a linear clas-
+sifier. When a classifier is fit in this manner, it will not
+be susceptible to unfulfilled assumptions in computing
+µ. However, the data-driven classifier offers no improve-
+ments over the simple linear classifier (see Appendix A),
+underscoring the accuracy of the scaling argument.
+An orthogonal approach is to build a purely data-
+driven classifier, for example, based on neural networks.
+One could build a neural-net classifier that takes as in-
+put the positions and velocities of the focal agent and
+its neighbours, and makes predictions. Given enough la-
+
+
+10
+
+belled data, such classifiers can learn high-quality, low-
+dimensional feature representations that can make effec-
+tive predictions.
+To be effective, such neural network
+classifiers should be informed and constrained by the
+physics and inherent symmetries of the problem. In our
+case, it means that the neural network should respect
+the rotational and translational invariances of the sys-
+tem, and should be invariant to any permutation of the
+agent ordering. Constraints such as these should be built
+in to the neural network design. There is an emerging
+body of research in graph neural networks [44, 45] and
+physics-informed deep learning [46, 47] which can be
+explored in this regard. Building neural network classi-
+fiers for collective dynamics and studying their feature
+representations is an exciting research direction.
+Towards a general inference framework for heteroge-
+neous collectives.
+There are several ways in which the
+classification algorithm can be improved further. Firstly,
+notice that the ultimate goal would be to recover v0,i, for
+example by finding φi such that vi − φi = v0,i. Our es-
+timated neighbourhood parameter doesn’t quite achieve
+this: however, it gets the sign correctly in general, i.e
+sgn(vi − φi) = sgn(v0,i), which is sufficient for classifica-
+tion.
+Recall that the neighbourhood parameter for an agent
+i was computed based on the mean of the velocities of
+the Voronoi neighbours of i. Potential ways to improve
+this would be to use a different neighbourhood, use a
+weighted average weighted by the distance to the neigh-
+bour, or use more complicated functions of the velocity.
+One could also use information about the spatial ar-
+rangement of the neighbours of i. For example, it is con-
+ceivable that the fore-aft asymmetry pattern in the neigh-
+bourhood of i will be different when i is being pushed
+versus when i is moving freely. Quantifying these spa-
+tial patterns could be an effective approach to recover
+intrinsic motion.
+Finally, note that both the observers treat the time win-
+dows as independent: when making predictions for a
+given time window, the observers do not use information
+from previously observed windows. One could conceive
+an observer that uses historical information and updates
+beliefs with time, perhaps in a Bayesian fashion. We do
+not explore this approach because our goal is to explore
+techniques that work in a nearly real-time manner with
+minimal observations, and to understand how instanta-
+neous and short-term dynamics in the system affects our
+ability to classify agents.
+Another way to incorporate
+temporal information would be to look for patterns in
+the higher derivatives (e.g. acceleration) of motion of
+both the focal agent and the neighbourhood.
+Conclusion
+It is worth reiterating that the goal of this
+study is to understand the ways in which the microscopic
+properties of a heterogeneous collective affect the classi-
+fication performance of an observer that is only privy to
+observables such as agent positions and velocities. We
+study this in the context of a model system, which is
+an idealised version of a heterogeneous collective in the
+
+real world. For this reason, hunting for the best data-
+driven classifier to solve this specific problem may not
+be very useful; such a classifier will not be transferable
+to a real-world collective as real-world collectives can be
+poly-disperse and can involve many complex interactions
+not included in our model. Hence, our main goal was to
+understand how the collective dynamics can affect clas-
+sification. A clear understanding of this relationship is
+essential to solve similar problems in real-world collec-
+tives. Our phenomenological approach to the classifica-
+tion problem is a first step towards hybrid techniques,
+where a data-driven approach is combined with domain-
+specific understanding of the collective dynamics to build
+better observer models.
+
+ACKNOWLEDGEMENTS
+
+The authors thank Jason Ryan Picardo,
+Ganapa-
+thy Ayappa, Vishwesha Guttal, Vivek Jadhav, Basil
+Thurakkal
+and
+Harishankar
+Muppirala
+for
+critical
+readings of the manuscript.
+The authors thank the
+DST INSPIRE faculty award for the funding (grant no.
+DST/INSPIRE/04/2017/002985)
+
+CODE AVAILABILITY
+
+The simulation and analysis code used in this work
+is available at https://github.com/arshednabeel/
+ObservingAcollective
+
+Appendix A: Appendix: Classifying agents with a
+data-driven classifier
+
+In Section III B, we used a scaling argument to analyt-
+ically estimate µ. Alternatively, if labelled data is avail-
+able, µ can be estimated in a data-driven manner by fit-
+ting a linear classifier.
+Section III B defined the neighbourhood classifier with
+a classification criterion vi ≶ φi. Let φi = µϕi where
+ϕi corresponds to the unscaled mean from Equation 9.
+In this formulation, the classification boundary (see Sec-
+tion III C and Figure 4) corresponds to a line of slope 1/µ
+in the (vi, ϕi) plane. With labelled data, one could fit a
+linear classifier (e.g. a support vector machine) to the
+data to obtain the ‘optimal’ µ for the data-set.
+We trained an SVM to distinguish between Group 1
+and Group 2 agents in this way. Since we are only inter-
+ested in learning a scaling factor µ, we enforce that the
+intercept of the classifier be zero. A separate model was
+fit for each set of parameters (Nr, s0 and ρ), with data
+pooled over all realizations and time-points. Since to our
+goal is to find the theoretically optimal µ, we did not use
+separate training and test sets, performance reported is
+
+
+11
+
+(a)
+(b)
+Classifying agents
+Estimating heterogeneity
+
+FIG. 6. Comparing the (physics-informed) neighbourhood classifier to a data-driven classifier: the physics-informed neighbourhood
+observer performs as good as a data-driven classifier fine-tuned to the dataset. (a) The probability of misclassifying agents pm for
+the minority (red, filled squares) and majority (blue, open squares) groups, as a function of the number ratio Nr, for different
+levels of agent mobility (main: intermediate mobility, ρ = 0.46, s0 = 1, top right: high mobility, ρ = 0.31, s0 = 2, bottom right:
+low mobility, ρ = 0.58, s0 = 0.75). The performance curves of the physics-informed neighbourhood observer are shown as dotted
+lines. There is no significant improvement with the data-driven classifier. (b) The estimated value of Nr, which is a measure of
+estimated asymmetry, as a function of true Nr, for different levels of agent mobility. The performance curves of the (analytically
+derived) neighbour observer are shown as dotted lines.
+
+from the same dataset used for training: this is an up-
+per bound for reported accuracy numbers with separate
+training and test sets.
+
+Figure 6 compares the performance of the analytically
+derived (as in Section III B) and data-driven classifiers.
+
+The data-driven approach does not show any significant
+improvement in classification performance—in terms of
+classifying agents as well as estimating heterogeneity, the
+SVM-based classifier performs nearly identically as our
+analytically derived classifier. This suggests that our esti-
+mate of µ is close to optimal.
+
+[1] R. Candelier and O. Dauchot, Journey of an intruder
+through the fluidization and jamming transitions of a
+dense granular media, Physical Review E 81, 011304
+(2010).
+[2] E. Kolb, P. Cixous, and J. C. Charmet, Flow fields around
+an intruder immersed in a 2D dense granular layer, Gran-
+ular Matter 16, 223 (2014).
+[3] R. Harich, T. Darnige, E. Kolb, and E. Cl´ement, Intruder
+mobility in a vibrated granular packing, EPL (Europhysics
+Letters) 96, 54003 (2011).
+[4] N. Kumar, H. Soni, S. Ramaswamy, and A. K. Sood, Flock-
+ing at a distance in active granular matter, Nature Com-
+munications 5, 4688 (2014).
+[5] T. Thorsen, R. W. Roberts, F. H. Arnold, and S. R. Quake,
+Dynamic Pattern Formation in a Vesicle-Generating Mi-
+crofluidic Device, Physical Review Letters 86, 4163
+(2001).
+[6] T. Beatus, R. H. Bar-Ziv, and T. Tlusty, The physics of 2D
+microfluidic droplet ensembles, Physics Reports 516, 103
+(2012).
+[7] B. Shen, M. Leman, M. Reyssat, and P. Tabeling, Dynamics
+of a small number of droplets in microfluidic Hele–Shaw
+cells, Experiments in Fluids 55, 1728 (2014).
+[8] B. M. Jose and T. Cubaud, Droplet arrangement and
+coalescence in diverging/converging microchannels, Mi-
+crofluidics and Nanofluidics 12, 687 (2012).
+
+[9] N. Bremond, H. Dom´ejean, and J. Bibette, Propagation
+of Drop Coalescence in a Two-Dimensional Emulsion: A
+Route towards Phase Inversion, Physical Review Letters
+106, 214502 (2011).
+[10] A. Tremel, A. Cai, N. Tirtaatmadja, B. D. Hughes, G. W.
+Stevens, K. A. Landman, and A. J. O’Connor, Cell migra-
+tion and proliferation during monolayer formation and
+wound healing, Chemical Engineering Science 64, 247
+(2009).
+[11] P. Ariano, C. Distasi, A. Gilardino, P. Zamburlin, and
+M. Ferraro, A simple method to study cellular migration,
+Journal of Neuroscience Methods 141, 271 (2005).
+[12] R. McLennan, L. Dyson, K. W. Prather, J. A. Morri-
+son, R. E. Baker, P. K. Maini, and P. M. Kulesa, Multi-
+scale mechanisms of cell migration during development:
+Theory and experiment, Development (Cambridge) 139,
+2935 (2012).
+[13] Y. Sharma, D. A. Vargas, A. F. Pegoraro, D. Lepzelter, D. A.
+Weitz, and M. H. Zaman, Collective motion of mammalian
+cell cohorts in 3D, Integrative Biology (United Kingdom)
+7, 1526 (2015).
+[14] S. Masoumeh Mousavi, I. Kasianiuk, D. Kasyanyuk, S. K.
+Velu, A. Callegari, L. Biancofiore, and G. Volpe, Clustering
+of Janus particles in an optical potential driven by hydro-
+dynamic fluxes, Soft Matter 15, 5748 (2019).
+[15] B. R. Si, P. Patel, and R. Mangal, Self-Propelled Janus Col-
+
+
+12
+
+loids in Shear Flow, Langmuir 36, 11888 (2020).
+[16] S. Kamijo, Y. Matsushita, K. Ikeuchi, and M. Sakauchi,
+Traffic monitoring and accident detection at intersections,
+IEEE Conference on Intelligent Transportation Systems,
+Proceedings, ITSC 1, 703 (1999).
+[17] M. Moussa¨ıd, E. G. Guillot, M. Moreau, J. Fehrenbach,
+O. Chabiron, S. Lemercier, J. Pettr´e, C. Appert-Rolland,
+P. Degond, and G. Theraulaz, Traffic Instabilities in Self-
+Organized Pedestrian Crowds, PLoS Computational Biol-
+ogy 8, e1002442 (2012).
+[18] A. Nicolas, M. Kuperman, S. Iba˜nez, S. Bouzat, and
+C. Appert-Rolland, Mechanical response of dense pedes-
+trian crowds to the crossing of intruders, Scientific Re-
+ports 9, 105 (2019).
+[19] V. Murino, M. Cristani, S. Shah, and S. Savarese, The
+Group and Crowd Analysis Interdisciplinary Challenge, in
+Group and Crowd Behavior for Computer Vision (Elsevier,
+2017) pp. 1–11.
+[20] M. Ballerini, N. Cabibbo, R. Candelier, A. Cavagna, E. Cis-
+bani, I. Giardina, V. Lecomte, A. Orlandi, G. Parisi, A. Pro-
+caccini, M. Viale, and V. Zdravkovic, Interaction ruling
+animal collective behavior depends on topological rather
+than metric distance: Evidence from a field study, Pro-
+ceedings of the National Academy of Sciences of the
+United States of America 105, 1232 (2008).
+[21] Y. Katz, K. Tunstrom, C. C. Ioannou, C. Huepe, and I. D.
+Couzin, Inferring the structure and dynamics of inter-
+actions in schooling fish, Proceedings of the National
+Academy of Sciences 108, 18720 (2011).
+[22] D. S. Calovi,
+A. Litchinko,
+V. Lecheval,
+U. Lopez,
+A. P´erez Escudero, H. Chat´e, C. Sire, and G. Theraulaz,
+Disentangling and modeling interactions in fish with
+burst-and-coast swimming reveal distinct alignment and
+attraction behaviors, PLoS Computational Biology 14, 1
+(2018).
+[23] J. Jhawar, R. G. Morris, U. Amith-Kumar, M. D. Raj,
+T. Rogers, H. Rajendran, and V. Guttal, Noise-induced
+schooling of fish, Nature Physics 16, 488 (2020).
+[24] L. Qin, D. Yang, W. Yi, H. Cao, and G. Xiao, Roles of leader
+and follower cells in collective cell migration, Molecular
+Biology of the Cell 32, 1267 (2021).
+[25] M. del Mar Delgado, M. Miranda, S. J. Alvarez, E. Gu-
+rarie, W. F. Fagan, V. Penteriani, A. di Virgilio, and J. M.
+Morales, The importance of individual variation in the
+dynamics of animal collective movements, Philosophical
+Transactions of the Royal Society B: Biological Sciences
+373, 20170008 (2018).
+[26] J. R. Dyer, D. P. Croft, L. J. Morrell, and J. Krause, Shoal
+composition determines foraging success in the guppy,
+Behavioral Ecology 20, 165 (2008).
+[27] J. W. Jolles, A. J. King, and S. S. Killen, The role of individ-
+ual heterogeneity in collective animal behaviour, Trends
+in Ecology & Evolution 35, 278 (2020).
+[28] Y. Zhang and H.-R. Jiang, A Review on Continuous-
+Flow
+Microfluidic
+PCR
+in
+Droplets:
+Advances,
+Challenges
+and
+Future,
+Analytica
+Chimica
+Acta
+10.1016/j.aca.2016.02.006 (2016).
+[29] P. Geoerg, J. Schumann, S. Holl, M. Boltes, and A. Hof-
+mann, The influence of individual impairments in crowd
+dynamics, Fire and Materials 45, 529 (2021).
+[30] L. J. Schumacher, P. K. Maini, and R. E. Baker, Semblance
+of Heterogeneity in Collective Cell Migration, Cell Sys-
+tems 5, 119 (2017).
+[31] T. Kwon, O.-S. Kwon, H.-J. Cha, and B. J. Sung, Stochastic
+
+and heterogeneous cancer cell migration: experiment and
+theory, Scientific reports 9, 1 (2019).
+[32] G. B. Blanchard, A. G. Fletcher, and L. J. Schumacher, The
+devil is in the mesoscale: Mechanical and behavioural
+heterogeneity in collective cell movement, Seminars in
+Cell & Developmental Biology 93, 46 (2019), sI: Vis-
+coelasticity.
+[33] T. Vissers, A. Wysocki, M. Rex, H. L¨owen, C. P. Royall,
+A. Imhof, and A. Van Blaaderen, Lane formation in driven
+mixtures of oppositely charged colloids, Soft Matter 7,
+2352 (2011).
+[34] M. E. Leunissen, C. G. Christova, A. P. Hynninen, C. P.
+Royall, A. I. Campbell, A. Imhof, M. Dijkstra, R. Van Roij,
+and A. Van Blaaderen, Ionic colloidal crystals of oppo-
+sitely charged particles, Nature 437, 235 (2005).
+[35] K. R. S¨utterlin, A. Wysocki, A. V. Ivlev, C. R¨ath, H. M.
+Thomas, M. Rubin-Zuzic, W. J. Goedheer, V. E. Fortov,
+A. M. Lipaev, V. I. Molotkov, O. F. Petrov, G. E. Morfill, and
+H. L¨owen, Dynamics of lane formation in driven binary
+complex plasmas, Physical Review Letters 102, 1 (2009).
+[36] D. Helbing, L. Buzna, A. Johansson, and T. Werner, Self-
+Organized Pedestrian Crowd Dynamics:
+Experiments,
+Simulations, and Design Solutions, Transportation Sci-
+ence 39, 1 (2005).
+[37] C. Feliciani and K. Nishinari, Empirical analysis of the lane
+formation process in bidirectional pedestrian flow, Physi-
+cal Review E 94, 032304 (2016).
+[38] D. Zhang, H. Zhu, S. Hostikka, and S. Qiu, Pedestrian dy-
+namics in a heterogeneous bidirectional flow: Overtaking
+behaviour and lane formation, Physica A: Statistical Me-
+chanics and its Applications 525, 72 (2019).
+[39] H. Sridhar and V. Guttal, Friendship across species bor-
+ders: factors that facilitate and constrain heterospecific
+sociality, Philosophical Transactions of the Royal Society
+B: Biological Sciences 373, 20170014 (2018).
+[40] A. J. W. Ward, T. M. Schaerf, A. L. J. Burns, J. T. Lizier,
+E. Crosato, M. Prokopenko, and M. M. Webster, Cohe-
+sion, order and information flow in the collective motion
+of mixed-species shoals, Royal Society Open Science 5,
+181132 (2018).
+[41] T. Hastie, R. Tibshirani, and J. Friedman, Overview of su-
+pervised learning, in The elements of statistical learning
+(Springer, 2009) pp. 9–41.
+[42] D. Helbing, I. J. Farkas, and T. Vicsek, Freezing by Heating
+in a Driven Mesoscopic System, Physical Review Letters
+84, 1240 (2000).
+[43] C. Reichhardt and C. J. Reichhardt, Velocity force curves,
+laning, and jamming for oppositely driven disk systems,
+Soft Matter 14, 490 (2018).
+[44] J. Zhou, G. Cui, S. Hu, Z. Zhang, C. Yang, Z. Liu, L. Wang,
+C. Li, and M. Sun, Graph neural networks: A review of
+methods and applications, AI Open 1, 57 (2020).
+[45] M. M. Bronstein, J. Bruna, T. Cohen, and P. Veliˇckovi´c, Ge-
+ometric deep learning: Grids, groups, graphs, geodesics,
+and gauges (2021).
+[46] G. E. Karniadakis, I. G. Kevrekidis, L. Lu, P. Perdikaris,
+S. Wang, and L. Yang, Physics-informed machine learning
+(2021).
+[47] M. Raissi, P. Perdikaris, and G. E. Karniadakis, Physics-
+informed neural networks: A deep learning framework
+for solving forward and inverse problems involving non-
+linear partial differential equations, Journal of Computa-
+tional Physics 378, 686 (2019).
+
+

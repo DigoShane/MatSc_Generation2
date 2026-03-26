@@ -1,0 +1,2221 @@
+Towards a Systematic Improvement of the Fixed-Node Approximation in Diffusion
+
+Monte Carlo for Solids - A Case Study in Diamond
+
+Anouar Benali,1, a) Kevin Gasperich,2 Kenneth D. Jordan,2 Thomas Applencourt,3 Ye
+
+Luo,1 M. Chandler Bennett,4 Jaron T. Krogel,5 Luke Shulenburger,6 Paul R. C. Kent,7, 8
+
+Pierre-François Loos,9 Anthony Scemama,9 and Michel Caffarel9, b)
+
+1)Computational Sciences Division, Argonne National Laboratory, Argonne, IL 60439,
+
+United States
+
+2)Department of Chemistry, University of Pittsburgh, Pittsburgh, Pennsylvania 15260,
+
+United States
+
+3)Argonne Leadership Computing Facility, Argonne National Laboratory, Argonne,
+
+IL 60439, United States
+
+4)Materials Science and Technology Division, Oak Ridge National Laboratory, Oak Ridge,
+
+TN 37831, United Statesc)
+
+5)Materials Science and Technology Division, Oak Ridge National Laboratory, Oak Ridge,
+
+TN 37831, United States
+
+6)HEDP Theory Department, Sandia National Laboratories, Albuquerque,
+
+New Mexico 87185, USA
+
+7)Center for Nanophase Materials Sciences, Oak Ridge National Laboratory, Oak Ridge,
+
+TN 37831, United States
+
+8)Computational Sciences and Engineering Division, Oak Ridge National Laboratory,
+
+Oak Ridge, TN 37831, United States
+
+9)Laboratoire de Chimie et Physique Quantiques, Université de Toulouse, CNRS, UPS,
+
+Toulouse, France
+
+c) This manuscript has been authored by UT-Battelle, LLC under Contract No. DE-AC05-00OR22725 with the
+
+U.S. Department of Energy. The United States Government retains and the publisher, by accepting the article
+
+for publication, acknowledges that the United States Government retains a non-exclusive, paid-up, irrevocable,
+
+worldwide license to publish or reproduce the published form of this manuscript, or allow others to do so, for United
+
+States Government purposes. The Department of Energy will provide public access to these results of federally
+
+sponsored research in accordance with the DOE Public Access Plan (http://energy.gov/downloads/doe-public-access-
+
+plan).
+
+1
+
+arXiv:2007.11673v2  [physics.chem-ph]  29 Oct 2020
+
+
+While Diffusion Monte Carlo (DMC) is in principle an exact stochastic method for ab initio
+
+electronic structure calculations, in practice the fermionic sign problem necessitates the
+
+use of the fixed-node approximation and trial wavefunctions with approximate nodes (or
+
+zeros) must be used. This approximation introduces a variational error in the energy that
+
+potentially can be tested and systematically improved. Here, we present a computational
+
+method that produces trial wavefunctions with systematically improvable nodes for DMC
+
+calculations of periodic solids. These trial wavefunctions are efficiently generated with the
+
+configuration interaction using a perturbative selection made iteratively (CIPSI) method.
+
+A simple protocol in which both exact and approximate results for finite supercells are
+
+used to extrapolate to the thermodynamic limit is introduced. This approach is illustrated
+
+on the case of the carbon diamond using Slater-Jastrow trial wavefunctions including up
+
+to one million Slater determinants. Fixed-node DMC energies obtained with such large
+
+expansions are much improved and the fixed-node error is found to decrease monotonically
+
+and smoothly as a function of the number of determinants in the trial wavefunction, a
+
+property opening the way to a better control of this error. The cohesive energy extrapolated
+
+to the thermodynamic limit is in close agreement with the estimated experimental value.
+
+Interestingly, this is also the case at the single-determinant level, thus indicating a very good
+
+error cancelation in carbon diamond between the bulk and atomic total fixed-node energies
+
+when using single-determinant nodes.
+
+a)Electronic mail: benali@anl.gov
+
+b)Electronic mail: caffarel@irsamc.ups-tlse.fr
+
+2
+
+
+I.
+INTRODUCTION
+
+A faithful and quantitative first principles (i.e., ab initio) description of the electronic structure
+
+of solids is one of the greatest challenges of material science. For weakly correlated materials (most
+
+simple metals, semiconductors, and insulators), modern approximations to exact density-functional
+
+theory (DFT),1–3 and approximate many-body perturbation theory (MBPT) approaches (such as the
+
+GW approximation4,5 and the Bethe-Salpeter equation6–8) generally yield ground- and excited-state
+
+properties in good agreement with experiment.9,10 In sharp contrast, for strongly correlated systems
+
+(e.g., transition metal oxides) for which electrons can no longer be treated as weakly interacting
+
+quasiparticles, the approaches mentioned above may dramatically fail, even qualitatively.11,12 An
+
+alternative path to describe correlation effects in solids is to resort to wave-function-based correlated
+
+methods, as done in a number of recent works [e.g. second order Møller-Plesset Perturbation theory
+
+(MP2),13 Coupled Cluster Single and Double (CCSD) with perturbative Triple (CCSD(T)), and
+
+the Equation Of Motion-CCSD (EOM-CCSD)14,15]. However, as single-reference approaches they
+
+are of limited use for strongly correlated materials. Designing efficient and general computational
+
+approaches with controlled and testable approximations is therefore of great interest.
+
+Quantum Monte Carlo (QMC) methods have been developed to treat weakly through strongly
+
+correlated systems while invoking few approximations. These include variational Monte Carlo
+
+(VMC) and diffusion Monte Carlo (DMC) in continuous space16,17, and full configuration interaction
+
+QMC (FCIQMC)18,19 and auxiliary field QMC (AFQMC)20,21 in determinant space. These methods
+
+utilize stochastic integration to help treat the complexity of the many-body electronic structure
+
+problem, and are applicable to both solids and isolated molecules. Importantly it is becoming
+
+possible to compare these and other many-body methods with each other on equivalent problems
+
+and to both validate their results and focus improvements.22,23 In this study we will focus on
+
+DMC, which is one of the most widely used QMC approach for calculating the electronic structure
+
+of solids.16,24 DMC enjoys a relatively low computational scaling with system size and is well
+
+adapted to massive parallelism.25–29 For bosons, DMC can deliver the exact energy to an arbitrarily
+
+small error. However, for fermionic problems, because of the uncontrolled fluctuations of the
+
+wavefunction sign a DMC implementation that does not address the sign problem is not stable in
+
+time.30,31 To address the fermion sign problem and correctly obtain the required fermionic symmetry,
+
+practical DMC calculations must rely on the fixed-node approximation: the fermionic constraints
+
+are fulfilled by imposing the zeros (nodes) of the wavefunction to be those of an approximate
+
+3
+
+
+antisymmetric (fermionic) trial function. However, because these nodes are approximate, the
+
+DMC energy has a residual variational error, referred to as the fixed-node error. Devising an
+
+efficient strategy to improve the trial wavefunction nodes in a systematic way and, thus, better
+
+controlling the only source of error of the method, brings us closer to achieving a genuine general
+
+from-first-principles theory, which is one of the major challenges of DMC.
+
+One advantage of real space QMC methods is their ability to flexibly use different forms of trial
+
+wavefunctions. Since only the values and derivatives of the wavefunction are required there is no
+
+need in principle to choose forms that are suited for conventional numerical integration. While it
+
+is now standard to utilize sophisticated multideterminant trial wavefunctions in molecules, most
+
+solid state applications of DMC use a single Slater determinant (SD) trial wavefunction. A Jastrow
+
+factor is used to incorporate dynamical correlations and improve the wavefunction overall, but it
+
+does not change the nodes. Although SD-DMC calculations have proven valuable in addressing a
+
+wide range of problems in chemistry and materials science, for example obtaining near chemical
+
+accuracy in van der Waals binding32,33, this accuracy is far from general. A potentially general
+
+strategy to address this problem, which has been successfully applied to atoms and molecules, is to
+
+employ multideterminant (MD) trial functions.34–37. However this requires an efficient method to
+
+generate the multideterminant expansion.
+
+In this work, we present a scheme to perform multideterminant DMC calculations in solids
+
+using configuration interaction (CI) based trial functions. We employ a selected CI (SCI) approach
+
+in which only the most important Slater determinants from the full CI (FCI) space are identified
+
+and selected. Although SCI does not suppress the exponential wall of conventional CI calculations,
+
+it may be deferred sufficiently to allow practical calculations. In the case of atomic and molecular
+
+systems, several successful applications of SCI trial functions in DMC calculations have been
+
+reported.34,37–44 Here, we use the configuration interaction using a perturbative selection made
+
+iteratively (CIPSI) algorithm,45 as implemented in the quantum package code46 to generate the trial
+
+functions for DMC calculations on periodic systems. This approach is illustrated by computing the
+
+cohesive energy of carbon diamond in the thermodynamic limit. We use the QMCPACK quantum
+
+Monte Carlo package28,29 for the DMC calculations. Although diamond is not a particularly
+
+challenging system with respect to the role of electron correlation, it is a valuable test system since
+
+its cohesive energy is accurately known and pseudopotential accuracy is not a major concern. This
+
+work may thus be considered as a first step toward the study of more difficult solids where greater
+
+correlation effects and the generation of CIPSI expansions may be more challenging.
+
+4
+
+
+The paper is organized as follows. In Sec. II, the theoretical aspects of the approach are presented.
+
+A brief summary of the CIPSI method is given and its extension to the case of periodic systems is
+
+described in depth. The computational details are provided in Sec. III. Results for diamond, both
+
+at the single- and multideterminant levels, are reported and discussed in Sec. IV. Finally, some
+
+concluding remarks are given in Sec. V, including areas where further improvements are desired.
+
+Unless otherwise stated, atomic units are used throughout this paper.
+
+II.
+THEORY
+
+A.
+The CIPSI algorithm
+
+In the present manuscript, the CIPSI algorithm developed for finite-size atomic or molecular
+
+systems is generalized to the case of periodic solids. CIPSI is one of the variants of the broad
+
+class of methods known as SCI. Selecting determinants in the CI space is a natural idea, and many
+
+SCI variants have been developed under various acronyms and implementations over the last five
+
+decades.34,37,39–41,45,47–80 SCI methods are ordinary CI approaches except that determinants are not
+
+chosen based on predetermined occupation or excitation criteria, but are instead selected step by
+
+step based on their estimated contribution to the FCI energy and/or wavefunction. It is a particularly
+
+successful approach since it is well-recognized that, in a predefined subspace of determinants for
+
+example, single and double excitations with respect to the Hartree-Fock (HF) reference, only a
+
+small fraction of them make a non-negligible contribution to the wavefunction.59,81 Therefore, an
+
+on-the-fly selection of determinants has been proposed in the late 1960s by Bender and Davidson,47
+
+as well as by Whitten and Hackmeyer.48 The main advantage of SCI methods is that no a priori
+
+assumption is made on the type of determinants needed to describe the electronic correlation effects.
+
+Therefore, at the potentially greater price of a blind and automated calculation, a SCI calculation is
+
+less biased by the user’s understanding of the problem’s complexity (for example, when choosing
+
+the active space orbitals for a particular problem).
+
+The CIPSI approach was developed in 1973 by Huron, Rancurel, and Malrieu.45 In recent years,
+
+two of us have revived this approach34 and developed a very efficient and massively parallel version
+
+of the algorithm which has been implemented in quantum package.46 Briefly, at each iteration n,
+
+CIPSI selects some external determinants |Dα⟩ not present in the current zeroth-order wavefunction
+
+|Ψ(n)
+0 ⟩ =
+�
+
+I
+c(n)
+I |DI⟩ ,
+(1)
+
+5
+
+
+where |DI⟩ is an internal determinant. Starting, for example, with the HF determinant at n = 0,
+
+the external determinants are selected using a criterion based on the estimated gain in correlation
+
+energy evaluated using second-order perturbation theory that would result from the inclusion of
+
+|Dα⟩. Denoting the second-order correction as
+
+e(n)
+α =
+| ⟨Ψ(n)
+0 | ˆH|Dα⟩|
+2
+
+E(n)
+var − ⟨Dα| ˆH|Dα⟩
+,
+(2)
+
+where
+
+E(n)
+var = ⟨Ψ(n)
+0 | ˆH|Ψ(n)
+0 ⟩
+
+⟨Ψ(n)
+0 |Ψ(n)
+0 ⟩
+(3)
+
+is the variational energy of the wavefunction at the nth iteration, a number of external determinants
+
+associated with the greatest e(n)
+α are incorporated into the variational space and the Hamiltonian
+
+is diagonalized to give |Ψ(n+1)
+0
+⟩ and E(n+1)
+var . In practice, the size of the variational wavefunction is
+
+roughly doubled at each iteration. Next, the second-order Epstein-Nesbet energy correction to the
+
+variational energy (denoted as E(n)
+PT2) is computed by summing up the contributions of all external
+
+determinants
+
+E(n)
+PT2 =
+�
+
+α
+e(n)
+α ,
+(4)
+
+and the total CIPSI energy is given by
+
+E(n)
+CIPSI = E(n)
+var + E(n)
+PT2.
+(5)
+
+The algorithm is then iterated until some convergence criterion (for example, |E(n)
+PT2| ≤ ϵ) is met. For
+
+simplicity, in the following the superscript denoting the largest iteration number attained will be
+
+dropped from the various expressions. When the number of determinants in the variational space
+
+gets large, computing the second-order correction EPT2 by adding up all contributions eα to the
+
+sum becomes computationally unfeasible. To perform this formidable task, a simple and efficient
+
+hybrid stochastic-deterministic algorithm has been developed.62 In short, the leading contributions
+
+to the sum in Eq. (4) are exactly computed (deterministic part) while the very large number of small
+
+residual contributions are sampled via a Monte Carlo algorithm (stochastic part).
+
+B.
+CIPSI for periodic systems
+
+We now present the extension of CIPSI to periodic solids. As in any CI calculation, we must
+
+define (i) the system (number of electrons, charge and positions of the nuclei), (ii) the Hamiltonian,
+
+6
+
+
+and (iii) the one-electron basis set. The calculation of the one-and two-electron integrals required
+
+for the computation of the Hamiltonian matrix elements then needs to be discussed.
+
+1.
+Supercells
+
+In practice, an infinite solid is modeled by a finite supercell obtained by replicating a given
+
+primitive cell ni times in each Cartesian direction (i.e., i = x, y, z). Accordingly, we will label a
+
+supercell as nx × ny × nz. In the present study, we will restrict ourselves to the simplest case of a
+
+cubic primitive cell of side L with arbitrary nx, ny, and nz values. The supercell is then a rectangular
+
+cuboid of volume Ω = N × L3, where N = nxnynz is the total number of primitive cells replicated to
+
+build the supercell.
+
+The supercell being defined, we are led back to an ordinary CI calculation consisting of the set of
+
+electrons and nuclei present in the supercell and subject to an external periodic electric potential. We
+
+denote RI and ZI the position and charge of the of Ith nuclei of the primitive cell (I = 1, . . . , Nn). The
+
+actual system is then composed of N×Nn nuclei at positions RI+taa+tbb+tcc, and of N×Ne electrons,
+
+where Ne is the number of electrons of the primitive cell. Here, t = taa + tbb + tcc = (ta, tb, tc) is the
+
+lattice translation vector, and the triplet of integers (ta, tb, tc) takes all the values needed to generate
+
+the supercell through translations of the primitive cell along its unit vectors (a, b, c). Similarly, the
+
+supercell translation vector is defined as T = TAA + TBB + TCC = (TA, TB, TC), where, in the case
+
+of a cubic primitive cell, (A, B, C) = (La, Lb, Lc) are the corresponding unit translation vectors of
+
+the supercell.
+
+We emphasize that, in contrast to effective one-body theories such as HF or DFT, many-body
+
+electronic structure calculations explicitly taking into account the electron-electron interaction,
+
+such as the ones performed here, cannot be restricted to the primitive cell if accurate properties
+
+are to be obtained.16 In one-body theories the thermodynamic limit can be reached by indefinitely
+
+improving the k-point sampling of the first Brillouin zone of the primitive cell. In presence of
+
+electron-electron interaction the translation of individual electrons is no longer a symmetry of the
+
+Hamiltonian (k is no longer a good quantum number) and the use of supercells is mandatory (see,
+
+e.g., Refs 16 and 82 for a discussion of this aspect).
+
+7
+
+
+2.
+Hamiltonian
+
+The supercell electronic Hamiltonian
+
+ˆHN = ˆT + ˆVne + ˆVee + ˆVnn
+(6)
+
+has a standard form, except that the electron-electron, electron-nucleus, and nucleus-nucleus
+
+Coulombic potentials, ˆVee, ˆVne, and ˆVnn, respectively, are now periodized to model the interaction
+
+of the electrons and nuclei belonging to the supercell with the infinite set of replicas associated with
+
+their periodic images, i.e.,
+
+ˆHN = −1
+
+2
+
+�
+
+i
+∇2
+i −
+�
+
+T
+
+�
+
+i
+
+�
+
+J
+
+ZJ
+
+|ri − RJ + T|
+
++ 1
+
+2
+
+�
+
+T
+
+�′
+
+ij
+
+1
+
+|ri − r j + T| + 1
+
+2
+
+�
+
+T
+
+�′
+
+IJ
+
+ZIZJ
+
+|RI − RJ + T| ,
+(7)
+
+where ri is the position of the ith electron, �
+T ≡ �∞
+TA=−∞
+�∞
+TB=−∞
+�∞
+TC=−∞, and the prime symbol
+
+indicates that the self-interaction term i = j or I = J has to be excluded when T = 0 = (0, 0, 0).
+
+As is well known, periodic Coulomb potentials are mathematically ill-defined due to the long-
+
+range character of the Coulomb interaction. The periodic infinite sums in Eq. (7) not only converge
+
+very slowly but they are also conditionally convergent, meaning that the result depends on the
+
+order of summation. A specific and careful mathematical treatment has to be introduced in order
+
+to provide a meaningful answer. The standard solution, and the one we employ here for the three
+
+Coulomb potentials in Eq. (7), is to resort to the Ewald summation technique.
+
+Applying the Ewald summation technique, for example, to the nucleus-nucleus term ˆVnn in
+
+Eq. (7) enables one to compute this term as a sum of two contributions: a short-range contribution
+
+in real space and a short-range in reciprocal space. Both contributions are expressed as rapidly
+
+converging infinite sums, thus leading to a very fast and efficient calculation of the potential.
+
+Explicitly, it is given by
+
+ˆVnn = 1
+
+2
+
+�
+
+T
+
+�′
+
+IJ
+
+ZIZJ
+
+|RI − RJ + T| erfc
+�|RI − RJ + T|
+√
+
+2σ
+
+�
+
++ 2π
+
+Ω
+
+�
+
+G�0
+
+e− σ2G2
+
+2
+
+G2
+
+�������
+
+�
+
+I
+ZIeiG·RI
+�������
+
+2
+−
+�
+I Z2
+I
+√
+
+2πσ
+− πσ2
+
+Ω
+
+
+�
+
+I
+ZIRI
+
+
+
+2
+,
+
+(8)
+
+where erfc(x) is the complementary error function, G refers to the set of quantized reciprocal
+
+vectors of the supercell defined by the condition eiG·T = 1, and σ is a small positive parameter
+
+chosen to facilitate convergence. Additional details can be found, for example, in Refs. 83 and 84.
+
+8
+
+
+3.
+Basis functions
+
+In this work, the one-electron basis functions are chosen to be crystalline Gaussian-based atomic
+
+orbitals
+
+χµk(r) =
+�
+
+T
+eik·T ˜χµ(r + T),
+(9)
+
+i.e., the periodized (or translationally-symmetry-adapted) version of the (localized) Gaussian atomic
+
+orbitals ˜χµ(r) from the supercell. In Eq. (9), the crystal momentum vector k is chosen within
+
+the first Brillouin zone of the primitive cell, and it is sampled from a Monkhorst-Pack grid,85 an
+
+evenly-spaced rectangular grid in reciprocal space [see Sec. (II C)]. The atomic index µ is referred
+
+to as the band index after periodization.
+
+The molecular orbitals of the system are then defined as
+
+φpk(r) =
+
+Nbas
+�
+
+µ=1
+Cµp(k) χµk(r),
+(10)
+
+where Nbas is the number of basis functions, and the molecular orbital coefficients Cµp(k) are now
+
+momentum-dependent due to the translational-symmetry adaptation of the basis functions. Once
+
+again, we emphasize that, because of the explicit treatment of the electron-electron interaction,
+
+k is no longer a good quantum number and the orbitals defined above do not have the correct
+
+translational symmetry of the problem. However, choosing such a representation is particularly
+
+convenient in practice since it allows to take full advantage of the techniques and codes developed
+
+for the effective one-particle theories, such as HF and DFT.
+
+4.
+One- and two-electron integrals
+
+The Hamiltonian and the one-electron basis set having been defined, the next step in a CI
+
+calculation is to evaluate the Hamiltonian matrix elements between Slater determinants. This
+
+requires evaluation of one- and two-electron integrals. It is easy to see from the expressions of the
+
+Hamiltonian [see Eqs. (7) and (8)] and basis functions [see Eq. (9)] that this can be accomplished
+
+by calculation of the integrals over Fourier transforms of the product of Gaussian functions for
+
+which fast and reliable algorithms have been developed.14,86,87
+
+The only new aspect with respect to standard CI implementations is the use of complex-valued
+
+orbitals, integrals and Hamiltonian matrix elements. Let us denote the two-electron integrals as
+
+⟨pkpqkq|rkrsks⟩ =
+�
+
+Ω2 dr1dr2φ∗
+pkp(r1)φ∗
+qkq(r2) 1
+
+r12
+φrkr(r1)φsks(r2).
+(11)
+
+9
+
+
+Since the one-particle basis functions are invariant with respect to the primitive lattice translation
+
+vectors t, the two-electron integrals must conserve crystal momentum, i.e., kp + kq = kr + ks + g,
+
+where g is a reciprocal lattice vector of the primitive cell.
+
+When real-valued orbitals are used, a given two-electron integral is symmetric with respect to
+
+permutations of the orbital indices p and r, or q and s, as well as with the permutation of the electron
+
+labels 1 and 2, thus resulting in a 8-fold symmetry of the set of two-electron integrals. Consequently,
+
+the N4
+bas four-index integrals can be mapped to a set of approximately N4
+bas/8 unique integral
+
+values.88 However, when one considers complex-valued orbitals, the integral ⟨pkpqkq|rkrsks⟩
+
+is no longer invariant with the permutations of p and r, or q and s, so the number of unique
+
+integral values scales as N4
+bas/2 (exchanging the electron indices 1 and 2 still leaves the value of
+
+the integral unchanged). When storing these complex-valued integrals, it is useful to recognize
+
+that exchanging p with r, or q with s changes the integral value in a non-trivial way. However,
+
+exchanging both of these pairs simultaneously yields the complex conjugate of the original value,
+
+i.e., ⟨pkpqkq|rkrsks⟩∗ = ⟨rkrsks|pkpqkq⟩. This allows one to save an additional factor of two in the
+
+storage requirements; one then only needs to store N4
+bas/4 complex-valued two-electron integrals.
+
+5.
+Hamiltonian matrix elements
+
+In order to implement FCI or any of its lower-cost alternatives, one must be able to evaluate
+
+matrix elements of the Hamiltonian in the space of Slater determinants. If the determinants are all
+
+built from the same set of orthonormal spin-orbitals (which is the case here), then one can evaluate
+
+matrix elements via the usual Slater-Condon rules (see, e.g., Ref. 88 and Ref. 89 for an efficient
+
+implementation in a determinant-driven context).
+
+C.
+Boundary conditions and twist averaging
+
+In order to reduce finite-size effects and, to accelerate the convergence to the thermodynamic
+
+limit (i.e., N → ∞), it is advantageous to exploit the freedom in the type of periodic boundary
+
+conditions of the supercell. By judiciously choosing the electron momenta k of the basis functions
+
+[see Eq. (9)], the boundary conditions can be easily implemented. Translating one electron of the
+
+supercell by a superlattice vector (say, A = La) generates a phase factor, eiLk·a, for each of the
+
+orbitals of the CI determinants. Accordingly, a global phase factor common to all determinants is
+
+10
+
+
+obtained whenever all these individual phase factors are made equal, that is
+
+eiLk1·a = eiLk2·a = . . . = eiθ,
+(12)
+
+where θ is some arbitrary angle (or twist) between −π and π. These conditions are fulfilled when
+
+momenta are chosen uniformly spaced in the first Brillouin zone of the lattice (that is, by using a
+
+Monkhorst-Pack grid85) and shifted by a common vector K
+
+kia = K + ia
+
+ta
+
+b × c
+
+a · (b × c),
+(13a)
+
+kib = K + ib
+
+tb
+
+c × a
+
+b · (c × a),
+(13b)
+
+kic = K + ic
+
+tc
+
+a × b
+
+c · (a × b),
+(13c)
+
+with il = 0, . . . , tl (l = a, b, c) is the twist index. In this case, we have |D⟩ → eiθ |D⟩, with θ = K · a.
+
+Boundary conditions can be varied with θ from −π to +π, θ = 0 and θ = ±π corresponding to
+
+periodic and anti-periodic boundary conditions, respectively.
+
+For a given system size, a property O can be computed by averaging out its values for different
+
+K values (or twists θ). In the limit of an infinite set of sampling values, we have
+
+⟨O⟩ = 1
+
+2π
+
+� π
+
+−π
+dθ ⟨Ψθ| ˆO|Ψθ⟩ ,
+(14)
+
+where Ψθ is the exact wavefunction of the system for the corresponding boundary condition. In
+
+practice, the integral is computed as a finite sum over shifted Monkhorst-Pack grids, as expressed
+
+by Eqs. (13a), (13b), and (13c). The main effect of twist-averaging is to suppress the major part of
+
+the one-body shell effects in the filling of single-particle states. Note that each value of θ requires an
+
+independent calculation, the total computational cost is then proportional to the number of twists.
+
+III.
+COMPUTATIONAL DETAILS
+
+The DMC method is employed to compute ground-state energies within the fixed-node approx-
+
+imation. The application of DMC to solids being now well documented, we refer the interested
+
+reader to the existing literature for the theoretical background (see, for example, Refs. 16, 28, and
+
+82). Calculations were performed using QMCPACK.28,29 The integrals over periodized Gaussian-
+
+type orbitals are carried out using the PySCF program,90 which has been interfaced with quantum
+
+package.46 Plane wave trial wavefunctions were generated with the QUANTUM ESPRESSO
+
+package91.
+
+11
+
+
+To model carbon diamond, we used a primitive cell with two carbon atoms separated by 1.545
+
+Å (approximately, 3.568 Å for the lattice constant). In order to compute the cohesive energy in
+
+the thermodynamic limit and to correct energies for finite-size effects, we consider supercells
+
+made of 16 (2 × 2 × 2), 54 (3 × 3 × 3) and 128 (4 × 4 × 4) atoms with converged twist-averaged
+
+(TA) boundary conditions with a total of 216, 64 and 27 twists respectively.92 All calculations are
+
+carried out using the Burkatzki-Filippi-Dolg (BFD)93,94 effective core potentials and the associated
+
+2s2p1d or 3s3p2d1 f contracted Gaussian-type orbital (GTO) basis sets (BFD-vDZ or BFD-vTZ,
+
+respectively). For the plane wave trial wavefunction, consistently with Ref. 95, a 200Ry cut-off was
+
+applied to the kinetic energy. Both SD-DMC and MD-DMC calculations used a time step of 0.001
+
+a.u. and Casula’s T-moves for pseudopotential evaluation.96
+
+The trial wavefunctions for DMC consist either of a single determinant or multideterminant
+
+expansion determined using CIPSI multiplied by a Jastrow factor with one, two, and three body
+
+terms. The parameters for the one- and two-body terms were represented by B-splines and the
+
+three-body term by a polynomial. These parameters were optimized in VMC through a variant of
+
+the linear method of Umrigar et al.97 Note that the coefficients of the CIPSI expansion were not
+
+optimized in VMC and therefore in this study the nodal surface is wholly determined by the CIPSI
+
+expansion.
+
+IV.
+RESULTS
+
+A.
+Single-determinant fixed-node DMC
+
+To establish a reference for the multideterminant studies we first investigate the dependence of
+
+single determinant DMC energies on the initial orbitals and their basis sets. In Fig. 1, we show
+
+the dependence of the fixed-node DMC energy for single determinant trial wavefunctions built
+
+with local-density approximation (LDA)98, Perdew–Burke-Ernzerhof (PBE)99, Becke, 3-parameter,
+
+Lee–Yang–Parr (B3LYP)100–103 and HF orbitals calculated with the BFD-vDZ and BFD-vTZ basis
+
+sets. These calculations were performed for the simplest case of a single primitive cell consisting
+
+of two carbon atoms (1 × 1 × 1 supercell), with the SD-DMC energy being computed at the Γ point.
+
+As an additional reference, the SD-DMC energy obtained using LDA orbitals expanded in a large
+
+plane-wave (PW) basis set with a high energy cutoff of 175 Hartree and the same pseudopotential
+
+is also reported. Using a larger energy cutoff of 250 Hartree leads to a difference in DMC energies
+
+12
+
+
+-������
+
+-������
+
+-������
+
+-������
+
+-������
+
+-������
+
+FIG. 1. SD-DMC total energy of the 1 × 1 × 1 diamond primitive cell computed at the Γ point using SD
+
+trial wavefunctions built with various orbitals (LDA, PBE, B3LYP, and HF) and the BFD-vDZ (blue) or
+
+BDF-vTZ (red) GTO basis sets. The solid line corresponds to the SD-DMC energy obtained using a large
+
+PW basis set and LDA orbitals and the dashed lines indicate the associated statistical error. The raw data can
+
+be found in the supplementary material.
+
+below 1 milliHartree and therefore our initial choice of 175 Hartree is close to the complete basis
+
+set limit. Note that the fixed node SD-DMC energies using nodal surfaces of the Kohn-Sham
+
+determinants obtained from different DFT approximations differ by less than the variation in
+
+the pure DFT energies, 6.8(6) milliHartree vs 13.05 milliHartree, respectively. The SD-DMC
+
+energies obtained with LDA orbitals expanded in the BFD-vTZ and PW basis sets coincide within
+
+1.0(6) milliHartree thus indicating the suitability of the BFD-vTZ basis set. On the other hand, an
+
+appreciably higher SD-DMC energy is obtained when using the BFD-vDZ basis set. Consequently,
+
+in the following, all calculations are performed with the BFD-vTZ basis set.
+
+In Table I, we report twist-averaged SD-DMC total energies (per primitive cell) as a function
+
+of the supercell size N, as well as the corresponding cohesive energies. We also report the SD-
+
+13
+
+
+TABLE I. Twist-averaged SD-DMC total energies (in Hartree/cell) and cohesive energies (in Hartree) of
+
+diamond for supercells of increasing size N = n3 (n = 2, 3, and 4). The (extrapolated) thermodynamic values
+
+and the cohesive energies (with and without ZPE correction) are also reported.
+
+Cell size
+SD-DMC
+SD-DMC
+
+(n × n × n)
+(B3LYP/GTO)a
+(PBE/PW)b
+
+2 × 2 × 2
+−11.4217(1)
+−11.4199(1)
+
+3 × 3 × 3
+−11.4078(7)
+−11.4049(1)
+
+4 × 4 × 4
+−11.4020(5)
+−11.3995(1)
+
+Extrapolated (N → ∞)c
+−11.3971(7)
+−11.3949(1)
+
+Cohesive energy (w/o ZPE)
+0.2772(4)
+0.2755(1)
+
+Cohesive energy (w/ ZPE)
+0.2712(4)
+0.2695(1)
+
+a Results from the present work obtained with B3LYP orbitals and the BFD-vTZ GTO basis set.
+
+b Results from Ref. 95 obtained with PBE orbitals and a PW basis set.
+c Extrapolated values obtained using a using a simple quadratic fit of the energies for the three sizes as a function of
+
+1/N.
+
+DMC energies computed by Shin et al. in Ref. 95, which were obtained using a PW basis set
+
+and a single Slater determinant wavefunction of PBE orbitals and using the same twist values.104
+
+Results are compared to our SD-DMC data using B3LYP orbitals and the BFD-vTZ basis set. The
+
+SD-DMC total energies from the two calculations are very close, with a difference never greater
+
+than 3 milliHartree. Electronic cohesive energies calculated by subtracting from the crystal energy
+
+the SD-DMC energy of the isolated atoms calculated using the same approaches [−5.4226(2)
+
+Hartree/atom for PBE/PW and −5.42138(2) Hartree/atom for B3LYP/GTO] lead to a difference
+
+of only 3.0 ± 0.4 milliHartree once extrapolated to the thermodynamic limit. Adding the zero-
+
+point vibrational energy (ZPE) correction estimated to be 6.0 milliHartree/atom105 brings the
+
+SD-DMC(B3LYP/GTO) cohesive energy to 1.3 ± 0.4 milliHartree of the estimated experimental
+
+value106 of 0.2699 Hartree (see Table I). The result indicates that there is very good error cancelation
+
+between the bulk and atomic total energies at the single determinant level in carbon diamond.
+
+14
+
+
+B.
+Multideterminant trial wavefunctions
+
+In Fig. 2, we show the convergence of the CIPSI variational energy Evar and its second-order
+
+corrected value Evar + EPT2 as a function of the number of determinants in the reference space (see
+
+Sec. II A) for the 1 × 1 × 1 diamond primitive cell at the Γ point and using the BFD-vTZ basis set.
+
+Independent calculations using both HF and B3LYP orbitals are shown. Despite the large size of
+
+the Hilbert space (about ∼ 1011 determinants), energy convergence is achieved with a reasonable
+
+accuracy using less than ∼ 107determinants. In addition, the FCI limit is independent of the orbital
+
+set employed in the SCI calculation, as it should be. In the variational calculations, convergence
+
+to milliHartree accuracy is achieved at about 3 × 106 determinants whether using HF or B3LYP
+
+orbitals. When the perturbative corrections to the energy are included, milliHartree accuracy is
+
+reached with only ∼ 2 × 103 and ∼ 4 × 103 determinants determinants for HF and B3LYP orbitals,
+
+respectively.
+
+Although CIPSI rapidly converges to the FCI limit for the 1 × 1 × 1 supercell (Γ point calcula-
+
+tions) the exponential character of the FCI approach is still present and, for larger supercells, the
+
+number of determinants required to reach the FCI limit to the required accuracy rapidly becomes
+
+computationally intractable. To alleviate this issue and to enable treating larger supercells we
+
+limit the SCI calculations to a subset of orbitals belonging to a pre-defined active space, thus
+
+performing in practice a CIPSI calculation for a set of Ne electrons distributed among No orbitals,
+
+denoted as CIPSI(Ne,No), instead of a FCI one. Of course, there are many ways of choosing such
+
+an active space (AS). A natural choice is to build the AS using the natural orbitals obtained in a
+
+preliminary CIPSI calculation. This is what has been systematically done for molecular systems
+
+in a number of works published by some of the authors.39–41,43,62,67,68,78–80 Here, in view of the
+
+large number of orbitals needed for solids, an alternative choice could be to employ instead the
+
+natural orbitals of a preliminary MP2 calculation. Another possibility is to use Kohn-Sham orbitals
+
+instead of Hartree-Fock ones. Here, we have chosen to postpone the investigation of such important
+
+aspects to a future detailed study and we have considered the simplest approach where only virtual
+
+orbitals with one-electron energies below a given energy threshold are included in the active space.
+
+Although this choice is rather crude (and certainly not optimal), it is important to emphasize that the
+
+choice of the active space for constructing the multideterminant trial wavefunction is expected to
+
+be less critical in DMC than when just limiting the calculation to pure CI. High-energy orbitals are
+
+indeed expected to have a small impact on the wavefunction and, thus, on the location of the nodes.
+
+15
+
+
+�
+��
+���
+����
+���
+���
+���
+
+-����
+
+-����
+
+-����
+
+-����
+
+-����
+
+FIG. 2. Convergence of the CIPSI energies with the size of the variational space for the 1 × 1 × 1 diamond
+
+primitive cell computed at the Γ point. Both the CIPSI variational energy Evar and its second-order corrected
+
+value Evar + EPT2 (dashed) computed with the BFD-vTZ basis set using HF orbitals (black) and B3LYP
+
+orbitals (red) are reported. The raw data can be found in the supplementary material.
+
+Figure 3 illustrates the use CIPSI(Ne,No). The error in DMC total energy (in Hartree/atom)
+
+computed at the Γ point as a function of the number of orbitals belonging to the active space is
+
+presented. The error is calculated with respect to the converged DMC value obtained with 58
+
+orbitals. For the 1 × 1 × 1 primitive cell, results are reported for both B3LYP and HF orbitals, and
+
+for a number of orbitals in the CIPSI(8,No) up to the maximum of 58. For the 2 × 1 × 1 supercell,
+
+16
+
+
+��
+��
+��
+��
+��
+
+�����
+
+�����
+
+�����
+
+�����
+
+�����
+
+�����
+
+FIG. 3. Error in the DMC total energy (in Hartree/atom) computed at the Γ point as a function of the number
+
+of orbitals in the active space for CIPSI(Ne,No) trial wavefunctions built with HF orbitals (1 × 1 × 1 cell,
+
+Ne = 8) or B3LYP orbitals (1 × 1 × 1, Ne=8 and 2 × 1 × 1 cells, Ne=16). These calculations are performed
+
+with the BFD-vTZ basis set. The raw data can be found in the supplementary material.
+
+only the B3LYP results are presented, and the maximum number of orbitals in the CIPSI(16,No)
+
+corresponds to only half of the total number of orbitals (116). For the 1 × 1 × 1 supercell a well
+
+converged SD-DMC energy is achieved when using only 30 of the 58 B3LYP orbitals, but all
+
+orbitals must be retained to obtain a well converged result when using HF orbitals. For the larger
+
+2 × 1 × 1 cell for which the CIPSI(16,No) is built with B3LYP orbitals, convergence to within
+
+1.0 ± 0.3 milliHartree/atom is reached between 30 and 40 orbitals out of a total of 116. Due to the
+
+better convergence of the calculations with truncated orbital spaces when using B3LYP than HF
+
+orbitals, B3LYP orbitals are used in all subsequent calculations.
+
+17
+
+
+C.
+Multideterminant fixed-node DMC
+
+Figure 4 illustrates one of the central points of this work, namely the possibility of improving
+
+nodal surfaces in a systematic way using SCI multideterminant trial wavefunctions. Fixed-node
+
+DMC total energies using various SD and MD trial wave functions are represented in Fig. 4 for
+
+the 1 × 1 × 1 diamond primitive cell. On the left side of the graph, DMC energies obtained with
+
+SD trial wavefunctions built with LDA, PBE, B3LYP, and HF orbitals, respectively, are reported.
+
+(These are the same as the BFD-vTZ results reported in Fig. 1.) At the scale of the figure 4, the
+
+various SD-DMC energies are very similar, and are much higher in energy than the MD-DMC
+
+energies, which are up to 0.05 Hartree lower. This indicates a significant improvement in the
+
+quality of the nodal surface. On the right side of the graph, the convergence of the MD-DMC
+
+energy as a function of the size of the CIPSI expansion is presented both using the full active space
+
+(lower black curve) and active space. (upper blue curve) spaces. The corresponding numerical
+
+data (including the number of determinants and the intrinsic variance for DMC calculations) are
+
+reported in Table II. Here, ϵ is a threshold associated with the number of determinants retained in
+
+the expansion, and ϵ = 0 corresponds to the full CIPSI wavefunction (which is much smaller than
+
+the FCI space due to a limit on the total number of determinants retained, see Ref. 107). In view of
+
+the computational cost of using a very large number of determinants in the trial wavefunction in
+
+DMC calculations, it is important to limit the determinants used to the smallest number possible.
+
+As seen in Table II the fixed-node energies are essentially converged within statistical errors at
+
+ϵ = 10−5 and, thus, to consider the full CIPSI wavefunction (ϵ = 0) in DMC is not necessary here.
+
+Note that the number of determinants needed to reach a given threshold ϵ is smaller for the FCI
+
+space than the CIPSI(8,30) space. This results from the greater flexibility available with the FCI
+
+space. The convergence curves of the MD-DMC energy both for the FCI and CIPSI(8,30) spaces
+
+are similar and, at near-convergence, the two DMC energies differ by only about 2 ± 1 milliHartree.
+
+The DMC intrinsic variance in the energy shows a systematic improvement with the number of
+
+determinants in the expansion when using the FCI space.
+
+As seen from Fig. 4 the DMC energy decreases monotonically and smoothly when increasing
+
+number of determinants in the trial wavefunction. As discussed in Ref. 41, there is no guarantee
+
+that increasing the number of Slater determinants in the trial wavefunction lowers the DMC energy,
+
+because the selection procedure does not explicitly optimize the nodal surface and DMC energy.
+
+However in all applications performed so far – atoms34,42,107, molecules38–41,61, and now solids – a
+
+18
+
+
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+FIG. 4. Comparison of DMC total energies (in Hartree) computed at the Γ point with various SD and MD
+
+trial wave functions for the 1 × 1 × 1 diamond primitive cell. The SD-DMC energies (red dots) are computed
+
+with trial wave functions built with LDA, PBE, B3LYP, and HF orbitals. The MD-DMC energies are given
+
+as a function of the size of the CIPSI expansion for the FCI space which contains 58 orbitals (black curve)
+
+and the CIPSI(8,30) (blue curve). The multideterminant trial wavefunctions are built with B3LYP orbitals
+
+obtained with the BFD-vTZ basis set. Numbers in parentheses on the abscissa correspond to the values of
+
+the truncation threshold ϵ (see text). Error bars are either smaller or of the order of the size of the markers.
+
+The raw data are gathered in Table II and in the supplementary material.
+
+systematic decrease of the fixed-node DMC energy is observed whenever the SCI trial wavefunction
+
+is improved variationally, upon increasing the number of determinants, the size of the basis set, or
+
+the size of the active space.
+
+The DMC total energy (in Hartree/cell) of diamond as a function of 1/N, where N is the size
+
+of the system, i.e., the total number of primitive cells replicated to create the supercell (N = 8,
+
+18, 27, and 64 for 2 × 2 × 2, 3 × 3 × 2, 3 × 3 × 3, and 4 × 4 × 4, respectively), computed with
+
+19
+
+
+TABLE II. DMC total energies (in Hartree/cell) computed at the Γ point for the 1 × 1 × 1 diamond primitive
+
+cell containing 8 electrons, as a function of the truncation threshold ϵ on the coefficients of the CIPSI
+
+wavefunction computed within the full active space (58 orbitals) and the active space (30 orbitals) with the
+
+BFD-vTZ basis set. For both spaces the final CIPSI wave function is obtained by stopping the selection
+
+process when the number of determinants exceeds about 1 million. The number of determinants in the trial
+
+wavefunction and intrinsic variance in the energy are also reported for each value of ϵ as well as the variance
+
+of the energy inferred from the DMC data.
+
+Truncation
+Full active space
+Active space
+
+threshold ϵ # determinants
+DMC energy
+Variance
+# determinants
+DMC energy
+Variance
+
+10−2
+178
+−10.5638(3)
+0.2428(4)
+200
+−10.5633(2)
+0.2399(5)
+
+10−3
+4124
+−10.5707(3)
+0.2010(1)
+3204
+−10.5694(3)
+0.1950(2)
+
+10−4
+80864
+−10.5791(4)
+0.1730(2)
+57990
+−10.5754(7)
+0.1720(2)
+
+10−5
+738998
+−10.5812(3)
+0.1382(7)
+578025
+−10.5776(4)
+0.16384(5)
+
+10−6
+1043197
+−10.5817(4)
+0.1372(8)
+1282995
+−10.5788(8)
+0.16338(9)
+
+ϵ = 0
+1137782
+−10.5817(7)
+0.1363(8)
+1510556
+−10.5796(9)
+0.16260(2)
+
+various methods and approximations is reported in Fig. 5. The two upper curves (solid lines) report
+
+SD-DMC (red) and MD-DMC (black) energies computed at the Γ point. The two lower curves
+
+(dashed lines) are SD-DMC (red) and MD-DMC (black) energies obtained by twist-averaging as
+
+described in Sec. II C. To minimize the statistical fluctuations we re-optimized the Jastrow factor
+
+at each twist. The number of determinants in the multideterminant trial wavefunction varies from
+
+about 600000 to 1200000.
+
+SD-DMC calculations (at the Γ point and twist-averaged) have been performed for the 2 × 2 × 2,
+
+3×3×3, and 4×4×4 supercells. MD-DMC calculations are much more computationally demanding
+
+than their SD-DMC analogues. Consequently, MD-DMC calculations have been limited to the
+
+2 × 2 × 2 and 3 × 3 × 3 supercells, with the energy of the 4 × 4 × 4 supercell being estimated as
+
+explained below. In all cases we only computed the symmetry inequivalent twists in the Brillouin
+
+zone, using symmetries to reduce the number of expensive DMC calculations. There are 16, 8, and
+
+4 inequivalent twists out of 216, 64, and 27 total for the 2 × 2 × 2, 3 × 3 × 3, and 4 × 4 × 4 supercells,
+
+respectively.
+
+To further reduce the computational effort, an approximate version of the twist-averaged MD-
+
+20
+
+
+����
+����
+����
+����
+����
+����
+����
+����
+
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+FIG. 5. SD- and MD-DMC total energies (in Hartree/cell) as a function of the inverse of the system size N.
+
+Energies are calculated either at the Γ point (Γ, solid lines) or by twist-averaging (TA, dashed lines). Error
+
+bars are either smaller or of the order of the size of the markers. Each set of energies [SD (red lines) or
+
+MD (black lines)] are fitted simultaneously using Eq. (16a) or Eq. (16b). The raw data can be found in the
+
+supplementary material.
+
+DMC energies was employed for the 3 × 3 × 3 and 4 × 4 × 4 superlattices. In this procedure we
+
+estimate the energy at a given twist (other than Γ) via
+
+EDMC(wi) ≈ EDMC(w0) + EB3LYP
+HF
+(wi) − EB3LYP
+HF
+(w0),
+(15)
+
+where wi denotes the ith twist (w0 being the Γ point) and EB3LYP
+HF
+is the energy computed with the
+
+21
+
+
+HF energy functional and B3LYP orbitals. This approximation relies on the B3LYP band structure
+
+being sufficiently accurate, but can be further improved by considering how this data is extrapolated
+
+to the thermodynamic limit, as we will detail below.
+
+Fig. 6 reports the SD- and MD-DMC energies computed both exactly and using Eq. (15) for the
+
+16 independent twists of the 2×2×2 supercell. To facilitate the visualization of the actual differences
+
+between data, the 16 DMC energies are artificially connected with straight lines. The two upper
+
+(red) curves and the two lower (black) curves correspond to SD-DMC and MD-DMC calculations,
+
+respectively. As one can see, there is excellent agreement between the exact (solid lines) and
+
+approximate (dashed lines) treatment of twist averaging in the case of SD-DMC, introducing an
+
+error of only 1.7(2)mHa in the twist averaged energy. For MD-DMC, the agreement is not as
+
+good but remains satisfactory for the present purpose, introducing an error of 8(4)mHa to the twist
+
+averaged energy.
+
+We can estimate the twist-averaged DMC energy of the 4 × 4 × 4 supercells by combining
+
+the extrapolated value of the DMC energy at the Γ point and a twist-averaged contribution from
+
+Eq. (15). The extrapolated value reported in Fig. 5 has been obtained as the value resulting from a
+
+quadratic fit of the three values corresponding to the Γ point energies of the 2 × 2 × 2, 3 × 3 × 2, and
+
+3 × 3 × 3 supercells. Note that, as is common in solid state calculations, a more precise fit function
+
+based on theoretical basis could be employed (see, for example ref.82 and 108). However, here
+
+in view of the remaining errors that are certainly much larger than the difference in error between
+
+various extrapolation fit functions, we have used the simplest possible fit function that reproduces
+
+the approximate parabolic shape of the curves. Fitting our data only within the domain of size
+
+where a quasi-linear regime is reached would clearly be preferable but the high computational cost
+
+of the MD-DMC data restricts the range of accessible sizes.
+
+Finally, in the spirit of extracting the maximum of information from our limited set of data, we
+
+propose to exploit the fact that both Γ point and twist-averaged energies must converge to the same
+
+value in the thermodynamic limit (i.e., N → ∞). This exact property is used as a constraint when
+
+fitting simultaneously both sets of energies with quadratic expressions, i.e.,
+
+EΓ
+fit(N) = EN→∞
+DMC + cΓ
+1
+N + cΓ
+2
+
+N2,
+(16a)
+
+ETA
+fit (N) = EN→∞
+DMC + cTA
+1
+N + cTA
+2
+N2 .
+(16b)
+
+The 5 parameters in Eqs. (16a) and (16b), i.e., EN→∞
+DMC and the four ci’s, are obtained by minimizing
+
+22
+
+
+the χ2-type function
+
+χ2 =
+�
+
+i
+
+�EΓ
+DMC(Ni) − EΓ
+fit(Ni)
+
+δEΓ
+DMC(Ni)
+
+�2
++
+�
+
+i
+
+�ETA
+DMC(Ni) − ETA
+fit (Ni)
+
+δETA
+DMC(Ni)
+
+�2
+,
+(17)
+
+where the δEDMC’s are the corresponding statistical errors, and the sum runs over Ni = 8, 18, 27,
+
+and 64 for the Γ point energies (centered grid), and Ni = 8, 27, and 64 for the twist-averaged (TA)
+
+energies. The quantity EN→∞
+DMC represents the best estimate of the DMC energy in the thermodynamic
+
+limit.
+
+Following this extrapolation procedure, the SD-DMC total energy in the thermodynamic limit
+
+is found to be EN→∞
+SD-DMC = −11.3986(2) Hartree. Combined with the atomic SD-DMC total energy
+
+of −5.4214(2) Hartree, it yields a cohesive energy (including the ZPE contribution) of 0.2719(3)
+
+Hartree, an estimate close to the value of 0.2712(4) Hartree obtained by a simple quadratic fit of
+
+the DMC energies computed at the Γ point (see Table I). In the multideterminant case, we find
+
+EN→∞
+MD-DMC = −11.4246(4) Hartree, and using the atomic MD-DMC energy computed at −5.4335(1)
+
+Hartree obtain a ZPE-corrected cohesive energy of 0.2729(1) Hartree . This value compares quite
+
+well with the estimated experimental cohesive energy of 0.2699 Hartree extracted from Ref.106.
+
+While this value is also similar to that obtained with single-determinant wavefunctions, there has
+
+been a significant lowering in the supercell and atomic energies due to use of multideterminant trial
+
+wave functions. In particular the energy of the atom obtained from the MD-DMC calculations is
+
+essentially exact (for the chosen pseudopotential).
+
+It should be emphasized that comparing calculated and experimental cohesive energies is subject
+
+to the error made in estimating the ZPE contribution. The value of 6.0 milliHartree/atom employed
+
+in this work was obtained by Schimka et al. using a zero-point anharmonic expansion based on DFT
+
+energy calculations105. For internal consistency and better accuracy, evaluating the ZPE correction
+
+using the very same DMC methodology would be desirable. Some caution is then needed with
+
+respect to the particularly good agreement between our final cohesive energies and the experimental
+
+value found in this work. Some fortuitous cancellation of systematic errors between ZPE, remaining
+
+fixed-node, and extrapolation errors could be at work. A number of earlier ab initio calculations of
+
+the diamond cohesive energy have been reported in the literature. Values obtained using DMC with
+
+a single-determinant Slater-Jastrow trial wavefunction [0.2699(2) Hartree from Hood et al.109 and
+
+0.2702(4) Hartree from Shin et al.95] agree closely with the estimated experimental value of 0.2699
+
+Hartree. The CCSD calculations of McClain et al.14 and Booth et al.19 give significantly smaller
+
+values of the cohesive energy, namely 0.2527 Hartree and 0.2621 Hartree, respectively. Finally, at
+
+23
+
+
+the CCSD(T) level, 0.2712 Hartree was reported by Booth et al.19. In our calculations, because the
+
+cohesive energy of the solid is slightly too large and the pseudoatom is solved essentially exactly,
+
+the remaining difference with the experimental data must lie with a combination of the uncertainties
+
+in the extrapolation, timestep error in the DMC calculations, or pseudopotential construction and
+
+evaluation. The ZPE error is also sizable compared to the residual difference from experiment in all
+
+of the literature predictions.
+
+For the 2×2×2 supercell containing 16 carbon atoms, it is also instructive to compare our results
+
+to those of López Ríos et al.110 using the nodes of an optimized backflow (BF) trial wavefunction.
+
+The pseudopotentials used are different, making a direct comparison of the energies not possible,
+
+although they are both around -11.4 Hartree per primitive cell (see Table X of Ref.110 and data in
+
+our supplementary material). The BF wavefunction improves the DMC energy by approximately
+
+0.007 Hartree per primitive cell over the single-determinant result. A truncated expansion of 65
+
+determinants in our Γ point CIPSI DMC yields a reduction of 0.011 Hartree per primitive cell. A
+
+larger expansion of e.g. about 106 determinants, achieves a 0.0253(5) Hartree improvement over
+
+the SD result per primitive cell.
+
+V.
+CONCLUSIONS
+
+We have demonstrated the feasibility of fixed-node DMC calculations for periodic solids using
+
+large multideterminant trial wavefunctions built from SCI expansions. Using as an example
+
+carbon diamond, this procedure is shown to be able to improve systematically the nodal surface
+
+of the trial wavefunction. In particular, we have found that the fixed-node DMC energy decreases
+
+monotonically and smoothly as a function of the number of determinants in the trial wavefunction.
+
+Performing DMC calculations using large CI expansions together with large supercells is not
+
+feasible without further approximations due to overall cost. Here, this issue was addressed by
+
+introducing an approximate, yet well-defined, protocol combining both exact and approximate
+
+results for finite supercells and a controlled fitting procedure to reach the thermodynamic limit.
+
+Although approximate, our estimate of the diamond cohesive energy is, to the best of our knowledge,
+
+the first example of a fully ab initio MD-DMC calculation of a periodic solid. In our protocol,
+
+only the Jastrow parameters are optimized in the VMC step, with the linear coefficients of the
+
+CIPSI expansions being kept fixed. The main motivation for not optimizing the coefficients is to
+
+exploit the property of SCI methods to provide in a simple, well-defined (linear optimization),
+
+24
+
+
+�
+�
+�
+�
+�
+��
+��
+��
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+-�����
+
+FIG. 6. Twist-averaged SD-DMC (red) and MD-DMC (black) total energies (in Hartree/cell) for the 2 × 2 × 2
+
+supercell as a function of twist index (16 independent twists out of the 216 reciprocal grid). Solid and dashed
+
+lines correspond to exact and approximate calculations [using Eq. (15)], respectively. The DMC energies at
+
+the various twist indices are connected by straight lines only to guide the eyes. The raw data can be found in
+
+the supplementary material.
+
+and systematic way of generating sequences of wavefunctions of increasing quality leading to
+
+a systematic reduction of the fixed-node error (see, Figs. 3 and 4). Defining such sequences
+
+is important, for example when extrapolating fixed-node energies at different supercell sizes or
+
+computing an energy difference such as the cohesive energy. However, the computational cost of
+
+using (very) large CI expansions in DMC calculations is high and strategies for generating more
+
+compact expansions are certainly desirable. Based on multideterminant DMC studies for isolated
+
+molecules (see, for example, Refs. 111,112, and 44) a practical solution consists of optimizing the
+
+CI coefficients in presence of the Jastrow factor and keeping only the most important determinants.
+
+However, such optimizations are challenging because the parameters in the Jastrow factors enter
+
+non-linearly and the objective function that one must minimize is evaluated stochastically. From a
+
+more general perspective, it would also be desirable to investigate the comparative performance
+
+25
+
+
+with other types of trial wavefunctions including those with backflow as introduced by P. López
+
+Ríos et al.110 (a first numerical comparison is presented in this work) or of geminal forms.113
+
+Finally, we note that, to exploit the full potential of the present approach, more challenging
+
+materials must be investigated. In addition, it would be instructive to compute physical properties
+
+other than the cohesive energy that would potentially display a different dependence on the nodal
+
+error. We hope to be able to address these points in future studies.
+
+SUPPLEMENTARY MATERIAL
+
+See the supplementary material for the raw data associated with each figure of the manuscript.
+
+VI.
+DATA AVAILABILITY STATEMENT
+
+The data that supports the findings of this study are available within the article and its supple-
+
+mentary material.
+
+ACKNOWLEDGMENTS
+
+Authors are grateful to Drs. Peter Doak and Qiming Sun for debugging and code implementations
+
+enabling simulations in respectively QMCPACK and PySCF. AS, PFL, and MC were supported by
+
+the ANR PhemSpec project, grant ANR-18-CE30-0025-02 of the French Agence Nationale de la
+
+Recherche and the international exchange program CNRS-PICS France-USA. AB, YL, CB, JK,
+
+PK and LS were supported by the U.S. Department of Energy, Office of Science, Basic Energy
+
+Sciences, Materials Sciences and Engineering Division, as part of the Computational Materials
+
+Sciences Program and Center for Predictive Simulation of Functional Materials. KG and KDJ
+
+acknowledge support from the National Science Foundation under grant CHE1762337. An award
+
+of computer time was provided by the Innovative and Novel Computational Impact on Theory
+
+and Experiment (INCITE) program. All QMC results used resources of the Argonne Leadership
+
+Computing Facility, which is a DOE Office of Science User Facility supported under Contract
+
+DE-AC02-06CH11357 and resources of the Oak Ridge Leadership Computing Facility, which is
+
+a DOE Office of Science User Facility supported under Contract DE-AC05-00OR22725. For the
+
+generation of the trial wavefunction, we gratefully acknowledge the computing resources provided
+
+on Bebop, a high-performance computing cluster operated by the Laboratory Computing Resource
+
+26
+
+
+Center at Argonne National Laboratory. Sandia National Laboratories is a multi-mission laboratory
+
+managed and operated by National Technology & Engineering Solutions of Sandia, LLC, a wholly
+
+owned subsidiary of Honeywell International Inc., for the U.S. Department of Energy National
+
+Nuclear Security Administration under contract DE-NA0003525.
+
+REFERENCES
+
+1P. Hohenberg and W. Kohn, Phys. Rev. 136, B864 (1964).
+
+2W. Kohn and L. J. Sham, Phys. Rev. 140, A1133 (1965).
+
+3R. G. Parr and W. Yang, Density-functional theory of atoms and molecules (Oxford, Clarendon
+
+Press, 1989).
+
+4L. Hedin, Phys. Rev. 139, A796 (1965).
+
+5G. Strinati, H. J. Mattausch, and W. Hanke, Phys. Rev. Lett. 45, 290 (1980).
+
+6E. E. Salpeter and H. A. Bethe, Phys. Rev. 84, 1232 (1951).
+
+7G. Strinati, Phys. Rev. B 29, 5718 (1984).
+
+8G. Strinati, Riv. Nuovo Cimento 11, 1 (1988).
+
+9R. M. Martin, Electronic Structure: Basic Theory and Practical Methods (Cambridge University
+
+Press, 2004).
+
+10R. M. Martin, L. Reining, and D. M. Ceperley, Interacting Electrons: Theory and Computational
+
+Approaches (Cambridge University Press, 2016).
+
+11S. Di Sabatino, J. A. Berger, L. Reining, and P. Romaniello, Phys. Rev. B 94, 155141 (2016).
+
+12S. Di Sabatino, J. A. Berger, and P. Romaniello, J. Chem. Theory Comput. 15, 5080 (2019).
+
+13C. Pisani, M. Busso, G. Capecchi, S. Casassa, R. Dovesi, L. Maschio, C. Zicovich-
+
+Wilson,
+and M. Schütz, The Journal of Chemical Physics 122, 094113 (2005),
+
+https://doi.org/10.1063/1.1857479.
+
+14J. McClain, Q. Sun, G. K.-L. Chan, and T. C. Berkelbach, J. Chem. Theory Comput. 13, 1209
+
+(2017).
+
+15T. Gruber, K. Liao, T. Tsatsoulis, F. Hummel, and A. Grüneis, Phys. Rev. X 8, 021043 (2018).
+
+16W. M. C. Foulkes, L. Mitas, R. J. Needs, and G. Rajagopal, Rev. Mod. Phys. 73, 33 (2001).
+
+17B. M. Austin, D. Y. Zubarev, and W. A. Lester, Chem. Rev. 112, 263 (2012).
+
+18G. H. Booth, A. J. W. Thom, and A. Alavi, J. Chem. Phys. 131, 054106 (2009).
+
+19G. Booth, A. Grüneis, G. Kresse, and A. Alavi, Nature 493, 365 (2013).
+
+27
+
+
+20S. Zhang, J. Carlson, and J. E. Gubernatis, Phys. Rev. B 55, 7464 (1997).
+
+21S. Zhang and H. Krakauer, Phys. Rev. Lett. 90, 136401 (2003).
+
+22M. Motta, D. M. Ceperley, G. K.-L. Chan, J. A. Gomez, E. Gull, S. Guo, C. A. Jiménez-Hoyos,
+
+T. N. Lan, J. Li, F. Ma, A. J. Millis, N. V. Prokof’ev, U. Ray, G. E. Scuseria, S. Sorella, E. M.
+
+Stoudenmire, Q. Sun, I. S. Tupitsyn, S. R. White, D. Zgid, and S. Zhang (Simons Collaboration
+
+on the Many-Electron Problem), Phys. Rev. X 7, 031059 (2017).
+
+23K. T. Williams, Y. Yao, J. Li, L. Chen, H. Shi, M. Motta, C. Niu, U. Ray, S. Guo, R. J. Anderson,
+
+J. Li, L. N. Tran, C.-N. Yeh, B. Mussard, S. Sharma, F. Bruneval, M. van Schilfgaarde, G. H.
+
+Booth, G. K.-L. Chan, S. Zhang, E. Gull, D. Zgid, A. Millis, C. J. Umrigar, and L. K. Wagner
+
+(Simons Collaboration on the Many-Electron Problem), Phys. Rev. X 10, 011041 (2020).
+
+24W. A. Lester, L. Mitas, and B. Hammond, Chem. Phys. Lett. 478, 1 (2009).
+
+25K. Nakano, C. Attaccalite, M. Barborini, L. Capriotti, M. Casula, E. Coccia, M. Dagrada,
+
+C. Genovese, Y. Luo, G. Mazzola, A. Zen, and S. Sorella, The Journal of Chemical Physics 152,
+
+204121 (2020), https://doi.org/10.1063/5.0005037.
+
+26A. Scemama, M. Caffarel, E. Oseret, and W. Jalby, in Lecture Notes in Computer Science
+
+(Springer Berlin Heidelberg, 2013) pp. 118–127.
+
+27R. J. Needs, M. D. Towler, N. D. Drummond, P. L. Ríos, and J. R. Trail, The Journal of Chemical
+
+Physics 152, 154106 (2020).
+
+28J. Kim, A. D. Baczewski, T. D. Beaudet, A. Benali, M. C. Bennett, M. A. Berrill, N. S. Blunt,
+
+E. J. L. Borda, M. Casula, D. M. Ceperley, S. Chiesa, B. K. Clark, R. C. Clay, K. T. Delaney,
+
+M. Dewing, K. P. Esler, H. Hao, O. Heinonen, P. R. C. Kent, J. T. Krogel, I. Kylänpää, Y. W. Li,
+
+M. G. Lopez, Y. Luo, F. D. Malone, R. M. Martin, A. Mathuriya, J. McMinis, C. A. Melton,
+
+L. Mitas, M. A. Morales, E. Neuscamman, W. D. Parker, S. D. P. Flores, N. A. Romero, B. M.
+
+Rubenstein, J. A. R. Shea, H. Shin, L. Shulenburger, A. F. Tillack, J. P. Townsend, N. M. Tubman,
+
+B. V. D. Goetz, J. E. Vincent, D. C. Yang, Y. Yang, S. Zhang, and L. Zhao, J. Phys.: Condens.
+
+Matter 30, 195901 (2018).
+
+29P. R. C. Kent, A. Annaberdiyev, A. Benali, M. C. Bennett, E. J. L. Borda, P. Doak, H. Hao, K. D.
+
+Jordan, J. T. Krogel, I. Kylänpää, J. Lee, Y. Luo, F. D. Malone, C. A. Melton, L. Mitas, M. A.
+
+Morales, E. Neuscamman, F. A. Reboredo, B. Rubenstein, K. Saritas, S. Upadhyay, G. Wang,
+
+S. Zhang, and L. Zhao, The Journal of Chemical Physics 152, 174105 (2020).
+
+30P. J. Reynolds, D. M. Ceperley, B. J. Alder, and W. A. Lester, J. Chem. Phys. 77, 5593 (1982).
+
+31D. M. Ceperley, J. Stat. Phys. 63, 1237 (1991).
+
+28
+
+
+32A. Benali, L. Shulenburger, N. A. Romero, J. Kim, and O. A. von Lilienfeld, J. Chem. Theory
+
+Comput. 10, 3417 (2014).
+
+33M. Dubecký, L. Mitas, and P. Jureˇcka, Chemical Reviews 116, 5188 (2016).
+
+34E. Giner, A. Scemama, and M. Caffarel, Can. J. Chem. 91, 879 (2013).
+
+35M. A. Morales, J. McMinis, B. K. Clark, J. Kim, and G. E. Scuseria, J. Chem. Theory Comput.
+
+8, 2181 (2012).
+
+36F. R. Petruzielo, J. Toulouse, and C. J. Umrigar, J. Chem. Phys. 136, 124116 (2012).
+
+37M. Caffarel, T. Applencourt, E. Giner, and A. Scemama, J. Chem. Phys. 144, 151103 (2016).
+
+38A. Scemama, M. Caffarel, A. Benali, D. Jacquemin, and P.-F. Loos, Res. Chem. 1, 100002
+
+(2019).
+
+39A. Scemama, Y. Garniron, M. Caffarel, and P. F. Loos, J. Chem. Theory Comput. 14, 1395
+
+(2018).
+
+40A. Scemama, A. Benali, D. Jacquemin, M. Caffarel, and P.-F. Loos, J. Chem. Phys. 149, 034108
+
+(2018).
+
+41M. Caffarel, T. Applencourt, E. Giner, and A. Scemama, ACS Symposium Series, Vol. 1234
+
+(American Chemical Society, 2016) Chap. 2, pp. 15–46, arXiv:1607.06742.
+
+42A. Scemama, T. Applencourt, E. Giner, and M. Caffarel, J. Chem. Phys. 141, 244110 (2014).
+
+43M. Dash, S. Moroni, A. Scemama, and C. Filippi, J. Chem. Theory Comput. 14, 4176 (2018).
+
+44M. Dash, J. Feldt, S. Moroni, A. Scemama, and C. Filippi, J. Chem. Theory Comput. 15, 4896
+
+(2019).
+
+45B. Huron, J. P. Malrieu, and P. Rancurel, J. Chem. Phys. 58, 5745 (1973).
+
+46Y. Garniron, K. Gasperich, T. Applencourt, A. Benali, A. Ferté, J. Paquier, B. Pradines, R. Assaraf,
+
+P. Reinhardt, J. Toulouse, P. Barbaresco, N. Renon, G. David, J. P. Malrieu, M. Véril, M. Caffarel,
+
+P. F. Loos, E. Giner, and A. Scemama, J. Chem. Theory Comput. 15, 3591 (2019).
+
+47C. F. Bender and E. R. Davidson, Phys. Rev. 183, 23 (1969).
+
+48J. L. Whitten and M. Hackmeyer, The Journal of Chemical Physics 51, 5584 (1969),
+
+https://doi.org/10.1063/1.1671985.
+
+49R. J. Buenker and S. D. Peyerimholf, Theor. Chim. Acta 35, 33 (1974).
+
+50R. J. Buenker and S. D. Peyerimholf, Theor. Chim. Acta 39, 217 (1975).
+
+51R. J. Buenker, S. D. Peyerimhoff, and W. Butscher, Mol. Phys. 35, 771 (1978).
+
+52S. Evangelisti, J.-P. Daudey, and J.-P. Malrieu, Chem. Phys. 75, 91 (1983).
+
+29
+
+
+53R.
+Cimiraglia,
+The
+Journal
+of
+Chemical
+Physics
+83,
+1746
+(1985),
+
+https://doi.org/10.1063/1.449362.
+
+54R. Cimiraglia and M. Persico, J. Comput. Chem. 8, 39 (1987).
+
+55F. Illas, J. Rubio, and J. M. Ricart, J. Chem. Phys. 89, 6376 (1988).
+
+56A. Povill, J. Rubio, and F. Illas, Theor. Chem. Acc. 82, 229 (1992).
+
+57M. L. Abrams and C. D. Sherrill, Chem. Phys. Lett. 412, 121 (2005).
+
+58C. F. Bunge and R. Carbó-Dorca, J. Chem. Phys. 125, 014108 (2006).
+
+59L. Bytautas and K. Ruedenberg, Chem. Phys. 356, 64 (2009).
+
+60M. Caffarel, E. Giner, A. Scemama, and A. Ramírez-Solís, J. Chem. Theory Comput. 10, 5286
+
+(2014).
+
+61E. Giner, A. Scemama, and M. Caffarel, J. Chem. Phys. 142, 044115 (2015).
+
+62Y. Garniron, A. Scemama, P.-F. Loos, and M. Caffarel, J. Chem. Phys. 147, 034101 (2017).
+
+63A. A. Holmes, N. M. Tubman, and C. J. Umrigar, Journal of Chemical Theory and Computation
+
+12, 3674 (2016), pMID: 27428771, http://dx.doi.org/10.1021/acs.jctc.6b00407.
+
+64S. Sharma, A. A. Holmes, G. Jeanmairet, A. Alavi, and C. J. Umrigar, J. Chem. Theory Comput.
+
+13, 1595 (2017).
+
+65A. A. Holmes, C. J. Umrigar, and S. Sharma, J. Chem. Phys. 147, 164111 (2017).
+
+66A. D. Chien, A. A. Holmes, M. Otten, C. J. Umrigar, S. Sharma, and P. M. Zimmerman, J. Phys.
+
+Chem. A 122, 2714 (2018).
+
+67P.-F. Loos, A. Scemama, A. Blondel, Y. Garniron, M. Caffarel, and D. Jacquemin, J. Chem.
+
+Theory Comput. 14, 4360 (2018).
+
+68Y. Garniron, A. Scemama, E. Giner, M. Caffarel, and P. F. Loos, J. Chem. Phys. 149, 064103
+
+(2018).
+
+69F. A. Evangelista, J. Chem. Phys. 140, 124114 (2014).
+
+70J. B. Schriber and F. A. Evangelista, J. Chem. Phys. 144, 161106 (2016).
+
+71J. B. Schriber and F. A. Evangelista, J. Chem. Theory Comput. 13, 5354 (2017).
+
+72W. Liu and M. R. Hoffmann, J. Chem. Theory Comput. 12, 1169 (2016).
+
+73M. C. Per and D. M. Cleland, J. Chem. Phys. 146, 164101 (2017).
+
+74Y. Ohtsuka and J. ya Hasegawa, J. Chem. Phys. 147, 034102 (2017).
+
+75P. M. Zimmerman, J. Chem. Phys. 146, 104102 (2017).
+
+76J. Li, M. Otten, A. A. Holmes, S. Sharma, and C. J. Umrigar, J. Chem. Phys. 149, 214110
+
+(2018).
+
+30
+
+
+77J. P. Coe, J. Chem. Theory Comput. 14, 5739 (2018).
+
+78P.-F. Loos, M. Boggio-Pasqua, A. Scemama, M. Caffarel, and D. Jacquemin, Journal of Chemical
+
+Theory and Computation 15, 1939 (2019), https://doi.org/10.1021/acs.jctc.8b01205.
+
+79P.-F. Loos, A. Scemama, and D. Jacquemin, The Journal of Physical Chemistry Letters 11, 2374
+
+(2020), pMID: 32125872, https://doi.org/10.1021/acs.jpclett.0c00014.
+
+80P. F. Loos, F. Lipparini, M. Boggio-Pasqua, A. Scemama, and D. Jacquemin, J. Chem. Theory
+
+Comput. 16, 1711 (2020).
+
+81J. S. Anderson, F. Heidar-Zadeh, and P. W. Ayers, Comput. Theor. Chem. 1142, 66 (2018).
+
+82J. Kolorenˇc and L. Mitas, Reports on Progress in Physics 74, 026502 (2011).
+
+83S. W. de Leeuw, J. W. Perram, and E. R. Smith, Proc. R. Soc. Lond. Ser. A 373, 27 (1980).
+
+84M. P. Allen and D. J. Tildesley, Computer Simulation of Liquids (Oxford: Oxford University
+
+Press, 1989).
+
+85H. J. Monkhorst and J. D. Pack, Phys. Rev. B 13, 5188 (1976).
+
+86P. M. W. Gill, M. Head-Gordon, and J. A. Pople, Int. J. Quantum Chem. 36, 269 (1989).
+
+87P. M. W. Gill and J. A. Pople, Int. J. Quantum Chem. 40, 753 (1991).
+
+88A. Szabo and N. S. Ostlund, Modern quantum chemistry (McGraw-Hill, New York, 1989).
+
+89A. Scemama and E. Giner, arXiv [physics.comp-ph] , 1311.6244 (2013).
+
+90Q. Sun, T. C. Berkelbach, N. S. Blunt, G. H. Booth, S. Guo, Z. Li, J. Liu, J. D. McClain, E. R.
+
+Sayfutyarova, S. Sharma, S. Wouters, and G. K. Chan, WIREs Comput. Mol. Sci. 8, e1340
+
+(2017).
+
+91P. Giannozzi, S. Baroni, N. Bonini, M. Calandra, R. Car, C. Cavazzoni, D. Ceresoli, G. L.
+
+Chiarotti, M. Cococcioni, I. Dabo, A. D. Corso, S. de Gironcoli, S. Fabris, G. Fratesi, R. Gebauer,
+
+U. Gerstmann, C. Gougoussis, A. Kokalj, M. Lazzeri, L. M-.Samos, N. Mazari, F. Mauri,
+
+R. Mazzarello, S. Paolini, A. Pasquarello, L. Paulatto, C. Sbraccia, S. Scandolo, G. Sclauzero,
+
+A. P. Seitsonen, A. Smogunov, P. Umari, and R. M. Wentzcovitch, J. Phys.: Condens. Matter 21,
+
+395502 (2009).
+
+92C. Lin, F. H. Zong, and D. M. Ceperley, Phys. Rev. E 64, 016702 (2001).
+
+93M. Burkatzki, C. Filippi, and M. Dolg, J. Chem. Phys. 126, 234105 (2007).
+
+94M. Burkatzki, C. Filippi, and M. Dolg, J. Chem. Phys. 129, 164115 (2008).
+
+95H. Shin, S. Kang, J. Koo, H. Lee, J. Kim, and Y. Kwon, J. Chem. Phys. 140, 114702 (2014).
+
+96M. Casula, Phys. Rev. B 74, 161102 (2006).
+
+31
+
+
+97C. J. Umrigar, J. Toulouse, C. Filippi, S. Sorella, and R. G. Hennig, Phys. Rev. Lett. 98, 110201
+
+(2007).
+
+98J. P. Perdew and A. Zunger, Physical Review B 23, 5048 (1981).
+
+99J. P. Perdew, K. Burke, and M. Ernzerhof, Phys. Rev. Lett. 77, 3865 (1996).
+
+100A. D. Becke, The Journal of Chemical Physics 98, 5648 (1993), https://doi.org/10.1063/1.464913.
+
+101C. Lee, W. Yang, and R. G. Parr, Phys. Rev. B 37, 785 (1988).
+
+102S. H. Vosko, L. Wilk,
+and M. Nusair, Canadian Journal of Physics 58, 1200 (1980),
+
+https://doi.org/10.1139/p80-159.
+
+103P. J. Stephens, F. J. Devlin, C. F. Chabalowski, and M. J. Frisch, The Journal of Physical
+
+Chemistry 98, 11623 (1994), https://doi.org/10.1021/j100096a001.
+
+104Data of Ref. 95 kindly provided by the authors.
+
+105L. Schimka, J. Harl, and G. Kresse, The Journal of Chemical Physics 134, 024116 (2011).
+
+106M. W. Chase and NIST, JANAF Thermodynamic Tables, Vol. 14 (American Chemical Society,
+
+[Washington, D.C.], 1985) pp. 61–65.
+
+107A. Scemama, T. Applencourt, E. Giner, and M. Caffarel, J. Comput. Chem. 37, 1866 (2016).
+
+108N. D. Drummond, R. J. Needs, A. Sorouri, and W. M. C. Foulkes, Phys. Rev. B 78, 125106
+
+(2008).
+
+109R. Q. Hood, P. R. C. Kent, R. J. Needs, and P. R. Briddon, Phys. Rev. Lett. 91, 076403 (2003).
+
+110P. López Ríos, A. Ma, N. D. Drummond, M. D. Towler, and R. J. Needs, Phys. Rev. E 74,
+
+066701 (2006).
+
+111J. Toulouse and C. J. Umrigar, The Journal of Chemical Physics 128, 174101 (2008),
+
+https://doi.org/10.1063/1.2908237.
+
+112E.
+Giner,
+R.
+Assaraf,
+and
+J.
+Toulouse,
+Molecular
+Physics
+114,
+910
+(2016),
+
+https://doi.org/10.1080/00268976.2016.1149630.
+
+113C. Genovese, T. Shirakawa, K. Nakano, and S. Sorella, arXiv (2020), 2002.03347.
+
+32
+
+

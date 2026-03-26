@@ -1,0 +1,2494 @@
+Representations of Materials for Machine Learning∗
+
+James Damewood1, Jessica Karaguesian1,2, Jaclyn R. Lunger1, Aik Rui Tan1, Mingrou Xie1,3,
+Jiayu Peng1, and Rafael G´omez-Bombarelli†1
+
+1Department of Materials Science and Engineering, Massachusetts Institute of Technology, 77
+Massachusetts Avenue, Cambridge, USA, 02129
+2Center for Computational Science and Engineering, Massachusetts Institute of Technology, 77
+Massachusetts Avenue, Cambridge, MA, USA, 02139
+3Department of Chemical Engineering, Massachusetts Institute of Technology, 77
+Massachusetts Avenue, Cambridge, MA, USA, 02139
+
+January 24, 2023
+
+Abstract
+
+High-throughput data generation methods and machine learning (ML) algorithms have given
+rise to a new era of computational materials science by learning relationships among composition,
+structure, and properties and by exploiting such relations for design.
+However, to build these
+connections, materials data must be translated into a numerical form, called a representation, that
+can be processed by a machine learning model. Datasets in materials science vary in format (ranging
+from images to spectra), size, and fidelity. Predictive models vary in scope and property of interests.
+Here, we review context-dependent strategies for constructing representations that enable the use
+of materials as inputs or outputs of machine learning models. Furthermore, we discuss how modern
+ML techniques can learn representations from data and transfer chemical and physical information
+between tasks. Finally, we outline high-impact questions that have not been fully resolved and thus,
+require further investigation.
+
+Contents
+
+1
+INTRODUCTION
+2
+
+2
+STRUCTURAL FEATURES FOR ATOMISTIC GEOMETRIES
+3
+2.1
+Local Descriptors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+2.2
+Global Descriptors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+2.3
+Topological Descriptors
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+7
+
+3
+LEARNING ON PERIODIC CRYSTAL GRAPHS
+8
+
+4
+CONSTRUCTING REPRESENTATIONS FROM STOICHIOMETRY
+11
+
+5
+DEFECTS, SURFACES, AND GRAIN BOUNDARIES
+13
+
+6
+TRANSFERABLE INFORMATION BETWEEN REPRESENTATIONS
+15
+
+∗Accepted for publication in Annual Review of Materials Research Volume 53, https://www.annualreviews.org/.
+†rafagb@mit.edu
+
+1
+
+arXiv:2301.08813v1  [cond-mat.mtrl-sci]  20 Jan 2023
+
+
+7
+GENERATIVE MODELS FOR INVERSE DESIGN
+17
+
+8
+DISCUSSION
+19
+8.1
+Trade-offs of Local and Global Structural Descriptors
+. . . . . . . . . . . . . . . . . . .
+19
+8.2
+Prediction from Unrelaxed Crystal Prototypes . . . . . . . . . . . . . . . . . . . . . . . .
+19
+8.3
+Applicability of Compositional Descriptors . . . . . . . . . . . . . . . . . . . . . . . . . .
+20
+8.4
+Extensions of Generative Models . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+20
+
+1
+INTRODUCTION
+
+Energy and sustainability applications demand the rapid development of scalable new materials tech-
+nologies. Big data and machine learning (ML) have been proposed as strategies to rapidly identify
+“needle-in-the-haystack” materials that have the potential for revolutionary impact.
+High-throughput experimentation platforms based on robotized laboratories can increase the effi-
+ciency and speed of synthesis and characterization. However, in many practical open problems, the
+number of possible design parameters is too large to be analyzed exhaustively.
+Virtual screening
+somewhat mitigates this challenge by using physics-based simulations to suggest the most promising
+candidates, reducing the cost but also the fidelity of the screens[1, 2, 3].
+Over the past decade, hardware improvements, new algorithms, and the development of large-scale
+repositories of materials data [4, 5, 6, 7, 8, 9] have enabled a new era of ML methods. In principle,
+predictive ML models can identify and exploit nontrivial trends in high-dimensional data to achieve
+accuracy comparable with or superior to first-principles calculations, but with orders of magnitude
+reduction in cost. In practice, while a judicious model choice is helpful in moving towards this ideal,
+such ML methods are also highly dependent on the numerical inputs used to describe systems of
+interest—the so-called representations. Only when the representation is composed of a set of features
+and descriptors from which the desired physics and chemistry are emergent can the promise of ML be
+achieved.
+Thus, the problem that materials informatics researchers must answer is: how can we best con-
+struct this representation? Previous works have provided practical advice for constructing materials
+representations [10, 11, 12, 13, 14], namely that: (1) the similarity/difference between two data points
+should match the similarity/difference between representations of those two data points, (2) the repre-
+sentation should be applicable to the entire materials domain of interest, (3) the representation should
+be easier to calculate than the target property.
+Representations should reflect the degree of similarity between data points such that similar data
+have similar representations and as data points become more different their representations diverge.
+Indeed, the definition of similarity will depend on the application. Consider, as an example, a hypothet-
+ical model predicting the electronegativity of an element, excluding Nobel gases. One could attempt
+to train the model using atomic number as input, but this representation violates the above principle,
+as atoms with a similar atomic number can have significantly different electronegativities (e.g. fluorine
+and sodium), forcing the model to learn a sharply varying function whose changes appear at irregular
+intervals. Alternatively, a representation using period and group numbers would closely group elements
+with similar atomic radii and electron configurations. Over this new domain, the optimal prediction
+will result in a smoother function that is easier to learn.
+The approach used to extract representation features from raw inputs should be feasible over the
+entire domain of interest—all data points used in training and deployment. If data required to construct
+the representation is not available for a particular material, ML screening predictions cannot be made.
+Finally, for the ML approach to remain a worthwhile investment, the computational cost of obtain-
+ing representation features and descriptors for new data should be smaller than that of obtaining the
+property itself through traditional means, either experimentally or with first-principles calculations. If,
+
+2
+
+
+for instance, accurately predicting a property calculated by density functional theory (DFT) with ML
+requires input descriptors obtained from DFT on the same structure and at the same level of theory,
+the machine learning model does not offer any benefit.
+A practicing materials scientist will notice a number of key barriers to forming property-informative
+representations that satisfy these criteria. First, describing behavior often involves quantifying structure-
+to-property relationships across length scales. The diversity of possible atomistic structure types con-
+sidered can vary over space groups, supercell size, and disorder parameters. This challenge motivates
+researchers to develop flexible representations capable of capturing local and global information based
+on atomic positions. Beyond this idealized picture, predicting material performance relies upon under-
+standing the presence of defects, the characteristics of the microstructure, and reactions at interfaces.
+Addressing these concerns requires extending previous notions of structural similarity or developing new
+specialized tools. Furthermore, atomistic structural information is not available without experimen-
+tal validation or extensive computational effort [15, 16]. Therefore, when predictions are required for
+previously unexplored materials, models must rely on more readily available descriptors such as those
+based on elemental composition and stoichiometry. Lastly, due to experimental constraints, datasets
+in materials science can often be scarce, sparse, and restricted to relatively few and self-similar exam-
+ples. The difficulty in constructing a robust representation in these scenarios has inspired strategies to
+leverage information from high-quality representations built for closely related tasks through transfer
+learning.
+In this review, we will analyze how representations of solid-state materials (Figure 1) can be
+developed given constraints on the format, quantity, and quality of available data. We will discuss
+the justification, benefits, and trade-offs of different approaches. This discussion is meant to highlight
+methods of particular interest rather than provide exhaustive coverage of the literature. We will discuss
+current limitations and open problems whose solutions would have high impact. In summary, we intend
+to provide readers with an introduction to current state of the field and exciting directions for future
+research.
+
+2
+STRUCTURAL FEATURES FOR ATOMISTIC GEOMETRIES
+
+Simple observations in material systems (e.g. higher ductility of face-centered cubic metals compared
+to body-centered cubic metals) have made it evident that material properties are highly dependent on
+crystal structure—from coordination and atomic ordering to broken symmetries and porosity. For a
+computational material scientist, this presents the question of how to algorithmically encode informa-
+tion from a set of atoms types (a1, a2, a3, ...), positions (x1, x2, x3, ...), and primitive cell parameters
+into a feature set that can be effectively utilized in machine learning.
+For machine learning methods to be effective, it is necessary that the machine-readable represen-
+tation of a material’s structure fulfills the criteria as outlined in the introduction [10, 11, 12, 13, 14].
+Notably, scalar properties (such as heat capacity or reactivity) do not change when translations, rota-
+tions, or permutations of atom indexing are applied to the atomic coordinates. Therefore, to ensure
+representations reflect the similarities between atomic structures, the representations should also be
+invariant to those symmetry operations.
+
+2.1
+Local Descriptors
+
+One strategy to form a representation of a crystal structure is to characterize the local environment
+of each atom and consider the full structure as a combination local representations. This concept was
+applied by Behler and Parinello[26], who proposed the atom-centered symmetry functions (ACSF).
+ACSF descriptors (Figure 2a) can be constructed using radial, G1
+i , and angular, G2
+i , symmetry
+
+3
+
+
+b
+
+c
+
+a
+
+Transfer Learning
+
+Structural
+
+Generative Models
+
+Defects
+
+Graphical
+
+Compositional
+
+Atom
+Concentration
+Radius
+Electronegativity
+
+0.60%
+
+0.20%
+
+0.20%
+
+a
+
+211 pm
+
+152 pm
+
+249 pm
+
+3.44
+
+1.54
+
+0.95
+
+c
+
+a
+
+b
+
+b
+
+c
+
+a
+
+c
+
+b
+
+a
+
+c
+
+a
+
+b
+
+b
+
+c
+
+a
+
+b
+
+c
+
+a
+
+b
+
+c
+
+a
+
+Δ Atomic Weight
+Δ Valence e-
+Δ Coordinate Number
+…
+
+Change Rel. to Bulk
+
+b
+
+c
+
+a
+
+c
+
+b
+
+a
+
+b
+
+c
+
+a
+
+b
+
+c
+
+a
+
+b
+
+c
+
+a
+
+Figure 1: Summary of representations for perovskite SrTiO3. Top Left. 2D cross section of Voronoi
+decomposition. Predictive features can be constructed from neighbors and geometric shape of cells [17].
+Middle Left. Crystal graph of SrTiO3 constructed assuming periodic boundary conditions and used
+as input to graph neural networks [18]. Bottom Left. Compositional data including concentrations
+and easily accessible atomic features including electronegativities and atomic radii [19]. Data taken
+from Reference [20].
+Top Right.
+Deviations on a pristine bulk structure induced by an oxygen
+vacancy to predict formation energy [21]. Middle Right. Representations can be learned from large
+repositories using deep neural networks. The latent physical and chemical information can be leveraged
+in related but data-scare tasks. Bottom Right. Training of generative models capable of proposing
+new crystal structures by placing atoms in discretized volume elements [22, 23, 24, 25].
+
+functions centered on atom i,
+
+G1
+i =
+
+neighbors
+�
+
+j̸=i
+e−η(Rij−Rs)2fc(Rij)
+(1)
+
+G2
+i = 21−ζ
+neighbors
+�
+
+j,k̸=i
+(1 + λ cos θijk)ζe−η(R2
+ij+R2
+ik+R2
+jk)fc(Rij)fc(Rik)fc(Rjk)
+(2)
+
+with the tunable parameters λ, Rs, η, and ζ. Rij is the distance between the central atom i and
+atom j, and θijk corresponds to the angle between the vector from the central atom to atom j and
+the vector from the central atom to atom k. The cutoff function fc screens out atomic interactions
+beyond a specified cutoff radius and ensures locality of the atomic interactions. Because symmetry
+functions rely on relative distances and angles, they are rotationally and translationally invariant. Local
+representations can be constructed from many symmetry functions of the type G1
+i and G2
+i with multiple
+settings of tunable parameters to probe the environment at varying distances and angular regions.
+With the set of localized symmetry functions, neural networks can then predict local contributions to a
+particular property and approximate global properties as the sum of local contributions. The flexibility
+of this approach allows for modification of the G1
+i and G2
+i functions [27, 28] or higher capacity neural
+networks for element-wise prediction [28].
+
+4
+
+
+In search of a representation with fewer hand-tuned parameters and a more rigorous definition
+of similarity, Bartok et al. [12] proposed a rotationally invariant kernel for comparing environments
+based on local atomic density. Given a central atom, the Smooth Overlap of Atomic Positions (SOAP)
+defines the atomic density function ρ(r) as a sum of Gaussian functions centered at each neighboring
+atom within a cutoff radius (Figure 2b). The choice of Gaussian function is motivated by the intuition
+that representations should be continuous such that small changes in atomic positions should result
+in correspondingly small changes in the metric between two configurations. With a basis of radial
+functions gn(r) and spherical harmonics Ylm(θ, φ), ρ(r) for central atom i can be expressed as:
+
+ρi(r) =
+�
+
+j
+exp −|r − rij|2
+
+2σ2
+=
+�
+
+nlm
+cnlmgn(r)Ylm(ˆr)
+(3)
+
+and the kernel can be computed[12, 29]:
+
+K(ρ, ρ′) = p(r) · p′(r)
+(4)
+
+p(r) ≡
+�
+
+m
+cnlm(cn′lm)∗
+(5)
+
+where cnlm are the expansion coefficients in Equation 3.
+In practice, p(r) can be used as a
+vector descriptor of the local environment and is also referred to as a power spectrum [12]. SOAP
+has demonstrated extraordinary versatility for materials applications both as a tool for measuring
+similarity [30] and as a descriptor for machine learning algorithms [31]. Furthermore, the SOAP kernel
+can be used to compare densities of different elements by adding an additional factor that provides a
+definition for similarity between atoms, where for instance, atoms in the same group could have higher
+similarity [29]. The mathematical connections between different local atomic density representations
+including ACSFs and SOAP are elucidated by a generalized formalism introduced by Willatt et al.
+[32], offering a methodology through which the definition of new variants can be clarified.
+Instead of relying on the density of nearby atoms, local representations can be derived from a
+Voronoi tessellation of a crystal structure. The Voronoi tessellation segments space into cells such
+that each cell contains one atom and all points in space such that atom A is the closest atom are
+contained in the same cell as atom A (Figure 2c). From these cells, Ward et al. [17] identified a set of
+descriptive features including an effective coordination number computed using the area of the faces,
+the lengths and volumes of nearby cells, ordering of the cells based on elements, and atomic properties
+of nearest neighbors weighted by the area of the intersecting face. When combined with compositional
+features [19], their representation results in better performance on predictions of formation enthalpy
+for ICSD than partial radial distribution functions [33] (Figure 1 in Reference [17]). In subsequent
+work, these descriptors have facilitated the prediction of experimental heat capacities in MOFs [34].
+Similarly, Isayev et al. [35] replaced faces of the Voronoi tessellation with virtual bonds and separated
+the resulting framework into sets of linear (up to four atoms) and shell-based (up to nearest neighbors)
+fragments. Additional features related to the atomic properties of constituent elements were associated
+with each fragment, and the resulting vectors were concatenated with attributes of the supercell. In
+addition to demonstrating accurate predictive capabilities, models could be interpreted through the
+properties of the various fragments. For instance, predictions of band gap could be correlated with
+the difference in ionization potential in two-atom linear fragments, a trend that could be exploited to
+design material’s properties through tuning of composition[35].
+
+2.2
+Global Descriptors
+
+Alternatively, to more explicitly account for interactions beyond a fixed cutoff, atom types and positions
+can be encoded into a global representation that reflects geometric and physical insight. Inspired by the
+
+5
+
+
+(a)
+(b)
+(c)
+
+(d)
+(e)
+
+Rij
+
+Gi
+1
+
+θijk
+
+ζ
+η
+
+Gi
+2
+
+7
+5
+
+4
+2
+
+3
+1
+
+8
+6
+
+9
+
+1-1 1-2 1-3 1-4 1-5 1-6 1-7 1-8 1-9
+
+2-1
+
+3-1
+
+4-1
+
+5-1
+
+6-1
+
+7-1
+
+8-1
+
+9-1
+
+2-2
+
+3-3
+
+4-4
+
+5-5
+
+6-6
+
+7-7
+
+8-8
+
+9-9
+
+Death
+
+Birth
+
+Figure 2:
+(a) Examples of radial, G1
+i , and angular, G2
+i , symmetry functions from the local atom-
+centered symmetry function descriptor proposed by Behler and Parinello[26].
+(b) In the Smooth
+Overlap of Atomic Positions (SOAP) descriptor construction, the atomic neighborhood density of a
+central atom is defined by a sum of Gaussian functions around each neighboring atom.
+A kernel
+function can then be built to compare the different environments by computing the density overlap of
+the atomic neighborhood functions. Figure is reprinted from reference [36]. (c) Voronoi tessellation
+in two and three dimensions. Yellow circles and spheres show particles while the blue lines divide
+equidistantly the space between two neighboring particles. Polygonal spaces encompassed by the blue
+lines are the Voronoi cells. Figure is reprinted from reference [37]. (d) Illustration of a Coulomb matrix
+where each element in the matrix shows Coulombic interaction between the labeled particles in the
+system on the left. Diagonal elements show self-interactions. (e) The births and deaths of topological
+holes in a point cloud (left) are recorded on a persistence diagram (right).
+Persistent features lie
+far from the parity line and indicate more significant topological features. Feature is reprinted from
+reference [38].
+
+importance of electrostatic interactions in chemical stability, Rupp et al. [39] proposed the Coulomb
+matrix (Figure 2d), which models the potential between electron clouds:
+
+Mi,j =
+
+�
+Z2.4
+i
+for i = i
+ZiZj
+|ri−rj|
+for i ̸= j
+(6)
+
+Due to the fact that off-diagonal elements are only dependent on relative distances, Coulomb ma-
+trices are rotation and translation invariant. However, the representation is not permutation invariant
+since changing the labels of the atoms will rearrange the elements of the matrix. While originally
+developed for molecules, the periodicity of crystal structures can be added to the representation by
+considering images of atoms in adjacent cells, replacing the
+1
+
+|ri−rj| dependence with another function
+with the same small distance limit and periodicity that matches the parent lattice, or using an Ewald
+sum to account for long range interactions [11]. BIGDML [40] further improved results by restricting
+predictions from the representation to be invariant to all symmetry operations within the space group
+of the parent lattice and demonstrated effective implementations on tasks ranging from H interstitial
+diffusion in Pt to phonon density of states. While this approach has been able to effectively model
+long-range physics, these representations rely on a fixed supercell and may not be able to achieve the
+
+6
+
+
+same chemical generality as local environments [40].
+Global representations have also been implemented with higher-order tensors. Partial radial distri-
+bution functions (PRDF) are 3D non-permutation invariant matrices gαβr whose elements correspond
+to the density of element β in the environments of element α at radius r [33]. The many-body tensor
+representation (MBTR) provides a more general framework [10] that can quantify k-body interactions
+and account for chemical similarity between elements. The MBTR is translationally, rotationally, and
+permutation invariant and can be applied to crystal structures by only summing over atoms in the
+primitive cell. While MBTR exhibited better performance than SOAP or Coulomb matrices for small
+molecules, its accuracy may not extend to larger systems [10].
+Another well-established method for representing crystal structures in materials science is the
+cluster expansion.
+Given a parent lattice and a decoration σ defining the element that occupies
+each site, Sanchez et al. sought to map this atomic ordering to material properties and proposed
+evaluating the correlations between sites through a set of cluster functions. Each cluster function Φ is
+constructed from a product of basis functions φ, over a subset of sites [41]. To ensure the representation
+is appropriately invariant, symmetrically equivalent clusters are grouped into classes denoted by α.
+The characteristics of the atomic ordering can be quantified by averaging cluster functions over the
+decoration < Φα >σ, and properties q of the configuration can be predicted as:
+
+q(σ) =
+�
+
+α
+Jαmα < Φα >σ
+(7)
+
+where mα is a multiplicity factor that accounts for the rate of appearance of different cluster types,
+and Jα are parameters referred to as effective cluster interactions that must be determined from fits
+to data [42]. While cluster expansions have been constructed for decades and provided useful models
+for configurational disorder and alloy thermodynamics [42], cluster expansions assume the structure of
+the parent lattice and models cannot generally be applied across different crystal structures [43, 44].
+Furthermore, due to the increasing complexity of selecting cluster functions, implementations are
+restricted to binary and ternary systems without special development [45]. Additional research has
+extended the formalism to continuous environments (Atomic Cluster Expansion) by treating σ as
+pairwise distances instead of site-occupancies and constructing φ from radial functions and spherical
+harmonics [46]. The Atomic Cluster Expansion framework has provided a basis for more sophisticated
+deep learning approaches [47].
+
+2.3
+Topological Descriptors
+
+Topological data analysis (TDA) has found favor over the past decade in characterizing structure
+in complex, high-dimensional datasets.
+When applied to the positions of atoms in amorphous or
+crystalline structures, topological methods reveal underlying geometric features that inform behavior
+in downstream predictions such as phase changes, reactivity, and separations. In particular, persistent
+homology (PH) is able to identify significant structural descriptors that are both machine readable and
+physically interpretable. The data can be probed at different length scales (formally called filtrations)
+by computing a series of complexes that each include all sets of points where all pairwise distances are
+less than the corresponding length [48]. Analysis of complexes by homology in different dimensions
+reveals holes or voids in the data manifold, which can be described by the range of length scales they
+are observed at (persistences), as well as when they are produced (births) and disappear (deaths).
+Emergent features with significant persistence values are less likely to be caused by noise in the data
+or as an artifact of the chosen length scales. In practice, multiple persistences, births, and deaths
+produced from a single material can be represented together by persistent diagrams (Figure 2e) or
+undergo additional feature engineering to generate a variety of descriptors as machine learning inputs
+[49].
+
+7
+
+
+While persistent homology has been applied to crystal structures in the Open Quantum Material
+Database [50], the method is particularly useful in the analysis of porous materials. The identified
+features (births, deaths, persistences) hold direct physical relevance to traditional structural features
+used to describe the pore geometries. For instance, persistent 2D deaths represent the largest sphere
+that can be included inside the pores of the materials. Krishnapriyan et al. has showed that these
+topological descriptors outperform traditional structural descriptors when predicting carbon dioxide
+adsorption under varying conditions for metal-organic frameworks [38], as did Lee et al. for zeolites
+for methane storage capacities [51].
+Representative cycles can trace the topological features back
+to the atoms that are responsible for the hole or the void, creating a direct relationship between
+structure and predicted performance (Figure 4 in Reference [38]). Similarity methods for comparing
+barcodes can then be used to identify promising novel materials with similar pore geometries for
+targeted applications.
+A caveat is that PH does not inherently account for system size and is thus size-dependent. The ra-
+dius cutoff, or the supercell size, needs to be carefully considered to encompass all significant topological
+features and allow comparison across systems of interest. In the worst case scenario, the computation
+cost per filtration for a structure is O(N3), where N is the number of sets of points defining a com-
+plex. Although the cost is alleviated by the sparsity of the boundary matrix [52], the scaling is poor
+for structures whose geometric features exceed unit cell lengths. The benefit of using PH features to
+capture more complex structural information has to be carefully balanced with the cost of generating
+these features.
+
+3
+LEARNING ON PERIODIC CRYSTAL GRAPHS
+
+In the previous section, we described many physically-inspired descriptors that characterize materials
+and can be used to efficiently predict properties. The use of differentiable graph-based representations
+in convolutional neural networks, however, mitigates the need for manual engineering of descriptors
+[53, 54]. Indeed, advances in deep learning and the construction of large-scale materials databases
+[4, 5, 6, 7, 8, 9] have made it possible to learn representations directly from structural data. From a
+set of atoms a1, a2, ... located at positions x1, x2, x3, ..., materials can be converted to a graph G(V, E)
+defined as the set of atomic nodes V and the set of edges E connecting neighboring atoms. Many
+graph-based neural network architectures were originally developed for molecular systems, with edges
+representing bonds. By considering periodic boundary conditions and defining edges as connections
+between neighbors within a cutoff radius, graphical representations can be leveraged for crystalline
+systems. The connectivity of the crystal graph thus naturally encodes local atomic environments [18].
+When used as input to machine learning algorithms, the graph nodes and edges are initialized
+with an associated set of features. Nodal features can be as simple as a one-hot vector of the atomic
+number or can explicitly include other properties of the atomic species (e.g. electronegativity, group,
+period). Edge features are typically constructed from the distance between the corresponding atoms.
+Subsequently, a series of convolutions parameterized by neural networks modify node and/or edge
+features based on the current state of their neighborhood (Figure 3a). As the number of convolutions
+increases, interactions from further away in the structure can propagate, and graph features become
+tuned to reflect the local chemical environment. Finally, node and edge features can be pooled to form
+a single vector representation for the material [53, 55].
+Crystal Graph Convolution Neural Networks (CGCNN) [18] and Materials Graph Networks (MEG-
+Net) [56] have become benchmark algorithms capable of predicting properties across solid-state mate-
+rials domains including bulk, surfaces, disordered systems, and 2D materials [57, 58]. Atomistic Line
+Graph Neural Network (ALIGNN) extended these approaches by including triplet three-body features
+in addition to nodes and edges and exhibited superior performance to CGCNN over a broad range of
+regression tasks including formation energy, bandgap, and shear modulus [59]. Other variants have
+
+8
+
+
+used information from Voronoi polyhedra to construct graphical neighborhoods and augment edge
+features [60] or initialized node features based on the geometry and electron configuration of nearest
+neighbor atoms [61].
+
+pmax
+
+pmin
+
+Property p
+
++
+
+Convolutional
+
+Layers
+
+Fully Connected
+
+Layers
+
+(a)
+(b)
+(c)
+
+Pooling
+
+Relaxed
+Structure
+
+Unrelaxed
+Structure
+
+(a)
+(b)
+
+(c)
+(d)
+
+θ
+θ
+
+θ
+
+| r |
+| r |
+
+| r |
+| r |
+
+ r 
+ r 
+
+ r 
+ r 
+
+Invariant representation
+Equivariant representation
+
+R2
+
+CGCNN
+
+CGCNN with 
+longer neighbor list
+
+CGCNN with 
+more convolutions
+
+� (short)
+� (long)
+
+0.0
+
+1.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+� (long)
+
+� (short)
+
+�
+�
+
+Receptive feld of atom��
+
+�
+
+Figure 3:
+(a) General architecture of graph convolutional neural networks for property prediction in
+crystalline systems. Three-dimensional crystal structure is represented as a graph with nodes repre-
+senting atoms and edges representing connections between nearby atoms. Features (e.g. nodal, edge,
+angular) within local neighborhoods are convolved, pooled into a crystal-wide vector, then mapped to
+the target property. Figure adapted from [62]. (b) Information loss in graphs built from pristine struc-
+tures. Geometric distortions of ground-state crystal structures are captured as differing edge features in
+graphical representations. This information is lost in graphs constructed from corresponding unrelaxed
+structures. (c) Graph-based models can struggle to capture periodicity-dependent properties, such as
+cell lattice parameters. R2 scores presented here were reported by Gong et al. for lattice parameter,
+a, predictions in short and long 1D single carbon chain toy structures. Figure adapted from [63]. (d)
+Ability of graphical representations to distinguish toy structures. Assuming a sufficiently small cutoff
+radius, the invariant representation—using edge lengths and/or angles—cannot distinguish the two toy
+arrangements, while the equivariant representation with directional features can. Figure adapted from
+[64].
+
+While these methods have become widespread for property prediction, graph convolution updates
+based only on the local neighborhood may limit the sharing of information related to long-range
+interactions or extensive properties. Gong et al. demonstrated that these models can struggle to learn
+materials properties reliant on periodicity, including characteristics as simple as primitive cell lattice
+parameters (Figure 3c)[63].
+As a result, while graph-based learning is a high-capacity approach,
+performance can vary substantially by the target use case.
+In some scenarios, methods developed
+primarily for molecules can be effectively implemented “out-of-the-box” with the addition of periodic
+boundary conditions, but especially in the case of long-range physical phenomena, optimal results can
+require specialized modeling.
+Various strategies to account for this limitation have been proposed. Gong et al. found that if
+the pooled representation after convolutions was concatenated with human-tuned descriptors, errors
+could be reduced by 90% for related predictions, including phonon internal energy and heat capacity
+[63]. Algorithms have attempted to more explicitly account for long-range interactions by modulating
+convolutions with a mask defined by a local basis of Gaussians and a periodic basis of plane waves
+
+9
+
+
+[65], employing a unique global pooling scheme that could include additional context such as stoi-
+chiometry [66], or constructing additional features from the reciprocal representation of the crystal
+[67]. Other strategies have leveraged assumptions about the relationships among predicted variables,
+such as representing phonon spectra using a Gaussian mixture model [68].
+Given the promise and flexibility of graphical models, improving the data-efficiency, accuracy,
+generalizability, and scalability of these representations are active areas of research. While our previous
+discussion of structure-based material representations relied on the invariance of scalar properties to
+translation and rotation, this characteristic does not continue to hold for higher-order tensors. Consider
+a material with a net magnetic moment. If the material is rotated 180◦ around an axis perpendicular
+to the magnetization, the net moment then points in the opposite direction. The moment was not
+invariant to the rotation but instead, transformed alongside the operation in an equivariant manner
+[69]. For a set of transformations described by group G, equivariant functions f satisfy g∗f(x) = f(g∗x)
+for every input x and every group element g [69, 70]. Recent efforts have shown that by introducing
+higher-order tensors to node and edge features (Figure 3d) and restricting the update functions
+such that intermediate representations are equivariant to the group E3 (encompassing translations,
+rotations, and reflections in R3), models can achieve state-of-the-art accuracy on benchmark datasets
+and even exhibit comparable performance to structural descriptors in low-data (∼100 datapoints)
+regimes [71, 69, 64]. Further accuracy improvements can be made by explicitly considering many-body
+interactions beyond edges [72, 73, 47]. Such models, developed for molecular systems, have since been
+extended to solid-state materials and shown exceptional performance. Indeed, Chen et al. trained an
+equivariant model to predict phonon density of states and was able to screen for high heat capacity
+targets [74], tasks identified to be particularly challenging for baseline CGCNN and MEGNet models
+[63]. Therefore, equivariant representations may offer a more general alternative to the specialized
+architectures described above.
+A major restriction of these graph-based approaches is the requirement for the positions of atomic
+species to be known. In general, ground-state crystal structures exhibit distortions that allow atoms
+to break symmetries, which are computationally modeled with expensive DFT calculations. Graphs
+generated from pristine structures lack representation of relaxed atomic coordinates (Figure 3b) and
+resulting model accuracy can degrade substantially [75, 76]. These graph-based models are therefore
+often most effective at predicting properties of systems for which significant computational resources
+have already been invested, thus breaking advice (3) from Section 1. As a result, their practical usage
+often remains limited when searching broad regions of crystal space for an optimal material satisfying
+a particular design challenge.
+Strategies have therefore been developed to bypass the need for expensive quantum calculations
+and use unrelaxed crystal prototypes as inputs. Gibson et al. trained CGCNN models on datasets
+composed of both relaxed structures and a set of perturbed structures that map to the same property
+value as the fully relaxed structure. The data-augmentation incentivizes the CGCNN model to predict
+similar properties within some basin of the fully relaxed structure and was demonstrated to improve
+prediction accuracy on an unrelaxed test set [76]. Alternatively, graph-based energy models can be
+used to modify unrelaxed prototypes by searching through a fixed set of possibilities [77] or using
+Bayesian optimization [78] to find structures with lower energy. Lastly, structures can be relaxed using
+cheap surrogate model (e.g. a force field) before a final prediction is made. The accuracy and efficiency
+of such a procedure will fundamentally rely on the validity and compositional generalizability of the
+surrogate relaxation approach [75].
+
+10
+
+
+4
+CONSTRUCTING REPRESENTATIONS FROM STOICHIOM-
+ETRY
+
+The phase, crystal system, or atomic positions of materials are not always available when modeling
+materials systems, rendering structural and graphical representations impossible to construct.
+In
+the absence of this data, material representations can also be built purely from stoichiometry (the
+concentration of the constituent elements) and without knowledge of the geometry of the local atomistic
+environments. Despite their lack of structural information and apparent simplicity, these methods
+provide unique benefits for materials science researchers. First, descriptors used to form compositional
+representations such as common atomic properties (e.g. atomic radii, electronegativity) do not require
+computational overhead and can be readily found in existing databases [19]. In addition, effective
+models can often be built using standard algorithms for feature selection and prediction that are
+implemented in freely available libraries [79], increasing accessibility to non-experts when compared
+with structural models. Lastly, when used as tools for high-throughput screening, compositional models
+identify a set of promising elemental concentrations.
+Compared with the suggestion of particular
+atomistic geometries, stoichiometric approaches may be more robust, as they make weaker assumptions
+about the outcomes of attempted syntheses.
+Compositional-based rules have long contributed to efficient materials design. Hume-Rothery and
+Linus Pauling designed rules for determining the formation of solid solutions and crystal structures
+that include predictions based on atomic radii and electronic valence states [80, 81]. However, many
+exceptions to their predictions can be found [82].
+Machine learning techniques offer the ability to discover and model relationships between properties
+and physical descriptors through statistical means. Meredig et al. demonstrated that a decision tree
+ensemble trained using a feature set of atomic masses, positions in the periodic table, atomic numbers,
+atomic radii, electronegativities, and valence electrons could outperform a conventional heuristic on
+predicting whether ternary compositions would have formation energies < 100 meV/atom [83]. Ward et
+al. significantly expanded this set to 145 input properties, including features related to the distribution
+and compatibility of the oxidation states of constituent atoms [19]. Their released implementation,
+MagPie, can be a useful benchmark or staring point for the development of further research methods [79,
+84, 85]. Furthermore, if a fixed structural prototype (e.g. elapsolite) is assumed, these stoichiometric
+models can be used to analyze compositionally-driven variation in properties [86, 87].
+Even more subtle yet extremely expressive low-dimensional descriptors can be obtained by initializ-
+ing a set with standard atomic properties and computing successive algebraic combinations of features,
+with each calculation being added to the set and used to compute higher order combinations in the
+next round. While the resulting set will grow exponentially, compressive sensing can then be used to
+identify the most promising descriptors from sets that can exceed 109 possibilities [88, 89]. Ghiringhelli
+et al. found descriptors that could accurately predict whether a binary compound would form in a
+zincblende or rocksalt structure [90], and Bartel et al. identified an improved tolerance factor τ for
+the formation of perovskite systems [91] (Table 1). While these approaches do not derive their results
+from a known mechanism, they do provide enough interpretability to enable the extraction of physical
+insights for the screening and design of materials.
+When large datasets are available, deep neural networks tend to outperform traditional approaches,
+and that is also the case for compositional representations.
+The size of modern materials science
+databases have enabled the development of information-rich embeddings that map elements or compo-
+sitions to vectors as well as the testing and validation of deep learning models. Chemically meaningful
+embeddings can be constructed by counting all compositions in which that element appeared in the
+Materials Project [92] or learned through the application of natural language processing to previously
+reported results in the scientific literature [93]. These data-hungry methods were able to demonstrate
+that their representations could be clustered based on atomic group [92] and could be used to suggest
+
+11
+
+
+Table 1: Example Descriptors Determined through Compressive Sensing
+
+Descriptor
+Prediction
+Variables
+
+IP-Ionization Potential
+
+IP(B)−EA(B)
+
+rp(A)2
+Ordering in AB Compound
+EA-Electron Afinity
+
+rp-Radius of Maximum Density of p-Orbital
+
+rX
+rB − nA(nA −
+rA/rB
+
+ln[rA/rB])
+Stability of ABX3 Perovskite
+nY -Oxidation State of Y
+
+ry-Ionic Radius of Y
+
+new promising compositions based on similarity with the best known materials [93]. The advantages
+of training deep learning algorithms with large datasets are exemplified by ElemNet, which only uses
+a vector of fractional stoichiometry as input. Despite its apparent simplicity, when > 3, 000 training
+points where available, ElemNet performed better than a MagPie-based model at predicting formation
+enthalpies [94].
+While the applicability of ElemNet is limited to problem domains with O(103) datapoints, more
+recent methods have significantly reduced this threshold. ROOST [95] represented each composition
+as a fully-connected graph with nodes as elements, and properties were predicted using a message-
+passing scheme with an attention mechanism that relied on the stoichiometric fraction of each element.
+ROOST substantially improved on ElemNet, achieving better performance than MagPie in cases with
+only hundreds of training examples. Meanwhile, CrabNet [96] forms element-derived matrices as a sum
+of embeddings of each element’s identity and stoichiometric fraction. This approach achieves similar
+performance to ROOST by updating the representation using self-attention blocks. The fractional
+embedding can take log-scale data as input such that even dopants in small concentrations can have a
+significant effect on predictions. Despite the inherent challenges of predicting properties purely from
+composition, these recent and significant modeling improvements suggest that continued algorithmic
+development could be an attractive and impactful direction for future research projects.
+Compositional models have the advantage that they can suggest new systems to experimentalists
+without requiring a specific atomic geometry and, likewise, can learn from experimental data without
+necessitating an exact crystal structure [97]. Owing to their ability to incorporate experimental findings
+into ML pipelines and provide suggestions with fewer experimental requirements (e.g. synthesis of a
+particular phase), compositional models have become attractive methods for materials design. Zhang
+el al. trained a compositional model using atomic descriptors on previous experimental data to predict
+Vicker’s harness and validated their model by synthesizing and testing eight metal disilicides [97].
+Oliynik et al. identified new Heusler compounds, while also verifying their approach on negative cases
+where they predicted a synthesis would fail [87]. Another application of their approach enabled the
+prediction of the crystal structure prototype of ternary compounds with greater than 96% accuracy.
+By training their model to predict the probability associated with each structure, they were able to
+experimentally engineer a system (TiFeP) with multiple competing phases [98].
+While researchers have effectively implemented compositional models as methods for materials
+design, their limitations should be considered when selecting a representation for ML studies. Funda-
+mentally, compositional models will only provide a single prediction for each stoichiometry regardless
+of the number of synthesizeable polymorphs. While training models to only predict properties of the
+lowest-energy structure is physically justifiable [99], extrapolation to technologically relevant meta-
+stable systems may still be limited. Additionally, graph-based structural models such as CGCNN [18]
+or MEGNet [56] generally outperform compositional models [84]. Therefore, composition models are
+most practically applicable when atomistic resolution of materials is unavailable, and thus structural
+
+12
+
+
+representations cannot be effectively constructed.
+
+5
+DEFECTS, SURFACES, AND GRAIN BOUNDARIES
+
+Mapping the structure of small molecules and unit cells to materials properties has been a reasonable
+starting point for many applications of materials science modeling. However, materials design often
+requires understanding of larger length scales beyond the small unit cell, such as in defect and grain
+boundary engineering, and in surface science [100]. In catalysis, for example, surface activity is highly
+facet dependent and cannot be modeled using the bulk unit cell alone. It has been shown that the
+(100) facet of RuO2, a state-of-the-art catalyst for the oxygen evolution reaction (OER), has an order
+of magnitude higher current for OER than the active site on the thermodynamically stable (110)
+facet [101].
+Similarly, small unit cells are not sufficient for modeling transport properties, where
+size, orientation, and characteristics of grain boundaries play a large role. In order to apply machine
+learning to practical materials design, it is therefore imperative to construct representations that can
+characterize environments at the relevant length scales.
+
+(a) Point defects
+(b) Surfaces
+(c) Grain boundaries
+
+DFT pristine structure
+
+Valence band
+
+Conduction band
+
+DFT vacancy 
+Formation energy
+
+DFT pristine structure
+
+DFT
+adsorption energy
+
+O2p
+Md
+
+DOS
+
+DFT structure
+
+pristine
+
+Grain boundary
+
+Grain boundary
+energy
+
+Miller index
+
+Figure 4: (a) Point defect properties are learned from a representation of the pristine bulk structure
+and additional relevant information on conduction and valence band levels. (b) Surface properties are
+learned from a combination of pristine bulk structure representation, miller index, and density of states
+information. (c) Local environments of atoms near a grain boundary versus atoms in the pristine bulk
+are compared to learn grain boundary properties. Figure 4a adapted from [102].
+
+Defect engineering offers a common and significant degree of freedom through which materials can
+be tuned. Data science can contribute to the design of these systems as fundamental mechanisms are
+often not completely understood even in long-standing cases such as carbon in steels [103]. Dragoni
+et al. [31] developed a Gaussian Approximate Potential (GAP) [104] using SOAP descriptors for face-
+centered cubic iron that could probe vacancies, interstitials, and dislocations, but their model was
+confined to a single phase of one element and required DFT calculations incorporating O(106) unique
+environments to build the interpolation.
+Considering that even a small number of possible defects significantly increases combinatorial com-
+plexity, a general approach for predicting properties of defects from pristine bulk structure represen-
+tations could accelerate computation by orders of magnitude (Figure 4a). For example, Varley et
+al. observed simple and effective linear relationships between vacancy formation energy and descrip-
+tors derived from the band structure of the bulk solid [102]. While their model only considered one
+type of defect, their implementation limits computational expense by demonstrating that only DFT
+calculations on the pristine bulk were required [102]. Structure- and composition-aware descriptors
+of the pristine bulk have additionally been shown to be predictive of vacancy formation in metal ox-
+
+13
+
+
+ides [105, 106] and site/antisite defects in AB intermetallics [107]. To develop an approach that can
+be used over a broad range of chemistries and defect types, Frey et al. formed a representation by
+considering relative differences in characteristics (atomic radii, electronegativity, etc.) of the defect
+structure compared to the pristine parent[21]. Furthermore, because reference bulk properties could
+be estimated using surrogate ML models, no DFT calculations were required for prediction of either
+formation energy or changes in electronic structure [21]. We also note that in some cases it may be
+judicious to design a model that does not change significantly in the presence of defects. For these
+cases, representations based on simulated diffraction patterns are resilient to site-based vacancies or
+displacements [108].
+Like in defect engineering, machine learning for practical design of catalyst materials requires
+representations beyond the single unit cell. Design of catalysts with high activity crucially depends on
+interactions of reaction intermediates with materials surfaces based on the Sabatier principle, which
+argues that activity is greatest when intermediates are bound neither too weakly nor too strongly [109].
+From a computational perspective, determining absorption energies involves searches over possible
+adsorption active sites, surface facets, and surface rearrangements, leading to a combinatorial space
+that can be infeasible to exhaustively cover with DFT. Single dimension descriptors based on electronic
+structure have been established that can predict binding strengths and provide insight on tuning
+catalyst compositions, such as metal d-band center for metals [110] and oxygen 2p-band center for
+metal oxides [111]. Additional geometric approaches include describing the coordination of the active
+site (generalized coordination number in metals, adjusted generalized coordination number in metal
+oxides) [112]. Based on the success of these simple descriptors, machine learning models have been
+developed to learn binding energy using the density of states and geometric descriptors of the pristine
+bulk structure as features (Figure 4b) [113].
+However, these structural and electronic descriptors are often not generalizable across chemistries
+[110, 114], limiting the systems over which they can be applied and motivating the development of more
+sophisticated machine learning techniques. To reduce the burden on high-throughput DFT calculations,
+active learning with surrogate models using information from pure metals and active-site coordination
+has been used to identify alloy and absorbate pairs that have the highest likelihood of producing near-
+optimal binding energies [115]. Furthermore, when sufficient data (> 10, 000 examples) is available,
+modifications of graph-convolutional models have also predicted binding energies with high accuracy
+even in datasets with up to 37 elements, enabling discovery without detailed mechanistic knowledge
+[114].
+To generalize these results, the release of Open Catalyst 2020 and its related competitions
+[6, 9] has provided both over one million DFT energies for training new models and a benchmark
+through which new approaches can be evaluated [75].
+While significant advancements have been
+made, state-of-the-art models still exhibit high-errors for particular absorbates and non-metallic surface
+elements, constraining chemistry over which effective screening can be conducted [75]. Furthermore,
+the complexity of the design space relevant for ML models grows considerably when accounting for
+interactions between absorbates and different surface facets [116].
+Beyond atomistic interactions, the mechanical and thermal behavior of materials can be signifi-
+cantly modulated by processing conditions and the resulting microstructure. Greater knowledge of
+local distortions introduced at varying grain boundary incident angles would give computational mate-
+rials scientists a more complete understanding of how experimentally chosen chemistries and synthesis
+parameters will translate into device performance. Strategies to quantify characteristics of grain bound-
+ary geometry have included reducing computational requirements by identifying the most promising
+configurations with virtual screening [117], estimating grain boundary free volume as a function of
+temperature and bulk composition [118], treating the microstructure as a graph of nodes connected
+across grain boundaries [119, 54], and predicting the energetics, and hence feasiblity, of solute segre-
+gation [120]. While the previous approaches did not include features based on the constituent atoms
+and were only benchmarked on systems with up to three elements, recent work has demonstrated that
+
+14
+
+
+the excess energy of the grain boundary relative to the bulk can be approximated across compositions
+with five variables defining its orientation and the bond lengths within the grain boundary (Figure
+4c)[121].
+Further research has tried to map local grain boundary structure to function. Algorithmic ap-
+proaches to grain boundary structure classification have been developed (see for example VoroTop
+[122]), but such approaches typically rely on expert users and do not provide a continuous representa-
+tion that can smoothly interpolate between structures [123]. To eliminate these challenges, Rosenbrock
+et al. proposed computing SOAP descriptors for all atoms in the grain boundary, clustering vectors into
+classes, and identifying grain boundaries through its local environment classes. The representation was
+not only predictive of grain boundary energy, temperature-dependent mobility, and shear coupling but
+also provides interpretable effects of particular structures within the grain boundary [124]. A related
+approach computed SOAP vectors relative to the bulk structure when analyzing thermal conductivity
+[125]. Representations based on radial and angular structure functions can also quantify the mobility of
+atoms within a grain boundary [126]. When combined, advancing models for grain boundary stability
+as well as structure to property relationships opens the door for functional design of grain boundaries.
+
+6
+TRANSFERABLE INFORMATION BETWEEN REPRESENTA-
+TIONS
+
+Applications of machine learning to materials science are limited by the scope of compositions and
+structures over which algorithms can maintain sufficient accuracy. Thus, building large-scale, diverse
+datasets is the most robust strategy to ensure trained models can capture the relevant phenomena.
+However, in most contexts, materials scientists are confronted with sparsely distributed examples.
+Ideally, models can be trained to be generalizable and exhibit strong performance across chemistries
+and configurations even with few to no data points in a given domain.
+In order to achieve this,
+representations and architectures must be chosen such that models can learn to extrapolate beyond
+the space observed in the training set. Effective choices often rely on inherent natural laws or chemical
+features that are shared between the training set and extrapolated domain such as physics constraints
+[127, 128], the geometric [129, 130] and electronic [131, 132] structure of local environments, and
+positions of elements in the periodic table [133, 134]. For example, Li et al. were able to predict
+absorption energies on high entropy alloy surfaces after training on transition metal data by using the
+coordination number and electronic properties of neighbors at the active site [129]. While significant
+advancements have been made in the field, extrapolation of machine learning models across materials
+spaces typically requires specialized research methods and is not always feasible.
+Likewise, it is not always practical for a materials scientist to improve model generality by just col-
+lecting more data. In computational settings, some properties can only be reliably estimated with more
+expensive, higher levels of theory, and for experimentalists, synthetic and characterization challenges
+can restrict throughput. The deep learning approaches that have demonstrated exceptional perfor-
+mance over a wide range of tests cases discussed in this review can require at least 103 training points,
+putting them seemingly out for the realm of possibility for many research projects. Instead, predictive
+modeling may fall back on identifying relationships between a set of human-engineered descriptors and
+target properties.
+Alternatively, the hidden, intermediate layers of deep neural networks can be conceptualized as a
+learned vector representation of the input data. While this representation is not directly interpretable,
+it must still contain physical and chemical information related to the prediction task, which downstream
+layers for the network utilize to generate model outputs. Transfer learning leverages these learned
+representations from task A and uses them in the modeling of task B. Critically, task A can be chosen
+to be one for which a large number of data points are accessible (e.g. prediction all DFT formation
+
+15
+
+
+energies in the Materials Project), and task B can be of limited size (e.g. predicting experimental heats
+of formation of a narrow class of materials). In principle, if task A and task B share an underlying
+physical basis (the stability of the material), the features learned when modeling task A may be more
+informationally-rich than a human-designed representation [135]. With this more effective starting
+point, subsequent models for task B can reach high accuracy with relatively few new examples.
+The most straightfoward methods to implement transfer learning in the materials science commu-
+nity follow a common procedure: (1) train a neural network model to predict a related property (task
+A) for which > O(1, 000) data points are available (pretraining), (2) fix parameters of the network
+up a chosen depth d (freezing), and (3) given the new dataset for task B, either retrain the remain-
+ing layers, where parameters can be initialized randomly or from the task A model (finetuning), or
+treat the output of the model at depth d as in input representation to another ML algorithm (feature
+extraction) [136, 137]. The robustness of this approach has been demonstrated across model classes
+including those using composition only (ElemNet [135, 137], ROOST [95]), crystal graphs (CGCNN)
+[138], and equivariant convolutions (GemNet) [139]. Furthermore, applications of task B, range from
+experimental data [135, 95] to DFT-calculated surface absorption energies [139].
+The sizes of the datasets for task A and task B will determine the effectiveness of a transfer learning
+approach in two ways. First, the quality and robustness of the representation learned for task A will
+increase as the number of observed examples (the size of dataset A) increases. Secondly, as the size
+of dataset B decreases, data becomes too sparse for a ML model to learn a reliable representation
+alone and prior information from the solution to task A can provide an increasingly useful method to
+interpolate between the few known points. Therefore, transfer learning typically exhibits the greatest
+boosts in performance when task A has orders of magnitude more data than task B [135, 138].
+In addition, the quality of information sharing through transfer learning depends on the physical
+relationship between task A and task B. Intuitively, the representation from task A provides a better
+guide for task B if the tasks are closely related.
+For example, Kolluru et al.
+demonstrated that
+transfer learning from models trained on the Open Catalyst Dataset [6] exhibited significantly better
+performance when applied to absorption of new species than energies of less-related small molecules
+[139]. While it is difficult to choose the optimal task A for a given task B a priori, shotgun transfer
+learning [136] has demonstrated that the best pairing can be chosen experimentally by empirically
+validating a large pool of possible candidates and selecting top performers.
+The depth d from which features should be extracted from task A to form a representation can also
+be task dependent. Kolluru et al. provided evidence that to achieve optimal performance more layers
+of the network should be allowed to be retrained in step (3) as the connection between task A and
+task B becomes more distant [139]. Gupta et al. arrived at a similar conclusion that the early layers
+of deep neural networks learned more general representations and performed better in cross-property
+transfer learning [137]. Inspired by this observation that representations at different neural network
+layers contain information with varying specificity to a particular prediction task, representations for
+transfer learning that combine activations from multiple depths have been proposed [139, 140].
+When tasks are sufficiently different, freezing neural network weights may not be the optimal
+strategy and instead representations for task B can include predictions for task A as descriptors. For
+instance, Cubuk et al. observed that structural information was critical to predict Li conductivity but
+was only available for a small set of compositions for which crystal structures were determined. By
+training a separate surrogate model to predict structural descriptors from composition and using those
+approximations in subsequent Li conductivity models, the feasible screening domain was expanded by
+orders of magnitude [141]. Similarly, Greenman et al. [142] used O(10, 000) TD-DFT calculations to
+train a graph neural network whose estimates could be used as an additional descriptor for a model
+predicting experimental peaks in absorption spectra. Representations have also been sourced from
+the output of generative models.
+Kong et al.
+trained a Generative Adversial Network (GAN) to
+sample electronic density of states (DOS) given a particular material composition.
+Predictions of
+
+16
+
+
+absorption spectra of a particular composition were improved by concatenating stoichiometric data
+with the average DOS sampled from the generative model [143].
+
+7
+GENERATIVE MODELS FOR INVERSE DESIGN
+
+While, in principle, machine learning methods can significantly reduce the time required to compute
+materials properties, and material scientists can employ these models to screen for a set of target
+systems by rapidly estimating the stability and performance, the space of feasible materials precludes
+a naive global optimization strategy in most cases.
+Generative models including Variational Au-
+toencoders (VAE) [144, 1], Generative Adversarial Networks (GAN) [145, 146], and diffusion models
+[147, 148] can be trained to sample from a target distribution and have proved to be capable strategies
+for optimization in high-dimensional molecular spaces [1, 149]. While some lessons can be drawn from
+the efforts of researchers in the computational chemistry community, generative models face unique
+challenges for proposing crystals [150, 151]. First, the diversity of atomic species increases substantially
+when compared with small organic molecules. In addition, given a composition, a properly defined
+crystal structure requires both the positions of the atoms within the unit cell as well as the lattice
+vectors and angles that determine the systems periodicity. This definition is not unique, and the same
+material can be described after rotations or translations of atomic coordinates as well as integer scal-
+ing of the original unit cell. Lastly, many state-of-the-art materials for catalysis (e.g. zeolites, metal
+organic frameworks) can have unit cells including > 100 of atoms, increasing the dimensionality of the
+optimization problem [150, 151].
+
+VOXEL
+INVARIANT
+Building Block
+
+Encode
+
+Add noises 
+
+Predict
+0.5
+0.5
+
+Composition
+Lattice
+
++
+
+Denoise
+
+# of atoms
+
++
+4
+
+Rand. init.
+
+Langevin dynamics
+Training
+
+Generation
+Conditional
+
+Conditional
+
+Generate conserving symmetries  
+Discretize Unit Cell 
+Construct from Fragments
+
+Extendable to frameworks with 
+
+O(104) atoms 
+
+Applicable over constrained 
+geometry or stoichiometry
+
+State-of-the-art with <24 
+
+atoms in unit cell 
+
+Figure 4. Hierarchical Decoding for New Materials after Sampling in the Latent Space
+
+1376 Matter 1, 1370–1384, November 6, 2019
+
+them, and in addition discover new compositions of V-O as well as new polymorphs
+of known V-O compositions with low energy above convex hull that might be synthe-
+sizable thermodynamically.
+
+RESULTS AND DISCUSSION
+
+Continuous Representation of Inorganic Materials
+The first building block in the invertible materials framework is the continuous rep-
+resentation of inorganic materials that includes crystal structure and composition.
+To represent inorganic crystal structures, we use a three-dimensional (3D) grid-
+based image representation as initial input, similar to earlier proposals.42–44 Partic-
+ular to our representation, we decompose the crystal structure into a unit cell
+image (length of the cell edges and angles between them) and basis image (atomic
+positions within a unit cell), as shown in Figure 2. We note that the representation
+scheme in Figure 2 is shown for a two-dimensional (2D) slice of the 3D crystal unit
+cell for simplicity, but actual implementation of the method for real crystals in the
+current study used 3D grids. Since image-based tasks such as image generation or
+object recognition are widely developed in the deep learning community, we
+leverage these technologies by using an image-based representation for crystal
+structures.45 Computational details of how to encode the materials data into im-
+age-based representations and decode back to original materials data (coordi-
+nates and unit cell parameters) are described in Experimental Procedures and
+Section S3.2.
+
+Figure 2. Image Representation of Crystal Structure and Inverse Transform
+For simplicity, we show the representation method for a slice of the cubic box. Crystal structure is
+encoded using the two images, (A) cell (in the grid space of n3 grid points) and (B) basis (in the grid
+space of m3 grid points). Crystal lattice parameters can be exactly recovered from the cell image
+using a simple inverse transform scheme, and atom positions are recovered from the basis images
+using an image filter. See also Experimental Procedures and Section S3.2 for details.
+
+Matter 1, 1370–1384, November 6, 2019 1373
+
+ARTICLES
+NATURE MACHINE INTELLIGENCE
+
+effective in prediction with even a limited amount of training data48. 
+The detailed SmVAE architecture and hyperparameter tuning pro-
+cess are described in Supplementary Note 2.
+
+Demonstration of SmVAE on MOF design and optimization
+To evaluate the fidelity of the trained SmVAE and the capability of its 
+latent space to capture MOF structure information, we estimate the 
+kernel density of each dimension in the latent space (288 in total). 
+As shown in Supplementary Fig. 8, all data distributions in differ-
+ent dimensions are normal, indicating the effectiveness of the varia-
+tional regularizer as implemented in the SmVAE. Furthermore, we 
+use MOF-11740 as an example by feeding its RFcode to the encoder 
+to obtain its latent representation and sampling its neighbouring 
+latent points at various distances. We check the decoding results of 
+the original representation and neighbouring points. We are able to 
+get the original MOF-117 back at the original point, and decoded 
+MOF structures at the sampled neighbouring points demonstrate 
+more and more variations with increasing distance as shown in 
+Fig. 3c. The autoencoder also provides us a critical opportunity to 
+explore the geometrical correlation between different MOF struc-
+tures. We encode two well-known yet topologically distinct (topol-
+ogy: ftw, csq) MOF structures (that is, cubic, ftw NU-110449 and 
+hexagonal, csq NU-100050) and perform an interpolation between 
+their latent points in space (Fig. 3d). The intermediate frameworks 
+along the interpolation path are then decoded, which demonstrate 
+a clear geometrical evolution from the cubic framework to the hex-
+agonal framework.
+
+Discovering systems with improved properties is the essential 
+
+goal of materials design. We examine the mapping of property 
+
+values to the latent representation in the jointly trained SmVAE 
+latent space using PCA (principal component analysis) (Fig. 3a,b), 
+and we find that the distribution of frameworks shows an explicit 
+gradient, with high-performance MOFs located in one domain 
+and low-performance MOFs in other domains. For comparison,  
+another SmVAE was trained with about two million MOFs with-
+out any property as a control group. The resulting latent repre-
+sentation distribution shows no noticeable pattern with respect 
+to property values (Supplementary Fig. 9), confirming the ability 
+of the SmVAE to organize the latent space according to property 
+values. Performance metrics such as prior and posterior scores for 
+sampling and constructing valid MOFs, as well as the mean abso-
+lute error (MAE) on predicting MOF properties, are computed and 
+shown in Supplementary Table 2. Our SmVAE demonstrates superb 
+accuracy in designing MOFs and predicting their properties.
+
+Ultimately, we optimize MOF structures in the latent space of the 
+
+jointly trained autoencoder. We build a GP model, which has been 
+proven to be lightweight and effective for smooth function predic-
+tion48, to learn the property landscape of the latent representations. 
+A GP model is then trained to predict the target property of the 
+latent vector of a given MOF RFcode. We then choose CO2 uptake in 
+the natural gas separation (CO2/CH4) as the target and demonstrate 
+two optimization processes: (1) isoreticular MOF design, where the 
+topology is constrained; and (2) globally optimized MOF design 
+(Fig. 4), with maximized property frameworks identified and inter-
+mediate structures interpolated. In the isoreticular design process, 
+we pick the MOF NU-110449 (CO2 uptake of 0.65 mol kg−1) as the 
+starting point and optimized the framework with constrained ftw 
+topology. Going through a series of intermediate linkers (Fig. 4b), 
+
+Deconstructor
+
+LCD, 20.4 Å; PLD,  8.9 Å;
+AGSA, 3,484 m2 g–1,     
+ 
+
+LCD, 11.2 Å; PLD, 10.0 Å;
+AGSA, 3,875 m2 g–1,      
+
+sym_3_1|Zn_6_1|qom
+
+Edge
+
+Vertex 
+Organic
+
+Vertex
+Metal
+
+Topology
+
+xedge
+
+xRFcom
+
+xedge
+~
+
+xRFcom
+~
+
+yproperty
+~
+
+Latent space
+
+Vertexorganic
+Vertexmetal
+Topology
+
+Encoder
+Decoder
+
+Computed
+Prediction
+
+0
+2
+4
+6
+8
+10
+
+AGSA (×103 m2 g–1)
+
+0
+2
+4
+6
+8
+10
+
+AGSA (×103 m2 g–1)
+
+Distribution
+
+Distribution
+
+Reconstructor
+
+MOF-117
+For example,
+
+Z
+
+Z
+
+Fig. 2 | Schematic of the automated reticular framework discovery platform empowered by the SmVAE. The SmVAE is a multi-component variational 
+autoencoder with modules that are in charge of encoding and decoding each part of the RFcode x
+
+ARTICLES
+NATURE MACHINE INTELLIGENCE
+
+effective in prediction with even a limited amount of training data48. 
+The detailed SmVAE architecture and hyperparameter tuning pro-
+cess are described in Supplementary Note 2.
+
+Demonstration of SmVAE on MOF design and optimization
+To evaluate the fidelity of the trained SmVAE and the capability of its 
+latent space to capture MOF structure information, we estimate the 
+kernel density of each dimension in the latent space (288 in total). 
+As shown in Supplementary Fig. 8, all data distributions in differ-
+ent dimensions are normal, indicating the effectiveness of the varia-
+tional regularizer as implemented in the SmVAE. Furthermore, we 
+use MOF-11740 as an example by feeding its RFcode to the encoder 
+to obtain its latent representation and sampling its neighbouring 
+latent points at various distances. We check the decoding results of 
+the original representation and neighbouring points. We are able to 
+get the original MOF-117 back at the original point, and decoded 
+MOF structures at the sampled neighbouring points demonstrate 
+more and more variations with increasing distance as shown in 
+Fig. 3c. The autoencoder also provides us a critical opportunity to 
+explore the geometrical correlation between different MOF struc-
+tures. We encode two well-known yet topologically distinct (topol-
+ogy: ftw, csq) MOF structures (that is, cubic, ftw NU-110449 and 
+hexagonal, csq NU-100050) and perform an interpolation between 
+their latent points in space (Fig. 3d). The intermediate frameworks 
+along the interpolation path are then decoded, which demonstrate 
+a clear geometrical evolution from the cubic framework to the hex-
+agonal framework.
+
+Discovering systems with improved properties is the essential 
+
+goal of materials design. We examine the mapping of property 
+
+values to the latent representation in the jointly trained SmVAE 
+latent space using PCA (principal component analysis) (Fig. 3a,b), 
+and we find that the distribution of frameworks shows an explicit 
+gradient, with high-performance MOFs located in one domain 
+and low-performance MOFs in other domains. For comparison,  
+another SmVAE was trained with about two million MOFs with-
+out any property as a control group. The resulting latent repre-
+sentation distribution shows no noticeable pattern with respect 
+to property values (Supplementary Fig. 9), confirming the ability 
+of the SmVAE to organize the latent space according to property 
+values. Performance metrics such as prior and posterior scores for 
+sampling and constructing valid MOFs, as well as the mean abso-
+lute error (MAE) on predicting MOF properties, are computed and 
+shown in Supplementary Table 2. Our SmVAE demonstrates superb 
+accuracy in designing MOFs and predicting their properties.
+
+Ultimately, we optimize MOF structures in the latent space of the 
+
+jointly trained autoencoder. We build a GP model, which has been 
+proven to be lightweight and effective for smooth function predic-
+tion48, to learn the property landscape of the latent representations. 
+A GP model is then trained to predict the target property of the 
+latent vector of a given MOF RFcode. We then choose CO2 uptake in 
+the natural gas separation (CO2/CH4) as the target and demonstrate 
+two optimization processes: (1) isoreticular MOF design, where the 
+topology is constrained; and (2) globally optimized MOF design 
+(Fig. 4), with maximized property frameworks identified and inter-
+mediate structures interpolated. In the isoreticular design process, 
+we pick the MOF NU-110449 (CO2 uptake of 0.65 mol kg−1) as the 
+starting point and optimized the framework with constrained ftw 
+topology. Going through a series of intermediate linkers (Fig. 4b), 
+
+Deconstructor
+
+LCD, 20.4 Å; PLD,  8.9 Å;
+AGSA, 3,484 m2 g–1,     
+ 
+
+LCD, 11.2 Å; PLD, 10.0 Å;
+AGSA, 3,875 m2 g–1,      
+
+sym_3_1|Zn_6_1|qom
+
+Edge
+
+Vertex 
+Organic
+
+Vertex
+Metal
+
+Topology
+
+Edge
+
+Vertex 
+Organic
+
+Vertex
+Metal
+
+Topology
+
+sym_4_16|Cr_6_9|tpt
+
+Computed
+Prediction
+
+0
+2
+4
+6
+8
+10
+
+AGSA (×103 m2 g–1)
+
+0
+2
+4
+6
+8
+10
+
+AGSA (×103 m2 g–1)
+
+Distribution
+
+Distribution
+
+Reconstructor
+
+MOF-117
+For example,
+
+Z
+
+Z
+
+Fig. 2 | Schematic of the automated reticular framework discovery platform empowered by the SmVAE. The SmVAE is a multi-component variational 
+autoencoder with modules that are in charge of encoding and decoding each part of the RFcode x
+
+ARTICLES
+NATURE MACHINE INTELLIGENCE
+
+effective in prediction with even a limited amount of training data48. 
+The detailed SmVAE architecture and hyperparameter tuning pro-
+cess are described in Supplementary Note 2.
+
+Demonstration of SmVAE on MOF design and optimization
+To evaluate the fidelity of the trained SmVAE and the capability of its 
+latent space to capture MOF structure information, we estimate the 
+kernel density of each dimension in the latent space (288 in total). 
+As shown in Supplementary Fig. 8, all data distributions in differ-
+ent dimensions are normal, indicating the effectiveness of the varia-
+tional regularizer as implemented in the SmVAE. Furthermore, we 
+use MOF-11740 as an example by feeding its RFcode to the encoder 
+to obtain its latent representation and sampling its neighbouring 
+latent points at various distances. We check the decoding results of 
+the original representation and neighbouring points. We are able to 
+get the original MOF-117 back at the original point, and decoded 
+MOF structures at the sampled neighbouring points demonstrate 
+more and more variations with increasing distance as shown in 
+Fig. 3c. The autoencoder also provides us a critical opportunity to 
+explore the geometrical correlation between different MOF struc-
+tures. We encode two well-known yet topologically distinct (topol-
+ogy: ftw, csq) MOF structures (that is, cubic, ftw NU-110449 and 
+hexagonal, csq NU-100050) and perform an interpolation between 
+their latent points in space (Fig. 3d). The intermediate frameworks 
+along the interpolation path are then decoded, which demonstrate 
+a clear geometrical evolution from the cubic framework to the hex-
+
+values to the latent representation in the jointly trained SmVAE 
+latent space using PCA (principal component analysis) (Fig. 3a,b), 
+and we find that the distribution of frameworks shows an explicit 
+gradient, with high-performance MOFs located in one domain 
+and low-performance MOFs in other domains. For comparison,  
+another SmVAE was trained with about two million MOFs with-
+out any property as a control group. The resulting latent repre-
+sentation distribution shows no noticeable pattern with respect 
+to property values (Supplementary Fig. 9), confirming the ability 
+of the SmVAE to organize the latent space according to property 
+values. Performance metrics such as prior and posterior scores for 
+sampling and constructing valid MOFs, as well as the mean abso-
+lute error (MAE) on predicting MOF properties, are computed and 
+shown in Supplementary Table 2. Our SmVAE demonstrates superb 
+accuracy in designing MOFs and predicting their properties.
+
+Ultimately, we optimize MOF structures in the latent space of the 
+
+jointly trained autoencoder. We build a GP model, which has been 
+proven to be lightweight and effective for smooth function predic-
+tion48, to learn the property landscape of the latent representations. 
+A GP model is then trained to predict the target property of the 
+latent vector of a given MOF RFcode. We then choose CO2 uptake in 
+the natural gas separation (CO2/CH4) as the target and demonstrate 
+two optimization processes: (1) isoreticular MOF design, where the 
+topology is constrained; and (2) globally optimized MOF design 
+(Fig. 4), with maximized property frameworks identified and inter-
+mediate structures interpolated. In the isoreticular design process, 
+
+Reconstructor
+
+MOF-117
+For example,
+
+Z
+
+Z
+
+(a)
+(b)
+(c)
+
+Figure 5: Approaches for crystal structure generative models. (Left) Initial models based on voxel
+representations defined positions of atoms by discretizing space into finite volume elements but were
+not applied generally over the space of crystal structures [23, 22, 24, 25]. (Center) Restricting the
+generation process to be invariant to permutation, translation, and rotations, through an appropriately
+constrained periodic decoder (PGNNDec) results in sampling structures exhibiting more diversity and
+stability. (Right) When features of the material can be assumed, such as a finite number of possible
+topologies connecting substructures, the dimensionality of the problem can be substantially reduced
+and samples over larger unit cell materials can be generated. Figures on left, center, and right are
+adapted from [23], [152], and [153], respectively.
+
+One attempt to partially address the challenges of generative modeling for solid materials design
+is a voxel representation [150], in which unit cells are divided into volume elements and models are
+built using techniques from computer vision.
+Hoffman represented unit cells using a density field
+that could be further segmented into atomic species and was able to generate crystals with realistic
+atomic spacings. However, atoms could be mistakenly decoded into other species with nearby atomic
+
+17
+
+
+number and most of the generated structures could not be stably optimized with a DFT calculation
+[22]. Alternate approaches could obtain more convincing results, but over a confined region of material
+space [154]. iMatgen (Figure 5a) invertibly mapped all unit cells into a cube with Gaussian-smeared
+atomic density and trained a VAE coupled with a surrogate energy prediction. The model was able
+to rediscover stable structures but was constrained over the space of Vanadium oxides [23]. A similar
+approach constructed a separate voxel representation for each element and employed a GAN trained
+alongside an energy constraint to explore the phases of Bi-Se [155]. In order to resolve some of Hoffman
+el al’s limitations, Court et al. [24] reduced segmentation errors by augmenting the representation with
+a matrix describing the occupation (0,1) of each voxel and a matrix recording the atomic number of
+occupied voxels. Their model was able to propose new materials that exhibited chemical diversity and
+could be further optimized with DFT but restricted analysis to cubic systems. Likewise, compositions
+of halide perovskites with optimized band gaps could be proposed using a voxelized representation of
+a fixed perovskite prototype [25].
+Voxel representations can be relaxed to continuous coordinates in order to develop methods that
+are more comprehensively applicable over crystal space. Kim et al. represented materials using a
+record of the unit cell as well as a point cloud of fractional coordinates of each element. The approach
+proposed lower energy structures than iMatgen for V-O binaries and was also applicable over more
+diverse chemical spaces (Mg-Mn-O ternaries) [156]. Another representation including atomic positions
+along with elemental properties could be leveraged for inverse design over spaces that vary in both
+composition and lattice structure.
+In a test case, the model successfully generated new materials
+with negative formation energy and promising thermoelectric power factor [154]. While these models
+have demonstrated improvements in performance, they lack the translational, rotational, and scale
+invariances of real materials and are restricted to sampling particular materials classes [156, 152].
+Recently, alternatives that account for these symmetries have been proposed. Fung et al. proposed
+a generative model for rotationally and translationally invariant atom-centered symmetry functions
+(ACSF) from which target structures could be reconstructed [157]. Crystal Diffusion VAEs (Figure
+5b) leveraged periodic graphs and SE(3) equivariant message-passing layers to encode and decode
+their representation in a translationally and rotationally invariant way [152]. They also proposed a
+two step generation process during which they first predicted the crystal lattice from a latent vector and
+subsequently sampled the composition and atomic positions through Langevin dynamics. Furthermore,
+they established well-defined benchmark tasks and demonstrated that for inverse design their method
+was more flexible than voxel models with respect to crystal system and more accurate than point cloud
+representations at identifying crystals with low formation energy.
+Scaling solid-state generative modeling techniques to unit cells with (104) atoms would enable
+inverse design of porous materials that are impossible to explore exhaustively but demonstrate excep-
+tional technological relevance. Currently, due to the high number of degrees of freedom, sampling from
+these spaces requires imposing physical constraints in the modeling process. Such restrictions can be
+implemented as post-processing steps or integrated into the model representation. ZeoGAN [158] gen-
+erated positions of oxygen and silicon atoms in a 32x32x32 grid to propose new Zeolites. While some
+of the atomic positions proposed directly from their model violated conventional geometric rules, they
+could obtain feasible structures by filtering out divergent compositions and repairing bond connectivity
+through the insertion or deletion of atoms. Alternatively, Yao et al. designed geometric constraints
+directly into the generative model by representing Metal Organic Frameworks (MOFs) by their edges,
+metal/organic vertexes, and distinct topologies (RFcodes) (Figure 5c) [153]. Because this represen-
+tation is invertible, all RFcodes correspond to a structurally possible MOFs. By training a VAE to
+encode and decode this RFcode representation, they demonstrated the ability to interpolate between
+structures and optimize properties. In general, future research should balance more stable structure
+generation against the possible discovery of new motifs and topologies.
+
+18
+
+
+8
+DISCUSSION
+
+In this review, we have introduced strategies for designing representations for machine learning in the
+context of challenges encountered by materials scientists. We discussed local and global structural
+features as well as representations learned from atomic-scale data in large repositories.
+We noted
+additional research that extends beyond idealized crystals to include the effects of defects, surfaces,
+and microstructure. Furthermore, we acknowledged that in practice the availability of data both in
+quality and quantity can be limited.
+We described methods to mitigate this including developing
+models based on compositional descriptors alone or leveraging information from representations built
+for related tasks through transfer learning. Finally, we analyzed how generative models have improved
+by incorporating symmetries and domain knowledge. As data-based methods have become increasingly
+essential for materials design, optimal machine learning techniques will play a crucial role in the success
+of research programs. The previous sections demonstrate that the choice of representation will be
+among these pivotal factors and that novel approaches can open the door to new modes of discovery.
+Motivated by these observations, we conclude by summarizing open problems with the potential to
+have high impact on the field of materials design.
+
+8.1
+Trade-offs of Local and Global Structural Descriptors
+
+Local structural descriptors including SOAP [12] have become reliable metrics to compare environments
+with a specific cutoff radius, and when properties can be defined through short-range interactions, have
+demonstrated strong predictive performance. Characterizing systems based off local environments al-
+lows models to extrapolate to cases where global representations may vary substantially (e.g.
+an
+extended supercell of a crystal structure)[14] and enables highly-scalable methods of computation that
+can extend the practical limit of simulations to much larger systems [159]. However, Unke et al. notes
+that the required complexity of the representation can grow quickly when modeling systems with many
+distinct elements and the quality of ML predictions will be sensitive to the selected hyperparameters,
+such as the characteristics distances and angles in atom-centered symmetry functions[160]. Further-
+more, it is unclear if these high quality results extend to materials characteristics that depend strongly
+on long-range physics or periodicity of the crystal. On the other hand, recent global descriptors [40]
+can more explicitly model these phenomena, but have not exhibited the same generality across space
+groups and system sizes. Strategies exploring appropriate combinations of local and long-range fea-
+tures [161] have the potential to break through these trade-offs to provide more universal models for
+material property prediction.
+
+8.2
+Prediction from Unrelaxed Crystal Prototypes
+
+If relaxed structures are required to form representations, the space over which candidates can be
+screened is limited to those materials for which optimized geometries are known. Impressively, recent
+work [162, 163] has shown that ML force-fields, even simple models with relatively high errors, can be
+used optimize structures and obtain converged results that are lower in energy than those obtained
+using VASP [164]. Their benchmarking on the OC20 [6] dataset and lower accuracy requirements
+suggest that the approach could be generalizable across a wide-class of material systems and thus
+significantly expand the availability of structural descriptors. Similarly, Chen et al. demonstrated
+that a variant of MEGNET could perform high fidelity relaxations of unseen materials with diverse
+chemistries and that leveraging the resulting structures could improve downstream ML predictions of
+energy when compared with unrelaxed inputs [165]. The strong performance of these approaches and
+their potential to significantly increase the scale and effectiveness of computational screening motivates
+high-value research questions concerning the scale of data sets required for training, the generalizabiltiy
+over material classes, and the applicability to prediction tasks beyond stability.
+
+19
+
+
+8.3
+Applicability of Compositional Descriptors
+
+Compositional descriptors are typically readily available as tabulated values, but even state-of-the-art
+models do not perform as well as the best structural approaches. However, there is some evidence that
+the scale of improvement when including structural information is property dependent. System energies
+can be conceptualized as a sum of site energies that are highly dependent on the local environment, and
+graph neural networks provide significantly more robust predictions of materials stability [84]. On the
+other hand, for properties dependent on global features such as phonons (vibrations) or electronic band
+structure (band gap) the relative improvement may not be as large [99, 166, 167]. Identifying common
+trends connecting tasks for which this difference is the least significant would provide more intuition on
+which scenarios compositional models are most appropriate. Furthermore, in some modeling situations,
+structural information is available but only over a small fraction of the dataset. To maximize the value
+of this data, more general strategies involving transfer learning [141] or combining separate composition
+and structural models [85] should be developed.
+
+8.4
+Extensions of Generative Models
+
+Additional symmetry considerations and the implementation of diffusion-based architectures led to
+generative models that improved significantly over previous voxel approaches. While this strategy is
+a promising direction for small unit cells, efforts pertaining to other parameters critical to material
+performance including microstructure [168], dimensionality [169] and surfaces [170] should also be
+pursued. In addition, research groups have side-stepped some of the challenges of materials generation
+by designing approaches that only sample material stoichiometry [171]. While this strategy limits the
+full characterization of new materials through a purely computational pipeline, there may be cases
+where they are sufficient to propose promising regions for experimental analysis.
+
+DISCLOSURE STATEMENT
+
+The authors are not aware of any affiliations, memberships, funding, or financial holdings that might
+be perceived as affecting the objectivity of this review.
+
+ACKNOWLEDGMENTS
+
+JD was involved in the writing of all sections. AT and MX collaborated on the writing and designed
+the figure for Atomistic Structure section, JK collaborated on the writing and designed the figure for
+the Periodic Graph section, JL collaborated on the writing and designed the figure for the Defects,
+Surfaces, and Grain Boundaries section. JP provided valuable insights for the organization and content
+of the article. RGB selected the topic and focus of the review, contributed to the central themes and
+context, and supervised the project. All authors participated in discussions and the reviewing of the
+final article. The authors would like to thank Anna Bloom for editorial contributions.
+The authors acknowledge financial support from the Advanced Research Projects Agency–Energy
+(ARPA-E), US Department of Energy under award number DE-AR0001220. JD, MX and ART thank
+the National Defense Science and Engineering Graduate Fellowship, the National Science Scholar-
+ship from Agency for Science, Technology and Research, and Asahi Glass Company, respectively, for
+financial support. RGB thanks the Jeffrey Cheah Chair in Engineering.
+
+20
+
+
+References
+
+[1] G´omez-Bombarelli R, Wei JN, Duvenaud D, Hern´andez-Lobato JM, S´anchez-Lengeling B, et al.
+2018. Automatic chemical design using a data-driven continuous representation of molecules.
+ACS Central Science 4(2):268–276
+
+[2] Peng J, Schwalbe-Koda D, Akkiraju K, Xie T, Giordano L, et al. 2022. Human- and machine-
+centred designs of molecules and materials for sustainability and decarbonization. Nature Reviews
+Materials 7:991–1009
+
+[3] Pyzer-Knapp EO, Suh C, G´omez-Bombarelli R, Aguilera-Iparraguirre J, Aspuru-Guzik A. 2015.
+What is high-throughput virtual screening?
+a perspective from organic materials discovery.
+Annual Review of Materials Research 45(1):195–216
+
+[4] Jain A, Ong SP, Hautier G, Chen W, Richards WD, et al. 2013. Commentary: The materi-
+als project: A materials genome approach to accelerating materials innovation. APL Materials
+1(1):011002
+
+[5] Kirklin S, Saal JE, Meredig B, Thompson A, Doak JW, et al. 2015. The open quantum materials
+database (oqmd): assessing the accuracy of dft formation energies. npj Computational Materials
+1(1):15010
+
+[6] Chanussot L, Das A, Goyal S, Lavril T, Shuaibi M, et al. 2021. Open catalyst 2020 (oc20) dataset
+and community challenges. ACS Catalysis 11(10):6059–6072
+
+[7] Curtarolo S, Setyawan W, Wang S, Xue J, Yang K, et al. 2012. Aflowlib.org: A distributed mate-
+rials properties repository from high-throughput ab initio calculations. Computational Materials
+Science 58:227–235
+
+[8] Ward L, Dunn A, Faghaninia A, Zimmermann NE, Bajaj S, et al. 2018. Matminer: An open
+source toolkit for materials data mining. Computational Materials Science 152:60–69
+
+[9] Tran R, Lan J, Shuaibi M, Goyal S, Wood BM, et al. 2022. The open catalyst 2022 (oc22) dataset
+and challenges for oxide electrocatalysis. ArXiv: 2206.08917
+
+[10] Huo H, Rupp M. 2017. Unified representation of molecules and crystals for machine learning.
+ArXiv: 1704.06439
+
+[11] Faber F, Lindmaa A, Lilienfeld OAV, Armiento R. 2015. Crystal structure representations for
+machine learning models of formation energies. International Journal of Quantum Chemistry
+115(16):1094–1101
+
+[12] Bart´ok AP, Kondor R, Cs´anyi G. 2013. On representing chemical environments. Physical Review
+B 87(18):184115
+
+[13] Lilienfeld OAV, Ramakrishnan R, Rupp M, Knoll A. 2015. Fourier series of atomic radial dis-
+tribution functions: A molecular fingerprint for machine learning models of quantum chemical
+properties. International Journal of Quantum Chemistry 115(16):1084–1093
+
+[14] Musil F, Grisafi A, Bart´ok AP, Ortner C, Cs´anyi G, Ceriotti M. 2021. Physics-inspired structural
+representations for molecules and materials. Chemical Reviews 121(16):9759–9815
+
+[15] Glass CW, Oganov AR, Hansen N. 2006. Uspex—evolutionary crystal structure prediction. Com-
+puter Physics Communications 175(11-12):713–720
+
+21
+
+
+[16] Wang Y, Lv J, Zhu L, Ma Y. 2010. Crystal structure prediction via particle-swarm optimization.
+Physical Review B 82(9):094116
+
+[17] Ward L, Liu R, Krishna A, Hegde VI, Agrawal A, et al. 2017. Including crystal structure at-
+tributes in machine learning models of formation energies via voronoi tessellations. Physical
+Review B 96(2):024104
+
+[18] Xie T, Grossman JC. 2018. Crystal graph convolutional neural networks for an accurate and
+interpretable prediction of material properties. Physical Review Letters 120(14):145301
+
+[19] Ward L, Agrawal A, Choudhary A, Wolverton C. 2016. A general-purpose machine learn-
+ing framework for predicting properties of inorganic materials. npj Computational Materials
+2(1):16028
+
+[20] Haynes WM. 2016. CRC Handbook of Chemistry and Physics. CRC Press
+
+[21] Frey NC, Akinwande D, Jariwala D, Shenoy VB. 2020. Machine learning-enabled design of
+point defects in 2d materials for quantum and neuromorphic information processing. ACS Nano
+14(10):13406–13417
+
+[22] Hoffmann J, Maestrati L, Sawada Y, Tang J, Sellier JM, Bengio Y. 2019. Data-driven approach
+to encoding and decoding 3-d crystal structures. ArXiv: 1909.00949
+
+[23] Noh J, Kim J, Stein HS, Sanchez-Lengeling B, Gregoire JM, et al. 2019. Inverse design of solid-
+state materials via a continuous representation. Matter 1(5):1370–1384
+
+[24] Court CJ, Yildirim B, Jain A, Cole JM. 2020. 3-d inorganic crystal structure generation and
+property prediction via representation learning. Journal of Chemical Information and Modeling
+60(10):4518–4535
+
+[25] Choubisa H, Askerka M, Ryczko K, Voznyy O, Mills K, et al. 2020. Crystal site feature embedding
+enables exploration of large chemical spaces. Matter 3(2):433–448
+
+[26] Behler J, Parrinello M. 2007. Generalized neural-network representation of high-dimensional
+potential-energy surfaces. Physical Review Letters 98(14):146401
+
+[27] Behler J. 2011. Atom-centered symmetry functions for constructing high-dimensional neural net-
+work potentials. The Journal of Chemical Physics 134(7):074106
+
+[28] Smith JS, Isayev O, Roitberg AE. 2017. Ani-1: an extensible neural network potential with dft
+accuracy at force field computational cost. Chemical Science 8(4):3192–3203
+
+[29] De S, Bart´ok AP, Cs´anyi G, Ceriotti M. 2016. Comparing molecules and solids across structural
+and alchemical space. Physical Chemistry Chemical Physics 18(20):13754–13769
+
+[30] Schwalbe-Koda D, Jensen Z, Olivetti E, G´omez-Bombarelli R. 2019. Graph similarity drives
+zeolite diffusionless transformations and intergrowth. Nature Materials 18(11):1177–1181
+
+[31] Dragoni D, Daff TD, Cs´anyi G, Marzari N. 2018. Achieving dft accuracy with a machine-learning
+interatomic potential: Thermomechanics and defects in bcc ferromagnetic iron. Physical Review
+Materials 2(1):013808
+
+[32] Willatt MJ, Musil F, Ceriotti M. 2019. Atom-density representations for machine learning. The
+Journal of Chemical Physics 150(15):154110
+
+22
+
+
+[33] Sch¨utt KT, Glawe H, Brockherde F, Sanna A, M¨uller KR, Gross EK. 2014. How to represent
+crystal structures for machine learning: Towards fast prediction of electronic properties. Physical
+Review B 89(20):205118
+
+[34] Moosavi SM, ´Almos Novotny B, Ongari D, Moubarak E, Asgari M, et al. 2022. A data-science
+approach to predict the heat capacity of nanoporous materials. Nature Materials 21(12):1419–
+1425
+
+[35] Isayev O, Oses C, Toher C, Gossett E, Curtarolo S, Tropsha A. 2017. Universal fragment de-
+scriptors for predicting properties of inorganic crystals. Nature Communications 8(1):15679
+
+[36] Bart´ok AP, De S, Poelking C, Bernstein N, Kermode JR, et al. 2017. Machine learning unifies
+the modeling of materials and molecules. Science Advances 3(12):e1701816
+
+[37] Lazar EA, Lu J, Rycroft CH. 2022. Voronoi cell analysis: The shapes of particle systems. Amer-
+ican Journal of Physics 90(6):469
+
+[38] Krishnapriyan AS, Montoya J, Haranczyk M, Hummelshøj J, Morozov D. 2021. Machine learn-
+ing with persistent homology and chemical word embeddings improves prediction accuracy and
+interpretability in metal-organic frameworks. Scientific Reports 11(1):1–11
+
+[39] Rupp M, Tkatchenko A, M¨uller KR, Lilienfeld OAV. 2012. Fast and accurate modeling of molec-
+ular atomization energies with machine learning. Physical Review Letters 108(5):058301
+
+[40] Sauceda HE, G´alvez-Gonz´alez LE, Chmiela S, Paz-Borb´on LO, M¨uller KR, Tkatchenko A. 2022.
+Bigdml—towards accurate quantum machine learning force fields for materials. Nature Commu-
+nications 13(1):3733
+
+[41] Sanchez JM, Ducastelle F, Gratias D. 1984. Generalized cluster description of multicomponent
+systems. Physica A: Statistical Mechanics and its Applications 128(1-2):334–350
+
+[42] Chang JH, Kleiven D, Melander M, Akola J, Garcia-Lastra JM, Vegge T. 2019. Clease: a versatile
+and user-friendly implementation of cluster expansion method. Journal of Physics: Condensed
+Matter 31(32):325901
+
+[43] Hart GL, Mueller T, Toher C, Curtarolo S. 2021. Machine learning for alloys. Nature Reviews
+Materials 6(8):730–755
+
+[44] Nyshadham C, Rupp M, Bekker B, Shapeev AV, Mueller T, et al. 2019. Machine-learned multi-
+system surrogate models for materials prediction. npj Computational Materials 5(1):1–6
+
+[45] Yang JH, Chen T, Barroso-Luque L, Jadidi Z, Ceder G. 2022. Approaches for handling high-
+dimensional cluster expansions of ionic systems. npj Computational Materials 8(1):1–11
+
+[46] Drautz R. 2019. Atomic cluster expansion for accurate and transferable interatomic potentials.
+Physical Review B 99(1):014104
+
+[47] Batatia I, Kov´acs DP, Simm GNC, Ortner C, Cs´anyi G. 2022. Mace: Higher order equivariant
+message passing neural networks for fast and accurate force fields. ArXiv: 2206.07697
+
+[48] Carlsson G. 2020. Topological methods for data modelling. Nature Reviews Physics 2(12):697–708
+
+[49] Pun CS, Lee SX, Xia K. 2022. Persistent-homology-based machine learning: a survey and a
+comparative study. Artificial Intelligence Review 55(7):5169–5213
+
+23
+
+
+[50] Jiang Y, Chen D, Chen X, Li T, Wei GW, Pan F. 2021. Topological representations of crystalline
+compounds for the machine-learning prediction of materials properties. npj Computational Ma-
+terials 7(1):1–8
+
+[51] Lee Y, Barthel SD, D�lotko P, Moosavi SM, Hess K, Smit B. 2018. High-throughput screening ap-
+proach for nanoporous materials genome using topological data analysis: Application to zeolites.
+Journal of Chemical Theory and Computation 14(8):4427–4437
+
+[52] Buchet M, Hiraoka Y, Obayashi I. 2018. Persistent homology and materials informatics. In:
+Tanaka, I. (eds) Nanoinformatics. Springer, Singapore
+
+[53] Duvenaud D, Maclaurin D, Aguilera-Iparraguirre J, G´omez-Bombarelli R, Hirzel T, et al. 2015.
+Convolutional networks on graphs for learning molecular fingerprints. 28th Conference on Ad-
+vances in Neural Information Processing Systems
+
+[54] Reiser P, Neubert M, Eberhard A, Torresi L, Zhou C, et al. 2022. Graph neural networks for
+materials science and chemistry. Communications Materials 3(1):1–18
+
+[55] Sch¨utt KT, Sauceda HE, Kindermans PJ, Tkatchenko A, M¨uller KR. 2018. Schnet – a deep learn-
+ing architecture for molecules and materials. The Journal of Chemical Physics 148(24):241722
+
+[56] Chen C, Ye W, Zuo Y, Zheng C, Ong SP. 2019. Graph networks as a universal machine learning
+framework for molecules and crystals. Chemistry of Materials 31(9):3564–3572
+
+[57] Fung V, Zhang J, Juarez E, Sumpter BG. 2021. Benchmarking graph neural networks for mate-
+rials chemistry. npj Computational Materials 7(1):84
+
+[58] Chen C, Zuo Y, Ye W, Li X, Ong SP. 2021. Learning properties of ordered and disordered
+materials from multi-fidelity data. Nature Computational Science 1(1):46–53
+
+[59] Choudhary K, DeCost B. 2021. Atomistic line graph neural network for improved materials
+property predictions. npj Computational Materials 7(1):185
+
+[60] Park CW, Wolverton C. 2020. Developing an improved crystal graph convolutional neural net-
+work framework for accelerated materials discovery. Physical Review Materials 4(6):063801
+
+[61] Karamad M, Magar R, Shi Y, Siahrostami S, Gates ID, Farimani AB. 2020. Orbital graph convo-
+lutional neural network for material property prediction. Physical Review Materials 4(9):093801
+
+[62] Karaguesian* J, Lunger* JR, Shao-Horn Y, Gomez-Bombarelli R. 2021. Crystal graph convolu-
+tional neural networks for per-site property prediction. Workshop on Machine Learning and the
+Physical Sciences at the 35th Conference on Neural Information Processing Systems
+
+[63] Gong S, Xie T, Shao-Horn Y, Gomez-Bombarelli R, Grossman JC. 2022. Examining graph neural
+networks for crystal structures: limitations and opportunities for capturing periodicity. ArXiv:
+2208.05039
+
+[64] Sch¨utt KT, Unke OT, Gastegger M. 2021. Equivariant message passing for the prediction of
+tensorial properties and molecular spectra. 38th International Conference on Machine Learning
+
+[65] Cheng J, Zhang C, Dong L. 2021. A geometric-information-enhanced crystal graph network for
+predicting properties of materials. Communications Materials 2(1):92
+
+24
+
+
+[66] Louis SY, Zhao Y, Nasiri A, Wang X, Song Y, et al. 2020. Graph convolutional neural networks
+with global attention for improved materials property prediction. Physical Chemistry Chemical
+Physics 22(32):18141–18148
+
+[67] Yu H, Hong L, Chen S, Gong X, Xiang H. 2023. Capturing long-range interaction with reciprocal
+space neural network. ArXiv 2211.16684
+
+[68] Kong S, Ricci F, Guevarra D, Neaton JB, Gomes CP, Gregoire JM. 2022. Density of states
+prediction for materials discovery via contrastive learning from probabilistic embeddings. Nature
+Communications 13(1):949
+
+[69] Batzner S, Musaelian A, Sun L, Geiger M, Mailoa JP, et al. 2021. E(3)-equivariant graph
+neural networks for data-efficient and accurate interatomic potentials. Nature Communications
+13(1):2453
+
+[70] Geiger M, Smidt T. 2022. e3nn: Euclidean neural networks. ArXiv 2207.09453
+
+[71] Thomas N, Smidt T, Kearnes S, Yang L, Li L, et al. 2018. Tensor field networks: Rotation- and
+translation-equivariant neural networks for 3d point clouds. ArXiv: 1802.08219
+
+[72] Gasteiger J, Becker F, G¨unnemann S. 2021. Gemnet: Universal directional graph neural networks
+for molecules. 35th Conference on Neural Information Processing Systems
+
+[73] Gasteiger J, Shuaibi M, Sriram A, G¨unnemann S, Ulissi Z, et al. 2022. How do graph networks
+generalize to large and diverse molecular systems? ArXiv: 2204.02782
+
+[74] Chen Z, Andrejevic N, Smidt T, Ding Z, Xu Q, et al. 2021. Direct prediction of phonon density
+of states with euclidean neural networks. Advanced Science 8(12):2004214
+
+[75] Kolluru A, Shuaibi M, Palizhati A, Shoghi N, Das A, et al. 2022. Open challenges in devel-
+oping generalizable large-scale machine-learning models for catalyst discovery. ACS Catalysis
+12(14):8572–8581
+
+[76] Gibson J, Hire A, Hennig RG. 2022. Data-augmentation for graph neural network learning of
+the relaxed energies of unrelaxed structures. npj Computational Materials 8(1):211
+
+[77] Schmidt J, Pettersson L, Verdozzi C, Botti S, Marques MA. 2021. Crystal graph attention net-
+works for the prediction of stable materials. Science Advances 7(49):7948
+
+[78] Zuo Y, Qin M, Chen C, Ye W, Li X, et al. 2021. Accelerating materials discovery with bayesian
+optimization and graph deep learning. Materials Today 51:126–135
+
+[79] Dunn A, Wang Q, Ganose A, Dopp D, Jain A. 2020. Benchmarking materials property predic-
+tion methods: the matbench test set and automatminer reference algorithm. npj Computational
+Materials 6(1):138
+
+[80] Callister WD, Rethwisch DG. 2018. Materials science and engineering: an introduction, 10th
+edition. Wiley Global Education
+
+[81] Pauling L. 1929. The principles determining the structure of complex ionic crystals. Journal of
+the American Chemical Society 51(4):1010–1026
+
+[82] George J, Waroquiers D, Stefano DD, Petretto G, Rignanese GM, Hautier G. 2020. The limited
+predictive power of the pauling rules. Angewandte Chemie 132(19):7639–7645
+
+25
+
+
+[83] Meredig B, Agrawal A, Kirklin S, Saal JE, Doak JW, et al. 2014. Combinatorial screening for
+new materials in unconstrained composition space with machine learning. Physical Review B
+89(9):094104
+
+[84] Bartel CJ, Trewartha A, Wang Q, Dunn A, Jain A, Ceder G. 2020. A critical examination
+of compound stability predictions from machine-learned formation energies. npj Computational
+Materials 6(1):97
+
+[85] Stanev V, Oses C, Kusne AG, Rodriguez E, Paglione J, et al. 2018. Machine learning modeling
+of superconducting critical temperature. npj Computational Materials 4(1):29
+
+[86] Faber FA, Lindmaa A, Lilienfeld OAV, Armiento R. 2016. Machine learning energies of 2 million
+elpasolite (abc2d6) crystals. Physical Review Letters 117(13):135502
+
+[87] Oliynyk AO, Antono E, Sparks TD, Ghadbeigi L, Gaultois MW, et al. 2016. High-
+throughput machine-learning-driven synthesis of full-heusler compounds. Chemistry of Materials
+28(20):7324–7331
+
+[88] Ouyang R, Curtarolo S, Ahmetcik E, Scheffler M, Ghiringhelli LM. 2018. Sisso: A compressed-
+sensing method for identifying the best low-dimensional descriptor in an immensity of offered
+candidates. Physical Review Materials 2(8):083802
+
+[89] Ghiringhelli LM, Vybiral J, Ahmetcik E, Ouyang R, Levchenko SV, et al. 2017. Learning physical
+descriptors for materials science by compressed sensing. New Journal of Physics 19(2):023017
+
+[90] Ghiringhelli LM, Vybiral J, Levchenko SV, Draxl C, Scheffler M. 2015. Big data of materials
+science: Critical role of the descriptor. Physical Review Letters 114(10):105503
+
+[91] Bartel CJ, Sutton C, Goldsmith BR, Ouyang R, Musgrave CB, et al. 2019. New tolerance factor
+to predict the stability of perovskite oxides and halides. Science Advances 5(2):eaav069
+
+[92] Zhou Q, Tang P, Liu S, Pan J, Yan Q, Zhang SC. 2018. Learning atoms for materials discovery.
+Proceedings of the National Academy of Sciences of the United States of America 115(28):E6411–
+E6417
+
+[93] Tshitoyan V, Dagdelen J, Weston L, Dunn A, Rong Z, et al. 2019. Unsupervised word embeddings
+capture latent knowledge from materials science literature. Nature 571(7763):95–98
+
+[94] Jha D, Ward L, Paul A, keng Liao W, Choudhary A, et al. 2018. Elemnet: Deep learning the
+chemistry of materials from only elemental composition. Scientific Reports 8(1):17593
+
+[95] Goodall RE, Lee AA. 2020. Predicting materials properties without crystal structure: deep
+representation learning from stoichiometry. Nature Communications 11(1):6280
+
+[96] Wang AYT, Kauwe SK, Murdock RJ, Sparks TD. 2021. Compositionally restricted attention-
+based network for materials property predictions. npj Computational Materials 7(1):77
+
+[97] Zhang Z, Tehrani AM, Oliynyk AO, Day B, Brgoch J. 2021. Finding the next superhard material
+through ensemble learning. Advanced Materials 33(5):2005112
+
+[98] Oliynyk AO, Adutwum LA, Rudyk BW, Pisavadia H, Lotfi S, et al. 2017. Disentangling struc-
+tural confusion through machine learning: Structure prediction and polymorphism of equiatomic
+ternary phases abc. Journal of the American Chemical Society 139(49):17870–17881
+
+26
+
+
+[99] Tian SIP, Walsh A, Ren Z, Li Q, Buonassisi T. 2022. What information is necessary and sufficient
+to predict materials properties using machine learning? ArXiv: 2206.04968
+
+[100] Artrith N. 2019. Machine learning for the modeling of interfaces in energy storage and conversion
+materials. Journal of Physics: Energy 1(3):032002
+
+[101] Rao RR, Kolb MJ, Giordano L, Pedersen AF, Katayama Y, et al. 2020. Operando identification
+of site-dependent water oxidation activity on ruthenium dioxide single-crystal surfaces. Nature
+Catalysis 3:516–525
+
+[102] Varley JB, Samanta A, Lordi V. 2017. Descriptor-based approach for the prediction of cation va-
+cancy formation energies and transition levels. Journal of Physical Chemistry Letters 8(20):5059–
+5063
+
+[103] Zhang X, Wang H, Hickel T, Rogal J, Li Y, Neugebauer J. 2020. Mechanism of collective inter-
+stitial ordering in fe–c alloys. Nature Materials 19(8):849–854
+
+[104] Deringer VL, Bart´ok AP, Bernstein N, Wilkins DM, Ceriotti M, Cs´anyi G. 2021. Gaussian process
+regression for materials and molecules. Chemical Reviews 121(16):10073–10141
+
+[105] Wan Z, Wang QD, Liu D, Liang J. 2021. Data-driven machine learning model for the prediction of
+oxygen vacancy formation energy of metal oxide materials. Physical Chemistry Chemical Physics
+23(29):15675–15684
+
+[106] Witman M, Goyal A, Ogitsu T, McDaniel A, Lany. S. 2022. Graph neural network modeling of
+vacancy formation enthalpy for materials discovery and its application in solar thermochemical
+water splitting. ChemRxiv 10.26434
+
+[107] Medasani B, Gamst A, Ding H, Chen W, Persson KA, et al. 2016. Predicting defect behavior
+in b2 intermetallics by merging ab initio modeling and machine learning. npj Computational
+Materials 2(1):1
+
+[108] Ziletti A, Kumar D, Scheffler M, Ghiringhelli LM. 2018. Insightful classification of crystal struc-
+tures using deep learning. Nature Communications 9(1):2775
+
+[109] Medford AJ, Vojvodic A, Hummelshøj JS, Voss J, Abild-Pedersen F, et al. 2015. From the
+sabatier principle to a predictive theory of transition-metal heterogeneous catalysis. Journal of
+Catalysis 328:36–42
+
+[110] Zhao ZJ, Liu S, Zha S, Cheng D, Studt F, et al. 2019. Theory-guided design of catalytic materials
+using scaling relationships and reactivity descriptors. Nature Reviews Materials 4(12):792–804
+
+[111] Hwang J, Rao RR, Giordano L, Katayama Y, Yu Y, Shao-Horn Y. 2017. Perovskites in catalysis
+and electrocatalysis. Science 358(6364):751–756
+
+[112] Calle-Vallejo F, Tymoczko J, Colic V, Vu QH, Pohl MD, et al. 2015. Finding optimal surface
+sites on heterogeneous catalysts by counting nearest neighbors. Science 350(6257):185–189
+
+[113] Fung V, Hu G, Ganesh P, Sumpter BG. 2021. Machine learned features from density of states
+for accurate adsorption energy prediction. Nature Communications 12(1):88
+
+[114] Back S, Yoon J, Tian N, Zhong W, Tran K, Ulissi ZW. 2019. Convolutional neural network of
+atomic surface structures to predict binding energies for high-throughput screening of catalysts.
+Journal of Physical Chemistry Letters 10(15):4401–4408
+
+27
+
+
+[115] Tran K, Ulissi ZW. 2018. Active learning across intermetallics to guide discovery of electrocata-
+lysts for co2 reduction and h2 evolution. Nature Catalysis 1(9):696–703
+
+[116] Ghanekar PG, Deshpande S, Greeley J. 2022. Adsorbate chemical environment-based machine
+learning framework for heterogeneous catalysis. Nature Communications 13(1):5788
+
+[117] Kiyohara S, Oda H, Miyata T, Mizoguchi T. 2016. Prediction of interface structures and energies
+via virtual screening. Science Advances 2(11):1600746
+
+[118] Hu C, Zuo Y, Chen C, Ong SP, Luo J. 2020. Genetic algorithm-guided deep learning of grain
+boundary diagrams: Addressing the challenge of five degrees of freedom. Materials Today 38:49–
+57
+
+[119] Dai M, Demirel MF, Liang Y, Hu JM. 2021. Graph neural networks for an accurate and inter-
+pretable prediction of the properties of polycrystalline materials. npj Computational Materials
+7:103
+
+[120] Huber L, Hadian R, Grabowski B, Neugebauer J. 2018. A machine learning approach to model
+solute grain boundary segregation. npj Computational Materials 4(1):64
+
+[121] Ye W, Zheng H, Chen C, Ong SP. 2022. A universal machine learning model for elemental grain
+boundary energies. Scripta Materialia 218:114803
+
+[122] Lazar EA. 2017. Vorotop: Voronoi cell topology visualization and analysis toolkit. Modelling and
+Simulation in Materials Science and Engineering 26(1):015011
+
+[123] Priedeman JL, Rosenbrock CW, Johnson OK, Homer ER. 2018. Quantifying and connecting
+atomic and crystallographic grain boundary structure using local environment representation
+and dimensionality reduction techniques. Acta Materialia 161:431–443
+
+[124] Rosenbrock CW, Homer ER, Cs´anyi G, Hart GL. 2017. Discovering the building blocks of atomic
+systems using machine learning: application to grain boundaries. npj Computational Materials
+3(1):29
+
+[125] Fujii S, Yokoi T, Fisher CA, Moriwake H, Yoshiya M. 2020. Quantitative prediction of grain
+boundary thermal conductivities from local atomic environments. Nature Communications
+11(1):1854
+
+[126] Sharp TA, Thomas SL, Cubuk ED, Schoenholz SS, Srolovitz DJ, Liu AJ. 2018. Machine learning
+determination of atomic dynamics at grain boundaries. Proceedings of the National Academy of
+Sciences of the United States of America 115(43):10943–10947
+
+[127] Batatia I, Batzner S, Kov´acs DP, Musaelian A, Simm GNC, et al. 2022. The design space of
+e(3)-equivariant atom-centered interatomic potentials. ArXiv: 2205.06643
+
+[128] Axelrod S, Shakhnovich E, G´omez-Bombarelli R. 2022. Excited state non-adiabatic dynamics
+of large photoswitchable molecules using a chemically transferable machine learning potential.
+Nature Communications 13(1):3440
+
+[129] Li X, Li B, Yang Z, Chen Z, Gao W, Jiang Q. 2022. A transferable machine-learning scheme
+from pure metals to alloys for predicting adsorption energies. Journal of Materials Chemistry A
+10(2):872–880
+
+28
+
+
+[130] Harper DR, Nandy A, Arunachalam N, Duan C, Janet JP, Kulik HJ. 2022. Representations and
+strategies for transferable machine learning improve model performance in chemical discovery.
+The Journal of Chemical Physics 156(7):074101
+
+[131] Unke OT, Chmiela S, Gastegger M, Sch¨utt KT, Sauceda HE, M¨uller KR. 2021. Spookynet:
+Learning force fields with electronic degrees of freedom and nonlocal effects. Nature Communi-
+cations 12(1):7273
+
+[132] Husch T, Sun J, Cheng L, Lee SJ, Miller TF. 2021. Improved accuracy and transferability of
+molecular-orbital-based machine learning: Organics, transition-metal complexes, non-covalent
+interactions, and transition states. The Journal of Chemical Physics 154(6):064108
+
+[133] Zheng X, Zheng P, Zhang RZ. 2018. Machine learning material properties from the periodic table
+using convolutional neural networks. Chemical Science 9(44):8426–8432
+
+[134] Feng S, Fu H, Zhou H, Wu Y, Lu Z, Dong H. 2021. A general and transferable deep learning
+framework for predicting phase formation in materials. npj Computational Materials 7(1):10
+
+[135] Jha D, Choudhary K, Tavazza F, keng Liao W, Choudhary A, et al. 2019. Enhancing materi-
+als property prediction by leveraging computational and experimental data using deep transfer
+learning. Nature Communications 10(1):5316
+
+[136] Yamada H, Liu C, Wu S, Koyama Y, Ju S, et al. 2019. Predicting materials properties with little
+data using shotgun transfer learning. ACS Central Science 5(10):1717–1730
+
+[137] Gupta V, Choudhary K, Tavazza F, Campbell C, keng Liao W, et al. 2021. Cross-property deep
+transfer learning framework for enhanced predictive analytics on small materials data. Nature
+Communications 12(1):6595
+
+[138] Lee J, Asahi R. 2021. Transfer learning for materials informatics using crystal graph convolutional
+neural network. Computational Materials Science 190:110314
+
+[139] Kolluru A, Shoghi N, Shuaibi M, Goyal S, Das A, et al. 2022. Transfer learning using attentions
+across atomic systems with graph neural networks (taag). The Journal of Chemical Physics
+156(18):184702
+
+[140] Chen C, Ong SP. 2021. Atomsets as a hierarchical transfer learning framework for small and
+large materials datasets. npj Computational Materials 7(1):173
+
+[141] Cubuk ED, Sendek AD, Reed EJ. 2019. Screening billions of candidates for solid lithium-ion
+conductors:
+A transfer learning approach for small data. The Journal of Chemical Physics
+150(21):214701
+
+[142] Greenman KP, Green WH, G´omez-Bombarelli R. 2022. Multi-fidelity prediction of molecular
+optical peaks with deep learning. Chemical Science 13(4):1152–1162
+
+[143] Kong S, Guevarra D, Gomes CP, Gregoire JM. 2021. Materials representation and transfer learn-
+ing for multi-property prediction. Applied Physics Reviews 8(2):021409
+
+[144] Kingma DP, Welling M. 2013. Auto-encoding variational bayes. 2nd International Conference on
+Learning Representations
+
+[145] Goodfellow IJ, Pouget-Abadie J, Mirza M, Xu B, Warde-Farley D, et al. 2014. Generative ad-
+versarial networks. 27th Conference on Advances in Neural Information Processing Systems
+
+29
+
+
+[146] Nouira A, Sokolovska N, Crivello JC. 2018. Crystalgan: Learning to discover crystallographic
+structures with generative adversarial networks. 2019 Spring Symposium on Combining Machine
+Learning with Knowledge Engineering
+
+[147] Shi C, Luo S, Xu M, Tang J. 2021. Learning gradient fields for molecular conformation generation.
+38th International Conference on Machine Learning
+
+[148] Ho J, Jain A, Abbeel P. 2020. Denoising diffusion probabilistic models. 34th Conference on Neural
+Information Processing Systems
+
+[149] Schwalbe-Koda D, G´omez-Bombarelli R. 2020. Generative models for automatic chemical design.
+Lecture Notes in Physics 968:445–467
+
+[150] Noh J, Gu GH, Kim S, Jung Y. 2020. Machine-enabled inverse design of inorganic solid materials:
+promises and challenges. Chemical Science 11(19):4871–4881
+
+[151] Fuhr AS, Sumpter BG. 2022. Deep generative models for materials discovery and machine
+learning-accelerated innovation. Frontiers in Materials 9:182
+
+[152] Xie T, Fu X, Ganea OE, Barzilay R, Jaakkola T. 2021. Crystal diffusion variational autoencoder
+for periodic material generation. 10th International Conference on Learning Representations
+
+[153] Yao Z, S´anchez-Lengeling B, Bobbitt NS, Bucior BJ, Kumar SGH, et al. 2021. Inverse design of
+nanoporous crystalline reticular materials with deep generative models. Nature Machine Intelli-
+gence 3(1):76–86
+
+[154] Ren Z, Tian SIP, Noh J, Oviedo F, Xing G, et al. 2022. An invertible crystallographic representa-
+tion for general inverse design of inorganic crystals with targeted properties. Matter 5(1):314–335
+
+[155] Long T, Fortunato NM, Opahle I, Zhang Y, Samathrakis I, et al. 2021. Constrained crystals
+deep convolutional generative adversarial network for the inverse design of crystal structures. npj
+Computational Materials 7(1):66
+
+[156] Kim S, Noh J, Gu GH, Aspuru-Guzik A, Jung Y. 2020. Generative adversarial networks for
+crystal structure prediction. ACS Central Science 6(8):1412–1420
+
+[157] Fung V, Jia S, Zhang J, Bi S, Yin J, Ganesh P. 2022. Atomic structure generation from recon-
+structing structural fingerprints. Machine Learning: Science and Technology 3(4):045018
+
+[158] Kim B, Lee S, Kim J. 2020. Inverse design of porous materials using artificial neural networks.
+Science Advances 6(1):aax9324
+
+[159] Musaelian A, Batzner S, Johansson A, Sun L, Owen CJ, et al. 2022. Learning local equivariant
+representations for large-scale atomistic dynamics. ArXiv: 2204.05249
+
+[160] Unke OT, Chmiela S, Sauceda HE, Gastegger M, Poltavsky I, et al. 2021. Machine learning force
+fields. Chemical Reviews 121(16):10142–10186
+
+[161] Grisafi A, Nigam J, Ceriotti M. 2021. Multi-scale approach for the prediction of atomic scale
+properties. Chemical Science 12:2078
+
+[162] Schaarschmidt M, Riviere M, Ganose AM, Spencer JS, Gaunt AL, et al. 2022. Learned force
+fields are ready for ground state catalyst discovery. ArXiv: 2209.12466
+
+[163] Lan J, Palizhati A, Shuabi M, Wood BM, Wander B, et al. 2023. Adsorbml: Accelerating ad-
+sorption energy calculations with machine learning. ArXiv 2211.16486
+
+30
+
+
+[164] Kresse G, Hafner J. 1993. Ab initio molecular dynamics for liquid metals. Phys. Rev. B 47(1):558–
+561
+
+[165] Chen C, Ong SP. 2022. A universal graph deep learning interatomic potential for the periodic
+table. Nature Computational Science 2(11):718–728
+
+[166] Legrain F, Carrete J, Roekeghem AV, Curtarolo S, Mingo N. 2017. How chemical composi-
+tion alone can predict vibrational free energies and entropies of solids. Chemistry of Materials
+29(15):6220–6227
+
+[167] Zhuo Y, Tehrani AM, Brgoch J. 2018. Predicting the band gaps of inorganic solids by machine
+learning. Journal of Physical Chemistry Letters 9(7):1668–1673
+
+[168] Hsu T, Epting WK, Kim H, Abernathy HW, Hackett GA, et al. 2020. Microstructure generation
+via generative adversarial network for heterogeneous, topologically complex 3d materials. JOM
+73(1):90–102
+
+[169] Song Y, Siriwardane EM, Zhao Y, Hu J. 2020. Computational discovery of new 2d materials
+using deep learning generative models. ACS Applied Materials and Interfaces 13(45)
+
+[170] Liu Z, Zhu D, Rodrigues SP, Lee KT, Cai W. 2018. Generative model for the inverse design of
+metasurfaces. Nano Letters 18(10):6570–6576
+
+[171] Dan Y, Zhao Y, Li X, Li S, Hu M, Hu J. 2020. Generative adversarial networks (gan) based
+efficient sampling of chemical composition space for inverse design of inorganic materials. npj
+Computational Materials 6(1):84
+
+31
+
+

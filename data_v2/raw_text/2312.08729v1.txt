@@ -1,0 +1,5623 @@
+VASP2KP: k · p models and Land´e g-factors from ab initio calculations
+
+Sheng Zhang,1, 2, ∗ Haohao Sheng,1, 2, ∗ Zhi-Da Song,3, 4, 5, † Chenhao Liang,1, 2 Yi Jiang,1, 2 Song
+Sun,1, 2 Quansheng Wu,1, 2 Hongming Weng,1, 2 Zhong Fang,1, 2 Xi Dai,6 and Zhijun Wang1, 2, ‡
+
+1Beijing National Laboratory for Condensed Matter Physics,
+and Institute of Physics, Chinese Academy of Sciences, Beijing 100190, China
+2University of Chinese Academy of Sciences, Beijing 100049, China
+3International Center for Quantum Materials, School of Physics, Peking University, Beijing 100871, China
+4Hefei National Laboratory, Hefei 230088, China
+5Collaborative Innovation Center of Quantum Matter, Beijing 100871, China
+6Department of Physics, Hong Kong University of Science and Technology, Hong Kong 999077, China
+
+The k ·p method is significant in condensed matter physics for the compact and analytical Hamil-
+tonian. In the presence of magnetic field, it is described by the effective Zeeman’s coupling Hamil-
+tonian with Land´e g-factors.
+Here, we develop an open-source package VASP2KP (including two
+parts: vasp2mat and mat2kp) to compute k · p parameters and Land´e g-factors directly from the
+wavefunctions provided by the density functional theory (DFT) as implemented in Vienna ab initio
+Simulation Package (VASP). First, we develop a VASP patch vasp2mat to compute matrix repre-
+sentations of the generalized momentum operator ˆπ = ˆp +
+1
+
+2mc2 (ˆs × ∇V (r)), spin operator ˆs, time
+reversal operator ˆT and crystalline symmetry operators ˆR on the DFT wavefunctions. Second, we
+develop a python code mat2kp to obtain the unitary transformation U that rotates the degenerate
+DFT basis towards the standard basis, and then automatically compute the k · p parameters and
+g-factors. The theory and the methodology behind VASP2KP are described in detail. The matrix
+elements of the operators are derived comprehensively and computed correctly within the projector
+augmented wave method. We apply this package to some materials, e.g. Bi2Se3, Na3Bi, Te, InAs
+and 1H-TMD monolayers. The obtained effective model’s dispersions are in good agreement with
+the DFT data around the specific wave vector, and the g-factors are consistent with experimental
+data. The VASP2KP package is available at https://github.com/zjwang11/VASP2KP.
+
+I.
+INTRODUCTION
+
+Electronic band structures hold immense importance
+in the field of condensed matter physics and materials
+science, providing crucial insights into the behavior of
+electrons within crystalline materials. They reveals infor-
+mation about distributions of energy levels, energy gaps,
+and density of states, which are essential for determin-
+ing material electrical conductivities, optical properties,
+thermal behavior, and so on.
+In this background, the
+density functional theory (DFT) [1, 2] was developed,
+which gave birth to many first-principles calculation soft-
+wares or codes based on them, including VASP [3, 4],
+Quantum Espresso [5, 6], CASTEP [7], ABINIT [8, 9],
+and so on [10–13].
+
+However, DFT bands are quite complex, which contain
+quite a large number of energy bands that hardly affect
+the desired physical properties thus making the physical
+pictures difficult to understand.
+In order to construct
+a model that only involves a few bands with a greater
+impact on the physical properties of materials, the k · p
+method is proposed, which is used to construct an effec-
+tive model to describe the quasiparticles near the specific
+wave vector in the reciprocal space [14]. The k ·p models
+
+∗These authors contributed equally to this work.
+†Electronic address: songzd@pku.edu.cn
+‡Electronic address: wzj@iphy.ac.cn
+
+constructed through the theory of invariants are analyti-
+cal and only contain a few important bands, thus making
+the physical pictures quite clear. There are some arbi-
+trary parameters in k · p models, which could be deter-
+mined by fitting to the corresponding experimental data
+or the DFT calculation data such as band structures.
+The k · p method has been successfully applied to many
+condensed-matter systems, including metals [15, 16],
+semiconductors [17, 18], topological insulators and su-
+perconductors [19–22], spin-lasers [23, 24], nanostruc-
+tured solids [25], two-dimensional van der Waals materi-
+als [26, 27] and so on [28–31].
+
+When a magnetic field is applied to a condensed matter
+system, we can use effective Zeeman’s coupling Hamilto-
+nian to describe the effects of the magnetic field. Effec-
+tive Zeeman’s coupling determines the split of Kramers
+states under magnetic field, leading to outcomes like the
+Pauli paramagnetism of the metals and the van Vleck
+paramagnetism of insulators.
+The important parame-
+ters in Zeeman’s coupling are Land´e g-factors.
+Land´e
+g-factors of materials have been widely studied in quan-
+tum wires [32–35], quantum dots [36, 37], semiconductors
+nanostructures [38–42], topological materials [43, 44] and
+so on [45–47]. Moreover, the theory of invariants can also
+be used to construct Zeeman’s coupling Hamiltonian con-
+veniently. However, there is no available code to compute
+Land´e g-factors and k · p parameters directly from DFT
+wavefunctions.
+
+First of all, Gao et al. developed the program IRVSP
+
+to determine the irreducible representations (irreps)
+
+arXiv:2312.08729v1  [cond-mat.mtrl-sci]  14 Dec 2023
+
+
+2
+
+of bands at any k-point in VASP calculations [48].
+Then,
+Jiang et al. developed the python package
+kdotp-generator to generate the k · p effective Hamil-
+tonian for the given irreps automatically [49]. Further-
+more, Song et al. derived effective Zeeman’s coupling and
+g-factors in DFT calculations [50]. Thus, it is straight-
+forward for us to generate the VASP2KP code to con-
+struct the effective models and to compute the model
+parameters from VASP wavefunctions directly. Although
+many similar codes are developed subsequently for Quan-
+tum Espresso, such as IR2PW [51], IrRep [52], and
+DFT2kp [53], their functions do not go beyond the above
+mentioned codes. The DFT2kp can not generate the Zee-
+man’s coupling Hamiltonians. Additionally, the matrix
+elements of symmetry operators are not obtained prop-
+erly, because the projector augmented wave (PAW) cor-
+rections are neglected in DFT2kp.
+
+In this work, we have developed an open-source pack-
+age VASP2KP, which can generate the effective k ·p model
+and Zeeman’s coupling, and obtain the values of the k · p
+parameters and g-factors.
+This package contains two
+parts: a VASP patch vasp2mat and a post-processing
+python code mat2kp.
+First, we use vasp2mat to gen-
+erate matrix representations for generalized momentum
+ˆπ = ˆp +
+1
+
+2mc2 (ˆs × ∇V (r)), spin ˆs, time reversal ˆT, and
+crystalline symmetry operators ˆR in DFT calculations.
+The matrix elements of the space group operators are
+derived in detail and computed correctly in the PAW
+wavefunctions. Second, mat2kp can obtain the unitary
+transformation U from the degenerate wavefunctions to
+the k · p standard basis, and then compute these param-
+eters automatically. The obtained effective masses and
+g-factors are important and comparable with experimen-
+tal observations.
+
+The paper is organized as the following. In Sec. II, the
+theoretical foundations behind VASP2KP are introduced.
+In Sec.
+III the main algorithm steps are described in
+detail. The results obtained by VASP2KP are shown and
+analysed for some typical materials in Sec. IV, and we
+have some discussions in Sec. V.
+
+II.
+THEORY AND METHODOLOGY
+
+In this section, we first introduce the k · p method in
+Sec. II A. The method to obtain Zeeman’s coupling is
+presented in Sec. II B. Then the theory of invariants is
+reviewed and the invariant k · p Hamiltonian as well as
+Zeeman’s coupling are obtained in Sec. II C. In Sec. II D,
+we propose a general routine to get the unitary transfor-
+mation that change degenerate DFT basis to the k · p
+standard basis. Last, the method to calculate k · p pa-
+rameters and g-factors is introduced in Sec. II E.
+
+A.
+k · p effective Hamiltonian
+
+When we only care about wave vector K around a
+specific wave vector k0 in the Brillouin zone, it can be well
+described by using the k·p effective model. Suppose that
+ψnK(r) is the wavefunction of n-th band which satisfies
+the Schr¨odinger equation with spin-orbit coupling (SOC),
+i.e., ˆHBψnK(r) = ϵn(K)ψnK(r), where
+
+ˆHB = ˆp2
+
+2m + V (r) +
+1
+
+2m2c2 (ˆs × ∇V (r)) · ˆp
+(1)
+
+is the Bloch Hamiltonian operator with SOC, and ˆp is
+the momentum operator, V (r) is the potential in crys-
+tal, ˆs is the spin momentum operator, m is the elec-
+tron mass, and c is the light speed in vacuum. To ex-
+pand the Hamiltonian at k0, introducing a transforma-
+tion ϕnk(r) = ψnK(r)e−ik·r, where k = K − k0 is the
+deviation from k0, the Schr¨odinger equation which ϕk(r)
+obeys is
+
+�
+ˆHB + ℏ2k2
+
+2m + ˆH′(k)
+�
+ϕnk(r) = ϵn(K)ϕnk(r)
+(2)
+
+where ˆH′(k) = ℏ
+
+mk·π is the first-order term, and ˆπ = ˆp+
+1
+
+2mc2 (ˆs × ∇V (r)) is the generalized momentum operator
+with SOC. We can take ˆHkp = ˆHB + ℏ2k2
+
+2m + ˆH′(k) as the
+equivalent Hamiltonian of ˆHB since the eigenvalues of
+them are all equal.
+Suppose that we have got the eigenenergies {ϵn(k0)}
+and the eigenstates {|n(k0)⟩} of
+ˆHB.
+Then we can
+obtain the generalized momentum elements by πmn =
+⟨m(k0)|ˆπ|n(k0)⟩. Thus the matrix elements of ˆHkp can
+be obtained by
+
+Hkp-all
+mn
+(k) =
+�
+ϵn(k0) + ℏ2k2
+
+2m
+
+�
+δmn + ℏ
+
+mπmn · k
+(3)
+
+Usually, we aimed at several low-energy bands (the set of
+which is denoted as A). The set of other bands is denoted
+as B. Then we can fold down the Hkp-all
+mn
+(k) Hamiltonian
+into a subspace A via L¨owdin partitioning. After two-
+order L¨owdin partitioning, the effective k ·p Hamiltonian
+is transformed as (see Appendix A for details)
+
+Hkp
+αβ(k) =
+�
+ϵα(k0) + ℏ2k2
+
+2m
+
+�
+δαβ + ℏ
+
+mπαβ · k
+
++ ℏ2
+
+2m2
+�
+
+l∈B
+
+�
+
+ij
+πi
+αlπj
+lβkikj
+
+×
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+
+(4)
+
+with i, j ∈ {x, y, z}. Hereafter we use α, β ∈ A, l ∈ B
+and m, n ∈ A∪B. Moreover, the k ·p Hamiltonian of the
+third order can be constructed similarly in Appendix A.
+
+
+3
+
+B.
+Zeeman’s coupling
+
+When a magnetic field is applied to the system, the
+momenta ℏki should be replaced by (−iℏ∂i + eAi) ac-
+cording to Peierls substitution, where A is the vec-
+tor potential and e (positively valued) is the elemen-
+tary charge.
+Therefore, ℏ2kikj in the summation will
+be replaced by the sum of the gauge dependent term
+1
+2
+�
+−iℏ∂i + eAi, −iℏ∂j + eAj�
+and gauge independent
+term
+1
+2
+�
+−iℏ∂i + eAi, −iℏ∂j + eAj�
+= − iℏe
+
+2
+�
+
+k ϵijkBk,
+where B is the magnetic induction intensity. In this case,
+the total Hamiltonian can be written by the summation
+of the k · p effective Hamiltonian Hkp
+αβ and Zeeman’s cou-
+pling HZ
+αβ, which are gauge dependent and gauge invari-
+ant, respectively. The k·p effective Hamiltonian Hkp
+αβ can
+be expressed as
+
+Hkp
+αβ =ϵα(k0)δαβ + ℏ
+
+mπαβ ·
+�
+−i∇ + e
+
+ℏA
+�
+
++
+�
+
+ij
+M ij
+αβ
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�,
+(5)
+
+where
+
+M ij
+αβ = ℏ2
+
+2mδαβδij + ℏ2
+
+4m2
+�
+
+l∈B
+
+�
+πi
+αlπj
+lβ + πj
+αlπi
+lβ
+�
+
+×
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�.
+(6)
+
+Zeeman’s coupling term can be expressed by
+
+HZ
+αβ = µB
+
+ℏ (Lαβ + 2sαβ) · B,
+(7)
+
+where
+
+Lk
+αβ = − iℏ
+
+2m
+
+�
+
+l∈B
+
+�
+
+ij
+ϵijkπi
+αlπj
+lβ
+
+×
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+(8)
+
+can be considered as the orbital contribution, sαβ =
+⟨α(k0)|ˆs|β(k0)⟩ are the spin elements, and µB is the
+Bohr magneton. The detailed derivation is shown in Ap-
+pendix B.
+
+C.
+Theory of invariants
+
+Suppose that the little group at k0 is L, and D(R) is a
+representation (rep) for ∀R ∈ L, whose dimension is N.
+There are a total of N 2 independent Hermitian matrices
+X = Xi (i = 1, 2, · · · , N 2) in N dimensions that consti-
+tute an N-dimensional matrix space. It is simple to get
+a new rep D(X) by
+
+D(R)XnD(R)−1 =
+�
+
+m
+XmD(X)
+mn (R)
+(9)
+
+for ∀R ∈ L. Also, we can construct polynomial space
+of order p ∈ N, whose basis can be chosen as g(k) =
+{ki
+xkj
+ykl
+z|i + j + l ≤ p, i, j, l ∈ N}. It is simple to get a
+new rep D(g) by
+
+ˆRgn(k) = gn(R−1k) =
+�
+
+m
+gm(k)D(g)
+mn(R).
+(10)
+
+Spatial inversion ˆP and time reversal ˆT may also be the
+elements of the little group L, which transform the wave
+
+vector as k
+ˆ
+P−→ −k and k
+ˆT−→ −k, respectively.
+Decomposing D(X) and D(g) into irreps, we have
+
+D(X)(R) ≃
+�
+
+λ
+aλDλ(R)
+(11)
+
+D(g)(R) ≃
+�
+
+λ
+bλDλ(R)
+(12)
+
+where Dλ represents irreps and aλ or bλ denotes the mul-
+tiplicities of Dλ. Note that the irreps decomposed from
+the D(X) and D(g) are not exactly the same. It is sim-
+ple to get the matrix basis Xλ,µ and polynomial basis
+gλ,ν(k) of Dλ-irrep. An irrep may correspond to more
+than one sets of matrix basis or polynomial basis, thus
+enabling us to add an indicator µ/ν to distinguish them.
+After obtaining matrix basis and polynomial basis, the
+k · p Hamiltonian can be written as
+
+Hkp(k) =
+�
+
+λ
+
+aλ
+�
+
+µ=1
+
+bλ
+�
+
+ν=1
+cλµνXλ,µ · g∗λ,ν(k),
+(13)
+
+where cλµν are undetermined k·p parameters, which must
+be real [49]. It can be proved that the p-th order k · p
+Hamiltonian expressed by Eq. (13) satisfies the relation
+
+Hkp( ˆRk) = D(R)Hkp(k)D(R)−1
+(14)
+
+for ∀R ∈ L [49].
+Moreover, in the presence of magnetic field, Zeeman’s
+coupling can also be constructed in the same way. Un-
+like the wave vector k, the magnetic field B is a pseu-
+
+dovector, thus making it satisfy the relation B
+ˆ
+P−→ B
+
+and B
+ˆT−→ −B under spatial inversion and time reversal,
+respectively. Effective Zeeman’s coupling satisfies the re-
+lation
+
+HZ( ˆRB) = D(R)HZ(B)D(R)−1
+(15)
+
+By the way, given the matrix representations of the
+generators of the little group L, the python package
+kdotp-generator constructs the standard k · p Hamil-
+tonian or Zeeman’s coupling with undetermined k · p pa-
+rameters as Eq. (13). The standard matrices Dstd(R)
+are given on the Bilbao Crystalline Server (BCS) for the
+assigned irreps by IRVSP .
+
+
+4
+
+D.
+Unitary transformation
+
+In DFT calculations, when the irrep is n-fold (n ≥ 2)
+and the eigenstates are degenerate, there is U(n) ambi-
+guity in the DFT eigenstates. In this section, we propose
+a general routine to get the unitary transformation that
+changes degenerate DFT wavefunctions to the k · p stan-
+dard basis. We can obtain the eigenenergies {ϵn(k0)} and
+eigenstates {|n(k0)⟩} in VASP. The matrix representa-
+tion of ˆR under the VASP basis set would be calculated
+by mat2kp, which is denoted as Dnum(R).
+However, Dnum(R) is usually not in the standard form;
+they are related by a unitary transformation, i.e.,
+
+Dstd(R) = U †Dnum(R)U
+(16)
+
+for ∀R ∈ L, where U is a unitary matrix. To find U, it is
+obvious that only the generators of the k0-little group L
+should be taken into account. They are space group op-
+erators {Rt|vt}, consisting of rotational part and trans-
+lational part. The translational part is usually expressed
+by a phase factor. The Eq. (16) can be rewritten as
+
+Dnum(R)U − UDstd(R) = 0
+(17)
+
+where 0 is a zero matrix.
+The real part and the
+imaginary part of each elements of U are indepen-
+dent variables, which are denoted as Ur11, Ur12, · · · Urnn
+and Ui11, Ui12, · · · Uinn, respectively.
+From Eq.
+(17),
+it
+is
+clear
+to
+find
+that
+all
+these
+variables
+sat-
+isfy a linear equation set.
+Using a column vector
+u
+=
+(Ur11, Ur12, · · · , Urnn, Ui11, Ui12, · · · , Uinn)T , the
+Eq. (17) can be rewritten as
+
+Qu = 0
+(18)
+
+where Q is a real coefficient matrix defined by Eq. (17).
+The details are shown in Appendix C.
+Therefore, all vectors in the null space of the matrix
+Q is the solution to Eq. (16). Perform singular value
+decomposition on matrix Q, we can obtain Q = V1ΣV T
+2
+thus QV2 = V1Σ, where V1 and V2 are orthogonal matri-
+ces and Σ is a diagonal matrix. It can be proved that the
+column vectors in V1 correspond to the singular value 0
+form the basis of the null space of the matrix Q, which
+are denoted as {u1, u2, · · · , um}. After reshaping these
+vectors, the basis of the solution space of U of Eq. (16)
+are denoted as {U1, U2, · · · , Un}.
+Any solution can be
+written as
+
+U =
+
+m
+�
+
+α=1
+λαUα
+(19)
+
+where λα must be real.
+Thus, one has to get one set of the parameters {λα} to
+satisfy U †U = I, where I is an identity matrix. However,
+this relation is nonlinear, thus making it hard to solve
+by treating it as an equation directly.
+In mat2kp, the
+unitary U is obtained via the sequential least squares
+programming to find optimal parameter set {λα}, which
+can minimize the error ε = �
+
+ij
+��(U †U − I)ij
+��.
+
+E.
+Calculations of parameters
+
+Applying Eqs. (4-8) in DFT calculations, one can get
+the numerical Hamiltonian Hnum, one have to solve the
+equation Hstd = U −1HnumU to get all the parameters in
+Hstd. By the way, from Eq. (13), it is easy to find that
+the equations are all linear equations.
+However, there
+are more equations than parameters. The coefficients of
+each linear equation are not accurate because of numer-
+ical errors generated from VASP calculations, making it
+impossible to solve by the traditional Gaussian elimina-
+tion method.
+We can write all equations in a matrix
+form
+
+Ax = b,
+(20)
+
+where A is a constant matrix, and x is the column
+vector comprised of all undetermined real parameters.
+To eliminate the constraint of the real x, suppose that
+A = Ar + iAi and b = br + ibi, where the subscript r
+represents the real part and the subscript i represents the
+imaginary part. Then Eq. (20) can be transformed as
+�Ar
+Ai
+
+�
+x =
+�br
+bi
+
+�
+.
+(21)
+
+In this case, all the matrices become real (the real con-
+straint is automatically satisfied). Therefore, the linear
+least square method can be used to calculate the param-
+eters and to give the error as well.
+
+III.
+CAPABILITY OF VASP2KP
+
+The VASP2KP package contains two parts: the VASP
+patch vasp2mat and the post-processing python code
+mat2kp.
+The workflow is presented in Fig. 1.
+The
+methodology of obtaining the matrix elements of the gen-
+eralized momentum, spin, time reversal and crystalline
+rotational operators in VASP is introduced in Sec. III A.
+The main algorithm steps of VASP2KP are described in
+Sec. III B. Lastly, main steps to construct k · p models
+and Zeeman’s coupling via VASP2KP are shown in Sec.
+III C.
+
+A.
+vasp2mat: to compute matrix elements from
+DFT wavefunctions
+
+The matrix elements of ˆπ, ˆs, ˆT and ˆR are required in
+constructing the k·p Hamiltonian and Zeeman’s coupling
+under the DFT wavefunctions as shown in Sec. II A. The
+computation method of ˆπ matrix elements was first in-
+troduced in Ref. [50]. Here we generalize it to nonlocal
+operators. In VASP, the PAW potential is used, which is
+a combination and generalization of the linear augmented
+plane wave method. Therefore, we derive these matrix
+elements under the PAW wavefunctions, which are im-
+plemented in vasp2mat to compute the matrix elements.
+
+
+5
+
+The relation of all electron wavefunction (|n(k0)⟩) and
+pseudo wavefunction (|�n(k0)⟩) in PAW is
+
+|n(k0)⟩ = T |�n(k0)⟩ ,
+(22)
+
+where the linear transformation T
+can be expressed
+as [54, 55]
+
+T = 1 +
+�
+
+aµζ
+
+���ϕa
+µζ
+�
+−
+����ϕa
+µζ
+�� �
+�pa
+µζ
+�� .
+(23)
+
+The
+��ϕa
+µζ
+�
+is the direct product of the real space all elec-
+tron partial wavefunction ϕa
+µ(r) at the a-th atom with
+
+a spinor wavefunction |ζ⟩ (ζ =↑ or ↓),
+����ϕa
+µζ
+�
+is the di-
+rect product of the real space pseudo partial wavefunc-
+tion �ϕa
+µ(r) with a spinor wavefunction |ζ⟩, and
+���pa
+µζ
+�
+is
+a projector wavefunction comprised of the direct prod-
+uct of a real space projector wavefunction �pa
+µ(r) and
+a spinor wavefunction |ζ⟩.
+Here, ϕa
+µ(r)’s are obtained
+by all-electron calculation for the reference atom. The
+pseudo partial wavefunctions �ϕa
+µ(r) are identical to ϕa
+µ(r)
+outside the augmentation sphere of the corresponding
+atom and are much softer than ϕa
+µ(r) inside the aug-
+mentation sphere; �ϕa
+µ(r)’s provide a complete basis for
+the pseudo wavefunction |�n(k0)⟩ inside the augmentation
+sphere. The projector wavefunctions are defined in such
+a way, i.e., ⟨�pa
+µ|�ϕa
+µ′⟩ = δµµ′, that ⟨�pa
+µζ|�n(k0)⟩ gives the
+expanding coefficients of |�n(k0)⟩ on �ϕa
+µ(r). Usually the
+projector wavefunctions are chosen to be zero outside the
+core radius. Therefore, outside the augmentation sphere
+the third and second terms in T cancel each other ex-
+actly, and inside the augmentation sphere the first and
+third terms cancel each other exactly. T leaves |�n(k0)⟩
+unchanged outside the augmentation sphere and maps it
+to the all-electron wavefunction inside the augmentation
+sphere. Both ϕa
+µ(r) and �ϕa
+µ(r) are stored as a radial part
+times an angular part, which can be expressed as
+�ϕa
+µ(r) = Y mµ
+lµ ( �
+r − τa)Ra
+µ(|r − τa|)
+
+�ϕa
+µ(r) = Y mµ
+lµ ( �
+r − τa) �Ra
+µ(|r − τa|)
+(24)
+
+where τa is the site of the a-th atom, Y m
+l
+are sphere har-
+monics, and Ra
+µ are real functions. The hatted vectors
+represent the unit vector along the corresponding direc-
+tions.
+According to Eq. (23), the PAW matrix form of a local
+operator ˆF can be expressed by
+
+Fmn = ⟨m(k0)| ˆF|n(k0)⟩ = ⟨ �m(k0)|T † ˆFT |�n(k0)⟩
+
+= ⟨ �m(k0)| ˆF|�n(k0)⟩
+
++
+�
+
+aµν
+
+�
+
+ζζ′
+
+�
+�m(k0)
+���pa
+µζ
+�
+F a
+µζ,νζ′ ⟨�pa
+νζ′|�n(k0)⟩
+, (25)
+
+where F a
+µζ,νζ′ is the projection matrix of the operator ˆF
+in the a-th atom’s augmentation sphere, which is defined
+as
+
+F a
+µζ,νζ′ =
+�
+ϕa
+µζ
+�� ˆF
+��ϕa
+νζ′�
+−
+�
+�ϕa
+µζ
+��� ˆF
+����ϕa
+νζ′�
+.
+(26)
+
+The first term in F a
+µζ,µ′ζ′ gives the contribution from
+the all-electron wavefunction in the augmentation sphere,
+and the second term cancels the contribution from the
+pseudo wavefunction in the augmentation sphere that is
+counted in the first term of Eq. (25).
+In PAW, the plane wave is used to span the pseudo
+wavefunction �ψnk0(r, ζ) = ⟨r, ζ|�n(k0)⟩, which is ex-
+pressed by
+
+�ψnk0(r, ζ) =
+�
+
+G
+cnk0
+ζG ei(k0+G)·r
+(27)
+
+where cnk0
+ζG are the plane wave coefficients.
+The projection coefficients
+�
+�pa
+µζ
+���n(k0)
+�
+in the second
+term of Eq. (25) have already been calculated in VASP.
+Therefore, to calculate the matrix of the local operator
+ˆF, we need to calculate ⟨ �m(k0)| ˆF|�n(k0)⟩ and F a
+µζ,νζ′ in
+Eq. (25).
+
+1.
+Generalized momentum matrix
+
+The matrix of the generalized momentum ˆπ can be
+expressed by substituting ˆπ into ˆF in Eq. (25) as follows:
+
+πmn = ⟨ �m(k0)|ˆp|�n(k0)⟩ +
+1
+
+2mc2 ⟨ �m(k0)|ˆs × ∇V |�n(k0)⟩
+
++
+�
+
+aµν
+
+�
+
+ζζ′
+
+�
+�m(k0)
+���pa
+µζ
+�
+pa
+µζ,νζ′ ⟨�pa
+νζ′|�n(k0)⟩
+
++
+1
+
+2mc2
+�
+
+aµνζζ′
+
+�
+�m(k0)
+���pa
+µζ
+� �
+ϕa
+µζ
+��ˆs × ∇V
+��ϕa
+νζ′�
+⟨�pa
+νζ′|�n(k0)⟩
+
+−
+1
+
+2mc2
+�
+
+aµνζζ′
+
+�
+�m(k0)
+���pa
+µζ
+� �
+�ϕa
+µζ
+���ˆs × ∇V
+����ϕa
+νζ′�
+⟨�pa
+νζ′|�n(k0)⟩
+
+(28)
+Since the SOC effect is considered only within the
+augmentation
+spheres
+in
+VASP,
+where
+|�n(k0)⟩
+=
+�
+
+aµζ
+����ϕa
+µζ
+� �
+�pa
+µζ
+���n(k0)
+�
+, we can make the second term
+
+and the fifth term in Eq. (28) cancel out. Therefore, the
+generalized momentum matrix can be simplified to
+
+πmn = ⟨ �m(k0)|ˆp|�n(k0)⟩
+
++
+�
+
+aµν
+
+�
+
+ζζ′
+
+�
+�m(k0)
+���pa
+µζ
+�
+π′a
+µζ,νζ′ ⟨�pa
+νζ′|�n(k0)⟩ (29)
+
+where
+
+π′a
+µζ,νζ′ =δζζ′
+� �
+ϕa
+µ
+��ˆp
+��ϕa
+ν
+�
+−
+�
+�ϕa
+µ
+���ˆp
+����ϕa
+ν
+��
+
++
+ℏ2
+
+4mc2 σζζ′ ×
+�
+ϕa
+µ
+��∇V
+��ϕa
+ν
+�
+(30)
+
+The first term of πmn in Eq. (29) can be calculated by
+
+⟨ �m(k0)|ˆp|�n(k0)⟩ =
+�
+
+G
+ℏ(k0 + G)c∗mk0
+ζG
+cnk0
+ζG
+(31)
+
+
+6
+
+where ˆp = −iℏ∇. The integrals in π′a
+µζ,νζ′ can be cal-
+culated by separating the radial part and angular part,
+which are expressed as
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+�
+ϕa
+µ
+��ˆp
+��ϕa
+ν
+�
+= −iℏ
+�
+dΩY mµ∗
+lµ
+∇Y mν
+lν
+
+�
+drr2Ra∗
+µ Ra
+ν
+
+− iℏ
+�
+dΩY mµ∗
+lµ
+r
+r Y mν
+lν
+
+�
+drr2Ra∗
+µ ∂rRa
+ν
+�
+�ϕa
+µ
+���ˆp
+����ϕa
+ν
+�
+= − iℏ
+�
+dΩY mµ∗
+lµ
+∇Y mν
+lν
+
+�
+drr2 �Ra∗
+µ �Ra
+ν
+
+− iℏ
+�
+dΩY mµ∗
+lµ
+r
+r Y mν
+lν
+
+�
+drr2 �Ra∗
+µ ∂r �Ra
+ν
+
+�
+ϕa
+µ
+��∇V
+��ϕa
+ν
+�
+≈
+�
+dΩY mµ∗
+lµ
+r
+r Y mν
+lµ
+
+�
+drr2Ra∗
+µ ∂rV Ra
+ν
+(32)
+Finally, by substituting Eqs.
+(30)-(32) into Eq.
+(29),
+the matrices of the generalized momentum ˆπ can be ob-
+tained.
+
+2.
+Spin matrices
+
+By substituting the local operator ˆs for ˆF in Eq. (25),
+the corresponding matrix elements are given explicitly.
+The first term in Eq. (25) can be calculated by
+
+�
+�α(k0)
+���ˆs
+����β(k0)
+�
+=ℏ
+
+2
+
+�
+
+GG′ζζ′
+σζζ′c∗αk0
+ζG cβk0
+ζ′G′δG,G′
+
+(33)
+where ˆs = ℏ
+
+2 ˆσ and the projection matrix can be obtained
+by
+
+sa
+µζ,νζ′ =ℏ
+
+2δlµlνδmµmνσζζ′
+�
+drr2 �
+Ra∗
+µ Ra
+ν − �Ra∗
+µ �Ra
+ν
+�
+
+(34)
+Finally, by substituting Eqs. (33,34) into Eq. (25), the
+matrices of the spin ˆs can be obtained in the PAW wave-
+functions.
+
+3.
+Space group operator matrices
+
+The general (magnetic) space group operator (SGO)
+is expressed by F = {R|v} or F = {TR|v}, which is
+usually a nonlocal (NL) operator. One should notice that
+the SGO commutes with T in Eq. (23). Thus the matrix
+element can be written as
+
+F NL
+mn = ⟨m(k0)| ˆF|n(k0)⟩ =
+�
+�m(k0)
+���T †T
+��� ˆF · �n(k0)
+�
+
+=⟨ �m(k0)| ˆF · �n(k0)⟩
+
++
+�
+
+aµνζ
+
+�
+�m(k0)
+���pa
+µζ
+�
+Ca
+µ,ν
+�
+�pa
+νζ
+��� ˆF · �n(k0)
+�
+, (35)
+
+where
+
+Ca
+µ,ν = δlµlνδmµmν
+
+�
+drr2 �
+Ra∗
+µ Ra
+ν − �Ra∗
+µ �Ra
+ν
+�
+
+�
+r, ζ
+���{R|v}
+����β(k0)
+�
+=
+�
+
+G
+cβk0
+ζG ei(k0+G)·R−1(r−v)
+
+�
+r, ζ
+���{TR|v}
+����β(k0)
+�
+= ηζ
+�
+
+G
+cβk0∗
+
+ζG e−i(k0+G)·R−1(r−v)
+
+(36)
+Here, η↑ = 1, η↓ = −1, and ¯ζ indicates the opposite of
+spin ζ. In our convention, the translation L is expressed
+by a phase factor of e−ik0·L. More functions of the patch
+vasp2mat are presented in Appendix D.
+
+B.
+The python code mat2kp
+
+In this subsection, we give a brief introduction of
+the main algorithm steps of mat2kp.
+This code needs
+the inputs of εn(k0), πmn, sαβ, Dnum
+αβ (R) and Dstd
+αβ (R),
+which correspond to the EIGENVAL, MAT Pi.m, MAT sig.m,
+MAT R.m and mat2kp.in files, respectively.
+The main
+steps of mat2kp are as follows:
+
+1. Following
+Sec.
+II D,
+calculate
+the
+unitary
+transformation matrix U satisfying Dstd(R)
+=
+U †Dnum(R)U for ∀R ∈ L.
+
+2. By downfolding processing and using Eqs. (5-8),
+get the numerical k · p Hamiltonian and Zeeman’s
+coupling and compute the coefficients numerically
+under DFT basis, i.e., Hkp−num and HZ−num.
+
+3. Through theory of invariants in Sec. II C, import
+the package kdotp-generator and generate the
+standard k · p Hamiltonian and Zeeman’s coupling
+with a set of undetermined parameters, Hkp−std
+
+and HZ−std, respectively.
+
+4. Obtain the values of k · p parameters and Land´e
+g-factors by solving Hkp−std = U −1Hkp−numU and
+HZ−std = U −1HZ−numU in Sec. II E.
+
+C.
+General steps to get the k · p model and
+parameters automatically
+
+The general workflow is given in Fig. 1. We will take
+Bi2Se3 as an example for illustration.
+
+1. Run VASP to output the eigenstates |n(k0)⟩
+(|�n(k0)⟩
+in
+WAVECAR)
+and
+eigenvalues
+εn(k0)
+(EIGENVAL) at k0 point.
+
+2. Run IRVSP to get the irreps of the aimed low-energy
+bands (set A), and then obtain the standard matrix
+representations [Dstd(R)] of the generators of k0-
+little group on the Bilbao Crystalline Server (BCS).
+They are given in “mat2kp.in” (the input file of
+mat2kp).
+
+
+7
+
+VASP :
+Get eigenvalues 𝜀𝑛(𝒌0) and eigenstates ȁ
+ۧ
+𝑛(𝒌0) at 𝒌0 point.
+
+“WAVECAR”
+
+IRVSP :
+1. obtain the irreps of 𝒌0-little group (𝐿) 
+
+for the aimed low-energy states (set 𝒜);
+
+2. get standard matrix representations
+
+[𝐷std(𝑅)] of the irreps on BCS Server.
+
+“mat2kp.in”
+“MAT_Pi.m” 
+“MAT_sig.m”
+“MAT_R.m”
+
+“EIGENVAL” 
+
+mat2kp :
+1. get 𝑈 satisfying 𝐷std(𝑅) = 𝑈−1𝐷num(𝑅)𝑈, ∀𝑅 ∈ 𝐿;
+2. get the effective 𝑘𝑝 model and Zeeman's coupling 
+
+with numerical coefficients, 𝐻𝑘𝑝-num and 𝐻𝑍-num;
+
+3. get standard Hamiltonians with undetermined 
+
+parameters by 𝐷std(𝑅), including 𝐻𝑘𝑝-std and 𝐻𝑍-std;
+
+4. obtain the values of parameters and 𝑔-factors by 
+
+solving 𝐻std = 𝑈−1𝐻num𝑈.
+
+vasp2mat :
+1. compute 𝝅𝑚𝑛 matrice elements;
+2. compute 𝒔𝛼𝛽 matrix elements;
+3. compute numerical matrix elements 
+
+[𝐷𝛼𝛽
+
+num(𝑅)] of the 𝐿
+
+, s generators 
+
+directly from the VASP wavefunctions. 
+
+Workflow of VASP2KP
+
+FIG. 1: The workflow of VASP2KP to compute the k · p parameters and Land´e g-factors directly from the VASP wavefunctions.
+
+######## mat2kp.in - Bi2Se3 ########
+Symmetry = {
+’C3z’ :
+{
+’rotation matrix’:
+Matrix([[-Rational(1,2), -sqrt(3)/2,0],[sqrt(3)/2, -Rational(1,2), 0],[0, 0, 1]]),
+’repr matrix’:
+Matrix([[Rational(1,2)-I*sqrt(3)/2,0,0,0],[0,Rational(1,2)+I*sqrt(3)/2,0,0],
+[0,0,Rational(1,2)-I*sqrt(3)/2,0],[0,0,0,Rational(1,2)+I*sqrt(3)/2]]),
+’repr has cc’:
+False},
+’C2x’ :
+{
+’rotation matrix’:
+Matrix([[1, 0, 0],[0, -1, 0],[0, 0, -1]]),
+’repr matrix’:
+Matrix([[0,-Rational(1,2)-I*sqrt(3)/2,0,0],[Rational(1,2)-I*sqrt(3)/2,0,0,0],
+[0,0,0,-Rational(1,2)-I*sqrt(3)/2],[0,0,Rational(1,2)-I*sqrt(3)/2,0]]),
+’repr has cc’:
+False},
+’P’ : {
+’rotation matrix’:
+Matrix([[-1,0,0],[0, -1, 0],[0, 0, -1]]),
+’repr matrix’:
+Matrix([[1,0,0,0],[0,1,0,0],[0,0,-1,0],[0,0,0,-1]]),
+’repr has cc’:
+False},
+’T’ : {
+’rotation matrix’:
+eye(3),# Identity Matrix
+’repr matrix’:
+Matrix([[0,1,0,0],[-1,0,0,0],[0,0,0,-1],[0,0,1,0]]),
+’repr has cc’:
+True}
+}
+# optional parameters
+vaspMAT = ’../Bi2Se3/GMmat’ # the path:
+to read eigenvalues, Pi, s, and R matrices
+in this folder.
+order = 2
+# Order of the kp model :
+2 (default) or 3.
+print flag = 2 # Where to output results:
+1 (screen) or 2 (files, default).
+kpmodel = 1
+# Whether to compute Hkp:
+0 or 1 (default).
+gfactor = 1
+# Whether to compute HZ : 0 or 1 (default).
+log = 1
+# Whether to output log files:
+0 or 1 (default).
+
+3. Run
+vasp2mat
+to
+generate
+πmn
+(vmat=11;
+vmat name=’Pi’),
+sαβ
+(vmat=10;
+vmat name=’sig’),
+and
+generators’
+[D(R)num
+αβ ;
+vmat=12] matrices directly from the VASP wave-
+functions (WAVECAR) by the following settings in
+“INCAR.mat” files, respectively.
+These numerical
+matrix representations are output in MAT Pi.m,
+MAT sig.m, MAT R.m files. They are in the ‘vasp-
+MAT’ folder (given in mat2kp.in). The vmat name
+of the generators should be the same as those given
+
+in “mat2kp.in”.
+
+######## INCAR.mat - Pi mat.
+########
+&vmat para
+!
+soc------------------------
+cfactor=1.0
+socfactor=1.0
+nosoc inH = .false.
+!
+operator------------------
+vmat = 11
+vmat name = ’Pi’
+vmat k = 1
+bstart=1, bend=400
+print only diagnal = .false.
+/
+
+######## INCAR.mat - sigma mat.
+########
+&vmat para
+!
+soc------------------------
+cfactor=1.0
+socfactor=1.0
+nosoc inH = .false.
+!
+operator------------------
+vmat = 10
+vmat name = ’sig’
+vmat k = 1
+bstart=47, bend=50
+print only diagnal = .false.
+/
+
+######## INCAR.mat - C3z / C2x / P / T mat.
+- Bi2Se3 ########
+&vmat para
+!
+soc------------------------
+cfactor=1.0
+socfactor=1.0
+nosoc inH = .false.
+!
+operator------------------
+vmat = 12
+vmat name = ’C3z’
+/
+’C2x’
+/
+’P’
+/
+’T’
+vmat k = 1
+bstart=47, bend=50
+print only diagnal = .false.
+!
+rotation------------------
+rot n(:)
+= 0 0 1
+/
+1 0 0
+/
+0 0 1
+/
+0 0 1
+rot alpha = 120
+/
+180
+/
+0
+/
+0
+rot det = 1
+/
+1
+/
+-1
+/
+1
+rot tau(:)
+= 0 0 0
+rot spin2pi = .false.
+time rev = .false.
+/
+.false.
+/
+.false.
+/
+.true.
+/
+
+
+8
+
+4. Run the post-processing python code mat2kp with
+the input files, to construct the standard k·p Hamil-
+tonian and Zeeman’s coupling, and compute the
+values of k·p parameters and g-factors. The outputs
+are “kp-parameters.out” and “g-factors.out”
+files, as pasted below.
+
+######## kp-parameters.out ########
+kp Hamiltonian
+========== Result of kp Hamiltonian ==========
+Matrix([[a1 + a2 + c1*(kx**2 + ky**2) + c2*(kx**2 + ky**2) + c3*kz**2 + c4*kz**2,
+0, -I*b2*kz, -b1*(kx*(sqrt(3) + 3*I) + ky*(3 - sqrt(3)*I))/3], [0, a1 + a2 +
+c1*(kx**2 + ky**2) + c2*(kx**2 + ky**2) + c3*kz**2 + c4*kz**2, b1*(kx*(sqrt(3) -
+3*I) + ky*(3 + sqrt(3)*I))/3, I*b2*kz], [I*b2*kz, b1*(kx*(sqrt(3) + 3*I) + ky*(3
+- sqrt(3)*I))/3, a1 - a2 + c1*(kx**2 + ky**2) - c2*(kx**2 + ky**2) + c3*kz**2 -
+c4*kz**2, 0], [-b1*(kx*(sqrt(3) - 3*I) + ky*(3 + sqrt(3)*I))/3, -I*b2*kz, 0, a1 -
+a2 + c1*(kx**2 + ky**2) - c2*(kx**2 + ky**2) + c3*kz**2 - c4*kz**2]])
+Parameters:
+a1 = 4.8898 ;
+a2 = -0.2244 ;
+b1 = -3.238 ;
+b2 = 2.5562 ;
+c1 = 19.5842 ;
+c2 = 44.4746 ;
+c3 = 1.8117 ;
+c4 = 9.5034 ;
+Error of the linear least square method:
+3.93e-06
+Sum of absolute values of numerical zero elements:
+6.47e-02
+
+######## g-factors.out ########
+Zeeman’s coupling
+========== Result of Zeeman’s coupling ==========
+mu B/2*Matrix([[Bz*g3 + Bz*g4, g1*(Bx*(1 - sqrt(3)*I/3) + By*(-sqrt(3)/3 - I)) +
+g2*(Bx*(1 - sqrt(3)*I/3) + By*(-sqrt(3)/3 - I)), 0, 0], [g1*(Bx*(1 + sqrt(3)*I/3)
++ By*(-sqrt(3)/3 + I)) + g2*(Bx*(1 + sqrt(3)*I/3) + By*(-sqrt(3)/3 + I)), -Bz*g3 -
+Bz*g4, 0, 0], [0, 0, Bz*g3 - Bz*g4, g1*(Bx*(1 - sqrt(3)*I/3) + By*(-sqrt(3)/3 - I))
++ g2*(Bx*(-1 + sqrt(3)*I/3) + By*(sqrt(3)/3 + I))], [0, 0, g1*(Bx*(1 + sqrt(3)*I/3)
++ By*(-sqrt(3)/3 + I)) + g2*(Bx*(-1 - sqrt(3)*I/3) + By*(sqrt(3)/3 - I)), -Bz*g3 +
+Bz*g4]])
+Parameters:
+g1 = -0.3244 ;
+g2 = 5.761 ;
+g3 = -7.8904 ;
+g4 = -13.0138 ;
+Error of the linear least square method:
+6.11e-08
+Sum of absolute values of numerical zero elements:
+4.12e-03
+
+IV.
+APPLICATIONS IN MATERIALS
+
+In this section, we apply this package to some typical
+materials, i.e., Bi2Se3, Na3Bi, Te, InAs, and 1H-TMD,
+to construct the effective models and to compute all the
+parameters.
+
+A.
+Four-band model at Γ in Bi2Se3
+
+As we know, the topological property of Bi2Se3 is due
+to the band inversion at Γ.
+By using IRVSP, the low-
+est conduction band belongs to GM9 (twofold degen-
+erate), while the highest valence band belongs to GM8
+(twofold degenerate), as depicted in Fig. 2(a). Based on
+these states in the ascending order, the low-energy ef-
+fective Hamiltonian at Γ is constructed automatically.
+The generators of the Γ-little group are {C3z|0, 0, 0},
+{C2x|0, 0, 0}, {P|0, 0, 0}, and {T|0, 0, 0}. Their standard
+matrix representations are given in TABLE I, which are
+needed by the code mat2kp to construct effective models.
+To the second order, the k·p Hamiltonian and Zeeman’s
+coupling are given in Eq. (37), where µB is the Bohr
+magneton (∼ 0.05788 meV/Tesla). After their numer-
+ical matrix representations are computed by vasp2mat
+directly from the VASP wavefunctions, the parameters
+of k · p Hamiltonian and g-factors of Zeeman’s coupling
+are computed, as shown in TABLE II. The four-band
+
+−0.05
+0.00
+0.05
+0.10
+
+−0.2
+
+0.0
+
+0.2
+
+0.4
+
+ vasp
+ kp
+ kp-all
+
+−1.5
+
+−1.0
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+F1                  G           L                 T1/T  G           F2
+
+−0.1
+0.0
+0.1
+
+−0.4
+
+−0.2
+
+0.0
+
+0.2
+
+0.4
+
+ vasp
+ kp
+ kp-all
+
+F1                     Γ                       L
+
+E-EF (eV)
+
+E-EF (eV)
+
+(1/Å)
+(a)                                                                (b)                         
+
+−1.5
+
+−1.0
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+Γ          M    K            Γ     A          L     H             A
+
+E-EF (eV)
+
+E-EF (eV)
+
+Γ                 DP                          A
+
+(1/Å)
+
+−1.5
+
+−1.0
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+Γ          M    K            Γ      A           L     H            A
+
+E-EF (eV)
+
+−0.1
+0.0
+0.1
+
+−0.4
+
+−0.2
+
+0.0
+
+0.2
+
+0.4
+
+ vasp
+ kp
+ kp-all
+
+L                      H                       A
+
+E-EF (eV)
+
+(1/Å)
+
+(c)                                                                (d)                         
+
+(e)                                                                (f)                         
+
+Bi
+
+Bi
+
+Na
+
+Te
+
+b
+a
+
+c
+
+a
+
+b
+
+c
+
+a
+b
+
+c
+b a
+c
+
+Se
+
+Bi
+
+GM9
+
+GM8
+
+DT8
+
+DT7
+
+H6
+
+H5
+H4
+
+FIG. 2:
+Crystal structure and electronic band structure
+(VASP) of Bi2Se3 (a), Na3Bi (c) and Te (e). Model disper-
+sions of Bi2Se3 (b), Na3Bi (d) and Te (f) [kp; Eq. (5) and
+kp-all; Eq. (3)].
+
+model’s dispersions are plotted in Fig. 2(b). They fit
+well with the VASP bands in the vicinity of Γ. More-
+over, the dispersions of the all-band k · p model without
+downfolding in Eq. (3) are also plotted for comparison
+(labeled by ‘kp-all’).
+
+Heff(k, B) = Hkp + HZ,
+
+Hkp =
+
+
+
+
+
+
+
+D1
+0
+−ib2kz
+− 3i+
+√
+
+3
+
+3
+b1k−
+D1
+
+√
+
+3−3i
+3
+b1k+
+ib2kz
+D2
+0
+†
+D2
+
+
+
+
+
+ ,
+
+HZ = µB
+
+2
+
+
+
+
+
+
+
+h+
+1 Bz
+h+
+2 B+
+0
+0
+−h+
+1 Bz
+0
+0
+h−
+1 Bz
+h−
+2 B−
+†
+−h−
+1 Bz
+
+
+
+
+
+ ,
+
+D1 = a1 + a2 + (c1 + c2)k+k− + (c3 + c4)k2
+z,
+
+D2 = a1 − a2 + (c1 − c2)k+k− + (c3 − c4)k2
+z,
+
+h±
+1 = g3 ± g4, h±
+2 = 3 −
+√
+
+3i
+
+3
+(g1 ± g2),
+
+k± = kx ± iky,
+B± = Bx ± iBy.
+
+(37)
+
+
+9
+
+TABLE I: The matrix representations of GM8 and GM9 irreps
+at Γ are given on BCS server for the generators.
+
+GM8
+GM9
+
+{C3z|0, 0, 0}
+
+�
+e− πi
+
+3
+0
+0
+e
+πi
+3
+
+�
+�
+e− πi
+
+3
+0
+0
+e
+πi
+3
+
+�
+
+{C2x|0, 0, 0}
+
+�
+0
+e− 2πi
+
+3
+
+e− πi
+
+3
+0
+
+�
+�
+0
+e− 2πi
+
+3
+
+e− πi
+
+3
+0
+
+�
+
+{P|0, 0, 0}
+�
+1 0
+0 1
+
+�
+�
+−1
+0
+0
+−1
+
+�
+
+{T|0, 0, 0}
+�
+0
+1
+−1 0
+
+�
+K
+�
+0 −1
+1
+0
+
+�
+K
+
+TABLE II: The computed values of parameters {ai, bi, ci, gi}
+for Bi2Se3 in Eq. (37), obtained from the VASP calculations
+directly.
+
+ai (eV)
+bi (eV·˚A)
+ci (eV·˚A2)
+gi
+
+a1 = 4.89
+b1 = 3.24
+c1 = 19.58
+g1 = −0.32
+a2 = −0.22
+b2 = −2.56
+c2 = 44.47
+g2 = 5.76
+c3 = 1.81
+g3 = −7.90
+c4 = 9.50
+g4 = −13.01
+
+B.
+Four-band model at the Dirac point in Na3Bi
+
+The Dirac semimetal Na3Bi has a Dirac point (DP:
+kD) along Γ-A in Fig. 2(c). It is formed by the crossing of
+the DT7-irrep and DT8-irrep bands. Thus, we construct
+the effective Hamiltonian at kD. The standard matrix
+representations are presented in TABLE E1. The Hkp
+
+and HZ are obtained in Eq.
+(38) with the computed
+parameters and g-factors in TABLE III. The four-band
+k · p model’s dispersions are fitting well with the VASP
+bands, as shown in Fig. 2(d).
+
+Hkp =
+
+
+
+
+
+
+D1
+0
+ξ−c2k2
+−
+Θ14
+D1 −iξ−k+(b1 + c4kz) ξ+c2k2
++
+D2
+0
+†
+D2
+
+
+
+
+ ,
+
+D1 = a1 + a2 + (b2 + b3)kz + d+
+1 k+k− + d+
+2 k2
+z,
+
+D2 = a1 − a2 + (b2 − b3)kz + d−
+1 k+k− + d−
+2 k2
+z,
+
+d±
+1 = c1 ± c3,
+d±
+2 = c5 ± c6,
+
+ξ± = 1 ±
+√
+
+3i,
+Θ14 = −iζ+k−(b1 + c4kz),
+
+HZ =µB
+
+2
+
+
+
+
+
+
+
+
+h+
+1 Bz
+0
+0
+3−
+√
+
+3i
+
+3
+g2B−
+−h+
+1 Bz
+3+
+√
+
+3i
+
+3
+g2B−
+0
+h−
+1 Bz
+6+2
+√
+
+3i
+
+3
+g1B+
+†
+−h−
+1 Bz
+
+
+
+
+
+
+ ,
+
+h±
+1 = g3 ± g4
+(38)
+
+C.
+Four-band model at H in Te
+
+Element tellurium is a narrow-gap semiconductor. The
+direct gap is at H. The low-energy bands at H are the H4-
+irrep and H5-irrep valence bands and H6-irrep (doubly
+degenerate) conduction bands. The four-band effective
+model is constructed accordingly. The standard matrix
+representations of the generators of the H-little group are
+given in TABLE E2. The k · p model at H is expressed
+as
+
+Hkp
+11 =a1 + 2a2 + a3 + (c1 + 2c3 + c8)k−k+
+
++ (c14 + 2c15 + c16)k2
+z,
+
+Hkp
+12 =2(b6 − ib7)kz,
+
+Hkp
+13 = −
+
+√
+
+3
+
+6
+
+��
+2iξ+b2 +
+√
+
+3iξ+b3 +
+√
+
+3ξ+b4 + 4ib5
+�
+k+
+
++
+�
+2iξ+c10 +
+√
+
+3iξ+c11 −
+√
+
+3ξ+c12 − 4ic13
+�
+k+kz
+
++
+�
+2iξ+c4 +
+√
+
+3iξ+c5 +
+√
+
+3ξ+c6 + 4ic7
+�
+k2
+−
+
+�
+,
+
+Hkp
+14 =
+
+√
+
+3
+
+3
+
+��
+2b2 +
+√
+
+3b3 −
+√
+
+3ib4 + ξ−b5
+�
+k−
+
+−
+�
+2c10 −
+√
+
+3c11 +
+√
+
+3ic12 − ξ−c13
+�
+k−kz
+
++
+�
+2c4 +
+√
+
+3c5 −
+√
+
+3ic6 + ξ−c7
+�
+k2
++
+
+�
+,
+
+Hkp
+22 =a1 − 2a2 + a3 + (c1 − 2c3 + c8)k−k+
+
++ (c14 − 2c15 + c16)k2
+z,
+
+Hkp
+23 =
+
+√
+
+3
+
+3
+
+��
+−2b2 +
+√
+
+3b3 +
+√
+
+3ib4 − ξ+b5
+�
+k+
+
++
+�
+2c4 −
+√
+
+3c5 −
+√
+
+3ic6 + ξ+c7
+�
+k2
+−
+
++
+�
+2c10 +
+√
+
+3c11 +
+√
+
+3ic12 − ξ+c13
+�
+k+kz
+�
+,
+
+Hkp
+24 =
+
+√
+
+3
+
+6
+
+��
+2iξ−b2 −
+√
+
+3iξ−b3 +
+√
+
+3ξ−b4 + 4ib5
+�
+k−
+
++
+�
+2iξ−c10 +
+√
+
+3iξ−c11 −
+√
+
+3ξ−c12 − 4ic13
+�
+k−kz
+
++
+�
+2iξ−c4 −
+√
+
+3iζ−c5 −
+√
+
+3ξ−c6 + 4ic7
+�
+k2
++
+
+�
+,
+
+Hkp
+33 =Hkp
+44 = a1 − a3 + 2b8kz + (c1 − c8)k−k+
+
++ (c14 − c16)k2
+z,
+
+Hkp
+34 =
+2
+√
+
+3
+
+3
+iξ−b1k+ +
+2
+√
+
+3
+
+3
+iξ−c2k2
+− + 2ξ−c9k+kz
+
+with
+ξ± = 1 ±
+√
+
+3i
+
+(39)
+
+Zeeman’s coupling is expressed by
+
+HZ =µB
+
+2
+
+
+
+
+
+
+
+0 (g6 − ig7)Bz h1B+
+h2B−
+0
+h3B+
+h4B+
+g8Bz
+6+2
+√
+
+3i
+
+3
+g1B+
+†
+−g8Bz
+
+
+
+
+
+ ,
+
+h1 =3 −
+√
+
+3i
+
+3
+g2 +
+
+√
+
+3 − i
+2
+g3 −
+
+√
+
+3i + 1
+
+2
+g4 − 2
+√
+
+3
+
+3 ig5,
+
+h2 =2
+√
+
+3
+
+3 g2 + g3 − ig4 +
+
+√
+
+3 − 3i
+
+3
+g5,
+
+h3 = − 2
+√
+
+3
+
+3 g2 + g3 + ig4 −
+
+√
+
+3 + 3i
+
+3
+g5,
+
+h4 =3 +
+√
+
+3i
+
+3
+g2 −
+
+√
+
+3 + i
+2
+g3 −
+
+√
+
+3i − 1
+
+2
+g4 + 2
+√
+
+3
+
+3 ig5.
+
+(40)
+The computed parameters {ai, bi, ci, gi} are presented in
+TABLE IV. The four-band k·p model’s dispersions agree
+well with the VASP bands in Fig. 2(f).
+
+
+10
+
+TABLE III: The computed values of parameters {ai, bi, ci, gi}
+in Eq. (38) for Na3Bi, obtained from the VASP calculations
+directly.
+
+ai (eV)
+bi (eV·˚A)
+ci (eV·˚A2)
+gi
+
+a1 = 2.22
+b1 = 0.99
+c1 = 7.39
+g1 = −3.78
+a2 = 0.00
+b2 = 1.48
+c2 = −4.02
+g2 = −5.24
+b3 = −1.69
+c3 = −0.76
+g3 = 2.74
+c4 = 7.24
+g4 = 8.58
+c5 = 3.17
+c6 = −4.43
+
+TABLE IV: The computed values of parameters in Eqs. (39)-
+(40) for Te, obtained from the VASP calculations directly.
+
+a (eV)
+b (eV·˚A)
+c (eV·˚A2)
+g
+
+a1 = 5.72
+b1 = −0.16
+c1 = 6.13
+g1 = 1.52
+a2 = −0.03
+b2 = 0.84
+c2 = −0.03
+g2 = −3.12
+a3 = −0.13
+b3 = −1.32
+c3 = 2.51
+g3 = −2.64
+b4 = −1.30
+c4 = 4.16
+g4 = 0.18
+b5 = −0.55
+c5 = 1.63
+g5 = 4.08
+b6 = 0.65
+c6 = −7.48
+g6 = −0.08
+b7 = −0.98
+c7 = −1.72
+g7 = −8.92
+b8 = −0.29
+c8 = −5.96
+g8 = −10.84
+c9 = 1.41
+c10 = −2.56
+c11 = 5.52
+c12 = −6.40
+c13 = −1.04
+c14 = 8.47
+c15 = −0.09
+c16 = −46.46
+
+D.
+Two-band model at Γ in InAs
+
+Here, we compute the band structure of the wurtzite
+(WZ) InAs semiconductor. Since InAs is usually of n-
+type, we consider the GM8 conduction bands (doubly
+degenerate) for the electron doped samples.
+The ma-
+trix representations of generators are presented in TA-
+BLE E3.
+The two-conduction-band effective model is
+constructed in Eq. (41), and the k · p parameters and g-
+factors are computed as listed in TABLE V. In Fig. 3(f),
+the splitting of the conduction bands at field 10T is 6.7
+meV, indicating an effective g-factor of 11.6. It is con-
+sistent with the experimental value in the bulk mate-
+rial [40, 56].
+
+Hkp =a1 +
+�
+c1k+k− + c2k2
+z (1 +
+√
+
+3i)b1k−
+†
+c1k+k− + c2k2
+z
+
+�
+
+HZ =µB
+
+2
+
+�
+g2Bz
+3−
+√
+
+3i
+
+3
+g1B−
+†
+−g2Bz
+
+�
+(41)
+
+In addition, another effective model for the six valence
+bands is constructed in Appendix F. Surprisingly, the
+highest valence bands show a splitting of 19.8 meV un-
+der 10T magnetic field in Fig. 3(f), indicating a remark-
+able effective g-factor, being three times of that of the
+conduction bands.
+
+−0.04
+0.00
+0.04
+
+−0.30
+
+−0.24
+
+−0.18
+
+0.18
+
+0.24
+
+ B = 0T
+ Bx=10T
+
+−0.04
+0.00
+0.04
+
+ B = 0T
+ By=10T
+
+−0.04
+0.00
+0.04
+
+ B = 0T
+ Bz=10T
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+Γ          M    K            Γ     A           L     H            A
+
+GM8
+GM8
+GM7
+
+GM8
+
+−0.1
+0.0
+0.1
+
+−0.8
+
+−0.6
+
+−0.4
+
+−0.2
+
+0.0
+
+0.2
+
+0.4
+
+ vasp
+ kp
+ kp-all
+
+In
+
+As
+
+K                      Γ                      A
+
+E-EF (eV)
+
+E-EF (eV)
+
+E-EF (eV)
+
+(1/Å)
+
+(1/Å)
+(1/Å)
+(1/Å)
+
+(a)                                          (b)                                                            (c)                         
+
+(d)                                                     (e)                                                   (f)                         
+
+K                      Γ                       A
+K                      Γ                       A
+K                      Γ                       A
+
+19.8 meV
+
+6.7 meV
+
+FIG. 3: Crystal structure, electronic structure, and k · p band
+dispersions of InAs. (a) Crystal structure, (b) Electronic band
+structure (VASP), (c) Model dispersions (kp; Eq.
+(5) and
+kp-all; Eq. (3)), and (d-f) the Zeeman effect with magnetic
+field along ˆx, ˆy and ˆz respectively. The splitting due to the
+magnetic field is depicted explicitly.
+
+TABLE V: The computed values of parameters {ai, bi, ci, gi}
+in Eq.
+(41) in wurtzite InAs are obtained from the VASP
+calculations directly.
+
+ai (eV)
+bi (eV·˚A)
+ci (eV·˚A2)
+gi
+
+a1 = 4.37
+b1 = −0.20
+c1 = 124.41
+g1 = −7.66
+c2 = 123.40
+g2 = −11.60
+
+E.
+Two-band model in 1H-TMD monolayers
+
+In 1H-phase transition metal chalcogenide (TMD)
+monolayers, their direct gaps are at K. The two valence
+bands at K belong to the K8-irrep and K11-irrep, respec-
+tively. The standard matrix representations of the gener-
+ators of the K-little group are given in TABLE E4. The
+two-band effective models are constructed in Eq. (42)
+(to the second order), which are plotted in Fig. 4. The
+computed k ·p parameters and g-factors are listed in TA-
+BLE VI.
+
+Hkp =a1 +
+�
+(c1 + c2)k−k+ + a2
+0
+0
+(c1 − c2)k−k+ − a2
+
+�
+,
+
+HZ =µB
+
+2 Bz
+
+�
+g1 + g2
+0
+0
+g1 − g2
+
+�
+.
+
+(42)
+
+V.
+DISCUSSION
+
+In this work, we develop an open-source package
+VASP2KP to construct the k·p Hamiltonian and Zeeman’s
+coupling, and to compute the k ·p parameters and Land´e
+g-factors from the VASP calculations directly.
+By ap-
+plying this package in many typical materials, we get
+
+
+11
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+ vasp
+ kp
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+ vasp
+ kp
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+ vasp
+ kp
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+ vasp
+ kp
+
+Γ                        M             K                            Γ
+
+E-E� (eV)
+
+g=4.49
+
+g=9.17
+
+g=4.67
+
+g=9.19
+
+g=5.55
+
+g=12.34
+
+g=5.27
+
+g=11.04
+
+MoTe2
+MoSe2
+
+WTe2
+WSe2
+
+Γ                        M             K                            Γ
+
+E-E� (eV)
+
+Γ                        M             K                            Γ
+
+E-E� (eV)
+
+Γ                        M             K                            Γ
+
+E-E� (eV)
+
+(a)                                                       (b)
+
+(c)                                                       (d)
+
+K�8
+
+K�11
+
+FIG. 4: Electronic structures and k · p band dispersions of
+1H-TMD monolayers. (a) MoTe2, (b) MoSe2, (c) WTe2, (d)
+WSe2.
+
+TABLE VI: The computed values of parameters {ai, bi, ci, gi}
+in Eq. (42) for 1H-TMD monolayers, obtained from the VASP
+calculations.
+
+MoTe2
+MoSe2
+WTe2
+WSe2
+
+a1 (eV)
+−1.92
+−2.93
+−1.79
+−2.75
+a2 (eV)
+−0.11
+−0.09
+−0.24
+−0.23
+c1 (eV·˚A2)
+−3.83
+−3.89
+−8.06
+−6.48
+c2 (eV·˚A2)
+0.60
+0.47
+2.75
+1.73
+g1
+6.82
+6.92
+8.94
+8.16
+g2
+−2.34
+−2.26
+−3.40
+−2.88
+
+TABLE VII: The computed effective g-factors for the two
+conduction/valence bands only in Bi2Se3, Te, InAs, and 1H-
+TMD. The conduction bands of Te have the larger g-factor
+than the valence bands. The 1st valence (v1) band has the
+larger g-factor than the 2nd valence band (v2) in 1H-TMD.
+
+band
+|gz|
+|g⊥|
+experiment
+
+Bi2Se3
+c
+20.52
+14.9
+32,23 [57]
+Te
+c
+6.40
+3.04
+WZ-InAs
+c
+11.60
+7.66
+13 [58]
+MoTe2
+v1/v2
+9.17/4.49
+MoSe2
+v1/v2
+9.19/4.67
+WTe2
+v1/v2
+12.34/5.55
+WSe2
+v1/v2
+11.04/5.27
+12.2 [59]
+WSe2
+c1/c2
+1.36/6.95
+1.72/7.68 [59]
+
+k ·p effective models, whose band dispersions are in good
+agreement with the VASP data around the specific wave
+vector in the Brillouin zone.
+As the orbital contribu-
+tion between the low-energy bands is usually remarkable
+(due to the small energy difference), the computed g-
+factor is not accurate in the multiple-band model. Thus,
+we recompute the effective g-factor for the two conduc-
+tion bands only in Bi2Se3 and Te. The recomputed val-
+ues are mainly consistent with the previous experimental
+data listed in TABLE VII. We reveal that the conduc-
+tion bands of Te have the larger g-factor than the valence
+bands, and the 1st valence band has the larger g-factor
+than the 2nd valence band in 1H-TMD monolayers. Our
+results indicate that VASP2KP has the capabilities to han-
+dle more materials.
+
+The obtained models provide the effective masses and
+g-factors, which are important physical quantities of the
+materials. The minor discrepancy from the experimen-
+tal data is due to the non-precise band gap in the DFT
+calculations. To improve these parameters, one can use
+our code in the hybrid functionals or GW calculations.
+For the new synthesized or predicted materials, for which
+there is no experimental data available, our code can
+be used to predict reliable parameters.
+In conclusion,
+VASP2KP [60] would be widely used in the Materials Sci-
+ence.
+
+Acknowledgements
+
+This work was supported by the National Key R&D
+Program of Chain (Grant No. 2022YFA1403800), Na-
+tional Natural Science Foundation of China (Grants
+No.
+11974395, No.
+12188101, No.
+11925408, No.
+12274436, and No.
+11921004), the Strategic Prior-
+ity Research Program of Chinese Academy of Sciences
+(Grant No. XDB33000000), and the Center for Mate-
+rials Genome.
+Zhi-Da Song was supported by the In-
+novation Program for Quantum Science and Technology
+(No. 2021ZD0302403), National Natural Science Foun-
+dation of China (General Program No. 12274005), and
+the National Key Research and Development Program
+of China (No. 2021YFA1401900). Hongming Weng and
+Quansheng Wu were also supported by the Informatiza-
+tion Plan of the Chinese Academy of Sciences (Grant No.
+CASWX2021SF-0102).
+
+[1] P.
+Hohenberg
+and
+W.
+Kohn,
+Phys.
+Rev.
+136,
+B864
+(1964),
+URL
+https://link.aps.org/doi/10.
+1103/PhysRev.136.B864.
+
+[2] W.
+Kohn
+and
+L.
+J.
+Sham,
+Phys.
+Rev.
+140,
+A1133 (1965),
+URL https://link.aps.org/doi/10.
+1103/PhysRev.140.A1133.
+
+[3] G. Kresse and J. Furthm¨uller,
+Phys. Rev. B 54,
+
+11169
+(1996),
+URL
+https://link.aps.org/doi/10.
+1103/PhysRevB.54.11169.
+
+[4] G. Kresse and J. Furthm¨uller,
+Computational Ma-
+terials Science 6, 15 (1996), ISSN 0927-0256, URL
+https://www.sciencedirect.com/science/article/
+pii/0927025696000080.
+
+[5] P. Giannozzi, S. Baroni, N. Bonini, M. Calandra, R. Car,
+
+
+12
+
+C. Cavazzoni, D. Ceresoli, G. L. Chiarotti, M. Cococ-
+cioni, I. Dabo, et al., Journal of Physics:
+Condensed
+Matter 21, 395502 (2009), URL https://dx.doi.org/
+10.1088/0953-8984/21/39/395502.
+
+[6] P. Giannozzi, O. Andreussi, T. Brumme, O. Bunau,
+M. B. Nardelli, M. Calandra, R. Car, C. Cavazzoni,
+D. Ceresoli, M. Cococcioni, et al., Journal of Physics:
+Condensed Matter 29, 465901 (2017), URL https://dx.
+doi.org/10.1088/1361-648X/aa8f79.
+
+[7] S. J. Clark, M. D. Segall, C. J. Pickard, P. J. Has-
+nip, M. I. J. Probert, K. Refson, and M. C. Payne,
+Zeitschrift f¨ur Kristallographie - Crystalline Materials
+220, 567 (2005), URL https://doi.org/10.1524/zkri.
+220.5.567.65075.
+
+[8] X. Gonze,
+B. Amadon,
+G. Antonius,
+F. Arnardi,
+L.
+Baguet,
+J.-M.
+Beuken,
+J.
+Bieder,
+F.
+Bottin,
+J. Bouchet, E. Bousquet, et al., Comput. Phys. Commun.
+248, 107042 (2020), URL https://doi.org/10.1016/j.
+cpc.2019.107042.
+
+[9] A. H. Romero, D. C. Allan, B. Amadon, G. Anto-
+nius, T. Applencourt, L. Baguet, J. Bieder, F. Bottin,
+J. Bouchet, E. Bousquet, et al., J. Chem. Phys. 152,
+124102 (2020).
+
+[10] J. M. Soler, E. Artacho, J. D. Gale, A. Garc´ıa, J. Jun-
+quera, P. Ordej´on, and D. S´anchez-Portal, Journal of
+Physics:
+Condensed Matter 14, 2745 (2002), URL
+
+https://dx.doi.org/10.1088/0953-8984/14/11/302.
+
+[11] A. Garc´ıa, N. Papior, A. Akhtar, E. Artacho, V. Blum,
+E. Bosoni, P. Brandimarte, M. Brandbyge, J. I. Cerd´a,
+F. Corsetti, et al., The Journal of Chemical Physics 152,
+204108 (2020), ISSN 0021-9606, URL https://doi.org/
+10.1063/5.0005077.
+
+[12] P. Blaha, K. Schwarz, F. Tran, R. Laskowski, G. K. H.
+Madsen, and L. D. Marks, The Journal of Chemi-
+cal Physics 152, 074101 (2020), ISSN 0021-9606, URL
+https://doi.org/10.1063/1.5143061.
+
+[13] B. Hourahine, B. Aradi, V. Blum, F. Bonaf´e, A. Buc-
+cheri, C. Camacho, C. Cevallos, M. Y. Deshaye, T. Du-
+mitric˘a, A. Dominguez, et al., The Journal of Chemi-
+cal Physics 152, 124101 (2020), ISSN 0021-9606, URL
+https://doi.org/10.1063/1.5143190.
+
+[14] A.
+Luque,
+A.
+Panchak,
+A.
+Mellor,
+A.
+Vlasov,
+A. Mart´ı,
+and V. Andreev,
+Physica B: Condensed
+Matter
+456,
+82
+(2015),
+ISSN
+0921-4526,
+URL
+
+https://www.sciencedirect.com/science/article/
+pii/S0921452614006929.
+
+[15] D. Gresch, Q. Wu, G. W. Winkler, and A. A. Soluyanov,
+New Journal of Physics 19, 035001 (2017), URL https:
+//dx.doi.org/10.1088/1367-2630/aa5de7.
+
+[16] J.
+M.
+Luttinger
+and
+W.
+Kohn,
+Phys.
+Rev.
+97,
+869 (1955), URL https://link.aps.org/doi/10.1103/
+PhysRev.97.869.
+
+[17] O. Marquardt, L. Geelhaar, and O. Brandt, Nano Letters
+15, 4289 (2015), pMID: 26042638, URL https://doi.
+org/10.1021/acs.nanolett.5b00101.
+
+[18] E.
+O.
+Kane,
+Journal
+of
+Physics
+and
+Chemistry
+of
+Solids
+1,
+249
+(1957),
+ISSN
+0022-3697,
+URL
+
+https://www.sciencedirect.com/science/article/
+pii/0022369757900136.
+
+[19] H.
+Zhang
+and
+S.-C.
+Zhang,
+physica
+status
+solidi
+(RRL)
+–
+Rapid
+Research
+Letters
+7,
+72
+(2013),
+URL https://onlinelibrary.wiley.com/doi/abs/10.
+1002/pssr.201206414.
+
+[20] H. Zhang, C.-X. Liu, X.-L. Qi, X. Dai, Z. Fang, and S.-C.
+
+Zhang, Nature Physics 5, 438 (2009).
+
+[21] L. Fu, Phys. Rev. Lett. 103, 266801 (2009), URL
+
+https://link.aps.org/doi/10.1103/PhysRevLett.
+103.266801.
+
+[22] G. Xu, H. Weng, Z. Wang, X. Dai, and Z. Fang, Phys.
+Rev. Lett. 107, 186806 (2011), URL https://link.aps.
+org/doi/10.1103/PhysRevLett.107.186806.
+
+[23] P.
+E.
+Faria
+Junior,
+G.
+Xu,
+J.
+Lee,
+N.
+C.
+Ger-
+hardt, G. M. Sipahi, and I. ˇZuti´c, Phys. Rev. B 92,
+075311 (2015), URL https://link.aps.org/doi/10.
+1103/PhysRevB.92.075311.
+
+[24] M.
+Holub
+and
+B.
+T.
+Jonker,
+Phys.
+Rev.
+B
+83,
+125309 (2011), URL https://link.aps.org/doi/10.
+1103/PhysRevB.83.125309.
+
+[25] O.
+Marquardt,
+Computational
+Materials
+Sci-
+ence
+194,
+110318
+(2021),
+ISSN
+0927-0256,
+URL
+
+https://www.sciencedirect.com/science/article/
+pii/S0927025621000434.
+
+[26] P. E. Faria Junior, M. Kurpas, M. Gmitra, and J. Fabian,
+Phys. Rev. B 100, 115203 (2019), URL https://link.
+aps.org/doi/10.1103/PhysRevB.100.115203.
+
+[27] A. Korm´anyos, G. Burkard, M. Gmitra, J. Fabian,
+V. Z´olyomi, N. D. Drummond, and V. Fal’ko, 2D Ma-
+terials 2, 049501 (2015), URL https://dx.doi.org/10.
+1088/2053-1583/2/4/049501.
+
+[28] T. Deilmann, P. Kr¨uger, and M. Rohlfing, Phys. Rev.
+Lett. 124, 226402 (2020), URL https://link.aps.org/
+doi/10.1103/PhysRevLett.124.226402.
+
+[29] P. Faria Junior and G. Sipahi, Journal of Applied Physics
+112 (2012).
+
+[30] F.
+Xuan
+and
+S.
+Y.
+Quek,
+Phys.
+Rev.
+Res.
+2,
+033256 (2020), URL https://link.aps.org/doi/10.
+1103/PhysRevResearch.2.033256.
+
+[31] J. I. Climente, C. Segarra, F. Rajadell, and J. Planelles,
+Journal of Applied Physics 119, 125705 (2016), ISSN
+0021-8979, URL https://doi.org/10.1063/1.4945112.
+
+[32] P. Lucignano, D. Giuliano, and A. Tagliacozzo, Phys.
+Rev. B 76, 045324 (2007), URL https://link.aps.org/
+doi/10.1103/PhysRevB.76.045324.
+
+[33] A. Zamani, F. Setareh, T. Azargoshasb, and E. Niknam,
+Superlattices and Microstructures 110,
+243 (2017),
+ISSN 0749-6036,
+URL https://www.sciencedirect.
+com/science/article/pii/S0749603617314672.
+
+[34] J. C. Le´on-Gonz´alez, R. G. Toscano-Negrette, A. L.
+Morales, J. A. Vinasco, M. B. Y¨ucel, H. Sari, E. Kasa-
+poglu, S. Sakiroglu, M. E. Mora-Ramos, R. L. Restrepo,
+et al., Nanomaterials 13 (2023), ISSN 2079-4991, URL
+https://www.mdpi.com/2079-4991/13/9/1461.
+
+[35] A.
+Zamani
+and
+G.
+Rezaei,
+Superlattices
+and
+Mi-
+crostructures 124, 145 (2018), ISSN 0749-6036, URL
+https://www.sciencedirect.com/science/article/
+pii/S0749603618316781.
+
+[36] C. E. Pryor and M. E. Flatt´e, Phys. Rev. Lett. 96,
+026804 (2006), URL https://link.aps.org/doi/10.
+1103/PhysRevLett.96.026804.
+
+[37] A.
+Gharaati,
+Solid
+State
+Communications
+258,
+17
+(2017),
+ISSN
+0038-1098,
+URL
+https:
+//www.sciencedirect.com/science/article/pii/
+S0038109817301229.
+
+[38] R. Kotlyar, T. L. Reinecke, M. Bayer, and A. Forchel,
+Phys. Rev. B 63, 085310 (2001), URL https://link.
+aps.org/doi/10.1103/PhysRevB.63.085310.
+
+[39] A. A. Kiselev, E. L. Ivchenko, and U. R¨ossler, Phys. Rev.
+B 58, 16353 (1998), URL https://link.aps.org/doi/
+
+
+13
+
+10.1103/PhysRevB.58.16353.
+
+[40] G. W. Winkler,
+D. Varjas,
+R. Skolasinski,
+A. A.
+Soluyanov, M. Troyer, and M. Wimmer, Phys. Rev. Lett.
+119, 037701 (2017), URL https://link.aps.org/doi/
+10.1103/PhysRevLett.119.037701.
+
+[41] M. A. Toloza Sandoval, A. Ferreira da Silva, E. A.
+de Andrada e Silva, and G. C. La Rocca, Phys. Rev.
+B 86, 195302 (2012), URL https://link.aps.org/doi/
+10.1103/PhysRevB.86.195302.
+
+[42] T. P. M. Alegre,
+F. G. G. Hern´andez,
+A. L. C.
+Pereira, and G. Medeiros-Ribeiro, Phys. Rev. Lett. 97,
+236402 (2006), URL https://link.aps.org/doi/10.
+1103/PhysRevLett.97.236402.
+
+[43] L.-X. Wang, Y. Yan, L. Zhang, Z.-M. Liao, H.-C. Wu,
+and D.-P. Yu, Nanoscale 7, 16687 (2015), URL http:
+//dx.doi.org/10.1039/C5NR05250E.
+
+[44] Z.-H. Liu, O. Entin-Wohlman, A. Aharony, J. Q. You,
+and H. Q. Xu, Phys. Rev. B 104, 085302 (2021),
+URL
+https://link.aps.org/doi/10.1103/PhysRevB.
+104.085302.
+
+[45] J. Xin and S. A. Reid, The Journal of Chemical Physics
+116, 525 (2002), ISSN 0021-9606, URL https://doi.
+org/10.1063/1.1423328.
+
+[46] M. Semenov, S. N. Yurchenko, and J. Tennyson, Jour-
+nal of Molecular Spectroscopy 330, 57 (2016), ISSN
+0022-2852, potentiology and Spectroscopy in Honor of
+Robert Le Roy, URL https://www.sciencedirect.com/
+science/article/pii/S0022285216303186.
+
+[47] C.
+Fischer
+and
+P.
+J¨onsson,
+Journal
+of
+Molecular
+Structure:
+THEOCHEM 537, 55 (2001), ISSN 0166-
+1280, URL https://www.sciencedirect.com/science/
+article/pii/S0166128000004607.
+
+[48] J. Gao, Q. Wu, C. Persson, and Z. Wang, Computer
+Physics Communications 261, 107760 (2021), ISSN 0010-
+4655, URL https://www.sciencedirect.com/science/
+article/pii/S0010465520303805.
+
+[49] Y. Jiang, Z. Fang, and C. Fang, Chinese Physics Letters
+38, 077104 (2021), URL https://dx.doi.org/10.1088/
+0256-307X/38/7/077104.
+
+[50] Z. Song, S. Sun, Y. Xu, S. Nie, H. Weng, Z. Fang,
+
+and X. Dai,
+First Principle Calculation of the Ef-
+fective Zeeman’s
+Couplings
+in
+Topological Materials
+(World Scientific, 2021), chap. Chapter 11, pp. 263–281,
+URL https://www.worldscientific.com/doi/abs/10.
+1142/9789811231711_0013.
+
+[51] R.
+Zhang,
+J.
+Deng,
+Y.
+Sun,
+Z.
+Fang,
+Z.
+Guo,
+and
+Z.
+Wang,
+Phys.
+Rev.
+Res.
+5,
+023142
+(2023),
+URL
+https://link.aps.org/doi/10.1103/
+PhysRevResearch.5.023142.
+The
+IR2PW
+code
+is
+available at https://github.com/zjwang11/IR2PW.
+
+[52] M. Iraola, J. L. Ma˜nes, B. Bradlyn, M. K. Horton, T. Ne-
+upert, M. G. Vergniory, and S. S. Tsirkin, Computer
+Physics Communications 272, 108226 (2022), ISSN 0010-
+4655, URL https://www.sciencedirect.com/science/
+article/pii/S0010465521003386.
+
+[53] J. V. V. Cassiano, A. L. Ara´ujo, P. E. F. Junior, and
+G. J. Ferreira, arXiv preprint arXiv:2306.08554 (2023).
+
+[54] P. E. Bl¨ochl, Phys. Rev. B 50, 17953 (1994), URL https:
+//link.aps.org/doi/10.1103/PhysRevB.50.17953.
+
+[55] P. E. Bl¨ochl, C. J. F¨orst, and J. Schimpl, Bulletin of
+Materials Science 26, 33 (2003).
+
+[56] S. M. Albrecht,
+A. P. Higginbotham,
+M. Madsen,
+F. Kuemmeth, T. S. Jespersen, J. Nyg˚ard, P. Krogstrup,
+and C. M. Marcus, Nature 531, 206–209 (2016), URL
+https://doi.org/10.1038/s41467-020-18521-6.
+
+[57] H. K¨ohler and E. W¨ochner, physica status solidi (b) 67,
+665 (1975), URL https://onlinelibrary.wiley.com/
+doi/abs/10.1002/pssb.2220670229.
+
+[58] M. T. Bj¨ork, A. Fuhrer, A. E. Hansen, M. W. Lars-
+son, L. E. Fr¨oberg, and L. Samuelson, Phys. Rev. B
+72, 201307 (2005), URL https://link.aps.org/doi/
+10.1103/PhysRevB.72.201307.
+
+[59] J. F¨orste, N. V. Tepliakov, S. Y. Kruchinin, J. Lind-
+lau, V. Funk, M. F¨org, K. Watanabe, T. Taniguchi,
+A. S. Baimuratov, and A. H¨ogele, Nature Communica-
+tions 11, 4539 (2020), URL https://doi.org/10.1038/
+s41467-020-18019-1.
+
+[60] S. Zhang, H. Sheng, Z.-D. Song, C. Liang, and Z. Wang,
+VASP2KP, http://www.vasp2kp.com (2023).
+
+Appendix A: L¨owdin partitioning theory to obtain k · p Hamiltonian
+
+The L¨owdin partitioning theory, also called as quasi-degenerate perturbation, is really a useful and important
+method to make an approximation to simplify the Hamiltonian by reducing the dimension. The main idea of it is to
+introduce an anti-Hermitian matrix S, which can transform the origin Hamiltonian matrix H (such as k·p Hamiltonian
+Hkp defined by Eq. (3)) to the optimal Hamiltonian matrix �H, which is expressed by
+
+�H = e−SHeS
+(A.1)
+
+It is obvious that �H has the same eigenvalues as H, thus making the corresponding bands all the same. Moreover, �H
+is expected to be block diagonal, as shown in Fig. A1, where A corresponds to the subspace of the bands of interest
+and B corresponds to the subspace of other bands. After this transformation, we can directly use the matrix block
+corresponding to A to replace the original Hamiltonian matrix. However, it is difficult to get the analytic or accurate
+matrix S, so we must use the perturbation expansion method to find the series solution.
+First, suppose that the Hamiltonian H = H0 + H′, where H0 is a diagonal matrix, which is the main part of the
+Hamiltonian while H′ can be treated as a perturbation. For instance, the k · p Hamiltonian Hkp can be the sum of
+the diagonal matrix whose diagonal elements are the eigenvalues ϵn(k0)
+
+(Hkp
+0 )mn =
+�
+ϵn(k0) + ℏ2k2
+
+2m
+
+�
+δmn
+(A.2)
+
+
+14
+
+and the perturbation terms
+
+H′kp
+mn = ℏ
+
+mπmn · k , (m ̸= n)
+(A.3)
+
+with small k. Furthermore, H′ can be separated as the sum of H1 and H2 which only have nonzero elements in and
+between the subspaces A and B, respectively, as shown in Fig. A2. Therefore, we can rewrite the origin Hamiltonian
+as
+
+H = H0 + H1 + H2
+(A.4)
+
+FIG. A1: Transform the original Hamiltonian H to the optimal Hamiltonian �
+H. The gray parts represent nontrivial matrix
+elements while the white parts represent trivial matrix elements (zero elements).
+
+FIG. A2: The schematic of H, H0, H1 and H2. The gray parts represent nontrivial matrix elements while the white parts
+represent trivial matrix elements.
+
+We suppose that the matrix S is anti-Hermitian and in the same shape as H2 (only has nonzero matrix elements
+between subspaces A and B), making eS a unitary matrix. It is simple to find that [H1, S] is in the same shape as H2
+and [H2, S] is in the same shape as H1, no matter what H1 and H2 are. According to the Baker–Campbell–Hausdorff
+formula, Eq. (A.1) can be rewritten as
+
+�H =
+
++∞
+�
+
+i=0
+
+1
+i![H, S](i)
+
+=
+
++∞
+�
+
+i=0
+
+1
+
+(2i)![H0 + H1, S](2i) +
+
++∞
+�
+
+i=0
+
+1
+
+(2i + 1)![H2, S](2i+1) +
+
++∞
+�
+
+i=0
+
+1
+
+(2i + 1)![H0 + H1, S](2i+1) +
+
++∞
+�
+
+i=0
+
+1
+
+(2i)![H2, S](2i)
+(A.5)
+
+The sum of first two terms of Eq. (A.5) is block diagonal in the same shape as H1, which is denoted by
+
+�HD =
+
++∞
+�
+
+i=0
+
+1
+
+(2i)![H0 + H1, S](2i) +
+
++∞
+�
+
+i=0
+
+1
+
+(2i + 1)![H2, S](2i+1)
+(A.6)
+
+and the sum of last two terms of Eq. (A.5) is non-block diagonal in the same shape as H2, which is denoted by
+
+�HN =
+
++∞
+�
+
+i=0
+
+1
+
+(2i + 1)![H0 + H1, S](2i+1) +
+
++∞
+�
+
+i=0
+
+1
+
+(2i)![H2, S](2i)
+(A.7)
+
+To make �H block diagonal, we have �HN = 0. Use the ansatz that S can be expanded as
+
+S = S(1) + S(2) + S(3) + · · ·
+(A.8)
+
+
+15
+
+Extract the small quantities of each order in HN and let them be 0:
+1st order
+
+[H0, S(1)] + H2 = 0
+(A.9)
+
+2nd order
+
+[H0, S(2)] + [H1, S(1)] = 0
+(A.10)
+
+3rd order
+
+[H0, S(3)] + 1
+
+6[H0, S(1)](3) + [H1, S(2)] + 1
+
+2[H2, S(1)](2) = 0
+(A.11)
+
+· · ·
+By solving Eqs. (A.9)-(A.11), the matrix elements of S(i) can be written as
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+S(1)
+αl = −
+H′
+αl
+
+Eα − El
+
+S(2)
+αl =
+1
+
+Eα − El
+
+� �
+
+α′∈A
+
+H′
+αα′H′
+α′l
+
+Eα′ − El
+−
+�
+
+l′∈B
+
+H′
+αl′H′
+l′l
+
+Eα − El′
+
+�
+
+S(3)
+αl =
+1
+
+Eα − El
+
+×
+
+
+
+−
+�
+
+α′,α′′∈A
+
+H′
+αα′′H′
+α′′α′H′
+α′l
+
+(Eα′′ − El) (Eα′ − El) −
+�
+
+l′,l′′∈B
+
+H′
+αl′H′
+l′l′′H′
+l′′l
+
+(Eα − El′′) (Eα − El′)
+
++
+�
+
+l′∈B,α′∈A
+
+H′
+αα′H′
+α′l′H′
+l′l
+
+(Eα′ − El) (Eα′ − El′) +
+�
+
+l′∈B,α′∈A
+
+H′
+αα′H′
+α′l′H′
+l′l
+
+(Em − El′) (Eα′ − El′)
+
++ 1
+
+3
+
+�
+
+l′∈B,α′∈A
+
+H′
+αl′H′
+l′α′H′
+α′l
+
+(Eα′ − El′) (Eα′ − El) + 1
+
+3
+
+�
+
+l′∈B,α′∈A
+
+H′
+αl′H′
+l′α′H′
+α′l
+
+(Eα − El′) (Eα′ − El′) +2
+
+3
+
+�
+
+l′∈B,α′∈A
+
+H′
+αl′H′
+l′α′H′
+α′l
+
+(Eα − El′) (Eα′ − El)
+
+
+
+
+
+· · · = · · ·
+(A.12)
+where α ∈ A and l ∈ B. This matrix S makes �HN = 0 so that �H = �HD. After obtaining the matrix S, we can
+directly obtain the optimal Hamiltonian by Eq. (A.6), which is expressed by
+
+�H = �H(0) + �H(1) + �H(2) + �H(3) + · · ·
+(A.13)
+
+where
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+H(0)
+αα′ =H0
+αα′
+
+H(1)
+αα′ =H′
+αα′
+
+H(2)
+αα′ =1
+
+2
+
+�
+
+l∈B
+H′
+αlH′
+lα′
+�
+1
+
+Eα − El
++
+1
+
+Eα′ − El
+
+�
+
+H(3)
+αα′ = − 1
+
+2
+
+�
+
+l∈B,α′′∈A
+
+�
+H′
+αlH′
+lα′′H′
+α′′α′
+
+(Eα′ − El) (Eα′′ − El) +
+H′
+αα′′H′
+α′′lH′
+lα′
+
+(Eα − El) (Eα′′ − El)
+
+�
+
++ 1
+
+2
+
+�
+
+l,l′∈B
+H′
+αlH′
+ll′H′
+l′α′
+�
+1
+
+(Eα − El) (Eα − El′) +
+1
+
+(Eα′ − El) (Eα′ − El′)
+
+�
+
+· · · = · · ·
+
+(A.14)
+
+Up to now, we have already obtained the optimal Hamiltonian. In the case of k · p Hamiltonian, by substituting
+
+
+16
+
+Eq. (A.2) and Eq. (A.3) into Eq. (A.14), we can obtain
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hkp(0)
+αβ
+=
+�
+ϵα(k0) + ℏ2k2
+
+2m
+
+�
+δαβ
+
+Hkp(1)
+αβ
+= ℏ
+
+mπαβ · k
+
+Hkp(2)
+αβ
+=
+ℏ2
+
+2m2
+�
+
+l∈B
+
+�
+
+ij
+
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+πi
+αlπj
+lβkikj
+
+Hkp(3)
+αβ
+= − ℏ3
+
+2m3
+�
+
+ijq
+
+
+
+
+
+
+�
+
+l∈B,γ∈A
+
+�
+πi
+αlπj
+lγπq
+γβ
+
+(ϵβ(k0) − ϵl(k0))(ϵγ(k0) − ϵl(k0)) +
+πi
+αγπj
+γlπq
+lβ
+
+(ϵα(k0) − ϵl(k0))(ϵγ(k0) − ϵl(k0))
+
+�
+
+−
+�
+
+l,l′∈B
+
+�
+1
+
+(ϵα(k0) − ϵl(k0))(ϵα(k0) − ϵl′(k0)) +
+1
+
+(ϵβ(k0) − ϵl(k0))(ϵβ(k0) − ϵl′(k0))
+
+�
+πi
+αlπj
+ll′πq
+l′β
+
+
+
+
+ kikjkq
+
+(A.15)
+
+Therefore, the k · p Hamiltonian of order 2 is the sum of Hkp(0), Hkp(1) and Hkp(2), which is equal to Eq. (4).
+Moreover, the k · p Hamiltonian of order 3 can be expressed by
+
+Hkp(≤3)
+αβ
+
+=
+�
+ϵα(k0) + ℏ2k2
+
+2m
+
+�
+δαβ + ℏ
+
+mπαβ · k + ℏ2
+
+2m2
+�
+
+l∈B
+
+�
+
+ij
+
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+πi
+αlπj
+lβkikj
+
+− ℏ3
+
+2m3
+�
+
+ijq
+
+
+
+
+
+
+�
+
+l∈B,γ∈A
+
+�
+πi
+αlπj
+lγπq
+γβ
+
+(ϵβ(k0) − ϵl(k0))(ϵγ(k0) − ϵl(k0)) +
+πi
+αγπj
+γlπq
+lβ
+
+(ϵα(k0) − ϵl(k0))(ϵγ(k0) − ϵl(k0))
+
+�
+
+−
+�
+
+l,l′∈B
+
+�
+1
+
+(ϵα(k0) − ϵl(k0))(ϵα(k0) − ϵl′(k0)) +
+1
+
+(ϵβ(k0) − ϵl(k0))(ϵβ(k0) − ϵl′(k0))
+
+�
+πi
+αlπj
+ll′πq
+l′β
+
+
+
+
+ kikjkq
+
+(A.16)
+
+Appendix B: Derivation of Zeeman’s coupling
+
+It is easy to compute the commutator [∂i, Aj] as
+
+[∂i, Aj]ϕ = ∂i(Ajϕ) − Aj∂iϕ = (∂iAj)ϕ + Aj∂iϕ − Aj∂iϕ = (∂iAj)ϕ
+(B.1)
+
+or in a simple form
+
+[∂i, Aj] = ∂iAj.
+(B.2)
+
+In addition, the components of the magnetic field can be expressed by
+
+Bk = (∇ × A) · ek =
+�
+
+lmn
+ϵlmn∂mAnel · ek =
+�
+
+lmn
+ϵlmn∂mAnδlk =
+�
+
+mn
+ϵkmn∂mAn
+(B.3)
+
+where ϵlmn is the Levi-Civita symbol and A is the magnetic vector potential. Therefore, we can establish the relation
+that
+
+�
+
+k
+ϵijkBk =
+�
+
+mnk
+ϵijkϵkmn∂mAn =
+�
+
+mn
+
+��
+
+k
+ϵijkϵkmn
+
+�
+
+∂mAn =
+�
+
+mn
+(δimδjn − δinδjm)∂mAn = ∂iAj − ∂jAi
+(B.4)
+
+Therefore, we can obtain the relation in Sec. II B that
+
+�
+−iℏ∂i + eAi, −iℏ∂j + eAj�
+= −ieℏ(
+�
+∂i, Aj�
+−
+�
+∂j, Ai�
+) = −iℏe(∂iAj − ∂jAi) = −iℏe
+�
+
+k
+ϵijkBk
+(B.5)
+
+
+17
+
+Furthermore, after replacing ki by −iℏ∂i+eAi (Peierls substitution) in Eq. (4), the last summation can be transformed
+as
+�
+
+ij
+πi
+αlπj
+lβ(−iℏ∂i + eAi)(−iℏ∂j + eAj)
+
+=
+�
+
+ij
+πi
+αlπj
+lβ
+
+�1
+
+2
+�
+−iℏ∂i + eAi, −iℏ∂j + eAj�
++ 1
+
+2
+�
+−iℏ∂i + eAi, −iℏ∂j + eAj��
+
+= − iℏe
+
+2
+
+�
+
+ijk
+πi
+αlπj
+lβϵijkBk + ℏ2
+
+2
+
+�
+
+ij
+πi
+αlπj
+lβ
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�
++ ℏ2
+
+2
+
+�
+
+ij
+πi
+αlπj
+lβ
+�
+−i∂j + e
+
+ℏAj� �
+−i∂i + e
+
+ℏAi�
+
+= − iℏe
+
+2
+
+�
+
+ijk
+πi
+αlπj
+lβϵijkBk + ℏ2
+
+2
+
+�
+
+ij
+πi
+αlπj
+lβ
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�
++ ℏ2
+
+2
+
+�
+
+ij
+πj
+αlπi
+lβ
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�
+
+= − iℏe
+
+2
+
+�
+
+ijk
+πi
+αlπj
+lβϵijkBk + ℏ2 �
+
+ij
+
+πi
+αlπj
+lβ + πj
+αlπi
+lβ
+
+2
+
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�
+
+(B.6)
+The Hamiltonian of Zeeman’s coupling is the gauge independent part in Eq. (4) (after Peierls substitution), which is
+expressed as
+
+HZ
+αβ = µB
+
+ℏ (Lαβ + 2sαβ) · B
+(B.7)
+
+where
+
+Lk
+αβ = − iℏ
+
+2m
+
+�
+
+l∈B
+
+�
+
+ij
+ϵijkπi
+αlπj
+lβ
+
+�
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+(B.8)
+
+and 2
+
+ℏµBs · B is the Zeemans’s coupling of the bare electron. In addition, the gauge dependent part in Eq. (4) (after
+Peierls substitution) is expressed by
+
+Hkp
+αβ = ϵα(k0)δαβ + ℏ
+
+mπαβ ·
+�
+−i∇ + e
+
+ℏA
+�
++
+�
+
+ij
+M ij
+αβ
+�
+−i∂i + e
+
+ℏAi� �
+−i∂j + e
+
+ℏAj�
+(B.9)
+
+where
+
+M ij
+αβ = ℏ2
+
+2mδαβδij + ℏ2
+
+4m2
+�
+
+l∈B
+
+�
+πi
+αlπj
+lβ + πj
+αlπi
+lβ
+� �
+1
+
+ϵα(k0) − ϵl(k0) +
+1
+
+ϵβ(k0) − ϵl(k0)
+
+�
+
+.
+(B.10)
+
+The Eqs. (B.7)-(B.10) are the same as Eqs. (5)-(8).
+
+Appendix C: Construction of the coefficient matrix Q for finding the unitary transformation U
+
+Only the generators of the group L should be taken into account when finding the unitary transformation matrix
+U. T is an anti-unitary generator, while S are the unitary generators. The Eq. (17) can be rewritten as
+
+Dnum(S)U − UDstd(S) = O
+(C.1)
+
+Dnum(T)U ∗ − UDstd(T) = O
+(C.2)
+
+where O is a zero matrix. The matrices U, Dstd(R) and Dnum(R) are complex, so we can consider the real parts and
+the imaginary parts separately, thus transforming Eqs. (C.1)-(C.2) into
+�
+Dnum
+r
+(S)Ur − UrDstd
+r (S) − Dnum
+i
+(S)Ui + UiDstd
+i
+(S) = O
+
+Dnum
+i
+(S)Ur − UrDstd
+i
+(S) + Dnum
+r
+(S)Ui − UiDstd
+r (S) = O
+(C.3)
+
+
+18
+
+and
+�
+Dnum
+r
+(T)Ur − UrDstd
+r (T) + Dnum
+i
+(T)Ui + UiDstd
+i
+(T) = O
+
+−Dnum
+i
+(T)Ur + UrDstd
+i
+(T) + Dnum
+r
+(T)Ui + UiDstd
+r (S) = O
+(C.4)
+
+where the subscripts r represent the real parts of U, Dstd(R) or Dnum(R) and the subscripts i represent the imaginary
+parts. Consider the real part and the imaginary part of each elements of U as independent variables, which are
+denoted as Ur11, Ur12, · · · Urnn and Ui11, Ui12, · · · Uinn, respectively. From Eqs. (C.3)-(C.4), it is clear to find that the
+matrix equations are all linear equations and all the parameters and variables are real. Introduced a column vector
+u = (Ur11, Ur12, · · · , Urnn, Ui11, Ui12, · · · , Uinn)T , which is comprised of all the independent variables to be solved,
+Eqs. (C.3)-(C.4) can be rewritten as
+
+A(S)u = 0
+(C.5)
+
+where
+
+A(S) =
+�
+Dnum
+r
+(S) ⊗ I − I ⊗ DstdT
+r
+(S) −Dnum
+i
+(S) ⊗ I + I ⊗ DstdT
+i
+(S)
+Dnum
+i
+(S) ⊗ I − I ⊗ DstdT
+i
+(S)
+Dnum
+r
+(S) ⊗ I − I ⊗ DstdT
+r
+(S)
+
+�
+(C.6)
+
+and
+
+B(T)u = 0
+(C.7)
+
+where
+
+B(T) =
+�
+Dnum
+r
+(T) ⊗ I − I ⊗ DstdT
+r
+(T)
+Dnum
+i
+(T) ⊗ I + I ⊗ DstdT
+i
+(T)
+−Dnum
+i
+(T) ⊗ I + I ⊗ DstdT
+i
+(T) Dnum
+r
+(T) ⊗ I + I ⊗ DstdT
+r
+(T)
+
+�
+.
+(C.8)
+
+The Eq. (C.5) holds for all unitary generators S1, S2, · · · , Sn. Combined Eq. (C.5) with Eq. (C.6), we can construct
+the large parameter matrix Q so that the vector u corresponds to the transformation matrix U satisfies Qu = 0,
+where
+
+Q = (AT (S1), AT (S2), · · · , AT (Sn), BT (T))T .
+(C.9)
+
+Therefore, all vectors in the null space of the matrix Q is the solution to Eq. (16).
+
+Appendix D: Functions of vasp2mat
+
+Except for the calculation of matrices of generalized momentum ˆπ = ˆp +
+1
+
+2mc2 (ˆs × ∇V (r)), spin ˆs, time reversal
+operator ˆT and crystalline symmetry operators ˆR, the patch vasp2mat can also do other calculations by setting the
+parameter vmat in INCAR.mat. All functions of vasp2mat are shown in TABLE D1, where ˆσ is Pauli operator. The
+matrix of time reversal operator ˆT can be calculated with vmat=12; time rev=.true..
+
+TABLE D1: The function of different vmat of vasp2mat.
+
+vmat
+Functions
+
+1
+Calculate overlap matrix ⟨m(K)|n(K)⟩
+
+2
+Calculate soft local potential matrix ⟨ �m(K)| ˆVeff|�n(K)⟩
+
+3
+Calculate kinetic energy matrix of pseudo wavefunctions ⟨ �m(K)| ˆTk|�n(K)⟩
+
+4
+Calculate nonlocal potential matrix ⟨ �m(K)| ˆVNL|�n(K)⟩
+
+5
+Calculate Hamiltonian matrix ⟨m(K)| ˆH|n(K)⟩
+
+7
+Calculate momentum matrices ⟨m(K)| ˆp|n(K)⟩
+
+8
+Calculate SOC Hamiltonian matrix ⟨m(K)| ˆHSOC|n(K)⟩
+
+10
+Calculate spin matrices ⟨m(K)|ˆσ|n(K)⟩
+
+11
+Calculate generalized momentum matrices ⟨m(K)|ˆπ|n(K)⟩
+
+12
+Calculate matrix representation of a symmetry operator ⟨m(K)| ˆR|n(K)⟩
+
+13
+Calculate Berry curvature, anomalous Hall conductance and spin Hall conductance
+
+14
+Calculate Wilson loops to obtain Berry phases
+
+
+19
+
+Appendix E: The standard matrix representations
+
+TABLE E1:
+In Na3Bi, the matrix representations of DT7 and DT8 irreps at kD (0 0 w) are given on BCS server,
+
+https://www.cryst.ehu.es/cgi-bin/cryst/programs/corepresentations out.pl?super=194.264&vecfinal=DT.
+
+R
+Dstd(R)
+irrep
+DT7
+DT8
+
+{C3z|0, 0, 0}
+
+�
+−1
+0
+0
+−1
+
+�
+�
+e− πi
+
+3
+0
+0
+e
+πi
+3
+
+�
+
+{C2z|0, 0, 1
+
+2}
+
+�
+−ieiπw
+0
+0
+ieiπw
+
+� �
+−ieiπw
+0
+0
+ieiπw
+
+�
+
+{Mx|0, 0, 0}
+
+�
+0
+1
+−1 0
+
+�
+�
+0
+e− 2πi
+
+3
+
+e− πi
+
+3
+0
+
+�
+
+{TP|0, 0, 0}
+
+�
+0
+1
+−1 0
+
+�
+K
+
+�
+0
+1
+−1 0
+
+�
+K
+
+TABLE E2: In Te, the matrix representations of H4, 5 and H6 irreps at H are given on BCS server, https://www.cryst.ehu.es/cgi-
+bin/cryst/programs/corepresentations out.pl?super=152.34&vecfinal=H.
+
+R
+Dstd(R)
+irrep H4 H5
+H6
+
+{C3z|0, 0, 1
+
+3}
+1
+1
+
+�
+e− 2πi
+
+3
+0
+0
+e
+2πi
+
+3
+
+�
+
+{C2x|0, 0, 2
+
+3}
+i
+−i
+
+�
+0
+e
+2πi
+
+3
+
+e
+πi
+3
+0
+
+�
+
+TABLE E3:
+In WZ InAs,
+the matrix representations of GM7 and GM8 irreps at Γ are given on BCS server,
+
+https://www.cryst.ehu.es/cgi-bin/cryst/programs/corepresentations out.pl?super=186.204&vecfinal=GM.
+
+R
+Dstd(R)
+irrep
+GM7
+GM8
+
+{C3z|0, 0, 0}
+
+�
+−1
+0
+0
+−1
+
+�
+�
+e− πi
+
+3
+0
+0
+e
+πi
+3
+
+�
+
+{C2z|0, 0, 1
+
+2}
+
+�
+−i 0
+0
+i
+
+�
+�
+−i 0
+0
+i
+
+�
+
+{Mx|0, 0, 0}
+
+�
+0
+1
+−1 0
+
+�
+�
+0
+e− 2πi
+
+3
+
+e− πi
+
+3
+0
+
+�
+
+{T|0, 0, 0}
+
+�
+0
+1
+−1 0
+
+�
+K
+
+�
+0
+1
+−1 0
+
+�
+K
+
+TABLE E4:
+In 1H-TMD monolayers, the matrix representations of K8 and K11 irreps at K are given on BCS server,
+
+https://www.cryst.ehu.es/cgi-bin/cryst/programs/corepresentations out.pl?super=187.210&vecfinal=K.
+
+R
+Dstd(R)
+irrep
+K8
+K11
+
+{C3z|0, 0, 0}
+−1
+e
+πi
+3
+
+{Mz|0, 0, 0}
+i
+−i
+
+{MxT|0, 0, 0}
+−1 · K e− πi
+
+3 · K
+
+
+20
+
+Appendix F: Six-band model at Γ in wurtzite InAs
+
+At Γ in the Brillouin zone of InAs, we consider six valence bands for the hole doping sample. The band represen-
+tations are GM8, GM8 and GM7 in the ascending order. The representation matrices of generators are presented in
+TABLE E3. The second order k · p Hamiltonian of six valence bands of InAs at Γ is expressed by
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hkp
+11 =Hkp
+22 = a1 + 4
+√
+
+3
+
+3 a4 + d1k+k− + d2k2
+z
+
+d1 = c1 + 4
+√
+
+3
+
+3 c5, d2 = c10 + 4
+√
+
+3
+
+3 c13k2
+z
+
+Hkp
+12 =ξ+(2b1 + 4b2 − 3b3 − 2b4)k−
+
+Hkp
+13 =Hkp
+24 = 2a3 − 2ib6kz + d5k+k− + c12k2
+z
+
+d5 = 2c3 + 2
+√
+
+3
+
+3 c4
+
+Hkp
+14 =2ξ+b2k− + 2
+√
+
+3
+
+3 iξ+c8k−kz
+
+Hkp
+15 =Hkp∗
+26
+=
+
+�
+
+−2c3 − 2
+√
+
+3
+
+3 c4 + 2c6
+
+�
+
+ξ−k2
+−
+
+Hkp
+16 =2ξ−(b2 − b4)k+ −
+
+√
+
+3
+3 iξ−(2c7 + 2c8 + 3c9)k+kz
+
+Hkp
+23 =2ξ−b2k+ + 2
+√
+
+3
+
+3 iξ−c8k+kz
+
+Hkp
+25 =2ξ+(b2 − b4)k− −
+
+√
+
+3
+3 iξ+(2c7 + 2c8 + 3c9)k−kz
+
+Hkp
+33 =Hkp
+44 = a1 + 2a2 − 2
+√
+
+3
+
+3 a4 + d+
+3 k+k− + d+
+4 k2
+z
+
+Hkp
+34 = − 2ξ+(b2 − b4 − b5)k−
+
+Hkp
+35 =Hkp∗
+46
+= −2
+√
+
+3
+
+3 ξ−c4k2
+−
+
+Hkp
+36 = − (4b2 − 3b3 − 2b4)ξ−k+ − 2
+√
+
+3
+
+3 iξ−c7k+kz
+
+Hkp
+45 = − (4b2 − 3b3 − 2b4)ξ+k− − 2
+√
+
+3
+
+3 iξ+c7k−kz
+
+Hkp
+55 =Hkp
+66 = a1 − 2a2 − 2
+√
+
+3
+
+3 a4 + d−
+3 k+k− + d−
+4 k2
+z
+
+d±
+3 = c1 ± 2c2 − 2
+√
+
+3
+
+3 c5,
+
+d±
+4 = c10 ± 2c11 − 2
+√
+
+3
+
+3 c13
+
+Hkp
+56 =0
+
+with
+ξ± = 1 ±
+√
+
+3i
+
+(F.1)
+
+
+21
+
+The Zeeman’s coupling of six valence bands of InAs at Γ can be expressed by
+
+HZ =µB
+
+2
+
+
+
+
+
+
+
+
+
+
+h1Bz
+h3B+
+2g7Bz
+h4B−
+0
+h5B+
+−h1Bz h∗
+4B+ −2g7Bz h∗
+5B−
+0
+3g9Bz
+h6B−
+0
+h7B+
+−3g9Bz h∗
+7B−
+0
+†
+h2Bz
+0
+−h2Bz
+
+
+
+
+
+
+
+
+
+
+h1 = 2h6 + 2
+√
+
+3
+
+3 g8 + 3g9
+
+h2 = 4
+√
+
+3
+
+3 g8 + 3g9
+
+h3 = −
+
+√
+
+3
+3 iξ+(2g1 + 4g2 − 3g3 − 2g4)
+
+h4 = −2
+√
+
+3
+
+3 iξ+g2
+
+h5 = 2
+√
+
+3
+
+3 iξ−(g2 − g4)
+
+h6 = 2
+√
+
+3
+
+3 iξ+(g2 − g4 − g5)
+
+h7 = −
+
+√
+
+3
+3 iξ−(4g2 − 3g3 − 2g4)
+
+with
+ξ± = 1 ±
+√
+
+3i
+
+(F.2)
+
+The values of the parameters {ai, bi, ci, gi} are presented in TABLE F1.
+
+TABLE F1: The computed values of parameters {ai, bi, ci, gi} for six valence states in InAs are obtained from the VASP
+calculations directly.
+
+a (eV)
+b (eV·˚A)
+c (eV·˚A2)
+g
+
+a1 = 3.91
+b1 = 0.13
+c1 = −45.78
+g1 = −3.28
+a2 = −0.09
+b2 = 0.08
+c2 = 12.94
+g2 = −2.44
+a3 = 0.02
+b3 = 0.11
+c3 = −1.54
+g3 = −3.16
+a4 = 0.03
+b4 = −0.09
+c4 = −20.14
+g4 = 5.50
+b5 = 0.06
+c5 = 7.65
+g5 = −2.76
+b6 = 0.21
+c6 = −2.23
+g6 = −11.20
+c7 = 21.62
+g7 = −6.90
+c8 = 32.86
+g8 = 19.82
+c9 = −60.12
+g9 = −3.88
+c10 = −45.68
+c11 = −7.45
+c12 = 28.03
+c13 = −23.43
+
+

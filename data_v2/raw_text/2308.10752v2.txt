@@ -1,0 +1,1952 @@
+Comprehensive Molecular Representation from
+Equivariant Transformer
+
+Nianze Tao, Hiromi Morimoto and Stefano Leoni1∗
+
+1Materials Discovery Group, School of Chemistry, Cardiff University,
+Cardiff, UK
+
+Abstract
+
+The tradeoff between precision and performance in molecular simulations can
+nowadays be addressed by machine-learned force fields (MLFF), which combine ab
+initio accuracy with force field numerical efficiency.
+Different from conventional
+force fields however, incorporating relevant electronic degrees of freedom into MLFFs
+becomes important. Here, we implement an equivariant transformer that embeds
+molecular net charge and spin state without additional neural network parame-
+ters. The model trained on a singlet/triplet non-correlated CH2 dataset can identify
+different spin states and shows state-of-the-art extrapolation capability.
+Therein,
+self-attention sensibly captures non-local effects, which, as we show, can be finely
+tuned over the network hyper-parameters. We indeed found that Softmax activation
+functions utilised in the self-attention mechanism of graph networks outperformed
+ReLU-like functions in prediction accuracy. Increasing the attention temperature
+from τ =
+√
+
+d to
+√
+
+2d further improved the extrapolation capability, indicating a
+weighty role of nonlocality. Additionally, a weight initialisation method was pur-
+posed that sensibly accelerated the training process.
+
+1
+Introduction
+
+The need to expand the scope of molecular dynamics simulations has accelerated the
+resolution of the historical tradeoff between accuracy and efficiency in calculating inter-
+atomic forces.1 Ab initio approaches encode the relevant physical picture, however solving
+the Schr¨odinger equation, albeit approximately, entails severely constraining system size
+and time scope of any simulation.
+Classical force fields on the contrary focus on the
+dependency of the potential energy on atomic coordinates via an analytical representa-
+tion. Early applications of MLFFs to molecular simulations of bulk silicon2 expressed
+total energies as sum of atomic energies depending on local atomic coordination, en-
+coded by symmetry functions, fed into the neural network. Graph-based neural networks
+have recently achieved significant success in learning and predicting molecular energies
+
+∗email address: LeoniS@cardiff.ac.uk
+
+1
+
+arXiv:2308.10752v2  [physics.comp-ph]  7 Mar 2024
+
+
+and/or interatomic forces. Different architectures including invariant networks,3–7 covari-
+ant networks,8 and equivariant networks,9–19 which predict molecular energy and forces
+from raw atomic numbers and positions (Cartesian coordinates), showed higher comput-
+ing efficiency than ab initio quantum chemistry methods, without accuracy deterioration.
+Among these architectures, equivariant message passing neural networks (MPNN) have
+been shown to reliably predict tensor properties (e.g., dipole moment) with higher accu-
+racy,9 which prompted further efforts to develop different models based on various equiv-
+ariant groups.9,10,12,13 It was shown9,10 that the equivariant characteristic even benefited
+the prediction of invariant properties (e.g., total energy of a molecule). Recent works also
+successfully combined equivariant message passing with transformer10,12 achieving signif-
+icant advances. Therein, P. Th¨olke et al 10 pointed out the key role of activation functions
+in self-attention mechanism, preferring ReLU-like functions for improved accuracy.
+Attention temperature20 in the self-attention mechanism was shown to play an im-
+portant role in performance generalisation in NLP models.20 For chemical system in par-
+ticular, self-attention is believed to play a major role in learning non-local effects implied
+by electronic degrees of freedom, a feature that may improve transferability.6
+
+As mentioned by O.T. Unke et al,6 the atomic numbers (Z) and coordinates (R) are
+not a complete representation of a molecule.
+A comprehensive representation, e.g., a
+wavefunction, besides Z and R, must include the molecule net charge (Q) and total spin
+(S) as well. Along this line, here we present Comprehensive Molecular Representation
+from Equivariant Transformer (CMRET), which explicitly embeds Z, R, Q and S into the
+model. Different from SpookyNet6 that embeds Q and S with Z, employing an attention-
+like strategy that requires adding more parameters into the neural network, our purposed
+method is trainable parameter-free and can be easily applied to other equivariant models
+(e.g., PAINN9) using vector features, like demonstrated in the following.
+
+2
+Methods
+
+2.1
+Architecture of Equivariant Transformer
+
+In this section, we detail key CMRET componets, i.e., embedding, radial basis function
+(RBF), interaction block, and output layer.
+The CMRET net takes atomic numbers
+and Cartesian coordinates as input. To achieve a wavefunction representation, the total
+charge and total spin are supplemented as vector feature prior to embedding. The network
+overview scheme is shown in Figure 1.
+
+2.1.1
+Embedding
+
+The embedding layer first maps the atomic number z to the ground state electron con-
+figuration (from 1s orbital to 7f orbital) xembedded of the element, which then is passed
+through a linear layer, i.e.,
+
+s0
+i = embed(zi) = W embedxembedded
+i
++ bembed.
+(1)
+
+s ∈ RNatom×F is the scalar feature of the included atoms, in which F is the number of
+atomic features (defaulting to 128).
+
+2
+
+
+RBF
+𝐑
+
+fcut
+𝐯𝟎
+Embedding
+
+Z
+
+Interaction 1
+
+Interaction T
+
+Output layer
+Σ
+
+Σ
+E
+
+…
+
+Attention
+CFConv
+
+O(Σj)
+
+sj/si
+rbf(rij)
+
+U
+
+Ԧ𝑣j
+
+Split
+
+Split
+∙
+
++
+
+∙
+
++
+
+∙,∙
+
+∙
+
+∙
+
+fcut
+
+ሶ∙
+
++
+
+Σj
+ResML
+
+Δsi
+yi
+Δ Ԧ𝑣i
+
+Y(1)
+
+Y(T)
+
+s
+
+Ԧ𝑟ij
+
+Interaction
+
+0o feature
+
+Concat
+
+Linear
+
+1o feature
+
+Split
+CFConv
+
+si/rbf(rij)
+sj/rbf(rij)
+
+s1 s2 s3
+
+Linear
+
+Linear
+Linear
+
+MatMul
+
+sj
+
+Scale
+
+MatMul
+
+σ
+
+S’j
+
+Attention
+
+Linear
+
+SiLU
+
+Linear
+
++
+
+Δsi
+
+yi
+
+ResML
+
+LayerNorm
+
+Gated 
+
+equivariant
+
+…
+
+Linear
+
+in
+
+out
+
+Output        Layer
+
+Charge | Spin
+
+Δ Ԧ𝑣i
+
+Figure 1: Colour-coded overview of the structure of CMRET and its individual compo-
+nents. Thin lines represent split scalar or vector features. ‘Split’ method cleaves the input
+feature into 3 equal-length outputs. ‘Scale’ method scales the input to its 1/τ (τ > 1). σ
+represents any activation function. The structure of Gated equivariant block introduced
+by K.F. Sch¨utt et al 9 is not shown here.
+
+2.1.2
+Radial Basis Functions (RBF)
+
+Two different radial basis functions are implemented in CMRET: a Bessel type5,9 RBF
+and a Gaussian type4,10 RBF. The Bessel type RBF is defined as
+
+RBF(dij) = 1
+
+dij
+sin( nπ
+
+dcut
+dij),
+(2)
+
+where dcut is the cut-off radius, dij = ∥⃗rij∥ = ∥⃗ri − ⃗rj∥ is the pair-wise distance between
+atom i and atom j, and n is an integer number n ∈ [1, Nbasis]. The Gaussian type RBF
+is defined as
+RBF(dij) = e−βn(e−dij −µn)2,
+(3)
+
+where βn and µn are trainable parameters: all β values are initialised as ( Nbasis
+
+2
+)2(1 −
+e−dcut)−2 and µn ∈ {µ1, µ2, µ3, ..., µNbasis} in which for ∀i, j ∥µi−µj∥ = (1−e−dcut)/Nbasis
+as initial values. The value of Nbasis defaults to 50 in CMRET.
+A cosine cut-off function, i.e.,
+
+ϕ(dij) =
+
+�
+1
+2
+�
+cos
+�
+π
+
+dcut dij
+�
++ 1
+�
+,
+dij ≤ dcut
+0
+,
+dij > dcut
+(4)
+
+is operated onto the RBF to create the edge feature as
+
+eij = ϕ ◦ RBF(dij).
+(5)
+
+3
+
+
+The attention mechanism, discussed below, allows for non-linear mixing of the basis func-
+tions relative to the basis vectors of the coordinate frames, allowing to naturally incorpo-
+rating an angular dependency.
+
+2.1.3
+Attention
+
+The attention layer follows the design of scaled dot-product self-attention21 mechanism,
+i.e.,
+
+s′
+i = attention(si) =
+
+all
+�
+
+j
+αij(W V sj + bV )
+(6)
+
+αij ∈ A = σ[(W Qs + bQ)(W Ks + bK)T/τ],
+(7)
+
+where σ is the attention activation function and τ is the attention temperature (τ > 0).
+A multi-head attention mechanism is also implemented in our model (4 heads as default).
+This module is parallel to the scalar-level message-passing block (i.e., CFConv block),
+which is expected to capture the long-range interactions outside the cut-off range defined
+in Equation (4).
+
+2.1.4
+Modified Continuous-Filter Convolution (CFConv)
+
+In the normal continuous-filter convolution introduced in SchNet,3 the features of first
+order neighbourhood nodes and edges (i.e., entities within the range of dcut) are aggregated
+together. Inspired by MixHop22 convolution, we add the zero order (self) features:
+
+lsnbh
+ij
+=
+l−1ˆsj ⊙ SiLU(lW e1eij + lbe1) ⊙ ϕij
+lsself
+ij
+=
+l−1ˆsi ⊙ SiLU(lW e2eij + lbe2) ⊙ ϕij
+
+lsij
+=
+lW o �
+lsself
+ij
+∥ lsnbh
+ij
+�
++ lbo,
+(8)
+
+where ⊙ represents the element-wise product, ∥ is the concatenation operator over feature
+dimension, and l−1ˆsi = SiLU(lW Φ l−1si + lbΦ) (W e1, W e2 ∈ RNbasis×F , W Φ ∈ RF ×F and
+W o ∈ R2F ×3F ). A cutoff function ϕ is used to smooth the potential. Scalar features s1,
+s2 and s3 are generated by equally splitting s.
+
+2.1.5
+Interaction
+
+The Interaction block utilises an equivariant topology similar to Torchmd-NET10 when
+updating the scalar feature and vector feature.
+However, instead of filling the initial
+vector feature ⃗V0 ∈ RNatom×3×F with zero matrix elements, we embed the information of
+molecular net charge and spin into the feature:
+
+⃗V0 = ⃗0 − charge − spin
+
+�all
+i
+zi
+⃗1 = [⃗v1 ⃗v2 ... ⃗vNatom]T,
+(9)
+
+where ⃗1 is an all-one matrix.
+
+4
+
+
+The atomic interaction is separated into local interaction (modified continuous-filter
+convolution) and non-local interaction (self-attention). The visualised scheme is shown in
+Figure 1. The updated scalar feature ∆si is
+
+∆si =
+
+
+
+O1
+
+
+
+
+
+∀j,dij≤dcut
+�
+
+j
+sij
+1 + si + s′
+i
+
+
+
+ + b1
+
+
+
++
+
+
+
+O2
+
+
+
+
+
+∀j,dij≤dcut
+�
+
+j
+sij
+1 + si + s′
+i
+
+
+
+ + b2
+
+
+
+⊙
+�
+U 1⃗vi, U 2⃗vi
+�
+,
+
+(10)
+where ⟨a, b⟩ is the inner product between a and b. Then yi = ResML(∆si).
+The updated vector feature ∆⃗vi is
+
+∆⃗vi =
+
+∀j,dij≤dcut
+�
+
+j
+(sij
+2 ⊙⃗vi+sij
+3 ⊙ ⃗rij
+
+∥⃗rij∥)+
+
+
+
+O3
+
+
+
+
+
+∀j,dij≤dcut
+�
+
+j
+sij
+1 + si + s′
+i
+
+
+
+ + b3
+
+
+
+⊙U 3⃗vi, (11)
+
+where O1, O2, O3, U 1, U 2, U 3 ∈ RF ×F are the weights of linear layers.
+In our model, we used 6 Interaction layers (T = 6), unless otherwise specified.
+
+2.1.6
+Output Layer
+
+The output layer consists of three parts: a layer normalisation23 block, a series of Gated
+Equivariant9 blocks (default to use 2 blocks) and two fully connected layers mapping
+atomic feature number F → 1, i.e., sout
+i
+= W ssi and ⃗vout
+i
+= W v⃗vi. For the pure scalar
+feature (e.g., total energy, ϵHOMO), the output is simply E = �all
+i
+sout
+i
+(⃗F = −∇E if the
+forces are required). The electronic spatial extent is
+
+⟨R2⟩ =
+
+all
+�
+
+i
+sout
+i
+∥(⃗ri − ⃗r0)∥
+(12)
+
+where ⃗r0 =
+1
+�all
+i
+zi
+�all
+i
+zi⃗ri is the charge centre. The computations of tensor features
+
+employ the vector output ⃗vout from the model. For the calculation of dipole moment, the
+output is defined as
+
+µ = ∥⃗µ∥ =
+
+�����
+
+all
+�
+
+i
+⃗vout
+i
++ sout
+i
+(⃗ri − ⃗r0)
+
+����� .
+(13)
+
+The isotropic polarisability is computed as
+
+α =
+
+�����
+
+all
+�
+
+i
+sout
+i
+I3 + ⃗vout
+i
+⊗ (⃗ri − ⃗r0) + (⃗ri − ⃗r0) ⊗ ⃗vout
+i
+
+����� ,
+(14)
+
+where ⊗ stands for the outer product, and I3 is the 3 × 3 identity matrix.
+
+2.2
+Data Preparation
+
+A singlet/triplet CH2 dataset containing 2,000 data points was generated based on DFT
+calculations at B3LYP24,25/cc-pVDZ level of accuracy, in order to test the capability of
+
+5
+
+
+CMRET to learn from electronic degrees of freedom. By sampling the 2 C-H bond lengths
+from 0.95 to 1.20 ˚A and the H-C-H angle from 90° to 140°, 1,000 uncorrelated geometries
+were generated, from which energies and forces where calculated.
+1,500 randomly selected data points (750 singlet + 750 triplet) constituted the training
+set. The remaining 500 geometries were used to test the performance of CMRET.
+
+2.3
+Training
+
+The model can be trained on both scalar and vector features, if vector features exist in
+the dataset. The training loss is defined as
+
+loss =
+
+�
+0.2 · MSE(S, ˆS) + 0.8 · MSE(⃗V , ˆ⃗V )
+if
+∃⃗V
+MSE(S, ˆS)
+if
+¬∃⃗V
+,
+(15)
+
+where ˆS and ˆ⃗V are labelled scalar and labelled vector properties, respectively. The opti-
+miser is Adam26 with β1 = 0.9, β2 = 0.999 and ϵ = 10−8. We found that AMSGrad27
+
+strategy had negative effect on training results. A cyclic learning rate scheduler28 (cy-
+cle momentum=False) is utilised to guide the learning rate for 2 cycles: during the first
+cycle the learning rate range was [10−6, 10−4], which in the second cycle was reduced to
+[10−8, 10−6]. The batch-size was 10 for singlet/triplet CH2 dataset, 5 for MD1729 dataset,
+20 for DES370K30 dataset and 15 for ISO173 and QM931 dataset.
+
+2.4
+Weight Initialisation
+
+A weight initialisation strategy was developed to stabilise and fasten the training process.
+We initialised the filter network in CFConv (W e1 and W e2) with an uniform distribution,
+in which the values were chosen between −
+�
+
+6/Nbasis and
+�
+
+6/Nbasis. All the remaining
+linear layers before a SiLU activation function were initialised with a normal distribution
+with µ = 0 and σ =
+�
+
+3/2F.
+
+3
+Experiments and Results
+
+Learning molecular data entails encoding equilibrium geometries as well as not-equilibrium
+geometries, which can be systematically obtained from molecular dynamics simulation
+protocols. The reliable prediction of energies and forces sensibly depends on the sensitivity
+of the learning framework to changes in molecular internal coordinates. To disentangle the
+contribution of attention layer from output layer, we first performed an ablation of those
+component individually from the CMRET network, followed by a focused investigation on
+the role of activation function (σ in Figure 1) and activation temperature for singlet/triplet
+carbene. Further, we trained and tested CMRET on static and dynamic data, including
+the calculation of static properties, and compared our results to state-of-the-art networks.
+Therein, we focused on extrapolation capabilities on unseen data (unknown molecules and
+conformations), either as single geometries, dimers or as trajectories.
+
+6
+
+
+100
+120
+140
+160
+180
+
+H-C-H angle
+
+1064.5
+
+1064.0
+
+1063.5
+
+1063.0
+
+1062.5
+
+Energy / eV
+
+Energy of Carbene w.r.t H-C-H angle 
+
+(C-H bond length = 1.1 Å)
+
+DFT B3LYP (cc-pVDZ); S = 0
+DFT B3LYP (cc-pVDZ); S = 1
+NN (w/o attention); S = 0
+NN (w/o attention); S = 1
+Neural Network; S = 0
+Neural Network; S = 1
+
+165.0
+167.5
+170.0
+172.5
+175.0
+177.5
+180.0
+
+0.7
+
+0.6
+
+Energy / eV
+
+1.062e3
+
+(a) Fully structured CMRET (2
+gated equivariant blocks in the
+output layer) vs. DFT.
+
+100
+120
+140
+160
+180
+
+H-C-H angle
+
+1064.5
+
+1064.0
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.0
+
+Energy / eV
+
+Energy of Carbene w.r.t H-C-H angle 
+
+(C-H bond length = 1.1 Å)
+
+DFT B3LYP (cc-pVDZ); S = 0
+DFT B3LYP (cc-pVDZ); S = 1
+NN (w/o attention); S = 0
+NN (w/o attention); S = 1
+NN (simplified output); S = 0
+NN (simplified output); S = 1
+
+166
+168
+170
+172
+174
+176
+178
+180
+
+0.7
+
+0.6
+
+Energy / eV
+
+1.062e3
+
+(b) CMRET with simplified out-
+put layer (1 gated equivariant
+block) vs. DFT.
+
+100
+120
+140
+160
+180
+
+H-C-H angle
+
+1064.5
+
+1064.0
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.0
+
+Energy / eV
+
+Energy of Carbene w.r.t H-C-H angle 
+
+(C-H bond length = 1.1 Å)
+
+DFT B3LYP (cc-pVDZ); S = 0
+DFT B3LYP (cc-pVDZ); S = 1
+NN (w/o attention); S = 0
+NN (w/o attention); S = 1
+NN (simplified output); S = 0
+NN (simplified output); S = 1
+
+165.0
+167.5
+170.0
+172.5
+175.0
+177.5
+180.0
+
+0.7
+
+0.6
+
+Energy / eV
+
+1.062e3
+
+(c)
+CMRET
+with
+simplified
+output
+(1
+gated
+equivariant
+block) and interaction layers (no
+ResML structures) vs. DFT.
+
+Figure 2: Total energies of singlet/triplet CH2 calculated by CMRET with different output
+layer structures and DFT method (B3LYP/cc-pVDZ) scanning through the H-C-H angle
+from 90 to 180° with C-H bond length fixed at 1.1 ˚A. Dashed grey lines represent the
+energies calculated by the neural network with fully structured output layer, but without
+applying self-attention networks.
+
+3.1
+Ablation Tests
+
+We evaluated the effects of attention layer and the structure of output layer on the ex-
+trapolation capability of the model on the singlet/triplet carbene dataset. Eliminating
+the attention layer had a negative effect on the prediction accuracy when the H-C-H was
+larger than 165° (Figure 2(a)), but the prediction values of the model still followed the
+trend of DFT. However, reducing the number of Gated Equivariant blocks in the output
+layer significantly weakened the extrapolation capability; removing ResML blocks made
+the performance worse (Figure 2(b) & Figure 2(c)).
+These observations leads to two
+insights: (1) the self-attention mechanism is a useful correction to the message-passing
+processes and (2) the severe influence of parameters outside Interaction blocks (message-
+passing + self-attention) on the extrapolative behaviours is a hint that the algorithm in
+the Interaction layer is sufficient to encode the information of a molecular graph into
+atom-wise information (i.e., atomic latent vectors), to which enough interpretation power
+of the output layer (i.e., the number of parameters in a machine learning point of view)
+is required to extract the molecular property.
+
+3.2
+The Attention Activation Function and Attention Tempera-
+ture
+
+We tested the performance of our model on singlet/triplet CH2 set on applying different
+activation functions in the attention layer, including Softmax (softmax function operating
+on the last dimension), Softmax2d (softmax function operating on the last two dimen-
+sions), and a range of ReLU-like smooth and continuous functions: Swish,32 Softplus,
+GELU33 and Mish.34 The comparison can be found in Table 1 & Table 2. We employed
+
+7
+
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+softmax =
+2d, Singlet
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.5
+
+1062.0
+
+1062.0
+
+1061.5
+
+1061.5
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+softmax =
+d, Singlet
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.5
+
+1062.0
+
+1062.0
+
+1061.5
+
+1061.5
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+Swish, Singlet
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.5
+
+1062.0
+
+1062.0
+
+1061.5
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+PAINN, Singlet
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.5
+
+1062.0
+
+1062.0
+
+1061.5
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+Reference, Singlet
+
+1063.5
+
+1063.0
+
+1062.5
+
+1062.5
+
+1062.0
+
+1062.0
+
+1061.5
+
+1061.5
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+softmax =
+2d, Triplet
+
+1064.4
+
+1064.0
+
+1063.6
+
+1063.6
+
+1063.2
+
+1063.2
+
+1062.8
+
+1062.8
+
+1062.8
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+softmax =
+d, Triplet
+
+1064.4
+
+1064.0
+
+1063.6
+
+1063.6
+
+1063.2
+
+1063.2
+
+1062.8
+
+1062.8
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+Swish, Triplet
+
+1064.4
+
+1064.0
+
+1063.6
+
+1063.6
+
+1063.2
+
+1063.2
+
+1062.8
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+PAINN, Triplet
+
+1064.4
+
+1064.0
+
+1063.6
+
+1063.6
+
+1063.2
+
+1063.2
+
+1062.8
+
+0.9
+1.0
+1.1
+1.2
+1.3
+1.4
+
+100
+
+120
+
+140
+
+160
+
+180
+
+Reference, Triplet
+
+1064.4
+
+1064.0
+
+1063.6
+
+1063.6
+
+1063.2
+
+1063.2
+
+1062.8
+
+1062.8
+
+Figure 3: Potential surface of singlet/triplet CH2 calculated by CMRET (attention σ
+= softmax with τ =
+√
+
+2d and τ =
+√
+
+d, and σ = Swish), modified PAINN, and DFT
+(B3LYP/cc-pVDZ) from left to right. X-axis is the C-H bond length from 0.9 to 1.4 ˚A
+(the two C-H bonds have equal length in this case). Y-axis is the H-C-H angle varied
+from 90° to 180°. A brighter colour represents higher energy. Geometries in the training
+and testing datasets are included in the square delimited by dashed grey lines. All the
+neural network models were trained to converge.
+
+single-head attention, T = 5, and Nbasis = 20 in this test.
+Table 2 also shows the effect of attention temperatures of τ =
+√
+
+d,
+√
+
+1.5d and
+√
+
+2d,
+where d is the feature number in the attention layer. The out-of-domain test (results
+showed in Figure 3) gave clearer information about the benefit of increasing the attention
+temperature. By scanning the potential surface of carbene, in which a large fraction of
+conformations were unseen during training, we found that the combination of σ = Soft-
+max, τ =
+√
+
+2d in the attention layer provided the best extrapolation capability (here, to
+enable PAINN to learn molecular spin states, we applied the same charge/spin embedding
+strategy of CMRET; the original nuclear embedding and output layer of PAINN were also
+replaced by the same method used in our model), as the structure of the potential energy
+surface (left in Figure 3) was closer to ground-truth energy (right in Figure 3) than the
+results obtained with other settings.
+From this test we concluded that Softmax function in the attention mechanism im-
+proves prediction accuracy, compared to ReLU-like functions. Increasing the attention
+temperature to τ =
+√
+
+2d promotes the generalisation capability of the trained model. We
+observed that even with more trainable parameters, the multi-head attention models with
+τ =
+√
+
+d did not outperform the single-head models.
+
+8
+
+
+Swish
+Softmax
+Softplus
+GELU
+Mish
+Multi-head attention
+
+(2 heads)
+
+energy
+5.795
+0.458
+0.624
+2.368
+1.914
+3.569
+
+forces
+0.292
+0.212
+0.215
+0.244
+0.264
+0.295
+
+Table 1: Testing results on singlet/triplet CH2 data (metric: MAE) with different atten-
+tion activation functions. The best result is labelled in bold. The models were trained
+for 7,000 epochs. The RBF type was Bessel. The unit of energy is meV and the unit of
+forces is meV/˚A. The multi-head attention21 mechanism was directly imported from the
+implementation in PyTorch.
+
+Swish
+Softmax
+Softmax2d
+Multi-head attention
+
+(4 heads)
+
+W/o
+attention
+
+# parameter
+1.48M
+1.48M
+1.48M
+1.81M
+1.23M
+
+τ =
+√
+
+d
+energy
+0.041
+0.039
+0.158
+0.055
+0.101
+
+forces
+0.156
+0.150
+0.151
+0.151
+0.161
+
+τ =
+√
+
+1.5d
+energy
+–
+0.351
+–
+–
+
+forces
+–
+0.148
+–
+–
+
+τ =
+√
+
+2d
+energy
+0.048
+0.047
+–
+–
+
+forces
+0.150
+0.147
+–
+–
+
+Table 2: Testing results on singlet/triplet CH2 data (metric: MAE) with different atten-
+tion activation functions and different attention temperatures. The best result is labelled
+in bold. The models were trained for 20k epochs. RBF type was Gaussian. The unit of
+energy is meV and the unit of forces is meV/˚A. The multi-head attention21 mechanism
+was directly imported from the implementation in PyTorch.
+
+3.3
+QM9 Dataset
+
+Table 3 shows the results of our model tested on the QM931 dataset, in which properties
+of molecules (up to 9 C, N, O, F ‘heavy’ atoms) were calculated at B3LYP/6-31G(2df,p)
+level, compared with other models. 110k data were randomly chosen as the training set,
+while the rest was used for testing (3054 data that failed geometric consistency checks were
+excluded). Although testing errors on internal energies were in general larger compared
+to other models, and only comparable to SchNet, QM9-trained CMRET (CMRET-QM9)
+showed very good extrapolated performance particularly on larger molecules, e.g., EDTA
+(20 ‘heavy’ atoms), azobenzene (14 ‘heavy’ atoms) and D-fructose (12 ‘heavy’ atoms),
+compared to HF calculations (Figure 4). This highlights the sensible influence that core,
+heavier atoms have on the attention element of the transformer when trained on static
+structure databases like QM9 containing geometry optimised molecules, in agreement
+with.10
+
+9
+
+
+unit
+SchNet
+DimeNet++
+PAINN
+Torchmd-NET
+MACE
+Ours
+
+µ
+D
+0.033
+0.0297
+0.012
+0.011
+0.015
+0.0029
+
+α
+a3
+0
+0.235
+0.0435
+0.045
+0.059
+0.038
+0.0137
+
+ϵHOMO
+meV
+41
+24.6
+27.6
+20.3
+22
+26.3
+
+ϵLUMO
+meV
+34
+19.5
+20.4
+17.5
+19
+20.4
+
+∆ϵ
+meV
+63
+32.6
+45.7
+36.1
+42
+43.9
+
+⟨R2⟩
+a2
+0
+0.073
+0.331
+0.066
+0.033
+0.210
+0.0278
+
+ZPVE
+meV
+1.7
+1.21
+1.28
+1.84
+1.23
+1.21
+
+U0
+meV
+14
+6.32
+5.85
+6.15
+4.1
+19.02
+
+U
+meV
+19
+6.28
+5.83
+6.38
+4.1
+18.90
+
+H
+meV
+14
+6.53
+5.98
+6.16
+4.7
+18.40
+
+G
+meV
+14
+7.56
+7.35
+7.62
+5.5
+20.34
+
+Cv
+cal/K/mol
+0.033
+0.023
+0.024
+0.026
+0.021
+0.0183
+
+Table 3: Testing results on QM9 dataset (metric: MAE). Data of SchNet, DimeNet++,
+PAINN and Torchmd-NET are from P. Th¨olke et al.10 Data of MACE were taken from
+D.P. Kovacs et al.35 It took 7 days per task to train our model on single V100 GPU. The
+best results are in bold. Calculated properties: µ dipole moment; α isotropic polarizabil-
+ity; ϵHOMO, ϵLUMO energies of HOMO and LUMO, respectively; ∆ϵ HOMO-LUMO gap;
+⟨R2⟩ electronic spatial extent; ZPVE Zero Point Vibrational Energy; U0 internal energy
+at 0 K; U, H, G, Cv internal energy, enthalpy, free energy and heat capacity at 298.15 K,
+respectively.
+
+HF/6-31G(2df,p):      -1095.9226282 a.u.
+B3LYP/6-31G(2df,p): -1101.4963015 a.u.
+
+CMRET-QM9:           -1101.8010254 a.u.
+
+EDTA
+
+HF/6-31G(2df,p):      -683.3914786 a.u.
+B3LYP/6-31G(2df,p): -686.8437437 a.u.
+
+CMRET-QM9:           -687.0215454 a.u.
+
+D-Fructose
+
+HF/6-31G(2df,p):      -569.1179965 a.u.
+B3LYP/6-31G(2df,p): -572.4111580 a.u.
+
+CMRET-QM9:           -572.6107789 a.u.
+
+Azobenzene
+
+Figure 4:
+Extrapolated performance compared to HF/6-31G(2df,p) and B3LYP/6-
+31G(2df,p) total energies.
+
+3.4
+MD17 Dataset
+
+The geometries of the molecules in the MD17 dataset were generated via molecular dynam-
+ics (MD).5,9,10,29 It was suggested by A.S. Christensen et al 36 that since the geometries
+are highly correlated, the maximum number of single molecule conformations should be
+limited to 1,000. Following this advice, we trained our model on 1,000 randomly selected
+samples of each molecule. The trained model was tested on 10k samples different from the
+training ones. The testing results on MD17 dataset compared with SchNet,3 PAINN,9
+
+SpookyNet6 and Torchmd-NET10 are summarised in Table 4. High-symmetry molecules
+like benzene are learned with great accuracy, comparable to the one achived for naphtal-
+ene, less symmetric but very similar in terms of chemical bonds. Toluene, with an MAE
+of 0.093, is also well described, however to a lower precision compared to Torchmd-NET.
+
+10
+
+
+While force prediction is improved compared for example to SchNet, it remains slightly
+inferior to other models on this dataset, in particular for low-symmetry molecules like
+salicylic acid and its acetylated form, aspirin.
+
+SchNet
+PAINN
+SpookyNet
+Torchmd-NET
+Ours
+
+Benzene
+energy
+0.08
+–
+–
+0.058
+0.045
+
+force
+0.31
+–
+–
+0.196
+0.075
+
+Ethanol
+energy
+0.08
+0.064
+0.052
+0.052
+0.022
+
+force
+0.39
+0.224
+0.095
+0.109
+0.264
+
+Malonaldehyde
+energy
+0.13
+0.091
+0.079
+0.077
+0.074
+
+force
+0.66
+0.319
+0.167
+0.169
+0.312
+
+Naphthalene
+energy
+0.16
+0.116
+0.116
+0.085
+0.083
+
+force
+0.58
+0.077
+0.089
+0.061
+0.061
+
+Aspirin
+energy
+0.37
+0.167
+0.151
+0.123
+0.115
+
+force
+1.35
+0.338
+0.258
+0.235
+0.611
+
+Salicylic acid
+energy
+0.20
+0.116
+0.114
+0.093
+0.072
+
+force
+0.85
+0.195
+0.180
+0.126
+0.475
+
+Toluene
+energy
+0.12
+0.095
+0.094
+0.074
+0.093
+
+force
+0.57
+0.094
+0.087
+0.067
+0.254
+
+Uracil
+energy
+0.14
+0.106
+0.105
+0.095
+0.090
+
+force
+0.56
+0.139
+0.119
+0.095
+0.288
+
+Table 4: Testing results on MD17 dataset (metric: MAE). Data of SchNet, PAINN and
+Torchmd-NET are taken from P. Th¨olke et al,10 data of SpookyNet from O.T. Unke et
+al.6 Models were all trained on 1k data points of each subset of MD17. The training took
+around 3.5 days on single V100 graphic card to convergence. The best results are in bold.
+The unit of energy is kcal/mol. The unit of force is kcal/mol/˚A.
+
+3.5
+ISO17 Dataset
+
+The ISO17 dataset contains MD trajectories of 127 different C7O2H10 molecules.3 This
+benchmark tests the extrapolation capability, i.e., after training on 80% of configurations
+(400k data points) the model is tested on unseen MD trajectories of both seen molecules
+(10%) and unseen molecules (10%). The testing results of our model are shown in Table 5.
+The results for known molecules in unknown conformations largely mirror the observation
+made above for the MD17 dataset, placing CMRET below SchNet on the MAE scale.
+However, CMRET can much more reliably extrapolate from known to unknown molecules,
+a feature that is rapidly deteriorating in SchNet and PhysNet.
+
+11
+
+
+SchNet
+PhysNet
+Ours
+
+known molecules/
+unknown conformations
+
+energy
+0.36
+0.10
+0.24
+
+force
+1.00
+0.12
+0.55
+
+unknown molecules/
+unknown conformations
+
+energy
+2.40
+2.94
+1.59
+
+force
+2.18
+1.38
+1.15
+
+Table 5: Testing results on ISO17 dataset (metric: MAE). SchNet data are taken from
+K. Sch¨utt et al.3 Data of PhysNet are sourced from O.T. Unke and M. Meuwly.4 It took
+around 29 days (400 epochs) to train the model on single V100 graphic card. The best
+results are in bold. The unit of energy is kcal/mol. The unit of force is kcal/mol/˚A.
+
+3.6
+DES370K Dataset
+
+The DES370K dataset30 consists of 370,959 dimer (charged or neutral) geometries labelled
+with a series of dimer interaction energies (unit in kcal/mol) calculated at CCSD(T)/CBS
+level of accuracy. A random sample of 80% of the geometries formed the training set, while
+the remaining 20% constituted the testing set. We only trained our model on the total
+CCSD(T) interaction energies (labelled as ‘cc CCSD(T) all’ in the dataset). Predicted
+values vs.
+labelled values are plotted in Figure 5 (MAE(testing set)=0.137 kcal/mol,
+MAE(training set)=0.092 kcal/mol). The extrapolative means of CMRET remains reli-
+able over the whole energy range, with only minor deterioration compared to the MAE
+achieved in the training. Importantly, this test highlights the capability of CMRET to
+learn intermolecular interactions via the same graph/attention mechanism effective for
+intramolecular interactions, which adds to its transferability to a broader spectrum of
+molecules and molecular landscapes, whose total energies result from a mixture of cova-
+lent and dispersive interactions, affecting therefore different length ranges. This flexibility
+is warranted by the attention layer, which can capture long-range interactions outside the
+cut-off range of functions like Equation (4) (see also Section Methods).
+
+Figure 5: CMRET predicted energies v.s. labelled energies on DES370K dataset of testing
+split (left) and training split (right).
+
+12
+
+
+4
+Discussion and Conclusions
+
+In this work, we introduced a method to embed molecular net charge and spin with-
+out adding network parameters, which can be applied to any equivariant neural network
+that utilizes vector features (e.g., PAINN,9 Torchmd-NET,10 etc.). The purposed model
+CMRET, employing a modified continuous-filter convolution, achieved higher prediction
+accuracy on several subset of MD17 and QM9 dataset than recent state-of-the-art models.
+We showed the importance of selecting proper activation functions and attention temper-
+atures in the self-attention mechanism of the equivariant transformer. We found that a
+Softmax-based self-attention outperformed a series of ReLU-like functions, deviating from
+previous works (P. Th¨olke et al 10) which suggested that the replacement of Softmax with
+a ReLU-like function, e.g., Swish function, in the attention architecture would improve
+the performance. Furthermore, we showed that increasing the attention temperature to
+τ =
+√
+
+2d benefited the extrapolation capability for unseen conformations, pinpointing the
+key role of attention in learning non-local, ”spooky”6 interactions. This, we argue, allows
+for an embedding of electronic degrees of freedom already at the initialisation stage.
+CMRET does not introduce any a priori angular dependency via specific functions.
+An angular sensitivity is rather achieved via non-linear mixing of the basis functions
+in the coordinate frames by means of the attention mechanism.
+The latter allows to
+capture long-range interaction outside of the cut-off range that informs the creation of
+edge features.
+The CMRET network is expected to provide a robust starting point for the study
+of molecular ensembles, with the explicit inclusion of spin states, as well as periodic
+solids with spin polarisation. As shown in this work, the spin embedding strategy can
+be easily transferred to other approaches, including its good extrapolation/transferability
+behaviour, for comparison and further model development.
+The superior extrapolation capabilities as well as the flexible learning of intra- and
+inter-molecular interactions from atomic coordinates, lends CMRET good flexibility for
+navigating molecular and periodic solid landscapes.
+
+4.1
+Limitations
+
+The extrapolation capability was limited when the training data was highly correlated,
+e.g., in short MD trajectories. To reduce the computational complexity, we did not im-
+plement higher order message passing in this work. The question whether higher order
+messages benefit this specific equivariant architecture will be studied in a future work.
+
+5
+Acknowledgements
+
+Access to computational facilities were provided by Supercomputing Wales. All calcu-
+lations were performed on (Hawk) at Cardiff University.
+We thank the Leverhulme
+Trust for support under Project No.
+RPG-2020-052.
+The DFT and HF calculations
+were preformed via the PySCF37 package. Our model CMRET is implemented in Py-
+Torch38 . The source code of the model and the data used are open-sourced at https:
+//github.com/Augus1999/torch_CMRET.
+
+13
+
+
+References
+
+[1] O. T. Unke, S. Chmiela, H. E. Sauceda, M. Gastegger, I. Poltavsky, K. T. Sch¨utt,
+A. Tkatchenko and K.-R. M¨uller, Chemical Reviews, 2021, 121, 10142–10186.
+
+[2] J. Behler, R. Martoˇn´ak, D. Donadio and M. Parrinello, Phys. Rev. Lett., 2008, 100,
+185501.
+
+[3] K. Sch¨utt, P.-J. Kindermans, H. E. Sauceda, S. Chmiela, A. Tkatchenko and K.-R.
+M¨uller, Advances in neural information processing systems, 2017, 30, 992–1002.
+
+[4] O. T. Unke and M. Meuwly, Journal of chemical theory and computation, 2019, 15,
+3678–3693.
+
+[5] J. Gasteiger, J. Groß and S. G¨unnemann, arXiv preprint arXiv:2003.03123, 2020.
+
+[6] O. T. Unke, S. Chmiela, M. Gastegger, K. T. Sch¨utt, H. E. Sauceda and K.-R. M¨uller,
+Nature communications, 2021, 12, 1–14.
+
+[7] Z. Fan, Z. Zeng, C. Zhang, Y. Wang, K. Song, H. Dong, Y. Chen and T. Ala-Nissila,
+Physical Review B, 2021, 104, 104309.
+
+[8] B. Anderson, T. S. Hy and R. Kondor, Advances in neural information processing
+systems, 2019, 32, 1–10.
+
+[9] K. Sch¨utt, O. Unke and M. Gastegger, International Conference on Machine Learning,
+2021, pp. 9377–9388.
+
+[10] P. Th¨olke and G. De Fabritiis, arXiv preprint arXiv:2202.02541, 2022.
+
+[11] V. G. Satorras, E. Hoogeboom and M. Welling, International conference on machine
+learning, 2021, pp. 9323–9332.
+
+[12] M. J. Hutchinson, C. Le Lan, S. Zaidi, E. Dupont, Y. W. Teh and H. Kim, Interna-
+tional Conference on Machine Learning, 2021, pp. 4533–4543.
+
+[13] I. Batatia, D. P. Kov´acs, G. N. Simm, C. Ortner and G. Cs´anyi, arXiv preprint
+arXiv:2206.07697, 2022.
+
+[14] S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, N. Molinari,
+T. E. Smidt and B. Kozinsky, Nature communications, 2022, 13, 1–11.
+
+[15] M. Haghighatlari, J. Li, X. Guan, O. Zhang, A. Das, C. J. Stein, F. Heidar-Zadeh,
+M. Liu, M. Head-Gordon, L. Bertels et al., Digital Discovery, 2022.
+
+[16] F. Fuchs, D. Worrall, V. Fischer and M. Welling, Advances in Neural Information
+Processing Systems, 2020, 33, 1970–1981.
+
+[17] J. Brandstetter, R. Hesselink, E. van der Pol, E. Bekkers and M. Welling, arXiv
+preprint arXiv:2110.02905, 2021.
+
+14
+
+
+[18] N. Thomas, T. Smidt, S. Kearnes, L. Yang, L. Li, K. Kohlhoff and P. Riley, arXiv
+preprint arXiv:1802.08219, 2018.
+
+[19] I. Batatia, S. Batzner, D. P. Kov´acs, A. Musaelian, G. N. Simm, R. Drautz, C. Ortner,
+B. Kozinsky and G. Cs´anyi, arXiv preprint arXiv:2205.06643, 2022.
+
+[20] S. Zhang, X. Zhang, H. Bao and F. Wei, arXiv preprint arXiv:2106.03441, 2021.
+
+[21] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, �L. Kaiser
+and I. Polosukhin, Advances in neural information processing systems, 2017, 30,
+6000–6010.
+
+[22] S. Abu-El-Haija, B. Perozzi, A. Kapoor, N. Alipourfard, K. Lerman, H. Harutyunyan,
+G. Ver Steeg and A. Galstyan, international conference on machine learning, 2019,
+pp. 21–29.
+
+[23] J. L. Ba, J. R. Kiros and G. E. Hinton, arXiv preprint arXiv:1607.06450, 2016.
+
+[24] A. D. Becke, J. Chem. Phys, 1993, 98, 5648–5652.
+
+[25] C. Lee, W. Yang and R. G. Parr, Phys. Rev. B, 1988, 37, 785–789.
+
+[26] D. P. Kingma and J. Ba, arXiv preprint arXiv:1412.6980, 2014.
+
+[27] S. J. Reddi, S. Kale and S. Kumar, International Conference on Learning Represen-
+tations, 2018.
+
+[28] L. N. Smith, 2017 IEEE winter conference on applications of computer vision
+(WACV), 2017, pp. 464–472.
+
+[29] S. Chmiela, A. Tkatchenko, H. E. Sauceda, I. Poltavsky, K. T. Sch¨utt and K.-R.
+M¨uller, Science Advances, 2017, 3, e1603015.
+
+[30] A. G. Donchev, A. G. Taube, E. Decolvenaere, C. Hargus, R. T. McGibbon, K.-H.
+Law, B. A. Gregersen, J.-L. Li, K. Palmo, K. Siva et al., Scientific data, 2021, 8, 55.
+
+[31] R. Ramakrishnan, P. O. Dral, M. Rupp and O. A. von Lilienfeld, Scientific Data,
+2014, 1, 140022.
+
+[32] P. Ramachandran, B. Zoph and Q. V. Le, arXiv preprint arXiv:1710.05941, 2017.
+
+[33] D. Hendrycks and K. Gimpel, arXiv preprint arXiv:1606.08415, 2016.
+
+[34] D. Misra, arXiv preprint arXiv:1908.08681, 2019.
+
+[35] D. P. Kov´acs, I. Batatia, E. S. Arany and G. Cs´anyi, The Journal of Chemical
+Physics, 2023, 159, 044118–1–044118–17.
+
+[36] A. S. Christensen and O. A. Von Lilienfeld, Machine Learning: Science and Technol-
+ogy, 2020, 1, 045018.
+
+15
+
+
+[37] Q. Sun, T. C. Berkelbach, N. S. Blunt, G. H. Booth, S. Guo, Z. Li, J. Liu, J. D.
+McClain, E. R. Sayfutyarova, S. Sharma, S. Wouters and G. K.-L. Chan, WIREs
+Computational Molecular Science, 2018, 8, e1340.
+
+[38] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin,
+N. Gimelshein, L. Antiga, A. Desmaison, A. Kopf, E. Yang, Z. DeVito, M. Raison,
+A. Tejani, S. Chilamkurthy, B. Steiner, L. Fang, J. Bai and S. Chintala, in Advances
+in Neural Information Processing Systems 32, Curran Associates, Inc., 2019, pp.
+8024–8035.
+
+16
+
+

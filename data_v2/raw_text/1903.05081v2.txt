@@ -1,0 +1,2665 @@
+Propagation of maximally localized Wannier functions in real-time
+TDDFT
+Dillon C. Yost,1 Yi Yao,1 and Yosuke Kanai1, a)
+
+Department of Chemistry, The University of North Carolina at Chapel Hill, Chapel Hill, 27599, NC,
+USA
+
+Real-time, time-dependent density functional theory (RT-TDDFT) has gained popularity as a first-principles
+approach to study a variety of excited-state phenomena such as optical excitations and electronic stopping.
+Within RT-TDDFT simulations, the gauge freedom of the time-dependent electronic orbitals can be exploited
+for numerical and scientific convenience while the unitary transformation does not alter physical properties
+calculated from the quantum dynamics of electrons. Exploiting this gauge freedom, we demonstrate propa-
+gation of maximally localized Wannier functions within RT-TDDFT. We illustrate its great utility through
+a number of examples including its application to optical excitation in extended systems using the so-called
+length gauge, interpreting electronic stopping excitation, and simulating electric field-driven quantized charge
+transport. We implemented the approach within our plane-wave pseudopotential RT-TDDFT module of the
+QB@LL code, and performance of the implementation is also discussed.
+
+I.
+INTRODUCTION
+
+Density
+functional
+theory
+(DFT),
+based
+on
+the
+Hohenberg-Kohn theorem1, is perhaps the most widely
+used approach to calculate properties of matter from first
+principles.
+However, DFT is limited to ground state
+properties, and many of the physical, chemical, and bio-
+logical processes of interest in modern science and tech-
+nology involve excited state dynamics. Such processes in-
+clude photo-excitation in dye sensitized solar cells2, hot
+carrier dynamics in nanomaterials3, and ionizing radi-
+ation in biological materials4. While these phenomena
+can be studied via advanced spectroscopic methods, first-
+principles simulations based on time-dependent density
+functional theory (TDDFT) can be used to provide pre-
+dictive and detailed insights on the atomistic level.
+Currently, time-dependent density functional theory,
+based on the Runge-Gross theorem5, is one of the most
+effective and efficient methods for first-principles calcu-
+lations of excited states and their dynamics6,7.
+Most
+often, it is the linear response formulation of TDDFT
+(LR-TDDFT)8 that is used, due to its utility in calcu-
+lating low-energy excitations of molecules and materials,
+allowing for the prediction and interpretation of elec-
+tronic excitations and absorption spectra9–11. However,
+as its name suggests, linear response TDDFT can only
+be applied in the linear response (i.e., weak-field) regime
+and cannot accurately describe processes involving strong
+fields, such as laser pulses12, and other non-linear re-
+sponse processes13–16.
+Additionally, even in the linear
+response regime, LR-TDDFT calculations can come at a
+prohibitive computational expense if the system includes
+a large number of electrons17, or if a broadband spec-
+trum is desired.
+This is due to the fact that the cal-
+culation must be carried out iteratively in a space of
+occupied and virtual state dimensions18.
+It should be
+
+a)Electronic mail: ykanai@unc.edu
+
+noted, however, that there has been progress in efficient
+calculations of broadband absorption using the Liouville-
+Lanczos method19, and there has been some success in us-
+ing energy-specific TDDFT to calculate high-energy ex-
+cited states20, even though these methods are still limited
+to the linear response regime.
+
+The real-time propagation approach to time-dependent
+density functional theory (RT-TDDFT) provides an al-
+ternative to LR-TDDFT. Since some of the first uses
+of real-time propagation approaches in the 1990s, RT-
+TDDFT has gained popularity for a variety of reasons21.
+In principle, RT-TDDFT can be used to describe both
+linear and nonlinear responses of matter to perturba-
+tions of any strength. Also, for large systems and cer-
+tain properties of interest, the RT-TDDFT approach can
+be more computationally efficient than LR-TDDFT. A
+single RT-TDDFT simulation can be used to obtain the
+entire broad-band absorption spectrum22,23, even includ-
+ing core excitations24–26. Additionally, RT-TDDFT sim-
+ulations give access to the time-dependent electron den-
+sity, allowing for molecular-level analysis of the excita-
+tion dynamics of interest27–29.
+Due to these factors,
+in recent years there has been a surge in applications
+of RT-TDDFT to a wide range of excited state phe-
+nomena such as electronic stopping16,30–36, optical ab-
+sorption22,37–39, core electron excitations24,26,40,41, elec-
+tronic circular dichroism spectra42, exciton dynamics in
+nanostructures43, atom-cluster collisions44,45, and laser-
+induced water splitting46.
+The promulgation of RT-
+TDDFT as a means for simulating excited state phe-
+nomena has led to its implementation in a variety of
+electronic structure codes.
+These include NWChem37,
+SIESTA47,
+CP2K48,
+SALMON49,
+Octopus50,51,
+Q-
+Chem52,
+GAUSSIAN53–55,
+MOLGW34,56,
+Quantum
+Espresso57, and QBOX/QB@LL58–60.
+Amongst these
+codes,
+the
+implementations
+vary
+in
+the
+underly-
+ing basis sets used,
+with implementations ranging
+from real-space grids47,49,50, Gaussian-type atomic or-
+bitals34,37,47,53,54,56, plane-waves58, and mixed Gaus-
+sians/planewaves48.
+
+arXiv:1903.05081v2  [cond-mat.mtrl-sci]  29 Apr 2019
+
+
+2
+
+Recently, several RT-TDDFT implementations have
+exploited the gauge freedom inherent in the time-
+dependent Kohn Sham (TDKS) equations that underly
+RT-TDDFT calculations.
+Under arbitrary, unitary,
+gauge transformations, the physical properties of the
+electron dynamics are unchanged, but certain gauge
+transformations allow for reformulations of the TDKS
+equations that can be advantageous in certain physical
+and numerical situations61. For instance, in recent works,
+Pemmaraju, et al.26 and Noda, et al.49 have implemented
+velocity-gauge formulations of RT-TDDFT that provide
+a convenient framework to simulation responses of pe-
+riodic systems to both weak and intense electric fields
+which, in the velocity gauge, can be represented via vec-
+tor potentials61.
+Another interesting example of gauge transformations
+in RT-TDDFT, demonstrated in recent works by Lin and
+co-workers, is the propagation of electron dynamics in the
+parallel transport gauge62,63. In the parallel transport
+gauge, the unitary transformation is performed such that
+oscillations of the propagating orbitals are minimized.
+This allows for significantly larger propagation time steps
+to be used with implicit time integration schemes such
+as the Crank-Nicolson scheme, providing computational
+advantages in practical RT-TDDFT simulations, espe-
+cially when hybrid exchange-correlation functionals are
+involved64.
+In this work, we exploit gauge freedom in two regards:
+We represent the KS orbitals in the gauge of maximally
+localized Wannier functions (MLWFs), and, as it nat-
+urally follows, we represent electric fields in the length
+gauge corresponding to the formulation of finite fields
+as scalar potentials. The foundational implementation of
+RT-TDDFT in the QB@LL branch of the Qbox code58,59
+
+used in this study involves a planewave pseudopotential
+formalism with periodic boundary conditions in which
+the TDKS states are represented as Bloch orbitals. How-
+ever, in this work, through "on-the-fly" computation and
+application of a unitary transformation matrix at each
+RT-TDDFT simulation step, we propagate the TDKS
+orbitals as time-dependent MLWFs (TD-MLWFs). Due
+to their relationship with the dynamic Berry phase65,
+the TD-MLWFs allow us to calculate the dynamic po-
+larization throughout RT-TDDFT simulations involving
+isolated and periodic systems in static or time-dependent
+electric fields. Through such simulations, we can calcu-
+late linear response quantities such as optical absorption
+spectra, and we can also simulate nonlinear responses
+to strong fields associated with laser pulses or ionizing
+particle radiation. Additionally, MLWFs are often used
+to give chemically intuitive representations of the elec-
+tronic structure of molecules and materials in terms of
+bonds, lone-pairs, etc. and TD-MLWFs have the same
+utility in the context of RT-TDDFT. By decomposing the
+dynamic polarization response in terms of contributions
+from TD-MLWFs associated with different chemical moi-
+eties, we determine, for instance, how a water molecule’s
+lone-pair electrons contribute to individual peaks in the
+
+total optical absorption spectrum. We also use the real-
+time propagation of MLWFs to study the electron exci-
+tation dynamics of a system in response to proton irra-
+diation. Normally, excitations induced by photonic and
+ionic irradiation are difficult to compare, but our imple-
+mentation of TD-MLWFs allows us to calculate a type
+of electronic stopping response spectrum, which can be
+used to make such comparisons.
+Finally, we perform
+simulations of optically-driven quantized charge trans-
+port in polyacetylene to demonstrate the length-gauge
+time-dependent field representation and to consider the
+possibilities for using TD-MLWF propagation to study
+dynamic topological phenomena.
+
+II.
+THEORETICAL AND COMPUTATIONAL DETAILS
+
+A.
+Time-Dependent Kohn Sham Equations
+
+The Runge-Gross theorem5 allows us to describe the
+quantum dynamics of a system evolving from a given
+initial state through a time-evolving electron probabil-
+ity density. This extension of the Hohenberg-Kohn the-
+orem1, formulated in the time domain, gave rise to the
+widely successful time-dependent density functional the-
+ory (TDDFT), now frequently used for excited state cal-
+culations and simulations. As in ground state DFT, prac-
+tical TDDFT calculations rely on equations expressed
+in terms of a system of non-interacting Kohn-Sham
+(KS) particles in an effective KS potential. The time-
+dependent Kohn-Sham equations (TDKS) are as follows:
+
+iℏ d
+
+dt|φi(r, t)⟩ =
+�H(t) |φi(r, t)⟩
+
+=
+�
+�T + �Vext(t) + �VHXC[ρ]
+�
+|φi(r, t)⟩
+
+(1)
+
+ρ(r, t) = �
+
+i |φi(r, t)|2
+(2)
+
+In Equation (1), �T is the kinetic energy operator −ℏ
+
+2m ∇2
+r
+and VHXC[ρ](r, t) =
+� ρ(r′,t)
+
+|r−r′| d r′+ δEXC
+
+δρ(r,t) is the sum of the
+
+Hartree (H) potential and the exchange-correlation (XC)
+potential, which is derived from a universal XC functional
+EXC[ρ]. The electron density ρ here is expressed as the
+sum of square amplitudes of the occupied KS orbitals φi
+(labeled by the state index i). The total energy at time
+t can be expressed as
+
+E(t) = �
+
+i
+�
+φi(r, t)
+��� �T
+��� φi(r, t)
+�
+
++
+�
+ρ(r, t)Vext(r, t) d r + EHXC[ρ](t)
+
+(3)
+
+This energy functional of the time-dependent density can
+be shown to obey energy conservation when the so-called
+adiabatic approximation66 is adopted, which provides a
+useful observable for validating numerical implementa-
+tions and practical simulations58. In most RT-TDDFT
+
+
+3
+
+FIG. 1. Isosurfaces of a single TD-MLWF orbital in an isolated water molecule (upper) and in crystalline silicon (lower). Each
+panel shows the TD-MLWFs at a different point in time in RT-TDDFT simulations after the systems have been perturbed by
+an instantaneous electric field impulse.
+
+simulations of realistic systems, the exchange-correlation
+(XC) potential is approximated with the adiabatic ap-
+proximation. That is, the XC potential depends only on
+the instantaneous electron density, neglecting any mem-
+ory effects.
+While time-dependent XC functionals be-
+yond the adiabatic approximation are an area of active
+research67–71, such a topic is beyond the scope of this
+work. Even so, within the adiabatic approximation to
+the XC functional, TDDFT calculations has still been
+successful in predicting excited state properties for a di-
+versity of molecular and material systems.
+
+While the majority of applications of TDDFT re-
+main within the linear-response formulation of TDDFT
+(LR-TDDFT), this real-time propagation approach (RT-
+TDDFT) has become increasingly popular in recent
+years.
+In a RT-TDDFT calculation, the work entails
+solving a set of time-dependent KS equations, which are
+non-linear partial differential equations, in time, for given
+initial conditions.
+The time dependence of the exter-
+nal potential in the TDKS system can arise explicitly
+and implicitly from a variety of sources, depending on
+the phenomenon of interest.
+For example, in applica-
+tions of RT-TDDFT to study electronic stopping pro-
+cesses16,27,30,35,36,7273, a fast-moving charged ion gives
+rise to an external potential that varies as the ion’s posi-
+tion changes over the course of time. In addition to ionic
+motion, the external potential can vary in time in situ-
+ations involving a dynamic applied electric field. A key
+advantage of RT-TDDFT is that it provides a framework
+within which a wide variety of dynamical electronic pro-
+cesses, such as electronic stopping and photoexcitation,
+can be treated on an equal footing.
+
+B.
+Bloch and Wannier Orbital Representations
+
+In the KS and TDKS equations, a Bloch representa-
+tion form naturally arises in extended systems, in which
+periodic boundary conditions are adapted74. The TDKS
+orbitals are written in the Bloch function form,
+
+ϕnk(r, t) = unk(r, t) eik·r
+(4)
+
+where unk(r, t) is the periodic part of the TDKS function,
+n is the eigenstate index, and k is the Brillouin zone vec-
+tor. By preserving the electron probability density from
+the KS single-particle orbitals, any unitary transforma-
+tion of the above Bloch functions gives an equivalent
+physical description of the system.
+Thus, one can ap-
+ply a unitary transformation to the Bloch functions that
+results in a representation in a set of “Wannier functions”
+(WFs)75–77 as follows:
+
+wnR(r, t) =
+Ω
+
+(2π)3
+
+�
+
+BZ
+dk e−ik·R ϕnk(r, t)
+(5)
+
+where the Wannier functions wnR are indexed with a
+band-like index n located in the lattice-periodic cell R
+with a real-space cell volume Ω. There exists a gauge
+freedom in this procedure due to the fact that one can
+apply an arbitrary phase transformation eiθn(k) to the
+Bloch orbitals without changing the physical observables
+of the system. However, in terms of the resultant WFs,
+such a transformation to the Bloch orbitals could alter
+the shapes and spreads of the corresponding WFs. Thus,
+due to this gauge freedom, in this most general definition,
+the WFs are not unique78.
+In order to address this nonuniqueness issue, a vari-
+ety of schemes have been proposed, including projec-
+
+
+4
+
+tion methods79–81, variational procedures82, and meth-
+ods based on symmetry considerations83,84.
+However,
+the most widely used method is the maximally local-
+ized Wannier function (MLWF) procedure developed by
+Marzari and Vanderbilt85.
+In this method, a spatial
+spread functional is defined, and then the unitary trans-
+formation can be optimized in order to minimize the
+spread functional, thus maximizing the localization of
+the WFs. Such maximally localized Wannier functions
+(MLWFs) typically have the character of being localized
+on chemical bonds and other familiar chemical moieties,
+which is why they have gained popularity for their use
+in interpreting the electronic structures of various mat-
+ter27,78. Throughout the entirety of this work, MLWFs
+are used.
+The algorithmic and computational details
+of the localization procedure are discussed later in the
+manuscript.
+Because the transformation between Bloch and MLWF
+states is unitary, both representations comprise equally
+valid descriptions of the electronic band subspace78.
+Thus, in the TDKS equations, one can substitute the
+single-particle KS orbitals, normally taken to be the
+Bloch functions, with MLWFs. The charge density ob-
+tained by summing the square amplitudes of the KS or-
+bitals is identical to that obtained by summing the square
+amplitudes of the MLWFs, meaning that we have an
+equivalent framing of RT-TDDFT calculations in terms
+of time-dependent MLWFs (TD-MLWFs).
+The TDKS
+equation in Bloch representation is
+
+i d
+dt|uj,k(r, t)⟩ =
+� 1
+
+2m [−iℏ∇r + k]2 + �Vion(t)
+
++ �VHXC[{ uj,k(r, t)}]
+�
+|uj,k(r, t)⟩
+
+(6)
+
+where this equation can also be written in terms of Wan-
+nier functions as
+
+i d
+dt|wl(r, t)⟩ =
+�
+�U ML + 1
+
+2m [−iℏ∇r]2 + �Vion(t)
+
++ �VHXC[{ wl(r, t)}]
+�
+|wl(r, t)⟩
+
+(7)
+
+where
+wl(r, t)
+is
+the
+time-dependent
+MLWF
+(TD-
+MLWF) with a band-like index l, where �U ML is the uni-
+tary operator that ensures the maximal localization:
+
+�U ML|wl(t)⟩ ≡ �N
+m Ulm(t)|wm(t)⟩
+(8)
+
+where the unitary transformation matrix Ulm minimizes
+the spread functional
+
+Min
+��N
+n
+��
+wn
+���r2�� wn
+�
+− ⟨wn |�r| wn⟩2��
+
+U
+(9)
+
+where the quantum mechanical position operator �r is de-
+fined generally even for extended systems86;
+
+⟨�r⟩ = L
+
+2π Im ln
+
+�
+
+ψ
+
+������
+e
+i2π
+L �r
+������
+ψ
+
+�
+
+(10)
+
+where L = ∥R∥ is the cell dimension. The unitary op-
+erator inEquation (7) does not change the quantum dy-
+namics governed by the time-dependent electron density,
+and therefore it does not affect physical observables. The
+algorithmic details of the unitary transformation matrix
+calculation are discussed later in the "Implementation in
+QB@LL" section.
+One of the central motivations for carrying out this
+transformation to MLWFs is that it allows for the cal-
+culation of electric polarization in extended periodic sys-
+tems. While simple formulas exist for the calculation of
+electric dipoles of molecular systems with localized wave-
+functions, these formulas cannot generally be extended to
+periodic systems in which the Bloch wavefunctions are
+delocalized in real space. In extended systems, the ana-
+log to the electric dipole moment is the electric polar-
+ization, defined as the electric dipole moment per unit
+volume. While the calculation of this quantity for pe-
+riodic systems may seem intuitive, the arbitrary choice
+between different valid unit cells can result in contradic-
+tory results for the electric polarization. This infamous
+problem was elegantly solved by Resta87 and King-Smith
+and Vanderbilt88 in work that is now collectively known
+as the “modern theory of polarization”89. In the modern
+theory of polarization, the electric polarization of a peri-
+odic system can be formulated in terms of Berry phases,
+or equivalently, in terms of Wannier functions.
+MLWFs have been used in the context of ground-
+state DFT to calculate the adiabatic stationary resonant
+state of an insulating material in static electric fields90,91.
+Souza, et al. also showed that this concept could be ex-
+tended to dynamics via the definition of a nonadiabatic
+Berry phase polarization65. Thus, through the incorpo-
+ration of MLWFs in RT-TDDFT we can track the dy-
+namics of a system’s polarization in time. Access to the
+dynamic polarization of a system in response to an exter-
+nal perturbation allows for the calculation of important
+quantities such as the transient current and frequency-
+dependent optical absorption65.
+
+C.
+Finite Electric Fields and Periodic Boundary Conditions
+
+While it is relatively straight-forward to perform RT-
+TDDFT calculations with time-varying external poten-
+tials caused by ionic motion, as has been done in RT-
+TDDFT studies of electronic stopping30,35, the treat-
+ment of spatially homogeneous electric fields requires
+more careful consideration in cases involving periodic sys-
+tems. Fundamentally speaking, application of the Runge
+Gross theorem in cases of an extended periodic system
+in a homogeneous electric field is not formally justified.
+Instead, time-dependent current-density functional the-
+ory (TDCDFT) should be used due to its incorpora-
+tion of the macroscopic current92. Despite this formal
+limitation, RT-TDDFT studies have shown that many
+response properties can in practice be successfully ac-
+quired without TDCDFT in practice. That being said,
+
+
+5
+
+there are several additional theoretical complications to
+be considered. One way to treat response of electrons
+to electric field excitations in RT-TDDFT is to intro-
+duce time-dependent spatially-homogeneous electric field
+in the KS Hamiltonian through a scalar potential in the
+so-called "length gauge".
+The electric field can be in-
+cluded through an additional potential in the Hamilto-
+nian
+
+�VE(t) = eE(t) · �r
+(11)
+
+where E(t)and �r are the time-dependent electric field and
+the quantum-mechanical position operator, respectively.
+However, the added potential makes the Hamiltonian in-
+compatible with periodic boundary conditions (PBC) as
+needed for modeling extended systems. Thus, instead of
+this length gauge formulation, it is common to move to
+a different gauge in electromagnetism. The electric field
+can be equivalently represented as the magnetic flux by
+the vector potential.
+
+A(t) = −c
+� t E(t′) d t′
+(12)
+
+In literature, RT-TDDFT simulations of periodic sys-
+tems with homogeneous electric field employ this so-
+called velocity-gauge formulation26,41,61,93. The TDKS
+equation, can be written as
+
+iℏ d
+
+dt|ui,k(r, t)⟩ =
+� 1
+
+2m
+
+�
+−iℏ∇r + k + e
+
+cA(t)
+�2
+
++�Vext(t) + �VHXC[ρ]
+�
+|ui,k(r, t)⟩
+
+(13)
+
+In the above velocity gauge, the Hamiltonian associated
+with Equation (13) is periodic for spatially homogeneous
+electric fields, allowing for a Bloch wavefunction to be
+used in the TDKS equations26. Although the velocity
+gauge is commonly used when simulating extended pe-
+riodic systems, it is not without its limitations. In par-
+ticular, unlike the scalar potential, the vector-potential
+results in a Hamiltonian which inherently changes nona-
+diabatically in time, even for the static field case65. Thus,
+unlike the length gauge, the velocity-gauge is not suit-
+able for calculating the stationary resonant polarization
+state of an insulator in a static electric field using time-
+independent DFT.
+The use of MLWFs instead of Bloch orbitals allow us to
+employ the length gauge in which the homogeneous elec-
+tric field is represented by a scalar potential in the Hamil-
+tonian. For non-metallic systems with a finite band gap
+(termed "Wannier-representable" systems65), the ML-
+WFs are spatially well-localized within each periodic sim-
+ulation cell, and the scalar potential can be applied to
+each MLWF individually such that the same homoge-
+neous electric field is described.
+This formalism been
+already demonstrated for the static case94 in the con-
+text of first-principles molecular dynamics simulations95.
+Due to their connection to the dynamic Berry phase po-
+larization (discussed in more detail in the next section),
+MLWFs provide a computationally attractive, and phys-
+ically intuitive, avenue for simulating systems in finite
+
+electric fields with RT-TDDFT in the MLWF/length-
+gauge. This TDKS/TD-MLWF equation can be written
+as
+
+iℏ d
+
+dt|wi(r, t)⟩ =
+�
+�U ML +
+� 1
+
+2m [−iℏ∇r]2 + �Vext(t)
+
++�VHXC[ρ] + eE(t) · �r
+��
+|wi(r, t)⟩
+
+(14)
+
+Including the unitary operator �U ML here, as in Equa-
+tion (7), ensures that the Wannier functions remain max-
+imally localized during the propagation, and this allows
+us to use the length gauge for applying a homogeneous
+electric field even when periodic boundary conditions are
+adapted.
+In practice, preserving the maximal locality
+of the Wannier functions enable us to easily calculate
+the positions of the MLWF centers at each time step via
+the diagonal elements of the quantum-mechanical posi-
+tion operator matrices (discussed in more detail in the
+"Maximal Localization Procedure". See Equation (23)).
+
+D.
+Dynamic Polarization via Wannier Functions
+
+The properties of insulating crystals in static electric
+fields can be calculated via the iterative determination of
+field-dependent WFs through the minimization of a so-
+called "electric enthalpy" functional90. This formalism
+was also generalized and extended to the time-dependent
+domain in work by Souza, et al.65 in which it was shown
+that the dynamic polarization can be expressed as a
+nonadiabatic geometric phase. The dynamic current is
+defined as the rate of polarization change per unit vol-
+ume with respect to time:
+
+J (t) = dPel(t)
+
+dt
+
+(15)
+
+Where the dynamic electronic polarization Pel(t) is given
+by the valence-band Berry phase88,90,96
+
+Pel(t) =
+
+−2e
+(2π)3
+�
+
+n
+
+�
+
+BZ
+d k ⟨un,k(r, t) |i∇k| un,k(r, t)⟩
+
+(16)
+
+Where un,k are the Bloch functions characterized by a
+band index n. In this time-dependent case, we do not
+assume that changes in the Hamiltonian are adiabatic.
+Instead, Equation (16) can be interpreted as the nonadi-
+abatic geometric phase65. Alternatively, this Berry phase
+expression can be transformed into a real-space represen-
+tation in terms of the occupied Wannier functions such
+as MLWFs:
+
+Pel(t) = −2e
+
+Ω
+
+�
+
+i
+⟨wi(r − R, t) |�r| wi(r − R, t)⟩(17)
+
+where the dynamic polarization is recast in real space as
+the vector sum of the charge centers of mass of the ML-
+WFs (MLWFCs), wi which correspond to the expectation
+
+
+6
+
+values of the quantum mechanical position operator �r for
+a periodic system. Here, the location of the MLWFC is
+indeterminate modulus the lattice vector R, and conse-
+quently the dynamic Berry-phase polarization Pel(t) is
+also indeterminate mod − 2eR
+
+Ω . This uncertainty is the
+so-called "quantum of polarization". Thus, as described
+in the modern theory of polarization, it is actually the
+change in polarization that is the physical quantity that
+needs to be measured.
+Using MLWFs, one can obtain this physically intuitive
+definition of the polarization, which is expressed in terms
+of the geometric centers of charge of the MLWFs (of-
+ten called “Wannier centers”, or WCs). As illustrated by
+Equation (17), the dynamic current is then proportional
+to the displacement of the WCs. Although the dynamic
+polarization is also gauge invariant only up to a "quan-
+tum of polarization", the current J(t) is uniquely defined.
+In fact, it is the current J(t) which is the quantity that
+can be used for determining various properties of the sys-
+tem of interest as discussed next.
+The theoretical framework laid out above is general
+and allows for arbitrarily strong and rapid variations of
+the homogeneous electric field.
+Consequently, one can
+perform RT-TDDFT calculations to study systems (both
+molecular and extended) under photo irradiation (i.e.,
+photo excitation), ion irradiation (i.e., electronic stop-
+ping), and static electric fields on an equal footing. As
+mentioned earlier, it should be noted that the underlying
+derivation of the dynamic polarization as a nonadiabatic
+Berry phase requires that the initial state be "Wannier-
+representable" (WR), as described in Ref.65. Physically,
+Wannier-representability holds when the initial state of
+the system is insulating-like, not metallic, in the RT-
+TDDFT simulations. Additionally, In their work, Souza,
+et al. proved that, in the absence of scattering, a WR
+state remains WR or "insulating like" at all later times,
+even if the ground state of the Hamiltonian for a given
+ionic configuration becomes metallic.
+With access to dynamic current, one can obtain
+the frequency-dependent conductivity and also dielec-
+tric function within linear response theory.
+For a sys-
+tem under a homogeneous perturbing field E(t) in the
+ν-direction, and for the time-dependent current in the
+µ-direction, the frequency dependent conductivity is ob-
+tained as
+
+σµν (ω) =
+1
+
+�
+Eν(ω)
+
+� T
+dt eiωt Jµ(t)
+(18)
+
+where �E(ω) is the Fourier transform of the applied elec-
+tric field. For extended periodic systems, the frequency
+dependent dielectric function is related to the conductiv-
+ity via
+
+ε(ω) = 1 + 4π i
+
+3ω Tr [σµν (ω)]
+(19)
+
+where Tr[σ(ω)] is the trace of the complex conductivity
+tensor. For extended systems, the imaginary part of this
+
+dielectric function is directly related to the optical ab-
+sorption, whereas the real part is related to dispersion.
+For isolated systems, the macroscopic dielectric function
+is not well-defined, and instead the convention is to de-
+scribe optical absorption in terms of the dipole strength
+function:
+
+S(ω) = 4πω
+
+3c Tr [ Im σµν (ω)]
+(20)
+
+where σµν(ω) is generally referred to as the frequency-
+dependent polarizability in the case of isolated systems97.
+For computing absorption spectra using RT-TDDFT, one
+must choose an appropriate excitation procedure that
+simultaneously excites the system in a superposition of
+eigenstates. Any sudden perturbation at time t=0 that is
+suddenly "switched off" at the next time step has the ef-
+fect of inducing electronic oscillations in the system that
+includes all frequency components and thus results in
+a broadband electronic excitation of the system98.
+In
+RT-TDDFT simulations, there are two common choices
+for this sudden perturbation: First, there is the delta-
+function-like impulsive electric field.
+In this approach,
+a finite electric field is applied only for an infinitesimally
+small moment in time. In practice, however, RT-TDDFT
+calculations involve a finite time-step ∆t, which allows
+for an approximation of a true impulsive electric field.
+This has consequences for the electric field Fourier trans-
+form term �E(ω), which for a true impulsive field with
+magnitude E0 should yield �E(ω) = E0. The equations
+defining the temporal profile and the Fourier transform
+of the electric field, with some magnitude E0, is defined
+below for the impulse approach:
+
+Eimp(t) =
+�
+E0 for t = 0
+0
+for t > 0
+�Eimp(ω) = E0
+
+(21)
+
+In practice, however, due to the finite integration time
+step, the field profile is actually that of a "boxcar" func-
+tion, and its Fourier transform results in a sinc func-
+tion. An additional complication is that this approach
+can cause some difficulties in the numerical integration
+of the TDKS equations98. For these reasons, in this work,
+we primarily use a second, more numerically convenient
+"step function" electric field approach, proposed by Ya-
+bana, et al.23. In this alternative method, one performs a
+standard DFT calculation including a static uniform elec-
+tric field to acquire a stationary state solution which is
+subsequently propagated in the TDKS equations for t > 0
+without the field. This amounts to an adiabatic "switch-
+ing on" of the field and a nonadiabatic "switching off"
+of the field at t=0 of the RT-TDDFT simulation. The
+equations defining the temporal profile and the Fourier
+transform of the electric field, with some magnitude E0,
+is defined below for the step function approach:
+
+Estep(t) =
+�
+E0 for t < 0
+0
+for t > 0
+
+�Estep(ω) = E0
+
+iω
+
+(22)
+
+
+7
+
+In practice, of course, for a finite amount of time T. Con-
+sequently, the abrupt end of the oscillations in the polar-
+ization at the end of the numerical simulation leads to ar-
+tificial “wiggles” in the calculated spectrum. The promi-
+nence of such numerical artifacts can be lessened to some
+degree by employing a damping function in the Fourier
+transform.
+A simple choice for the damping function,
+which we employ in this work, is the damping function
+f(t) = e−γt where γ is a damping constant.
+For RT-
+TDDFT simulations converged sufficiently with respect
+to total simulation time, the application of this damping
+function results spectra with Lorentzian shaped peaks.
+
+E.
+Implementation in QB@LL
+
+In this work, we employ the plane-wave pseudopoten-
+tial formalism in RT-TDDFT as discussed in Ref.58. The
+simulations carried out in this work were performed on
+the highly parallelized plane-wave pseudopotential im-
+plementation of RT-TDDFT in the Qb@ll branch of the
+Qbox code58,59,99 , in which we have implemented the
+real-time propagation of maximally localized Wannier
+functions. Details of the on-the-fly localization algorithm
+and its performance and accuracy are given in the sub-
+sections that follow.
+
+1.
+Maximal Localization Procedure
+
+The method employed in this work for computing ML-
+WFs and time-dependent MLWFs (TD-MLWFs) is an ex-
+tension of the method developed by Gygi, et al.100. Gygi,
+et al. developed a parallelized Cardoso-Souloumiac diag-
+onalization algorithm for the efficient and accurate com-
+putation of MLWFs in molecular and extended systems.
+While this implementation was restricted to real wave
+functions (i.e., static ground state wave functions), the
+algorithm itself, as suggested by the authors, could be ex-
+tended to complex wave functions (i.e., time-dependent
+wave functions), and in this work we have carried out
+such an extension.
+What follows is a brief outline of
+the MLWF algorithm generalized for complex wave func-
+tions. Further details can be found in the works by Gygi,
+et al.100.
+In seminal work by Resta86, the quantum-mechanical
+position operator is defined for periodic systems and its
+respective spread functional. In a rectangular periodic
+cell of dimensions Lx, Ly, Lz, at the center of the Bril-
+louin zone, it can be shown that the spread associated
+with the position operator is equal to using the spread
+functional associated with a set of six self-adjoint oper-
+ators
+�
+�A(k)�
+, k = 1, . . . , 6, defined as follows. For an
+N-electron system, and the set of KS (or TDKS) orbitals
+
+{φi} , i = 1, . . . , N,
+
+σ2
+{ �
+A(k)} ({φi}) ≡
+
+6
+�
+
+k=1
+
+�
+
+i
+
+��
+φi
+��� �A2��� φi
+�
+−
+�
+φi
+��� �A
+��� φi
+�2�
+
+�A(1) ≡ cos 2π
+
+Lx
+x
+
+�A(2) ≡ sin 2π
+
+Lx
+x
+
+�A(3) ≡ cos 2π
+
+Ly
+y
+
+�A(4) ≡ sin 2π
+
+Ly
+y
+
+�A(5) ≡ cos 2π
+
+Lz
+z
+
+�A(6) ≡ sin 2π
+
+Lz
+z
+
+(23)
+
+Minimization of σ2
+{ �
+A(k)} ({φi}) is achieved by calculat-
+
+ing a unitary transformation matrix U that simultane-
+ously maximally diagonalizes the matrices �A(k). This si-
+multaneous diagonalization is achieved via the Cardoso-
+Souloumiac algorithm101. The diagonalization is carried
+out iteratively until the spread functional σ2
+{ �
+A(k)}
+con-
+
+verges to a minimum within a chosen tolerance.
+The
+resultant diagonal elements of the matrices �A(k) can be
+used to determine the positions of the MLWF centers
+(MLWFCs) and the spreads of the MLWFs. The iterative
+implementation of the Cardoso-Souloumiac algorithm for
+the computation of this transformation matrix U is fur-
+ther detailed in the work by Gygi, et al.100, with the
+differences for the case of real matrices noted.
+Because the calculation of this unitary MLWF trans-
+formation (i.e., unitary localization operator) is carried
+out at each RT-TDDFT step (sometimes for thousands of
+simulation steps), computational performance is of great
+importance.
+Like the Jacobi algorithm, the Cardoso-
+Souloumiac algorithm is inherently parallel. The current
+implementation makes use of MPI and high-performance
+linear algebra libraries (ScaLAPACK, BLACS) in con-
+junction with a processor-data rotation scheme102 for the
+efficient parallelized computation of the MLWF trans-
+formation.
+Scaling and performance data for the TD-
+MLWF implementation compared with the standard
+TDKS implementation of RT-TDDFT are shown in the
+next section.
+
+2.
+Scaling and Accuracy
+
+The calculation and application of the TD-MLWF
+unitary transformation during the RT-TDDFT propa-
+
+
+8
+
+FIG. 2. Performance results, indicated in time per RT-TDDFT step, showing the scalability of the TD-MLWF propagation
+(blue) versus the standard TDKS propagation (red) in RT-TDDFT simulations, for an isolated benzene molecule (left) and
+512-atom crystalline silicon supercell (right).
+
+FIG. 3. RT-TDDFT simulation accuracy, measured in terms of energy drift, for simulations with two different integration
+schemes (ETRS and FORK) and two different types of orbital propagation (TD-MLWF and TDKS), as a function of number
+of integrations per a.u. of time for an isolated benzene molecule (left), and 64-atom crystalline silicon supercell (right).
+
+gation adds additional computational cost in the sim-
+ulations stemming from the calculation of the local-
+ization operator.
+Thus, it is important to examine
+the performance and accuracy of the RT-TDDFT/TD-
+MLWF implementation relative to the standard RT-
+TDDFT/TDKS approach. As test systems, we chose two
+representative cases: an isolated benzene molecule and
+crystalline silicon. All of these simulations used the LDA
+exchange-correlation functional and Hamann-Schluter-
+Chiang-Vanderbilt (HSCV) norm-conserving pseudopo-
+tentials103.
+The adiabatic approximation was used for
+the time dependence of the exchange correlation func-
+tional104,105. First, standard DFT calculations were per-
+
+formed to acquire the ground state wave functions. Then,
+in order to create a perturbed non-equilibrium initial con-
+dition for the RT-TDDFT simulations, the atoms were
+translated by +0.01 Bohr in the x-direction at the start
+of the time-propagation. For each system, we performed
+two simulations: a control case in which the TDKS equa-
+tions are propagated with TDKS Bloch orbitals, and a
+test case involving TD-MLWF propagation. For all TD-
+MLWF simulations, a convergence tolerance of 10−8 was
+used in the joint approximate diagonilization algorithm
+described in the previous section.
+
+The scalability tests for the benzene case were per-
+formed using a 30 Rydberg planewave kinetic cutoff en-
+
+
+9
+
+ergy, a 50 x 50 x 50 Bohr simulation cell, a 0.1 a.u. time
+step, for 100 simulation steps with the enforced time-
+reversal symmetry (ETRS) integrator106.
+The simula-
+tions were performed using MPI on nodes with 44 Intel
+Xeon processors each. Figure 2 shows the results of the
+performance test, and for this small case, the TD-MLWF
+propagation approach does not add any appreciable com-
+putational cost until we approach several hundred cores.
+On 352 cores, a single TD-MLWF simulation step is 1.41
+times the cost of a single TDKS simulation step. How-
+ever, we also observe that the performance of the stan-
+dard TDKS simulation also decreases when we reach over
+500 cores. For such a small system (30 electrons), this is
+not surprising that we reach this performance bottleneck
+at only a few hundred cores.
+For testing scalability with the silicon crystal, a 512-
+atom supercell was used, with a 60 Rydberg planewave
+kinetic cutoff energy, a 0.1 a.u. time step, for 100 simu-
+lation steps with the ETRS integrator. The simulations
+were performed using MPI on an IBM BG/Q system with
+16 MPI tasks per node. The results, shown inFigure 3,
+show that in all cases studied the TD-MLWF propaga-
+tion comes at a greater computational cost than TDKS
+propagation, as expected. However, scaling up to larger
+numbers of cores, the performance gap slightly decreases
+between the two methods: On 256 cores, each TD-MLWF
+step is 1.88 times the cost, and on 32,768 cores, each
+TD-MLWF step is 1.88 times the cost. The TD-MLWF
+propagation simulations in these test simulations used a
+very strict convergence criteria for the calculation of the
+localization operator, and with relaxation of this criteria
+the computational cost of the TD-MLWF propagation
+could be reduced even further while maintaining good
+accuracy.
+The scalability results in this work show that the cal-
+culation and propagation of TD-MLWFs incurs an ad-
+ditional computational cost, but that the additional cost
+does not significantly impede practical simulations. That
+being said, we have not yet explored the possibilities for
+TD-MLWFs to be used to actually reduce the cost of RT-
+TDDFT simulations in certain contexts. To our knowl-
+edge, this work represents the first use of MLWF prop-
+agation in RT-TDDFT, but the spatially localized char-
+acteristics of MLWFs have been exploited in the context
+of ground-state DFT calculations in insulating systems
+to achieve order-N calculations of exact exchange107 as
+well as order-N first-principles molecular dynamics sim-
+ulations based on a "divide and conquer" scheme108.
+The efficient calculation of hybrid exchange could al-
+low for RT-TDDFT simulations with hybrid exchange-
+correlation functionals.
+Additionally, the "divide and
+conquer" method described by Osei-Kuffour, et al.108
+
+could potentially be used in large-scale RT-TDDFT sim-
+ulations to improve performance by avoiding global com-
+munications and possibly by limiting the number of or-
+bitals that need to be propagated at each time step. We
+plan to investigate these possibilities in the future.
+In addition to testing the scalability of our TD-MLWF
+
+implementation, we performed simulations to test its ac-
+curacy. In principle, when one transforms Bloch orbitals
+into MLWFs, all physical observables should remain un-
+changed because the transformation is unitary, preserv-
+ing the total electron density. However, this assumes that
+the transformation matrix is exactly unitary. Numeri-
+cally, however, the joint diagonalization algorithm used
+to compute the matrix at each time step is approximate
+and requires us to choose a convergence tolerance for
+the spread functional (see "Maximal Localization Proce-
+dure" section). Thus, it is important to compare the TD-
+MLWF and standard TDKS (Bloch orbitals) RT-TDDFT
+simulations to ensure that we can achieve excellent agree-
+ment in physical observables such as total electronic en-
+ergy. Again, we chose two representative systems as test
+cases: an isolated benzene molecule in a 50 x 50 x 50 Bohr
+simulation cell as well as a 64-atom crystalline silicon su-
+percell. In order to examine the accuracy of TD-MLWF
+propagation with different numerical integrators, we per-
+formed simulations with both the fourth-order Runge-
+Kutta (FORK) method58,109 and the ETRS method106.
+As before, we initialize the RT-TDDFT simulations by
+shifting all atomic coordinates by +0.01 Bohr in the x
+direction relative to the coordinates used in the ground
+state DFT calculation. From this non-equilibrium start-
+ing point, the TDKS equations are propagated for 100
+a.u.
+of time in two different ways: a control case in
+which the TDKS equations are propagated via Bloch or-
+bitals, and a test case in which the TDKS equations are
+propagated in terms of the TD-MLWFs. With all atoms
+frozen, the total energy serves as a constant of motion,
+meaning that any drift in the energy can be attributed
+to numerical errors in the real-time propagation. For the
+TD-MLWF cases, a convergence tolerance of 10−8 was
+used for the joint approximate diagonilization algorithm.
+
+The results (see Figure 3) indicate that there is sig-
+nificant dependence on the numerical integrator used
+(FORK vs. ETRS), with the ETRS integrator conserv-
+ing the total energy in the system better than FORK
+for a given ∆t, especially for the case of the benzene
+molecule.
+Also, the ETRS propagator can use much
+larger time steps than the FORK (0.25 a.u.
+vs.
+0.15
+a.u.)
+before becoming completely unstable.
+However,
+in al cases there is no significant difference (< 0.1%)
+between the RT-TDDFT simulations with the standard
+Bloch TDKS propagation and the TD-MLWF propaga-
+tion. This shows that our TD-MLWF implementation is
+capable of maintaining high numerical accuracy in the
+computation and application of the unitary gauge trans-
+formation at every time step.
+
+
+10
+
+III.
+RESULTS AND DISCUSSION
+
+A.
+Optical Excitation
+
+1.
+Benzene Molecule
+
+As an example application for the real-time propaga-
+tion of MLWFs, we have performed RT-TDDFT simula-
+tions on a benzene molecule in vacuum to calculate the
+optical absorption spectrum. The optical properties of
+gas-phase benzene have been well-studied both in exper-
+imental and theoretical work. In particular, the optical
+absorption spectrum has been calculated via both RT-
+TDDFT110,111 and the Liouville-Lanczos approach to lin-
+ear response TDDFT (LR-TDDFT)57, and in the case of
+gaseous benzene, the calculated spectra are in very good
+agreement with reported experimental results, even with
+the LDA exchange-correlation approximation112,113.
+In our RT-TDDFT approach, a static polarized state
+electronic structure was first obtained adiabatically via a
+DFT calculation with an electric field of magnitude 0.001
+a.u. present using the MLWF/length-gauge formulation
+described in the Theoretical and Computational Methods
+section. This electric field magnitude is sufficiently small
+to ensure a linear response, and to ensure oscillations
+of the electronic dipole that are large enough compared
+to any numerical noise. The LDA exchange-correlation
+(XC) functional was used in all simulations. The basis
+was expanded in planewaves up to a kinetic cutoff en-
+ergy of 30 Ryd. A large cubic simulation cell of 100 x
+100 x 100 Bohr was used, with the benzene ring lying
+in the xy plane. Such a large simulation cell was used
+in order to avoid interactions between periodic images
+of the system which can lead to extra "ripples" in the
+absorption spectrum for high-energy excitations where
+ionization becomes important23.
+Another approach to
+mitigate such finite size effects is to employ a complex
+absorbing potential at the simulation cell boundaries23,
+which is a capability that we plan to implement in the fu-
+ture. The RT-TDDFT simulations were initialized from
+the static field-polarized MLWFs. The enforced time re-
+versal symmetry (ETRS)106 was used for the numerical
+propagation of the TDKS equations. A time step of 0.1
+a.u. was used. At the initial RT-TDDFT time step, the
+electric field is "turned off", and the system propagates
+for 500 a.u. for each simulation. This sudden "switching
+off" of the electric field introduces a phase to the wave-
+functions, resulting in continuous oscillations of the elec-
+tronic dipole. Throughout the RT-TDDFT simulations,
+nuclear motion would be negligible due to the relatively
+short timescales and the small perturbations, thus, the
+nuclear positions are held fixed in order to reduce com-
+putational expense.
+As can be seen in Figure 4, the RT-TDDFT calculated
+spectrum shows good agreement with the experimental
+data. Indeed, other studies have shown that the optical
+absorption spectrum of molecular benzene can be suc-
+cessfully determined with TDDFT calculations110, even
+
+FIG. 4.
+Dipole strength function (i.e., electronic absorp-
+tion spectrum) for gas phase benzene calculated via TD-
+MLWFs/RT-TDDFT in this work (purple) compared to ex-
+perimental data (black).
+
+FIG. 5. Dipole strength function for gas-phase benzene (pur-
+ple) decomposed via TD-MLWF centers into carbon-carbon
+bonds (blue) and carbon-hydrogen bonds (red). The negative
+values observed in the CH bond spectrum indicate oscillations
+that are out of phase with the CC bond oscillations.
+
+with the simple LDA approximation to the exchange-
+correlation functional.
+In addition to calculating the photo-absorption spec-
+trum of benzene, the TD-MLWF approach allows us to
+decompose the spectrum into contributions from different
+chemical moieties. For molecular systems, the maximal
+localization transformation results in Wannier functions
+that are localized on bonds, and/or lone pairs.
+Thus,
+in the case of benzene, the TD-MLWFs and their cor-
+responding centers can easily be associated with either
+carbon-carbon (CC) or carbon-hydrogen (CH) bonds. By
+Fourier-transforming the dynamic polarization of just the
+
+
+11
+
+CC bonds or just the CH bonds, we can acquire the
+chemically-decomposed spectra shown in Figure 5. Inter-
+estingly, there are portions of the C-H spectrum which
+are negative. While negative values for the total absorp-
+tion would be unphysical, the decomposed spectrum al-
+lows for this possibility. The negative "absorption" indi-
+cates that, at ~7 eV, the oscillations of the CH bonds are
+out of phase with those of the CC bonds. This destructive
+interference results in total dynamic polarization oscilla-
+tions that are smaller in magnitude than the CC bond
+dipole oscillations themselves.
+
+2.
+Water Molecule
+
+Due to the availability of experimental absorption
+spectrum data over a wide range (~0 eV to ~200 eV),
+gaseous water is another interesting test case.
+LR-
+TDDFT based on Casida’s equation8 is the most widely
+used approach for computing absorption spectra of mate-
+rials and molecules. However, Casida’s equation is solved
+iteratively in a basis of (occupied) x (virtual) dimen-
+sions18, meaning that calculations involving more than a
+few low-lying excited states become computationally pro-
+hibitive. Thus, the calculation of the broad-band spec-
+trum of gaseous water is one problem that lends itself
+to RT-TDDFT. Additionally, RT-TDDFT methods in
+planewave bases have the capabilities to capture high-
+energy excitations.
+This is unlike atom-centered basis
+set RT-TDDFT methods, which are known to exhibit
+spurious high-energy artifacts unless unlike some local-
+ized basis implementations which can erroneously predict
+spurious excitations at high energies unless an imaginary
+molecular orbital-based absorbing potential is used114.
+The simulation details closely follow those described
+for the benzene molecule case. A static polarized state
+electronic structure was first determined adiabatically via
+a DFT calculation with an electric field of magnitude
+0.001 a.u. present. The PBE exchange-correlation func-
+tional115 was used in all simulations. The basis was ex-
+panded in planewaves up to a kinetic cutoff energy of 40
+Ryd. A cubic simulation cell of 100 x 100 x 100 Bohr was
+used. The enforced time reversal symmetry (ETRS)106
+
+was used for the numerical propagation of the TDKS
+equations.
+A time step of 0.05 a.u.
+was used, with a
+total propagation of 250 a.u. for each simulation. At the
+initial RT-TDDFT time step, the system is perturbed
+by suddenly switching off the static homogeneous elec-
+tric field. This perturbation introduces a phase to the
+wavefunctions, resulting in continuous oscillations of the
+
+d-e78764119d2d-ufig6.png
+
+FIG. 6. Dipole strength function (i.e., electronic absorption
+spectrum) for gas phase water calculated via TD-MLWFs/RT-
+TDDFT in this work (blue) compared to the experimental
+spectrum (black).
+The inset more clearly shows the low-
+energy portions of the spectra.
+
+FIG. 7. Dipole strength function for gas-phase water (blue)
+decomposed via TD-MLWF centers into oxygen-hydrogen
+bonds (light blue) and lone pairs (red).
+The negative val-
+ues observed in the OH bond spectrum indicate oscillations
+that are out of phase with the lone pair bond oscillations.
+
+electronic dipole.
+This electric field magnitude is suf-
+ficiently small to ensure a linear response, to conserve
+energy throughout the numerical propagation, and to ac-
+quire oscillations of the electronic dipole that are large
+compared to any numerical noise. The nuclei are held in
+fixed positions throughout the RT-TDDFT simulations.
+The RT-TDDFT calculated spectrum alongside the ex-
+perimental spectrum116 are shown in Figure 6 in two dif-
+ferent energy ranges, with the absorption spectra in a
+lower energy range (0 eV to 30 eV), displaying three well-
+defined peaks in addition to the rapid onset of broadband
+absorption.
+While the RT-TDDFT results show good
+qualitative agreement with the experimental spectrum,
+there is a red-shift of the peaks by ~2 eV. It is possible
+that RT-TDDFT with hybrid XC functionals or meta-
+GGA functionals could yield spectra in better agreement
+to experiment, and we plan to explore this in a future
+work. We also see that the broadband spectrum (0 eV
+to 150 eV) is in overall agreement with the experimental
+data. This showcases the ability of the abilities of the RT-
+TDDFT simulations to acquire the absorption spectrum
+over a wide energy range, including photoemission-like
+excitations.
+Similar to the molecular benzene case, the TD-MLWFs
+allow us to decompose the spectrum for a more detailed
+chemical understanding of the photoabsorption trends.
+The spectrum, decomposed in terms of contributions
+from oxygen-hydrogen (OH) bond TD-MLWFs and lone
+pair (LP) TD-MLWFs is shown in Figure 7. For the OH
+bond spectrum, we again see a region of negative mag-
+nitude, implying destructive interference in the coupling
+between OH bonds and LPs. Also, we observe that the
+LP spectrum does not contain sharp peaks as seen in
+the OH bond spectrum, which comprises the three well-
+defined peaks in the 0 to 15 eV range. However, with
+regards to overall magnitude, the LP excitations domi-
+
+
+12
+
+nate at low energies below ~15 eV, whereas the OH bond
+absorption dominates in a higher energy range.
+
+3.
+Benzene in Liquid Water
+
+With the capability to calculated dynamic polarizabil-
+ity in both molecular and condensed matter systems, we
+can use the TD-MLWF approach to study complex sys-
+tems such as molecules solvated in liquid water. Known
+as the solvatochromic effect, the optical absorption spec-
+trum of solute molecules, such as organic dyes, varies de-
+pending on the solvent117. Thus, it is often important to
+account for solvent effects when performing excited state
+calculations on molecules, materials, and nanostructures.
+The most common approach to represent the solvent en-
+vironment in TDDFT calculations is through a polar-
+izable continuum model (PCM)118, which is computa-
+tionally inexpensive but may not accurately describe sol-
+vatochromic effects. Also, mixed quantum mechanical-
+classical (QM/MM) methods with standard or polariz-
+able force fields can be used, providing a balance be-
+tween accuracy and computational cost119–121. However,
+in QM/MM methods, partitioning QM region can be a
+somewhat arbitrary or ambiguous choice. Also, by con-
+struction, in QM/MM approaches the MM region can-
+not be photo-excited.
+An alternative, albeit computa-
+tionally expensive, approach is to treat the entire system
+(solute and solvent) quantum mechanically, performing
+TDDFT calculations on the full electronic structure122.
+With the TD-MLWF approach, we can propagate the full
+electronic system with the TDKS equations, with the ad-
+ditional benefit that the orbitals are localized, allowing
+for the calculation of dynamic polarization for any indi-
+vidual molecule, or for the liquid system as a whole.
+In order to demonstrate this approach, we again chose
+benzene as a test case. However, in this system, we ex-
+plicitly solvated the benzene molecule in a cubic simu-
+lation cell (25.04 a.u. x 25.04 a.u. x 25.04 a.u.) con-
+taining 73 water molecules (614 electrons in total, in-
+cluding benzene).
+In order to acquire the absorption
+spectrum for a solvated molecule, one should in principle
+perform TDDFT calculations on a random ensemble of
+solvent/solute structures123. However, due to the consid-
+erable computational cost of performing a RT-TDDFT
+calculation on even one structure containing over 600
+electrons, we restrict ourselves here to two representa-
+tive configurations known to be important in influencing
+the electronic structure of benzene124, for the purposes
+of illustrating the TD-MLWF utility. A first-principles
+molecular dynamics simulation using the CP2K code48
+
+with the SCAN XC functional125 and the DZVP basis
+was used to acquire the two MD snapshots to use for
+the RT-TDDFT calculations.
+In Configuration 1, the
+hydrogen of a single water molecule is directed toward
+the center of the benzene ring (see Figure 8 top left).
+In Configuration 2, there is no such “special” benzene-
+water molecule interaction (see Figure 8 top right). For
+
+both configurations, a standard DFT calculation was per-
+formed to acquire the electronic ground states. Then, the
+RT-TDDFT simulations with TD-MLWF propagation
+were performed. For all simulations, the PBE exchange-
+correlation functional was used. Additional calculation
+parameters were: 0.05 a.u. time step, 250 a.u. total sim-
+ulation time, 40 Rydberg planewave cutoff energy, 0.001
+a.u. electric field impulse in x, y, and z directions (sepa-
+rately) at t = 0.
+Figure 8 shows the calculated absorption spectra of the
+entire benzene and water system with the dynamic polar-
+izability obtained from the RT-TDDFT simulations. Us-
+ing the positions of the TD-MLWF centers to decompose
+the dynamic polarization response, we also calculated
+the absorption spectrum of both the benzene molecule
+and liquid water separately. The total absorption spec-
+trum does not have particularly well-separated peaks,
+but with this spectrum decomposition, the contributions
+from each molecular species becomes clearer.
+For the
+benzene molecule, there is a peak at ~7 eV, as was also
+seen in the vacuum environment. However, for config-
+uration 2, there is an additional low-energy peak at ~5
+eV. These results illustrate the usefulness and flexibility
+of the TD-MLWF approach in uncovering molecular-level
+details of complex chemical phenomena such as the sol-
+vatochromic effect.
+
+4.
+Crystalline Silicon
+
+As an example of the TD-MLWF approach for periodic
+systems, we have performed RT-TDDFT simulations on
+crystalline silicon due to the fact that this material has
+been studied by a range of RT-TDDFT codes, results
+which provide useful points of comparison. For all sim-
+ulations, the LDA exchange correlation functional was
+used. A planewave kinetic energy cutoff of 40 Rydberg
+was used. Additional calculation parameters are as fol-
+lows: 0.05 a.u. time step, 250 a.u. total simulation time,
+40 Rydberg planewave cutoff energy, 0.001 a.u. electric
+field impulse strength.
+For periodic crystalline systems one must take partic-
+ular care to ensure convergence with respect to finite size
+effects. Our current TD-MLWF implementation does not
+yet include capabilities to incorporate multiple k-points,
+thus, in this work we use only the Γ point and a silicon
+supercell in order to acquire accurate results for the bulk
+material. Previous RT-TDDFT calculations on the op-
+tical properties of silicon have shown that k-point grids
+of 16x16x16 can be required to ensure full convergence
+of the absorption spectrum26. Because of this, converg-
+ing the spectrum with respect to supercell size may seem
+like a computationally intractable problem, as it would
+require a simulation cell with tens of thousands of elec-
+trons.
+However, we can take advantage of the lattice
+symmetry to greatly reduce the cost of obtaining a con-
+verged absorption spectrum. Due to the symmetry of the
+diamond cubic crystalline silicon, the linear response of
+
+
+13
+
+FIG. 8. Absorption spectra for a benzene in water system (black) decomposed via TD-MLWF centers into contributions from
+the benzene molecule (red) and the water molecules (blue). Two configurations from two MD snapshots are represented: one
+structure with a water molecule hydrogen pointed into the benzene molecule pi cloud (left), and another without any such
+coordination (right).
+
+FIG. 9.
+Imaginary part of the dielectric function for
+crystalline silicon calculated this work via TD-MLWFs/RT-
+TDDFT using the QB@LL code (blue).
+This spectrum is
+compared to reported results from LR-TDDFT (red), and
+two velocity-gauge RT-TDDFT calculations using the atomic
+orbital-based SIESTA code (orange) and the real-space-grid
+SALMON code (pink).
+
+the system will be identical for impulses in the x, y, and
+z directions. Thus, the diagonal elements polarizability
+tensor (Equation (18)) will all be equal, implying that
+
+only one RT-TDDFT simulation is required to obtain
+the full linear response of the system. With regards to
+the dimensions of the silicon supercell, as shown in work
+by Darrigan, et al.126 one can achieve convergence with
+respect to cell dimensions simply by extending the super-
+cell in the direction of the applied electric field. Thus, if
+we are perturbing the system with an impulsive electric
+field in the x direction, we can simply repeat the 8-atom
+unit cell in the x direction until we reach convergence.
+Figure S2 (supporting information) shows the resultant
+spectra for a range of supercells, and we observe that a
+256-atom supercell is required to converge the imaginary
+part of the dielectric function.
+
+In Figure 9 we compare our results to those acquired
+via a range of other TDDFT codes.
+The SALMON
+(scalable ab-initio light-matter simulator for optics and
+nanoscience) software package49 involves a RT-TDDFT
+implementation in which the time-dependent Kohn-Sham
+orbitals are discretized on a 3D real-space grid. In the
+SALMON code, the perturbing field is represented in
+the velocity gauge by a shift of the vector potential,
+and the dielectric function is determined with respect
+to the induced electric current density49. The SIESTA
+code employs an RT-TDDFT calculations within a linear
+combination of atomic orbitals (LCAO) basis set frame-
+work, and the finite field calculations are also carried out
+in the velocity-gauge, with a vector potential represen-
+tation of the perturbation26. Third, Figure 9 includes
+results from linear-response TDDFT calculations in a
+
+
+14
+
+FIG. 10. Schematic (adapted from Resta and Vanderbilt89)
+illustrating the possible trajectories for MLWF centers under
+an adiabatic cyclic evolution of the Hamiltonian. The ML-
+WFCs can either (a) return to their initial sites or (b) "hop"
+to a new site one lattice vector away.
+
+planewave pseudopotential implementation127. Although
+linear-response TDDFT represents a different theoreti-
+cal framework altogether, the results should agree with
+those acquired through RT-TDDFT simulations, and, as
+can be seen in Figure 9, they do. Generally speaking,
+all of the spectra are in good agreement, with the slight
+differences likely being attributable to numerical differ-
+ences in the various implementations and basis sets. Al-
+though TDDFT is known to yield poor silicon spectra for
+conventional XC approximations, this example helps to
+illustrate the flexibility that real-time propagation of TD-
+MLWFs provides, eliminating any need to change gauge
+representations between isolated and periodic systems.
+
+B.
+Quantized Charge Transport
+
+Due to their unique connection to the Berry phase,
+Wannier functions are increasingly being used in the con-
+text of topological materials128. As posited by Resta and
+Vanderbilt, considering the behavior of Wannier centers
+(WCs) under a cyclic adiabatic evolution of the Hamil-
+tonian can lead to some useful insights89.
+At the end
+of such a cyclic evolution, the WCs must return to their
+initial positions mod the lattice constant R because the
+initial and final Hamiltonians are the same.
+As illus-
+trated in a 1D model schematic (adapted from Resta
+and Vanderbilt89) shown in Figure 10, one can consider
+two possible evolutions of the WCs that satisfy this con-
+dition.
+The route involving a shift of the WCs by a
+lattice vector R corresponds to the quantized topologi-
+cal pumping phenomenon first discussed by Thouless129.
+In recent years, different types of Thouless pumps have
+been demonstrated experimentally130,131, and Wannier
+functions have been used as a formal means to under-
+stand the mechanisms of these dynamic topological phe-
+nomena.
+Most theoretical studies and descriptions of
+
+FIG. 11. Temporal profiles of the homogeneous electric field
+for the two simulation cases. The region to the left of the
+dashed line, t ∈ (−∞, 0) represents the adiabatic switching-
+on of the electric field (blue) in the time-indepedendent DFT
+calculation. The region to the right t ∈ [0, 500] a.u.of the
+dashed line represents the beginning of the RT-TDDFT sim-
+ulations with the quasi-monochromatic pulse with (blue) and
+without (green) the static electric field.
+
+topological pumping assume complete adiabaticity of the
+Hamiltonian evolution.
+It is important to note here
+that topological Thouless pumping is a phenomenon that
+manifests from the complex phase of the wavefunctions,
+which means that any real MLWF method based on time-
+independent DFT would fail to exhibit such topological
+phenomenon. Our TD-MLWF/RT-TDDFT implementa-
+tion, however, in principle allows us to study quantized
+charge transport phenomenon, including nonadiabatic ef-
+fects and driving forces, from first principles. We plan to
+carry out detailed studies in the future.
+Here, we demonstrate the ability for TD-MLWFs, and
+in particular their centers, to describe quantized charge
+transport in the semiconducting polymer system of trans
+polyacetylene.
+We use a quasi-monochromatic electric
+field pulse applied along the axis of the polymer chain as
+a cyclic nonadiabatic driving force for the electronic sys-
+tem. Applying such a pulse to the electronic ground state
+of the system induces either continuous oscillations of the
+TD-MLWFCs or tunneling in both the +x and -x direc-
+tions, depending on the magnitude of the applied electric
+field. In order to drive quantized charge transport in one
+direction, we prepare a field-polarized resonant state as
+the initial condition of the RT-TDDFT simulation by
+first adiabatically "switching on" a static electric field.
+This static electric field has the effect of "tilting" the
+periodic potential well, breaking the energy landscape
+symmetry in the x-direction.
+Next, the field-polarized
+stat is subjected to a quasi-monochromatic pulse, which
+then drives the quantized charge transport. In this way,
+we can drive quantized charge transport for a certain res-
+onant frequency.
+The simulation details for the first-principles charge
+
+
+15
+
+transport simulations are as follows:
+A 14-monomer
+trans-polyacetylene chain was contained in a periodic
+simulation cell with dimensions of (34.28 x 20.00 x 20.00
+Bohr), with the polymer aligned along the x axis. All
+atoms were represented by HSCV pseudopotentials. A
+planewave cutoff energy of 20 Ryd. was used. The LDA
+XC functional was used for all calculations. For the RT-
+TDDFT simulations, a 0.1 a.u. time step was used with
+the ETRS integrator.
+Two initial electronic states for
+the RT-TDDFT simulations were calculated: 1) the elec-
+tronic ground state calculated via DFT, and 2) the field-
+polarized state calculated adiabatically via DFT in the
+presence a static electric field in the +x direction with
+a magnitude of 2.5 × 10−3 a.u. For the RT-TDDFT
+simulations, these systems are then subjected to a quasi-
+monochromatic electric field pulse with a frequency of 2.8
+eV (calculated resonant frequency of double-bond TD-
+MLWFs), a maximum field-strength of 1.0 × 10−3 a.u.,
+which is enveloped in a gaussian with a full-width at half-
+maximum of 1.0 eV. In Figure 11, the temporal profiles
+of the electric fields are shown, with the adiabatic (DFT)
+and nonadiabatic (RT-TDDFT) portions of the simula-
+tions delineated.
+
+The spatial x-axis coordinates of the double-bond TD-
+MLWFCs with respect to time are shown in Figure 12
+for both simulation cases. Although the electrons, and
+consequently the TD-MLWFs, are all in principle indis-
+tinguishable, in Figure 12 we have highlighted some of
+the plotted data as a visual guide to understand the ob-
+served phenomena.
+In the pulse-only case (Figure 12
+left), the dynamics are fairly simple, with the quasi-
+monochromatic pulse exciting a resonance in the double-
+bond TD-MLWFs that causes repetitive Rabi oscilla-
+tions, but no net charge transport in one direction. With
+the presence of the static electric field in addition to the
+quasi-monochromatic pulse (Figure 12 right), however,
+the dynamics are clearly different. At a point in time
+near the end of the pulse (~475 a.u.), there is a sudden
+jump in the TD-MLWFC positions. This discontinuity,
+an average of 1.8 a.u. displacement in the -x direction,
+corresponds to double-bond TD-MLWFs tunneling from
+one site on the polyacetylene chain to another. Figure 13
+illustrates this pictorially through the perspective of the
+chemical structure and by showing snapshots of the poly-
+acetylene TD-MLWFs from one RT-TDDFT time step to
+the next, only 0.1 a.u. later. For both simulations all
+nuclei were held in fixed positions. Thus, even after the
+applied electric field is turned off at t = 500 a.u., the elec-
+tronic system continues to propagate freely and cyclically
+as in a Rabi oscillation. Consequently, we observe that
+the quantized charge transport, initially driven by the
+pulse, continues repetitively, regularly, on average every
+67.9 a.u. of time and with -1.81 a.u. displacement of each
+TD-MLWFC. The discretized tunneling phenomenon is
+also reflected in the TD-MLWF spread. Figure 14 shows
+the total change in spread of the TD-MLWFs throughout
+the RT-TDDFT simulations. For the pulse-only case, the
+dynamics are as expected, with the pulse having the effect
+
+of cyclic oscillations in the spread (i.e., oscillatory local-
+ization and delocalization of the TD-MLWFs). However,
+in the pulse + static field case, we observe again jump dis-
+continuities simultaneous with the TD-MLWFC position
+jumps. As the TD-MLWFs come close to tunneling, the
+spread increases rapidly, and then suddenly decrease af-
+ter the tunneling occurred and the TD-MLWFs return to
+being localized between a different pair of carbon atoms.
+
+C.
+Electronic Stopping Excitations
+
+One physical process that RT-TDDFT has been quite
+successful in simulating is electronic stopping.
+Elec-
+tronic stopping is the phenomenon that occurs when fast-
+moving charged particles (> ~10 keV) transfer energy to
+the surrounding electronic system through excitation and
+ionization. Electronic stopping power is defined as the
+rate of energy transfer from projectile ion to electrons,
+is a key quantity in describing this process.
+In recent
+years, RT-TDDFT simulations have been quite success-
+ful in predicting the electronic stopping power of a range
+of matter and for a variety of projectile ions16,30,35,36,132.
+However, there are more scientific insights to be gained
+from understanding these ion irradiation excitation dy-
+namics on an atomistic level. Induced density analysis16
+
+and single-particle projection methods27 have been pre-
+viously used as tools to understand the molecular level
+details of the stopping process. However, both of these
+approaches have limitations.
+Analysis in terms of the
+time-dependent induced density can be difficult to inter-
+pret, and quantitative comparisons usually require the
+use of a charge-partitioning scheme, which relies on a
+reasonable, but still rather arbitrary, choice. Projection
+methods, on the other hand, also have their limitations.
+In particular, with projections onto the equilibrium (i.e.
+ground state) eigenstates, it is difficult to include enough
+virtual/unoccupied eigenstates in the projection calcula-
+tion to account for excited electrons in ionization, which
+is rather common in electronic stopping process. Thus,
+in practice, projection methods are only most useful in
+analyzing excited hole distributions.
+With these chal-
+lenges in mind, TD-MLWF propagation provides a new,
+useful tool. By construction, TD-MLWFs can give molec-
+ular level details of the excited electrons in the electronic
+stopping process without the need to resort to charge
+density partitioning scheme.
+Additionally, a key chal-
+lenge in studies of electronic stopping is to examine dif-
+ferences in the electron excitation induced by photon and
+ion radiation. The TD-MLWF approach, with its flexi-
+bility in simulations of both types of radiation, can aid
+in this challenge.
+In order to demonstrate some of the capabilities of TD-
+MLWFs for descriptions of electronic stopping processes,
+we have performed several RT-TDDFT simulations of
+proton irradiation of an isolated benzene molecule. The
+simulations were performed with a 0.1 a.u. time step in
+
+
+16
+
+FIG. 12. Positions of the double-bond TD-MLWFCs on the polyacetylene chain (commensurate with the x-axis) throughout
+the RT-TDDFT simulations for the "pulse only" (left) and the "pulse + static field" (right) cases. The positions of the TD-
+MLWFCs are plotted as a point at each step in the RT-TDDFT simulation to show the presence of the jump discontinuities
+(right).
+
+the ETRS propagator, a 30 Rydberg planewave kinetic
+cutoff energy, the LDA XC functional, and HSCV pseu-
+dopotentials. The setup was as follows: a proton with
+constant velocity in the +x direction was moved through
+a 30 x 30 x 50 a.u. simulation cell containing a benzene
+molecule oriented in the xy plane. Four proton veloci-
+ties were simulated (v = 0.625, 1.25, 5.00, 10.0 a.u.) at
+two different impact parameters relative to the plane of
+the benzene molecule. Once the proton has traversed the
+length of the simulation cell (50 a.u.), it is removed, at
+which point the RT-TDDFT simulation and TD-MLWF
+propagation is continued for 500 a.u.
+The electronic
+dipole moment of the excited benzene molecule, calcu-
+lated via the TD-MLWFCs, then continues to oscillate.
+Taking the absolute value of the Fourier transform of
+the electronic dipole moment presents a spectrum of the
+excitations caused in the proton electronic stopping pro-
+cess. Figure 15 shows the resultant "electronic stopping
+
+FIG. 13.
+(Upper) Skeletal chemical structure for the
+trans polyacetylene chain illustrating the double-bond TD-
+MLWFCs hopping occurring in the RT-TDDFT simulation.
+(Lower) Two consecutive RT-TDDFT simulation snapshots
+showing the carbon and hydrogen atoms (grey and white) and
+the TD-MLWFCs (yellow and dark blue) as spheres. Here,
+the TD-MLWFC spheres have been scaled and colored pro-
+portionally to the spreads of the associated TD-MLWFs.
+
+spectra", alongside the calculated optical spectrum. For
+the low-velocity cases (0.625 and 1.25 a.u.), the spectra
+primarily comprise a single well-defined peak at ~6.9 eV,
+which aligns with the lowest energy peak in the optical
+spectrum, indicating that at lower velocities, the proton
+primarily excites the mode that corresponds to the first
+optical excitation. Approaching higher proton velocities
+(5.00 and 10.0 a.u.), the peak at ~6.9 eV diminishes, and
+we emergence of peaks in higher energy ranges (15 eV
+to 40 eV). This result is consistent with previous RT-
+TDDFT studies of electronic stopping which have shown
+that more ionization occurs as the ion velocity increases.
+We also observed an impact parameter dependence in
+the electronic stopping spectra (see Figure 15, left panel
+compared to right panel). Not surprisingly, there is an
+overall trend of increasing spectrum intensity with de-
+creasing impact parameter for all velocities.
+However,
+the low-velocity spectra (0.625 a.u. and 1.25 a.u.) show
+large increases in intensity (by a factor or ~2), whereas
+the high-velocity spectra show much smaller increases.
+
+IV.
+CONCLUSIONS
+
+Real-time, time-dependent density functional theory
+(RT-TDDFT) has gained popularity as a first-principles
+approach to study a variety of excited-state phenom-
+ena such as optical excitations and electronic stopping.
+Within RT-TDDFT simulations, the gauge freedom of
+the time-dependent electronic orbitals can be exploited
+for numerical and scientific convenience while the unitary
+transformation does not alter physical properties calcu-
+lated from the quantum dynamics of electrons. Exploit-
+ing this gauge freedom, we demonstrated the propagation
+of maximally localized Wannier functions (MLWFs) in
+RT-TDDFT within our plane-wave pseudopotential RT-
+TDDFT branch of the QB@LL code.
+In recent years, the gauge freedom in RT-TDDFT has
+
+
+17
+
+FIG. 14. Total change in the TD-MLWF spread throughout the RT-TDDFT simulations for the "pulse only" case (green dots)
+and the "pulse + static field" case (blue dots). The inset zooms in on a small time region to illustrate the sudden decrease in
+spread at the time of TD-MLWF tunneling.
+
+FIG. 15. "Electronic stopping spectra" for a proton impinging on a gas phase benzene molecule with an impact parameter of
+10 a.u. (left) and an impact parameter of 8 a.u. (right). Four velocities (0.625, 1.25, 5.00, and 10.0 a.u.) were simulated and
+four spectra were calculated for each case. The optical spectrum (dashed line) is shown for comparison.
+
+been exploited in various ways including using the so-
+called parallel transport gauge for numerical efficiency62.
+The time-dependent MLWF (TD-MLWF) formalism de-
+tailed in this work represents another such gauge rep-
+resentation that is practical for a wide range of RT-
+TDDFT simulations. Due to the MLWF connection to
+the Berry Phase, the dynamic polarization of both iso-
+lated molecular systems and condensed matter systems
+in periodic boundary conditions are well-defined, allow-
+ing for a scalar potential representation of homogeneous
+electric fields. This length gauge formulation circumvents
+the commonly-used velocity gauge26 formulation (within
+the electrodynamics) in which the electric field needs to
+be represented as a magnetic flux when periodic bound-
+
+ary conditions are used. As a demonstration, we have
+performed RT-TDDFT simulations of the linear response
+of both molecular and crystalline systems in order to cal-
+culate the resultant absorption spectra. For the case of
+benzene, we observe good agreement between the RT-
+TDDFT calculated and experimental absorption spec-
+tra. As another molecular case, we used the TD-MLWF
+method to calculate the absorption spectrum of an iso-
+lated (i.e., gas phase) water molecule. In this case, we ob-
+serve excellent qualitative agreement with the experimen-
+tal optical absorption spectrum covering a wide range of
+excitation energies (0 - 150 eV). Notably, the simulations
+do not give rise to any spurious peaks in the high energy
+region, a boon that is likely a result of the planewave
+
+
+18
+
+pseudopotential basis upon which the RT-TDDFT code
+is implemented. Additionally, we have demonstrated the
+utility of TD-MLWFs for analyzing intermolecular and
+intramolecular excitation dynamics. In the case of the
+isolated molecules (benzene and water), we demonstrated
+the decomposition of the optical absorption spectra in
+terms of different chemical moieties, such as lone-pairs
+oxygen-hydrogen bonds, carbon-carbon bonds, etc. We
+showed how this TD-MLWF decomposition scheme can
+be used also to examine the absorption spectrum of a
+benzene molecule solvated in liquid water, demonstrating
+the possibilities for investigating solvatochromic effects.
+As a capability demonstration of the length-gauge for-
+mulation for representing homogeneous electric field in
+periodic boundary conditions, we calculated the dielec-
+tric function of crystalline silicon, a system which has
+been well-studied with other TDDFT codes. Our spec-
+trum shows a good agreement with both LR-TDDFT re-
+sults127 and RT-TDDFT results from a variety of codes in
+atomic orbital26 and real-space grid49 implementations.
+One application of RT-TDDFT that was not discussed
+in this work is the computation of core-level optical spec-
+tra, such as X-ray absorption spectra (XAS). While we
+have recently studied core electron excitation dynam-
+ics in electronic stopping successfully133, there remain
+significant challenges in the computation of XAS with
+RT-TDDFT for a number of reasons. In the context of
+atomic-orbital based RT-TDDFT simulations, such cal-
+culations have been carried out in recent years24,25,41,134.
+However, with planewave pseudopotential (PW-PP) ap-
+proaches, accurate representation of core electron wave-
+functions requires an extremely high planewave cutoff
+(i.e., PW basis set expansion) which makes the cal-
+culation of XAS particularly computationally difficult
+in practice.
+And in general, for any underlying basis
+set of choice, there remain shortcoming with regards
+to the exchange-correlation approximation, with popu-
+lar hybrid functionals even failing to accurately predict
+XAS excitation energies134.
+Although the TD-MLWF
+approach can be used also for modeling of XAS using
+RT-TDDFT, it is a topic that requires a thorough inves-
+tigation in a future work.
+We presented a few examples of the great utility of the
+TD-MLWF gauge representation beyond the linear re-
+sponse regime (e.g. optical absorption spectrum). Using
+the ability to simulate both static and time-dependent
+electric fields as scalar potentials in the length gauge, we
+demonstrated the simulation of quantized charge trans-
+port in polyacetylene. Although it is a relative simple test
+case, similar simulations could be used in the future to
+carry first-principles investigations into dynamic topolog-
+ical transport phenomena, beyond the adiabatic dynamic
+description of a topological Thouless pump129,135.
+Fi-
+nally, we presented TD-MLWF RT-TDDFT simulations
+of the electronic stopping of a proton impinging on a ben-
+zene molecule. Although it is often difficult to make di-
+rect comparisons between the excitation behavior of sys-
+tems under photon and ion irradiation, we have proposed
+
+a type of analysis through the calculation of "electronic
+stopping spectrum" based on the dynamic polarization
+in the same way optical absorption spectrum is calcu-
+lated from the dynamics polarization.
+Using the elec-
+tronic stopping spectrum, one can identify what parts of
+the optical absorption spectrum are excited in electronic
+stopping process as a function of the projectile proton
+velocity.
+There are many additional applications of RT-TDDFT
+where TD-MLWFs could provide advantages over con-
+ventional TDKS propagation. In the context of ground-
+state DFT, the spatial locality of MLWFs have been used
+to greatly accelerate calculations with hybrid exchange-
+correlation (XC) functionals107 and first principles molec-
+ular dynamics simulations108.
+We have demonstrated
+that, for large systems, the TD-MLWF implementation
+scales well over tens of thousands of cores without incur-
+ring prohibitive computational costs (i.e. only two times
+more expensive). Thus, the TD-MLWF approach makes
+it possible to also accelerate hybrid XC calculations in
+the context of RT-TDDFT for studying large complex
+condensed matter systems.
+
+ACKNOWLEDGMENTS
+
+The authors would like to thank Erik W. Draeger
+for helpful discussions. This work is supported by the
+National Science Foundation under Grants No.
+CHE-
+1565714, No.
+DGE-1144081, and No.
+OAC-17402204.
+An award of computer time was provided by the Inno-
+vative and Novel Computational Impact on Theory and
+Experiment (INCITE) program. This research used re-
+sources of the Argonne Leadership Computing Facility,
+which is a DOE Office of Science User Facility supported
+under Contract DE-AC02– 06CH11357
+
+1P. Hohenberg and W. Kohn, Physical Review 136, B864 (1964).
+
+2M. Grätzel, Journal of Photochemistry and Photobiology C:
+
+Photochemistry Reviews 4, 145 (2003).
+
+3A. J. Nozik, Annual Review of Physical Chemistry 52, 193
+
+(2001).
+
+4O. I. Obolensky, Nucl. Instrum. Methods Phys. Res. B 266,
+
+1623 (2008).
+
+5E. Runge and E. K. Gross, Physical Review Letters 52, 997
+
+(1984).
+
+6M. A. Marques and E. K. Gross, Annu. Rev. Phys. Chem. 55,
+
+427 (2004).
+
+7C. A. Ullrich, in Time-dependent density-functional theory:
+
+concepts and applications (OUP Oxford, 2011).
+
+8M. E. Casida, in REcent Advances in Density Functional Meth-
+
+ods (Part I) (1995) pp. 155–192.
+
+9R. L. Martin, The Journal of chemical physics 118, 4775 (2003).
+
+
+19
+
+10M. Petersilka, U. J. Gossmann,
+and E. K. U. Gross, Physical
+
+Review Letters 76, 1212 (1996).
+
+11K. Burke, J. Werschnik,
+and E. K. U. Gross, The Journal of
+
+Chemical Physics 123, 062206 (2005).
+
+12C. A. Ullrich and A. D. Bandrauk, in Time-Dependent Density
+
+Functional Theory, Lecture Notes in Physics, Vol. 837, edited
+
+by M. A. L. Marques, N. T. Maitra, F. M. S. Nogueira, E. K. U.
+
+Gross,
+and A. Rubio (Springer-Verlag, Berlin, 2012) pp. 351–
+
+371.
+
+13V. A. Goncharov, The Journal of Chemical Physics 139, 084104
+
+(2013).
+
+14X. Andrade, S. Botti, M. A. Marques, and A. Rubio, The Jour-
+
+nal of Chemical Physics 126, 184106 (2007).
+
+15F. Ding, B. E. V. Kuiken, B. E. Eichinger,
+and X. Li, The
+
+Journal of Chemical Physics 138, 064104 (2013).
+
+16D. C. Yost and Y. Kanai, Physical Review B 94, 115107 (2016).
+
+17J. Liu and J. M. Herbert, The Journal of Chemical Physics 143,
+
+034106 (2015).
+
+18R. E. Stratmann, G. E. Scuseria, and M. J. Frisch, The Journal
+
+of Chemical Physics 109, 8218 (1998).
+
+19S. Baroni and R. Gebauer, in Fundamentals of Time-Dependent
+
+Density Functional Theory. Lecture Notes in Physics, Vol. 837,
+
+edited by M. Marques, N. Maitra, F. Nogueira, E. Gross, and
+
+A. Rubio (Springer, Berlin, Heidelberg, 2012) pp. 375–390.
+
+20W. Liang, S. A. Fischer, M. J. Frisch,
+and X. Li, Journal of
+
+Chemical Theory and Computation 7, 3540 (2011).
+
+21J. J. Goings, P. J. Lestrange, and X. Li, Wiley Interdisciplinary
+
+Reviews: Computational Molecular Science 8, e1341 (2018).
+
+22K. Yabana and G. F. Bertsch, Physical Review B 54, 4484
+
+(1996).
+
+23K. Yabana, T. Nakatsukasa, J. I. Iwata,
+and G. F. Bertsch,
+
+Physica Status Solidi (b) 243, 1121 (2006).
+
+24K. Lopata, B. E. V. Kuiken, M. Khalil, and N. Govind, Journal
+
+of chemical theory and computation 8, 3284 (2012).
+
+25R. G. Fernando, M. C. Balhoff,
+and K. Lopata, Journal of
+
+Chemical Theory and Computation 11, 646 (2015).
+
+26C. D. Pemmaraju, F. D. Vila, J. J. Kas, S. A. Sato, J. J. Rehr,
+
+K. Yabana, and D. Prendergast, Computer Physics Communi-
+
+cations 226, 30 (2018).
+
+27K. G. Reeves and Y. Kanai, Scientific Reports 7, 40379 (2017).
+
+28Y. Miyamoto and A. Rubio, Journal of the Physical Society of
+
+Japan 87, 041016 (2018).
+
+29S. Meng and E. Kaxiras, Nano Letters 10, 1238 (2010).
+
+30A. Schleife, Y. Kanai, and A. A. Correa, Physical Review B 91,
+
+014306 (2015).
+
+31A. Ojanperä, A. V. Krasheninnikov,
+and M. Puska, Physical
+
+Review B 89, 035120 (2014).
+
+32A. A. Correa, Computational Materials Science 150, 291 (2018).
+
+33J. M. Pruneda, D. Sánchez-Portal, A. Arnau, J. I. Juaristi, and
+
+E. Artacho, Physical Review Letters 99, 235501 (2007).
+
+34I. Maliyov, J.-P. Crocombette, and F. Bruneval, The European
+
+Physical Journal B 91, 172 (2018).
+
+35D. C. Yost, Y. Yao,
+and Y. Kanai, Physical Review B 96,
+
+115134 (2017).
+
+36K. G. Reeves, Y. Yao,
+and Y. Kanai, Physical Review B 94,
+
+041108 (2016).
+
+37K. Lopata and N. Govind, Journal of Chemical Theory and
+
+Computation 7, 1344 (2011).
+
+38K. Yabana and G. F. Bertsch, International Journal of Quantum
+
+Chemistry 75, 55 (1999).
+
+39M. A. Marques, X. López, D. Varsano, A. Castro, and A. Rubio,
+
+Physical review letters 90, 258101 (2003).
+
+40A. R. Attar, A. Bhattacherjee, C. D. Pemmaraju, K. Schnorr,
+
+K. D. Closser, D. Prendergast, and S. R. Leone, Science 356,
+
+54 (2017).
+
+41C. D. Pemmaraju, Computational Condensed Matter , e00348
+
+(2018).
+
+42J. J. Goings and X. Li, The Journal of Chemical Physics 144,
+
+234102 (2016).
+
+43B. Peng, D. B. Lingerfelt, F. Ding, C. M. Aikens,
+and X. Li,
+
+The Journal of Physical Chemistry C 119, 6421 (2015).
+
+44C. M. Isborn, X. Li, and J. C. Tully, The Journal of chemical
+
+physics 126, 134307 (2007).
+
+45C. L. Moss, C. M. Isborn,
+and X. Li, Physical Review A 80,
+
+024503 (2009).
+
+46Y. Miyamoto, H. Zhang, X. Cheng,
+and A. Rubio, Physical
+
+Review B 96, 115451 (2017).
+
+47Y. Takimoto, F. D. Vila, and J. J. Rehr, The Journal of Chem-
+
+ical Physics 127, 154114 (2007).
+
+48J. Hutter, M. Iannuzzi, F. Schiffmann,
+and J. VandeVondele,
+
+Wiley Interdisciplinary Reviews: Computational Molecular Sci-
+
+ence 4, 15 (2014).
+
+49M. Noda, S. A. Sato, Y. Hirokawa, M. Uemoto, T. Takeuchi,
+
+S. Yamada, A. Yamada, Y. Shinohara, M. Yamaguchi, K. Iida,
+
+et al., Computer Physics Communications 235, 356 (2019).
+
+50X. Andrade,
+J. Alberdi-Rodriguez,
+D. A. Strubbe,
+M. J.
+
+Oliveira, F. Nogueira, A. Castro, J. Muguerza, A. Arruabar-
+
+rena, S. G. Louie, A. Aspuru-Guzik, et al., Journal of Physics:
+
+Condensed Matter 24, 233202 (2012).
+
+51A. Castro, H. Appel, M. Oliveira, C. A. Rozzi, X. Andrade,
+
+F. Lorenzen, M. A. Marques, E. K. U. Gross,
+and A. Rubio,
+
+Physica Status Solidi (b) 243, 2465 (2006).
+
+52T. S. Nguyen and J. Parkhill, Journal of Chemical Theory and
+
+Computation 11, 2918 (2015).
+
+
+20
+
+53W. Liang, C. T. Chapman, and X. Li, The Journal of Chemical
+
+Physics 134, 184102 (2011).
+
+54X. Li, S. M. Smith, A. N. Markevitch, D. A. Romanov, R. J.
+
+Levis, and H. B. Schlegel, Physical Chemistry Chemical Physics
+
+7, 233 (2005).
+
+55M. J. Frisch, G. W. Trucks, H. B. Schlegel, G. E. Scuseria,
+
+M. A. Robb, J. R. Cheeseman, G. Scalmani, V. Barone, G. A.
+
+Petersson, H. Nakatsuji, et al., “Gaussian 16,” (2016), Revision
+
+A.
+
+56F. Bruneval, T. Rangel, S. M. Hamed, M. Shao, C. Yang,
+
+and J. B. Neaton, Computer Physics Communications 208, 149
+
+(2016).
+
+57B. Walker, A. M. Saitta, R. Gebauer, and S. Baroni, Physical
+
+review letters 96, 113001 (2006).
+
+58A. Schleife, E. W. Draeger, Y. Kanai,
+and A. A. Correa, The
+
+Journal of Chemical Physics 137, 22A546 (2012).
+
+59F. Gygi, IBM Journal of Research and Development 52, 137
+
+(2008).
+
+60A. Schleife, E. W. Draeger, V. M. Anisimov, A. A. Correa, and
+
+Y. Kanai, Computing in Science & Engineering 16, 54 (2014).
+
+61G. F. Bertsch, J. I. Iwata, A. Rubio, and K. Yabana, Physical
+
+Review B 62, 7998 (2000).
+
+62W. Jia, D. An, L.-W. Wang, and L. Lin, Journal of Chemical
+
+Theory and Computation 14, 5645 (2018).
+
+63D. An and L. Lin, arXiv preprint arXiv:1804.02095 (2018).
+
+64W. Jia and L. Lin, Computer Physics Communications (2019).
+
+65I. Souza, J. Íniguez, and D. Vanderbilt, Physical Review B 69,
+
+085106 (2004).
+
+66E. K. Gross, J. F. Dobson, and M. Petersilka, in Density Func-
+
+tional Theory II. Topics in Current Chemistry, Vol. 181, edited
+
+by R. F. Nalewajski (Springer, Berlin, Heidelberg, 1996) pp.
+
+81–172.
+
+67J. I. Fuks, L. Lacombe, S. E. Nielsen, and N. T. Maitra, Physical
+
+Chemistry Chemical Physics 20, 26145 (2018).
+
+68G. Vignale, C. A. Ullrich, and S. Conti, Physical Review Letters
+
+79, 4878 (1997).
+
+69C. A. Ullrich and K. Burke, The Journal of chemical physics
+
+121, 28 (2004).
+
+70C. A. Ullrich, The Journal of Chemical Physics 125, 234108
+
+(2006).
+
+71H. O. Wijewardane and C. A. Ullrich, Physical Review Letters
+
+100, 056404 (2008).
+
+72C.-W. Lee and A. Schleife, The European Physical Journal B
+
+91, 222 (2018).
+
+73R. Ullah, E. Artacho, and A. A. Correa, Physical Review Let-
+
+ters 121, 116401 (2018).
+
+74F. Bloch, Zeitschrift für Physik 52, 555 (1929).
+
+75G. H. Wannier, Physical Review 52, 191 (1937).
+
+76W. Kohn, Physical Review 115, 809 (1959).
+
+77J. D. Cloizeaux, Physical Review 129, 554 (1963).
+
+78N. Marzari, A. A. Mostofi, J. R. Yates, I. Souza, and D. Van-
+
+derbilt, Reviews of Modern Physics 84, 1419 (2012).
+
+79U. Stephan, R. M. Martin, and D. A. Drabold, Physical Review
+
+B 62, 6885 (2000).
+
+80W. Ku, H. Rosner, W. E. Pickett, and R. T. Scalettar, Physical
+
+Review Letters 89, 167204 (2002).
+
+81W.-C. Lu, C.-Z. Wang, T.-L. Chan, K. Ruedenberg, and K.-M.
+
+Ho, Physical Review B 70, 041101 (2004).
+
+82V. P. Smirnov and D. E. Usvyat, Physical Review B 64, 245108
+
+(2001).
+
+83B. Sporkmann and H. Bross, Physical Review B 49, 10869
+
+(1994).
+
+84B. Sporkmann and H. Bross, Journal of Physics: Condensed
+
+Matter 9, 5593 (1997).
+
+85N. Marzari and D. Vanderbilt, Physical Review B 56, 12847
+
+(1997).
+
+86R. Resta, Physical Review Letters 80, 1800 (1998).
+
+87R. Resta, Reviews of Modern Physics 66, 899 (1994).
+
+88R. D. King-Smith and D. Vanderbilt, Physical Review B 47,
+
+1651 (1993).
+
+89R. Resta and D. Vanderbilt, in Physics of Ferroelectrics. Topics
+
+in Applied Physics, Vol. 105 (Springer, Berlin, Heidelberg, 2007)
+
+pp. 31–68.
+
+90I. Souza, J. Íniguez, and D. Vanderbilt, Physical Review Letters
+
+89, 117602 (2002).
+
+91R. W. Nunes and X. Gonze, Physical Review B 63, 155107
+
+(2001).
+
+92N. T. Maitra, I. Souza, and K. Burke, Physical Review B 68,
+
+045109 (2003).
+
+93K. Yabana, T. Sugiyama, Y. Shinohara, T. Otobe,
+and G. F.
+
+Bertsch, Physical Review B 85, 045134 (2012).
+
+94M. Stengel and N. A. Spaldin, Physical Review B 75, 205121
+
+(2007).
+
+95M. Sharma, Y. Wu, and R. Car, International Journal of Quan-
+
+tum Chemistry 95, 821 (2003).
+
+96D. Vanderbilt and R. D. King-Smith, Physical Review B 48,
+
+4442 (1993).
+
+97A. Zangwill and P. Soven, Physical Review A 21, 1561 (1980).
+
+98C. A. Ullrich, in Time-Dependent Density-Functional Theory:
+
+Concepts and Applications (Oxford University Press, Great
+
+Clarendon Street, Oxford, 2012) pp. 204–210.
+
+99E. W. Draeger,
+X. Andrade,
+J. A. Gunnels,
+A. Bhatele,
+
+A. Schleife,
+and A. A. Correa, Journal of Parallel and Dis-
+
+tributed Computing 106, 205 (2017).
+
+
+21
+
+100F. Gygi, J.-L. Fattebert, and E. Schwegler, Computer Physics
+
+Communications 155, 1 (2003).
+
+101J.-F. Cardoso and A. Souloumiac, SIAM Journal on Matrix
+
+analysis and Applications 17, 161 (1996).
+
+102G. H. Golub and C. F. V. Loan, in Matrix Computations, edited
+
+by and others (JHU Press, 1996).
+
+103D. Vanderbilt, Physical Review B 32, 8412 (1985).
+
+104A. Zangwill and P. Soven, Physical Review Letters 45, 204
+
+(1980).
+
+105A. Zangwill and P. Soven, Physical Review B 24, 4121 (1981).
+
+106A. Castro, M. A. L. Marques,
+and A. Rubio, The Journal of
+
+Chemical Physics 121, 3425 (2004).
+
+107X. Wu, A. Selloni, and R. Car, Physical Review B 79, 085102
+
+(2009).
+
+108D. Osei-Kuffuor and J.-L. Fattebert, Physical Review Letters
+
+112, 046401 (2014).
+
+109W. H. Press, S. A. Teukolsky, W. T. Vetterling, and B. P. Flan-
+
+nery, in Numerical Recipes 3rd Edition: The Art of Scientific
+
+Computing (Cambridge University Press, Cambridge, 2007).
+
+110K. Yabana and G. F. Bertsch, International Journal of Quantum
+
+Chemistry 75, 55 (1999).
+
+111X. Qian, J. Li, X. Lin,
+and S. Yip, Physical Review B 73,
+
+035408 (2006).
+
+112E.-E. Koch and A. Otto, Chemical Physics Letters 12, 476
+
+(1972).
+
+113A. Hiraya and K. Shobatake, The Journal of Chemical Physics
+
+94, 7700 (1991).
+
+114K. Lopata and N. Govind, Journal of chemical theory and com-
+
+putation 9, 4939 (2013).
+
+115J. P. Perdew, K. Burke,
+and M. Ernzerhof, Physical Review
+
+Letters 77, 3865 (1996).
+
+116H. Hayashi, N. Watanabe, Y. Udagawa,
+and C. C. Kao, The
+
+Journal of Chemical Physics 108, 823 (1998).
+
+117A. Marini, A. Munoz-Losa, A. Biancardi,
+and B. Mennucci,
+
+The Journal of Physical Chemistry B 114, 17128 (2010).
+
+118M. Cossi, V. Barone, R. Cammi,
+and J. Tomasi, Chemical
+
+Physics Letters 255, 327 (1996).
+
+119J. M. Olsen, K. Aidas, K. V. Mikkelsen,
+and J. Kongsted,
+
+Journal of Chemical Theory and Computation 6, 249 (2009).
+
+120K. Sneskov, T. Schwabe, O. Christiansen,
+and J. Kongsted,
+
+Physical Chemistry Chemical Physics 13, 18551 (2011).
+
+121C. M. Isborn, A. W. Gotz, M. A. Clark, R. C. Walker,
+and
+
+T. J. Martínez, Journal of Chemical Theory and Computation
+
+8, 5092 (2012).
+
+122J. M. Milanese, M. R. Provorse, E. A. Jr,
+and C. M. Isborn,
+
+Journal of Chemical Theory and Computation 13, 2159 (2017).
+
+123T. J. Zuehlsdorff and C. M. Isborn, International Journal of
+Quantum Chemistry 119, e25719 (2019).
+
+124M. Allesch, F. C. Lightstone, E. Schwegler, and G. Galli, The
+
+Journal of Chemical Physics 128, 014501 (2008).
+
+125J. Sun, A. Ruzsinszky, and J. P. Perdew, Physical Review Let-
+
+ters 115, 036402 (2015).
+
+126C. Darrigan, M. Rérat, G. Mallia,
+and R. Dovesi, Journal of
+
+Computational Chemistry 24, 1305 (2003).
+
+127F. Sottile, F. Bruneval, A. G. Marinopoulos, L. K. Dash,
+
+S. Botti, V. Olevano, N. Vast, A. Rubio, and L. Reining, Inter-
+
+national Journal of Quantum Chemistry 102, 684 (2005).
+
+128D. Gresch, G. Autes, O. V. Yazyev, M. Troyer, D. Vanderbilt,
+
+B. A. Bernevig,
+and A. A. Soluyanov, Physical Review B 95,
+
+075146 (2017).
+
+129D. J. Thouless, Physical Review B 27, 6083 (1983).
+
+130S. Nakajima, T. Tomita, S. Taie, T. Ichinose, H. Ozawa,
+
+L. Wang, M. Troyer,
+and Y. Takahashi, Nature Physics 12,
+
+296 (2016).
+
+131M. Lohse, C. Schweizer, O. Zilberberg, M. Aidelsburger,
+and
+
+I. Bloch, Nature Physics 12, 350 (2016).
+
+132A. A. Correa, Computational Materials Science 150, 291 (2018).
+
+133Y.
+Yao,
+D.
+C.
+Yost,
+and
+Y.
+Kanai,
+arXiv
+preprint
+
+arXiv:1903.03194 (2019).
+
+134P. J. Lestrange, P. D. Nguyen, and X. Li, Journal of Chemical
+
+Theory and Computation 11, 2994 (2015).
+
+135L. Privitera, A. Russomanno, R. Citro,
+and G. E. Santoro,
+
+Physical Review Letters 120, 106601 (2018).
+
+

@@ -1,0 +1,889 @@
+Pair distribution function analysis for oxide defect identification through feature extraction and
+supervised learning
+
+Shuyan Zhang1, Jie Gong1, Daniel Xiao2, B. Reeja Jayan1, and Alan J. H. McGaughey1
+
+1Department of Mechanical Engineering, Carnegie Mellon University,
+Pittsburgh, Pennsylvania 15213, USA
+and
+2Department of Materials Science and Engineering,
+Carnegie Mellon University,
+Pittsburgh, Pennsylvania 15213, USA
+(*mcgaughey@cmu.edu.)
+
+Feature extraction and a neural network model are applied to predict the defect types and concentrations in
+experimental TiO2 samples. A dataset of TiO2 structures with vacancies and interstitials of oxygen and titanium
+is built and the structures are relaxed using energy minimization. The features of the calculated pair distribution
+functions (PDFs) of these defected structures are extracted using linear methods (principal component analysis,
+non-negative matrix factorization) and non-linear methods (autoencoder, convolutional neural network). The
+extracted features are used as the inputs to a neural network that maps the feature weights to the concentration
+of each defect type. The performance of this machine learning pipeline is validated by predicting the defect con-
+centrations based on experimentally-measured TiO2 PDFs and comparing the results to brute-force predictions.
+A physics-based initialization of the autoencoder has the highest accuracy in predicting the defect concentra-
+tions. This model incorporates physical interpretability and predictability of material properties, enabling a
+more efficient material characterization process with scattering data.
+
+I.
+INTRODUCTION
+
+Pair distribution function (PDF) analysis uses data from
+total X-ray or neutron synchrotron scattering experiments to
+quantitatively characterize short-range and long-range atomic
+structure. [1] Unlike conventional X-ray diffraction, which
+only measures the Bragg peaks that result from the atomic
+periodicity, PDF analysis also incorporates diffuse scattering,
+which results from disorder, allowing for structural character-
+ization without assuming periodicity. [1–3] PDF analysis is
+thus applicable to crystalline, nanostructured, defected, and
+amorphous materials. [2]
+Advances in experimental techniques have increased the ac-
+quisition rates of PDF data. Advances in PDF analysis, how-
+ever, are lagging. An experimental PDF is analyzed by adjust-
+ing the parameters of an assumed structure model, such as the
+lattice constant(s), atomic positions, and grain/particle size. A
+refined PDF is obtained by minimizing the difference between
+the PDF of the structure model and the experimental PDF. [4]
+This process is implemented in PDFgui, [5] DiffPy-cmi, [6]
+and TOPAS. [7] Selecting the starting atomic structure(s) is a
+challenge and information about the sample (e.g., the crystal
+phase) is required to achieve satisfactory results. PDF anal-
+ysis thus typically requires manual trial-and-error refinement
+of multiple structure models. [8]
+One avenue to accelerating PDF analysis is to automate the
+refinement of a large number of structures that are pulled from
+a materials database or generated automatically. [4, 8] Such
+approaches are efficient when the composition and/or crys-
+tal structure are unknown. They may not be sufficient, how-
+ever, to identify detailed structural information when the ma-
+terial and phase are known. For example, in defected mate-
+rials and/or nanoparticles, there can be atomic displacements
+away from the perfect bulk structure due to defects and/or sur-
+faces. [2]
+Data-driven methods, including machine learning, have
+
+emerged as a means to improve the efficiency of interpreting
+PDF data. Instead of independently performing PDF analysis
+on each member of a set of samples, data-driven methods at-
+tempt to learn the underlying patterns of the full PDF dataset.
+Principal component analysis (PCA) and non-negative matrix
+factorization (NMF), both unsupervised methods, are capa-
+ble of extracting the PDF signals of the constituents of multi-
+phase and/or multi-component systems. PCA was applied by
+Chapman et al. to evaluate the evolution of the phase distribu-
+tion during the nucleation and growth of zeolite-supported sil-
+ver nanoparticles. [9] Li et al. used PCA to identify the chem-
+ical species involved in the discharge reaction of CoF2. [10]
+Liu et al.
+applied NMF to extract physically-interpretable
+components from PDF data of the lithiation of an RuO2 elec-
+trode. [11] Beyond PCA and NMF, machine learning models
+have also been used to study PDFs. Liu et al. built a convo-
+lutional neural network (CNN) to determine the space group
+of a material given its experimental X-ray PDF. [12] Anker et
+al. developed a conditional variational autoencoder to charac-
+terize the atomic structure of elemental metallic nanoparticles
+from PDF data. [13]
+Herein, we present a machine learning pipeline, shown in
+Fig. 1, that combines: (i) unsupervised learning of the features
+embedded in PDF data, and (ii) supervised learning models
+that predict the types and concentrations of point defects. The
+pipeline is the applied to an anatase titanium dioxide (TiO2)
+thin film synthesized with a sol-gel method. [3] The blue
+shaded area in Fig. 1 contains the data preprocessing and the
+training of the machine learning model using simulated PDFs.
+The red shaded area contains the application of the model to
+an experimental PDF.
+The paper is organized as follows. An overview of the PDF
+refinement is provided in Sec. II A. The preparation of the
+training/testing dataset of potential structures, which are built
+from atomistic simulations, is described in Sec II B 1 and the
+PDF calculation is described in Sec. II B 2. Due to the high
+
+arXiv:2210.07371v1  [cond-mat.mtrl-sci]  13 Oct 2022
+
+
+2
+
+dimensionality of each PDF (850 data points), using the un-
+processed data to predict the defect concentration is inefficient
+algorithmically and computationally, and may introduce noise
+and cause overfitting. [14] Feature extraction methods, which
+are described in Sec. II C, are hence required to reduce the
+dimensionality and discover patterns in the PDF data. Lin-
+ear algorithms (PCA, NMF) and nonlinear algorithms (au-
+toencoder, CNN) for feature extraction are compared by us-
+ing their output to train a neural network to predict the defect
+types and concentrations in experimentally measured PDFs.
+The performance of the models is presented in Sec. III A,
+where we find that linear feature extraction models tend to
+provide better interpretability, while nonlinear ones provide
+better predictive ability. The learned features are discussed in
+Sec. III B.
+
+II.
+METHODS
+
+A.
+Pair distribution function (PDF) analysis
+
+We use experimental PDFs of bulk anatase TiO2 and an
+anatase TiO2 thin film from a previous study [3] to test the
+predictive ability of our models. The data acquisition was
+performed at the X-ray Powder Diffraction Beamline, 28-ID-
+2, at the National Synchrotron Light Source II at Brookhaven
+National Laboratory. For metal oxides with heavier metal el-
+ements, oxygen is relatively more sensitive to neutrons than
+to X-rays, [15] leading to stronger signals for oxygen and its
+defects. We use X-ray PDFs for TiO2, however, because the
+negative neutron scattering length of Ti results in a cancel-
+lation between positive and negative peaks that makes some
+features hard to detect. [16]
+The PDF, G(r), gives a scaled probability of finding two
+atoms separated by a distance r. [1] Given a known structure
+model and ideal instrumental conditions, the PDF can be cal-
+culated by summing over all pairwise interatomic distances in
+a system with N atoms from
+
+G(r) = 1
+
+Nr ∑
+i ∑
+j̸=i
+
+�bibj
+
+⟨b⟩2 δ (r −ri j)
+�
+−4πrρ0.
+(1)
+
+Here, bi is the scattering factor of atom i, ⟨b⟩ is the composi-
+tional average scattering factor, δ() is the Dirac delta function,
+ri j is the distance between atoms i and j, and ρ0 is the atomic
+number density.
+Two corrections are included in Eq. (1) to account for non-
+idealities. First, the peaks are broadened by a factor σ given
+by [5]
+
+σ = σi j
+
+�
+
+1− δ1
+
+ri j
+− δ2
+
+r2
+i j
++Q2
+broadr2
+i j.
+(2)
+
+Here, σij is the uncorrelated peak width calculated from the
+atomic displacement parameters (ADPs), denoted by Uiso.
+The terms δ1/rij and δ2/ri j correct for the effects of corre-
+lated atomic motion at short distances. Here, only δ2/rij is
+
+considered to describe low-temperature behavior. [5] Qbroad
+is an instrument-dependent term. [5]
+Second, the presence of finite crystallite size tends to
+dampen the experimental PDF due to the size and shape of
+the coherently scattering domains. [17, 18] This effect is in-
+cluded by multiplying Eq. (1) by an envelope function that
+assumes spherical domains with diameter d such that:
+
+G(r,d) = G(r)
+�
+1− 3
+
+2
+r
+d + 1
+
+2
+
+� r
+
+d
+
+�3�
+θ(r,d),
+(3)
+
+where θ is a step function with a value of unity for r < d and
+zero otherwise.
+
+B.
+Dataset preparation
+
+1.
+Structure generation
+
+We built anatase TiO2 structures with different types and
+concentrations of randomly-placed point defects. The simu-
+lation box of the perfect structure before introducing defects
+contains 6×6×9 unit cells with 1944 atoms. Periodic bound-
+ary conditions are applied in all three directions. Combina-
+tions of common point defects (i.e., vacancies and interstitials)
+are considered for both the Ti and O atoms. Each structure
+has a label of four integers: VTi, VO, Tii, and Oi, which are the
+numbers of Ti vacancies, O vacancies, Ti interstitials, and O
+interstitials. The number of each defect type takes a value 0
+– 80, corresponding to concentrations of 0 – 4.1% (based on
+the number of atoms in the perfect structure). We built 800
+structures. Among them, 480 contain all defect types, 160
+have one defect type with zero concentration, 120 have two
+defect types with zero concentration, and 40 have three defect
+types with zero concentration.
+The box size and atomic positions in each structure was re-
+laxed using energy minimization allowing with a conjugate
+gradient algorithm in the Large-scale Atomic/Molecular Mas-
+sively Parallel Simulator (LAMMPS) [19] until the relative
+energy change is smaller than 10−10 and the force in any di-
+rection is smaller than 10−10 eV/Å. The second moment tight-
+binding charge equilibrium (SMTB-Q) variable charge poten-
+tial [20, 21] is used due to its robustness in modeling defected
+TiO2. [16] The electrostatic interaction was calculated using
+the Wolf summation method. [20, 22] The charge on each
+atom was updated every relaxation step using the charge equi-
+librium scheme developed by Rappé and Goddard. [23] More
+details about the simulation setup and benchmarking of the
+potential can be found in our prior work. [16]
+
+2.
+PDF calculation
+
+The PDFs of the relaxed atomic structures were calculated
+between 1.5 Å to 10 Å in 0.01 Å increments from Eqs. (1)
+– (3) using DiffPy-cmi, [6] resulting in 850 data points for
+each PDF. Qbroad is taken to be 0.0143 Å−1 from the experi-
+mental measurement on the TiO2 samples to be analyzed. [3]
+
+
+3
+
+FIG. 1. Machine learning pipeline for predicting defect types and concentrations. The blue shaded area contains the data preprocessing and
+the training of the ML model with simulated PDF data. The red shaded area contains the application of the model to an experimental PDF.
+
+TABLE I. PDF calculation parameters
+
+Qbroad (Å−1)
+0.0143 [3]
+Uiso,Ti (Å2)
+0.0046 [16]
+Uiso,O (Å2)
+0.0167 [16]
+δ2 (Å2)
+1.0, 1.5, 2.0, 2.5, 3.0
+d (Å)
+20, 40, 60, 108
+
+The calculated PDFs depend on the refineable parameters,
+which include a scaling factor, the lattice parameters, the
+ADPs, the low-r peak sharpening coefficient δ2, and the spher-
+ical particle size d. Of these parameters, we find that the scale
+factor and spherical particle size most affect the peak heights.
+Our objective is to predict the defect concentration of experi-
+mental PDFs, where the signal strength can vary due to exper-
+imental conditions. As such, we eliminated the effect of the
+scale factor by normalizing each PDF by [12]
+
+�G(r) =
+G(r)−min(G)
+
+max(G)−min(G),
+(4)
+
+such that 0 ≤ �G(r) ≤ 1. δ2 and d are then randomly selected
+from a set of physically-reasonable values. This process is
+repeated four times for each of the 800 structures. We thus
+obtain 3200 PDFs, with each structure having four PDFs cal-
+culated from four sets of parameters. The parameters used for
+the PDF calculations are listed in Table I.
+
+C.
+Linear feature extraction: Principal component analysis
+(PCA) and non-negative matrix factorization (NMF)
+
+PCA and NMF are techniques where a matrix V is factor-
+ized into two matrices W and H, such that its elements are
+
+Viµ ≈ (WH)iµ =
+
+p
+∑
+a=1
+WiaHaµ.
+(5)
+
+For our PDF dataset, V is an n×m matrix of size 850×3200,
+where each column contains a PDF. W and H have dimen-
+sions of n × p and p × m. The parameter p is chosen based
+on the desired number of basis PDFs, which are contained in
+the columns of W. Each column of H contains the weights
+in a one-to-one correspondence with a basis PDF in W. [24]
+The features to be used as the inputs to the neural network are
+the columns in the H matrix, with each one having dimension
+p×1. We chose p = 9 for PCA and p = 16 for NMF so that
+99.5% of the variance is explained.
+W and H are solved as a optimization problem using the ob-
+jective function ∥V−WH∥F, where ∥·∥F indicates the Frobe-
+nius norm. In PCA, the columns of W are constrained to
+be orthonormal and the rows of H are constrained to be or-
+thogonal, [11] such that a unique solution is guaranteed. [25]
+In NMF, the elements of V, W, and H are constrained to be
+non-negative. Because this problem is non-convex, a unique
+solution is not guaranteed. [26] As such, we employ an ini-
+tialization scheme called non-negative double singular value
+decomposition, which rapidly reduces the approximation er-
+ror to a value that is potentially lower than that from a random
+initialization. [27] More importantly, we observe that it results
+in smoother PDF components compared to other initialization
+schemes. We perform PCA and NMF using the Scikit-Learn
+package. [28]
+
+
+4
+
+D.
+Non-linear feature extraction: Autoencoder
+
+An autoencoder is an unsupervised learning technique that
+leverages neural networks for the task of representation learn-
+ing. [29] A neural network architecture is constructed with a
+bottleneck that forces a compressed knowledge representation
+of the original input. Here, the inputs are the simulated PDFs.
+The extracted features are embedded in the bottleneck layer.
+The single-layer autoencoder we constructed is shown in Fig.
+S1 in the Supplemental Material. [30] A softplus activation
+function is applied at the hidden layer to ensure the positiv-
+ity of the latent space H. This autoencoder is similar to the
+NMF algorithm in that H contains the weights in a one-to-one
+correspondence with a basis PDF in the decoder weight ma-
+trix W. [31] The difference is that there is no non-negativity
+constraint applied on the weights W in the autoencoder. The
+product of W and H approximates the original PDFs. We con-
+sider two initialization schemes. One is to randomly initialize
+the decoder weights (denoted as AE-rand) and the other is to
+initialize five of the weights to be the PDF signals of the per-
+fect phase and the four types of defects, which are defined
+in Sec. III B (AE-phys). The autoencoders are implemented
+using the Pytorch package. [32]
+We also built a one-dimensional convolutional neural net-
+work that directly maps the PDFs to the defect concentrations,
+which is described in Sec. S2 of the Supplemental Material.
+
+E.
+Supervised learning of defect concentrations: Neural
+networks
+
+We trained neural networks using the H matrices obtained
+from PCA, NMF, AE-rand, and AE-phys as inputs and the
+numbers of defect as labels. We tuned the hyperparameters
+of the neural network with the random search method using
+five-fold cross validation on the simulated TiO2 PDFs. The
+NN architecture with the highest averaged test score from the
+cross validation has two 50-neuron hidden layers that use the
+hyperbolic tangent activation function. The output layer has
+four neurons for the four defect types: VTi, Tii, VO, and Oi. A
+scaled sigmoid activation function is used to bound the out-
+put values into the range of 0 to 80. The neural network is
+implemented using the Pytorch package. [32]
+
+III.
+RESULTS AND DISCUSSIONS
+
+A.
+Model performance
+
+1.
+Training and testing
+
+As presented in Sec. II, five models: PCA, NMF, AE-rand,
+AE-phys, and CNN are used for feature extraction.
+Each
+of the five models was trained on 80% of the 3200 simu-
+lated PDFs of defected structures and tested on the remaining
+20%. This process was repeated 50 times for each model us-
+ing a randomized train/test split and initialization of the neu-
+
+ral networks. The autoencoder and CNN models have addi-
+tional randomization due to the initial weights. The average
+root-mean-square error (RMSE) and its standard deviation for
+the predicted number of defects compared against the ground
+truth number of defects for the training and testing processes
+are shown in Figs. 2(a) and 2(b). The R2 scores and their stan-
+dard deviations are shown in Figs. 2(c) and 2(d). All feature
+extraction methods result in a training RMSE lower than 8
+defects and testing RMSE lower than 12 defects for all four
+defect types. Recall that the structures contain 0 to 80 defects
+of each type. The Ti interstitial RMSEs are the lowest for the
+training and testing sets for all models. As will be discussed
+in Sec. III B, the feature associated with Ti interstitials is the
+easiest to be separated. The R2 scores for the training and test-
+ing sets are all above 0.85, except for the O vacancy predicted
+using NMF on the test data, which also has the largest testing
+RMSE. The parity plot for the Ti interstitial using AE-phys is
+shown in Fig. 3 as a demonstration of the defect concentration
+prediction.
+With the same ratio of the variance explained (99.5%),
+using NMF (dark green) to extract the features results in a
+smaller training RMSE compared to PCA (light green) for all
+defect types. The testing error for NMF is larger for O vacan-
+cies and O interstitials compared to their training error, sug-
+gesting a potential overfitting. Hyperparameter tuning for the
+neural network and lowering the number of components in the
+NMF, however, do not reduce the overfitting. Using AE-phys
+(dark blue) reduces both the training and testing RMSEs com-
+pared to the AE-rand (light blue). The standard deviations of
+RMSE and R2 for CNN are consistently larger than for the
+other models. This result could be due to the much larger
+number of parameters in the CNN compared to the other mod-
+els. [33]
+
+2.
+Application to experimental PDFs
+
+We applied the trained models to experimental PDFs of de-
+fected and perfect anatase TiO2. [3] The ground truths are
+[VTi, Tii, VO, Oi] = [54(±5), 34(±5), 1(±2), 9(±6)] for the
+defected structure obtained via an iterative search in our pre-
+vious work, [16] and [VTi, Tii, VO, Oi] = [0, 0, 0, 0] for the
+perfect structure.
+The predictions of the five models and the ground truth val-
+ues are shown in Figs. 4(a) and 4(b). The bar heights and
+error bars of the predictions are the means and standard devi-
+ations obtained from the 50 trained models. For defected TiO2
+[Fig. 4(a)], all models predict a minimal number of O vacan-
+cies (smaller than 3), which is consistent with the ground truth
+value of (1 ± 2). All models tend to overpredict the number
+of defects for the other three types, notably for O interstitials.
+NMF performs better than PCA except for Ti interstitials. AE-
+rand overpredicts the number of Ti defects and the predicted
+number of O interstitials is seven times higher than the ground
+truth with a large standard deviation. The performance of the
+autoencoder is significantly improved by the physics based
+initialization in AE-phys. The CNN gives good predictions
+on Ti vacancies, Ti interstitials, and O vacancies, but over-
+
+
+5
+
+FIG. 2. RMSE of (a) training data and (b) testing data, and the R2 scores of (c) training data and (d) testing data, for the four defect types (VTi,
+Tii, VO, and Oi) using five models. The bar graphs show the mean and the standard deviation for each type of model trained 50 times with
+different random seeds.
+
+FIG. 3. Ground truth of number of defects versus the prediction by
+AE-phys for the Ti interstitial. The red dots are training data and the
+blue dots are testing data.
+
+predicts on O interstitials and has a large standard deviation
+across all models.
+The predictions for the perfect TiO2 are shown in Fig. 4(b).
+NMF predicts a high value for the Ti vacancy concentration,
+but lower O defects compared to PCA. AE-rand has the largest
+standard deviation, while the physics-based initialization of
+
+AE-phys again improves the prediction.
+Overall, AE-phys leads to the most accurate predictions
+on the experimental PDFs with relatively small variance. As
+noted above, the physical knowledge used in AE-phys con-
+tributes largely to improving the performance compared to
+AE-rand. Furthermore, nonlinear feature extraction methods
+perform better than linear methods. One explanation for this
+finding is that the PDF signals of the defects may be embedded
+in a more complicated way than the PDF signals of different
+materials in a mixture or solution, where PCA and NMF have
+previously been successful. [9–11]
+To assess the AE-phys predictions from Fig. 4(a), we cre-
+ated five random structures with the mean number of de-
+fects of each type. These structures were relaxed using the
+SMTB-Q potential by energy minimization. PDF refinement
+was then performed for each structure against the experi-
+mental PDF. The quality of the fit was quantified by Rw =
+�
+
+∑n(Gobs,n−Gcalc,n)
+2
+
+∑n G2
+obs,n
+, [1] where Gobs,n is the nth point on the
+
+experimentally measured PDF and Gcalc,n is the nth point on
+the refined PDF. The average Rw is 0.268±0.002, which is in
+good agreement with that calculated using our previous brute
+force search approach of 0.266±0.002. [16]
+
+B.
+Feature learning
+
+We now explore the possibility that the features extracted
+from PCA, NMF, AE-rand, and AE-phys can be interpreted in
+
+
+6
+
+FIG. 4. Predicted number of defects in an initially perfect 1944-
+atom cell for experimental TiO2 PDFs using PCA, NMF, AE-rand,
+AE-phys, and 1D-CNN along with the ground truth for (a) a de-
+fected anatase TiO2 sample from our previous work and (b) a perfect
+anatase TiO2 sample. The bar graphs show the mean and the stan-
+dard deviation for each type of model trained 50 times with different
+random seeds.
+
+terms of the perfect structure and the four point defect types.
+To do so, the PDF signal of each point defect type x is de-
+fined as Gx = Gx
+30 −Gper fect, where Gx
+30 is the PDF of a struc-
+ture with 30 defects of type x and Gper fect is the PDF of the
+perfect structure. To determine if an extracted feature corre-
+sponds to one of the five PDF physical components (Gper fect
+and the four Gx), we calculated the Pearson correlation coef-
+ficient (PCC, rp) between all pairs of extracted features and
+physical components for each of the four methods.
+The results are provided in Table II, where i is the index of
+the extracted feature having the largest PCC with a specific
+physical component. PCC values greater than 0.8, which cor-
+respond to a strong correlation, [34] are bolded. We observe
+that the prediction accuracy for a specific defect concentration
+(Fig. 4) does not strongly depend on the degree of correlation
+between the extracted features and that physical component.
+The extracted features and physical components for the differ-
+ent feature extraction methods are shown Figs. S3-S4 of the
+Supplemental Material. [30]
+
+AE-phys extracts three features with strong correlation to
+the physical components, while NMF, PCA, and AE extract
+two, one, and zero strongly-correlated features, respectively.
+The strong performance of AE-phys compared to AE-rand is
+a result of its initialization. Compared with PCA and NMF,
+
+TABLE II. Largest Pearson correlation coefficient (rp) between the
+extracted features by different models and the physical components.
+i is the index of the extracted feature having the largest rp with a
+certain physical components.
+
+Perfect
+VTi
+Tii
+VO
+Oi
+
+i
+rp
+i
+rp
+i
+rp
+i
+rp
+i
+rp
+
+PCA
+1 0.60 1 -0.68 2 -0.86 4 0.75 7 -0.54
+NMF
+1 0.96 2 0.68 3 0.94
+4 0.66 9
+0.58
+AE-rand 6 0.53 6 -0.51 1 -0.70 10 0.52 10 0.37
+AE-phys 1 0.99 5 0.63 3 0.95
+5 0.87 5
+0.47
+
+AE-phys may perform better because it only applies the non-
+negativity constraint on the latent space by the Softplux acti-
+vation function, but nothing on the basis PDFs (i.e., the de-
+coder weights). NMF may perform better than PCA because
+it limits the component weights to be positive and does not
+apply an orthogonality constraint.
+The link between the extracted features and the physical
+components is moderate. Consistent with the discussion in
+Sec. III A 2, this finding suggests that while the PDFs of the
+components or phases in a mixture or solution can be sepa-
+rated, the impact of atomic-scale features on the PDF is more
+difficult to elucidate.
+
+IV.
+CONCLUSION
+
+We demonstrated a machine learning pipeline to predict
+the defect types and their concentrations in experimentally-
+measured PDFs of TiO2. A dataset of defected structures was
+built and then relaxed using energy minimization. PCA, NMF,
+AE-rand, AE-phys, and CNN were used to extract features
+from the calculated PDFs that were then fed to a neutral net-
+work for defect concentration prediction.
+The RMSEs for the simulated PDFs are lower than 8 defects
+for the training set and lower than 12 defects for the testing
+set [Figs. 2(a) and 2(b)]. When applying the trained models
+to the experimental PDFs, AE-phys generates the most accu-
+rate results with relatively small variance [Figs. 4(a) and 4(b)].
+We explored the physical significance of the extracted features
+and connections to the predictive capabilities of the different
+models. We found that AE-phys extracts the most number
+of features with strong correlation to the physical components
+(Table II). The strong performance of AE-phys is a result of its
+initialization and relaxed constraints. This machine learning
+pipeline can be expanded to other X-ray and neutron scatter-
+ing data to facilitate a more efficient material characterization
+and discovery process.
+
+ACKNOWLEDGEMENTS
+
+We thank Dr. Simon Billinge and Dr. Aarti Singh for help-
+ful discussions. All authors acknowledge support from the
+Defense Advanced Research Projects Agency under award
+AIRA HR00111990030. B.R.-J. acknowledges support from
+
+
+7
+
+the Army Research Office Young Investigator Program under
+contract number W911NF1710589.
+
+DATA AVAILABILITY
+
+The data that support the findings of this study are available
+from the corresponding author upon reasonable request.
+
+[1] T. Egami and S. J. Billinge, Underneath the Bragg peaks: struc-
+tural analysis of complex materials (Elsevier, 2003).
+[2] S. J. Billinge and M. G. Kanatzidis, Chemical Communications
+7, 749 (2004).
+[3] N. Nakamura, M. W. Terban, S. J. Billinge, and B. Reeja-Jayan,
+Journal of Materials Chemistry A 5, 18434 (2017).
+[4] L. Yang, P. Juhás, M. W. Terban, M. G. Tucker,
+and S. J.
+Billinge, Acta Crystallographica Section A: Foundations and
+Advances 76, 395 (2020).
+[5] C. Farrow, P. Juhas, J. Liu, D. Bryndin, E. Božin, J. Bloch,
+T. Proffen,
+and S. Billinge, Journal of Physics: Condensed
+Matter 19, 335219 (2007).
+[6] P. Juhás, C. L. Farrow, X. Yang, K. R. Knox, and S. J. Billinge,
+Acta Crystallographica Section A 71, 562 (2015).
+[7] A. Coelho, P. Chater, and A. Kern, Journal of Applied Crystal-
+lography 48, 869 (2015).
+[8] S. Banerjee, C. H. Liu, K. M. Jensen, P. Juhás, J. D. Lee, M. To-
+fanelli, C. J. Ackerson, C. B. Murray, and S. J. Billinge, Acta
+Crystallographica Section A: Foundations and Advances 76, 24
+(2020).
+[9] K. W. Chapman, S. H. Lapidus, and P. J. Chupas, Journal of
+Applied Crystallography 48, 1619 (2015).
+[10] W. Li, O. J. Borkiewicz, M. Saubanère, M. L. Doublet, D. Fla-
+haut, P. J. Chupas, K. W. Chapman, and D. Dambournet, The
+Journal of Physical Chemistry C 122, 23861 (2018).
+[11] C. H. Liu, C. J. Wright, R. Gu, S. Bandi, A. Wustrow, P. K.
+Todd, D. O’Nolan, M. L. Beauvais, J. R. Neilson, P. J. Chupas,
+et al., Journal of Applied Crystallography 54, 768 (2021).
+[12] C. H. Liu, Y. Tao, D. Hsu, Q. Du, and S. J. Billinge, Acta Crys-
+tallographica Section A: Foundations and Advances 75, 633
+(2019).
+[13] A. S. Anker, E. T. Kjaer, E. B. Dam, S. J. Billinge, K. M. Jensen,
+and R. Selvan, ChemRxiv (2020), https://par.nsf.gov/
+biblio/10300745.
+[14] R. Liu and D. F. Gillies, Pattern Recognition 53, 73 (2016).
+[15] Y. Ren and X. Zuo, Small Methods 2, 1800064 (2018).
+[16] S. Zhang, J. Gong, D. Xiao, B. R. Jayan, and A. J. H. Mc-
+Gaughey, “Pair distribution function analysis driven by atom-
+istic simulations:
+Application to microwave radiation syn-
+thesized TiO2 and ZrO2,”
+(2022), arXiv:2210.05890 [cond-
+mat.mtrl-sci].
+[17] K. Kodama, S. Iikubo, T. Taguchi, and S. I. Shamoto, Acta
+Crystallographica Section A: Foundations of Crystallography
+62, 444 (2006).
+[18] R. C. Howell, T. Proffen, and S. D. Conradson, Physical Re-
+view B 73, 094107 (2006).
+
+[19] A. P. Thompson, H. M. Aktulga, R. Berger, D. S. Bolintineanu,
+W. M. Brown, P. S. Crozier, P. J. in’t Veld, A. Kohlmeyer, S. G.
+Moore, T. D. Nguyen, et al., Computer Physics Communica-
+tions 271, 108171 (2022).
+[20] R. Tétot, A. Hallil, J. Creuze, and I. Braems, EPL (Europhysics
+Letters) 83, 40001 (2008).
+[21] E. Maras, N. Salles, R. Téétot, T. Ala-Nissila, and H. Jóénsson,
+The Journal of Physical Chemistry C 119, 10391 (2015).
+[22] D. Wolf, P. Keblinski, S. Phillpot, and J. Eggebrecht, The Jour-
+nal of Chemical Physics 110, 8254 (1999).
+[23] A. K. Rappe and W. A. Goddard III, The Journal of Physical
+Chemistry 95, 3358 (1991).
+[24] D. D. Lee and H. S. Seung, Nature 401, 788 (1999).
+[25] J. C. Liao, R. Boscolo, Y. L. Yang, L. M. Tran, C. Sabatti, and
+V. P. Roychowdhury, Proceedings of the National Academy of
+Sciences 100, 15522 (2003).
+[26] K. Huang, N. D. Sidiropoulos, and A. Swami, IEEE Transac-
+tions on Signal Processing 62, 211 (2013).
+[27] C. Boutsidis and E. Gallopoulos, Pattern recognition 41, 1350
+(2008).
+[28] F. Pedregosa,
+G. Varoquaux,
+A. Gramfort,
+V. Michel,
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss,
+V. Dubourg, et al., the Journal of machine Learning research
+12, 2825 (2011).
+[29] I. Goodfellow, Y. Bengio, and A. Courville, Deep Learning
+(MIT Press, 2016).
+[30] See Supplemental Material for information about extracted ba-
+sis PDFs.
+[31] P. Smaragdis and S. Venkataramani, in 2017 IEEE Interna-
+tional Conference on Acoustics, Speech and Signal Process-
+ing (ICASSP) (IEEE, 2017) pp. 86–90, https://arxiv.org/
+abs/1609.03296.
+[32] A. Paszke, S. Gross, S. Chintala, G. Chanan, E. Yang, Z. De-
+Vito, Z. Lin, A. Desmaison, L. Antiga, and A. Lerer, in NIPS-W
+(2017).
+[33] W. Rawat and Z. Wang, Neural computation 29, 2352 (2017).
+[34] H. Akoglu, Turkish journal of emergency medicine 18, 91
+(2018).
+[35] S. Zhang, J. Gong, X. Daniel, B. R. Jayan, and A. J. H. Mc-
+Gaughey, Physical Review Materials , 24 (2022).
+[36] F. Pedregosa,
+G. Varoquaux,
+A. Gramfort,
+V. Michel,
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss,
+V. Dubourg,
+J. Vanderplas,
+A. Passos,
+D. Cournapeau,
+M. Brucher, M. Perrot, and E. Duchesnay, Journal of Machine
+Learning Research 12, 2825 (2011).
+
+
+Pair distribution function analysis for oxide defect identification through
+
+feature extraction and supervised learning
+
+Shuyan Zhang1, Jie Gong1, Daniel Xiao2, B. Reeja Jayan1, and Alan J. H. McGaughey1
+
+1Department of Mechanical Engineering, Carnegie Mellon University,
+
+Pittsburgh, Pennsylvania 15213, USA and
+
+2Department of Materials Science and Engineering, Carnegie Mellon University,
+
+Pittsburgh, Pennsylvania 15213, USA
+
+(*mcgaughey@cmu.edu.)
+
+1
+
+arXiv:2210.07371v1  [cond-mat.mtrl-sci]  13 Oct 2022
+
+
+S1.
+AUTOENCODER STRUCTURE
+
+FIG. S1. Autoencoder used to extract features from the PDF dataset.
+
+S2.
+ONE-DIMENSIONAL CONVOLUTIONAL NEURAL NETWORK
+
+A convolutional neural network (CNN) is a class of neural network that has a shared-weight
+
+architecture of convolution kernels that slide along input features and provide translation equivari-
+
+ant responses known as feature maps [1]. A CNN usually consists of an input layer, several hidden
+
+layers (e.g., convolution layers, pooling layers, and fully connected layers), and an output layer.
+
+One-dimensional CNNs (1D-CNNs) are CNNs with one-dimensional filters on the convolution
+
+layers, making them suitable for 1D signal extraction [1].
+
+For the PDF dataset, the built-in feature extraction ability of a 1D-CNN makes it possible to
+
+extract information from adjacent peaks in a PDF. The convolution layers are effective for detect-
+
+ing local features within the kernel. The translational equivariant response from the convolution
+
+operation and the use of pooling layers helps to reduce the noise in PDFs calculated with different
+
+parameters.
+
+The architecture of our 1D-CNN is shown in Fig. S2. The hyperparameters were obtained
+
+through a search with the hyperband method [2]. The model is trained for 60 epochs using the
+
+Adam optimizer. The 1D-CNN method is self-contained compared with principal component
+
+analysis, non-negative matrix factorization, and an autoencoder (i.e., no additional neural network
+
+2
+
+
+is needed). The 1D-CNN and the hyperband method are implemented with the Keras [3] library
+
+on the TensorFlow version 2.0 deep learning platform [4].
+
+FIG. S2. 1D-CNN architecture used in this study.
+
+3
+
+
+S3.
+EXTRACTED BASIS PDFS
+
+The Pearson correlation coefficients (PCCs) reported in Table II of the main text correspond
+
+to the extracted features that provide the highest PCC with each of the five physical components.
+
+These extracted feature and physical component pairs are plotted in Figs. S3(a)-S3(e) for PCA,
+
+in S3(f)-S3(j) for NMF, in Figs. S4(a)-S4(e) for the randomly-initialized autoencoder and in Figs.
+
+S4(f)-S4(j) for the physics-based initialized autoencoder shown. The physical components have a
+
+spread because they is calculated from the PDFs of structures that contain a range of concentrations
+
+for the same defect type.
+
+FIG. S3.
+Basis PDFs extracted (the red curves) from (a)-(e) PCA and (f)-(j) NMF compared with the
+
+physical components (blue curves).
+
+4
+
+
+FIG. S4.
+Basis PDFs extracted (the red curves) from (a)-(e) randomly initialized autoencoder and (f)-(j)
+
+physics-based initialized autoencoder compared with the physical components (blue curves).
+
+5
+
+
+[1] S. Kiranyaz, O. Avci, O. Abdeljaber, T. Ince, M. Gabbouj, and D. J. Inman, Mechanical systems and
+
+signal processing 151, 107398 (2021).
+
+[2] L. Li, K. Jamieson, G. DeSalvo, A. Rostamizadeh, and A. Talwalkar, The Journal of Machine Learning
+
+Research 18, 6765 (2017).
+
+[3] F. Chollet et al., “Keras,” (2015).
+
+[4] M. Abadi, A. Agarwal, P. Barham, E. Brevdo, Z. Chen, C. Citro, G. S. Corrado, A. Davis, J. Dean,
+
+M. Devin, S. Ghemawat, I. Goodfellow, A. Harp, G. Irving, M. Isard, Y. Jia, R. Jozefowicz, L. Kaiser,
+
+M. Kudlur, J. Levenberg, D. Mané, R. Monga, S. Moore, D. Murray, C. Olah, M. Schuster, J. Shlens,
+
+B. Steiner, I. Sutskever, K. Talwar, P. Tucker, V. Vanhoucke, V. Vasudevan, F. Viégas, O. Vinyals,
+
+P. Warden, M. Wattenberg, M. Wicke, Y. Yu, and X. Zheng, “TensorFlow: Large-scale machine learn-
+
+ing on heterogeneous systems,” (2015), software available from tensorflow.org.
+
+6
+
+

@@ -1,0 +1,944 @@
+MLATTICEABC: GENERIC LATTICE CONSTANT PREDICTION
+OF CRYSTAL MATERIALS USING MACHINE LEARNING
+
+A PREPRINT
+
+Yuxin Li, Wenhui Yang, Rongzhi Dong
+School of Mechanical Engineering
+Guizhou University
+Guiyang China 550025
+
+Jianjun Hu*
+Department of Computer Science and Engineering
+University of South Carolina
+Columbia, SC 29201
+jianjunh@csc.sc.edu
+
+November 2, 2020
+
+ABSTRACT
+
+Lattice constants such as unit cell edge lengths and plane angles are important parameters of the
+periodic structures of crystal materials. Predicting crystal lattice constants has wide applications
+in crystal structure prediction and materials property prediction. Previous work has used machine
+learning models such as neural networks and support vector machines combined with composition
+features for lattice constant prediction and has achieved a maximum performance for cubic structures
+with an average R2 of 0.82. Other models tailored for special materials family of a fixed form
+such as ABX3 perovskites can achieve much higher performance due to the homogeneity of the
+structures. However, these models trained with small datasets are usually not applicable for generic
+lattice parameter prediction of materials with diverse composition. Herein, we report MLatticeABC,
+a random forest machine learning model with a new descriptor set for lattice unit cell edge length
+(a, b, c) prediction which achieves a R2 score of 0.979 for lattice parameter a of cubic crystals and
+significant performance improvement for other crystal systems as well. Source code and trained
+models can be freely accessed at https://github.com/usccolumbia/MLatticeABC
+
+Keywords Lattice constants · lattice lengths · crystal structure prediction · Deep learning
+
+1
+Introduction
+
+The periodic structures of crystal materials can be summarized by its space group and the parallelepiped unit cell as
+shown in Figure 1. A unit cell is defined by six lattice parameters/constants including the lengths of three cell edges
+(a, b, c) and the angles between them (α, β, γ). The shape of the unit cell of a crystal material determines its crystal
+system out of seven possibilities: triclinic, monoclinic, orthorhombic, tetragonal, trigonal, hexagonal, and cubic. Lattice
+constants and their changes such as lattice distortion upon different pressures and temperatures are related to many
+interesting physical and chemical properties of the materials[1, 2, 3]. Lattice mismatch between the films and the
+growth substrates is also known to cause major issues in fabricating large and high quality of heteroepitaxial films of
+semiconductors like GaAs, GaN and InP [4]. Finding a new material with desired matched lattice constant is then a big
+challenge for both experimental approach based on X-ray electron or neutron diffraction techniques and first-principles
+calculations for large-scale screening.
+
+Computational prediction of lattice constants of crystal materials has wide applications in both materials property pre-
+diction and discovery[5], crystal structure prediction[6, 7], and large screening of materials for materials fabrication[8].
+During the past 15 years, a series of prediction approaches have been proposed for lattice constant prediction, which
+can be categorized by their input information used, the descriptors or features, the machine learning model, and the
+chemical system or materials family they are trained for. According to the input information of the prediction models,
+
+arXiv:2010.16099v1  [cond-mat.mtrl-sci]  30 Oct 2020
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+(a) Unit cell and lattice constants: a, b, c and α, β, γ.
+(b) Cubic unit cell where a = b = c and
+α = β = γ = 90o
+
+Figure 1: Unit cell descriptors and lattice constants.
+
+the approaches can be divided into composition (such as atomic properties of their constituent elements) based lattice
+parameter prediction models [4] and structure based prediction models[9]. While the majority of methods are based
+on composition information, the structure based approaches can also bring interesting insights [8]. In [9], a deep
+learning method is proposed to predict lattice parameters in cubic inorganic perovskites based on Hirshfeld surface
+representations of crystal structures. They showed that two-dimensional Hirshfeld surface fingerprints contain rich
+information encoding the relationships between chemical bonding and bond geometry characteristics of perovskites.
+
+Lattice prediction methods can also be classified by their machine learning models used. A variety of machine learning
+models have been applied for lattice constant prediction including conventional machine learning methods in the early
+stage such as linear regression [10, 4], support vector machines [11, 12], neural networks [10, 13], gene expression
+programming[8], random forests(RF)[14], and Gaussian process regression (GPR)[15]. However, the performance
+difference among different machine learning algorithms have not been thoroughly evaluated.
+
+A major difference among different lattice constant prediction studies is the chemical systems or materials families
+they focus on. The majority of the studies are focused on a special category of materials with fixed mole ratios,
+including the cubic perovskites ABX3[4, 16, 11, 17, 18, 19], double perovskites[20], A2XY6 [8],half-Heusler ternary
+compounds(XYZ)[21], and binary body centered cubic crystals [12]. Most of such studies use an extremely small
+dataset (<200 samples) coupled with selected elemental properties to achieve high accuracy (R2>0.95) as evaluated
+by the random hold-out or cross-validation methods. However, due to the high similarity (or redundancy) among the
+samples, these two evaluation methods tend to over-estimate the prediction performance [22]. Another reason for the
+reported high accuracy is because the space group and the structure topologies of the samples in their dataset are all
+identical and the variation among the lattice structures is only due to variations of some element properties.
+
+On the other hand, few studies have been reported to predict lattice constants of generic crystal materials with varying
+mole ratios or different number of elements. In 2017, Takahashi et al. [12] calculated the lattice constants of 1541
+binary body centered cubic crystals using density functional theory and trained a prediction model using Support vector
+regression (SVR) and feature engineering based on atomic number, atomic radius, electronegativity, electron affinity,
+atomic orbital, atomic density, and number of valence electrons. They reported a R2 accuracy of 83.6%. In 2020, Liang
+et al. [5] proposed a neural network called Cryspnet based on extended Magpie elemental descriptors [23] for lattice
+constants prediction for materials with formulas of generic forms. They built a neural network model for each Bravais
+lattice type. For Cubic (P,I,F) materials, their models achieve R2 scores of 0.85, 0.80, and 0.83. For other crystal
+systems, the R2 regression performance range from 0.11 to 0.77, with increasing scores for Bravais lattice types with
+higher symmetry. These scores are much lower than the other reported performance in the perovskite studies [8, 15],
+indicating the much greater challenge in solving the generic lattice constant prediction problem.
+
+While choice of machine learning algorithms affect the prediction performance, it is found that the descriptors play a
+major role in lattice parameter prediction. Fundamentally, any factor that contributes to the change of lattice constants
+can be added to the descriptor set of the prediction model. A large number of descriptors have been used for lattice
+constant prediction even though some of them may be specific to the form of the chemical compositions. For perovskite
+lattice constant prediction, the following descriptors have been used: valence electron[24, 10], ionic radii(which reflects
+
+2
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+bond lengths)[24, 8], tolerance factor(t =
+rA+rX
+√
+
+2.(rB+rX)) calculated from ionic radii of the A-site and B-site cations and
+rX, the ionic radius of the anion)[4], electronegativity[25, 26, 20], oxidation state[20], ionic charge[27]. In term of ionic
+radii, there are several ways to combine the values of the component elements such as the sum, differences, or ratios. In
+the structure based lattice constant prediction[9], both graph representations and 2D fingerprints have been used by
+measuring (di, de) at each point on the surface and then binning them into a 2D histogram. In lattice constant prediction
+of binary body centered cubic crystals, Keisuke Takahashi et al. [12] recommended seven descriptors for predicting
+lattice constant a including atomic number of element A and B, density, atom orbital of elements A and B, difference in
+electronegativity between A and B, atomic orbital B+difference in electronegativity between A and B. When trained
+with 1541 samples, their Support vector regression model achieved mean R2 score of 83.6% via cross-validation and
+maximum error of 4% when compared to experimentally determined lattice constants. However it is not obvious how to
+extend their two-element oriented descriptors to materials with three or more elements.
+
+In this work, we focus on the lattice edge length (a, b, c) prediction problem for generic crystal materials. Compared to
+previous work, our datasets are much larger (10-100 times), enabling us to achieve high performance for generic lattice
+parameter prediction. Our model have achieve exceptionally high accuracy for cubic systems with R2 reaching 0.979,
+of which the materials have a single edge length a as their lattice parameter. Cubic crystals consist of 18,325 or 14.63%
+of all the 125,278 crystals deposited in the Materials project database as of September 2020. Using a dataset with 18,325
+samples of cubic crystals in Materials Project[28], we develop a random forest model using a set of novel descriptors
+for generic crystal materials lattice edge length prediction of which the number of elements and the mole ratios are not
+stereotyped. Our experiments show that our MLatticeABC algorithm achieves the much better performance compared
+with previous methods with an R2 reaching as high as to 98% for cubic materials.
+
+Our contributions can be summarized as follows:
+
+• We propose a new descriptor set for generic lattice constant a,b,c prediction of crystal materials.
+
+• We conduct extensive experiments with different combinations of descriptors and transfer learning strategies
+and evaluate and compare the performances of different machine learning algorithms.
+
+• Our experiments show that our MLatticeABC algorithm based on Random forest achieves state-of-the-art
+prediction performance in generic lattice edge length prediction.
+
+2
+Materials and Methods
+
+2.1
+Descriptors
+
+In this work, we focus on developing lattice constant prediction models from materials composition only with the
+goal for downstream crystal structure prediction[6]. Such composition based models are also needed for large-scale
+screening of hypothetical materials composition datasets generated by generative machine learning models[29].
+
+In the baseline model for generic lattice constant prediction[5], Magpie descriptors plus a few new descriptors have
+been used. The Magpie predictor set [23] is based on calculating the mean, average deviation, range, mode, minimum,
+and maximum of a set of elemental properties (weighted by the fraction of each element in the composition). The
+element properties included in the Magpie descriptor calculation include Atomic Number,Mendeleev Number, Atomic
+Weight, Melting Temperature, Periodic Table Row & Column, covalent radius, electronegativity, the number of Valence
+e- in each Orbital (s, p, d, f, total), the number of unfilled e-in each orbital (s, p, d, f, total), ground state band gap
+energy, ground state magnetic moment. Additionally, they have added the following descriptors including Stoichiometry
+p-norm (p=0,2,3,5,7), Elemental Fraction, Fraction of Electrons in each Orbital, Band Center, Ion Property (possible to
+form ionic compound, ionic charge).
+
+Compared to the previous studies of lattice constant predictions for perovskites [11], one major difference of the generic
+lattice parameter prediction problem is the varying number of elements and the different mole ratios in the compositions
+of materials. For example, the following formulas are all included in our dataset which have different number of
+elements and stoichiometries: Sn4S4, Pr20S32, Ge4Sb4,Sm64Cd16Ni16,Mg4Co16O32. While descriptors based on ionic
+radii, electronegativity, ionic charges and so on have been defined for lattice constant prediction of perovskites, they
+need to be extended or adjusted to be applicable for formulas with varying number of elements and different mole
+ratios.
+
+In this work, we start with the Magpie descriptors and the baseline descriptors in CryspNet[5], and propose MLattice-
+ABC, a random forest lattice parameter (a/b/c) prediction model with a new set of descriptors. The feature set of our
+
+3
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+model include the enhanced Magpie features as described in [5] (which includes the Magpie descriptors plus stoichiome-
+try, valence orbitals, ion properties, band center, number of elements, and element fractions) and an additional descriptor
+set that characterizes the distribution of atom numbers of all elements in the formula. This element_atom_no_stat
+descriptor set includes the statistics of the number of atoms of each element in the formula, from which we calculate
+the minimum, maximum, mean, and variance. It also includes the number of total atoms in the unit cell, which is a
+key feature that we found to be important for lattice edge length prediction. We also compare the performance of our
+model with the Roost model[30] in which a whole graph based graph neural network is used to extract descriptors for
+composition based property prediction. This model has achieved outstanding results in composition based formation
+energy prediction [31].
+
+2.2
+Machine learning models: Random forest(RF), deep neural networks(DNN) and Gaussian Process
+Regressors(GPR)
+
+In this study, we combine different descriptors with deep neural networks, Random Forest, and Gaussian process
+regressor to identify the best model for lattice constant prediction.
+
+We use the Random Forest [32] to create lattice prediction models. RF is a supervised ensemble learning algorithm that
+constructs a multitude of many decision trees at training time and outputs the average of the regression values of the
+individual trees. RF algorithms have demonstrated strong prediction performance when combined with composition
+features in our previous studies [13]. In our RF regression models, we set the number of trees to be 50,criterion to ’mse’.
+This algorithm was implemented using the Scikit-Learn library in Python 3.6.
+
+The deep neural network as shown in Figure2 is composed of 5 fully connected layers with 249, 256, 128, 128, 64, and
+1 nodes from the input layer to the output layer. The action functions for those layers are relu. After each layer except
+the last layer, there is a dropout layer with 0.2 as the drop rates. The learning rate is set as 0.002. The batch size is 100.
+Standard Gradient Descent (SGD) is used as the optimizer. The network parameters are optimized manually to achieve
+the best performance with reasonable amount of trial-and-error fine-tuning.
+
+Figure 2: Architecture of the deep neural network.
+
+As comparison, we also include Gaussian process regressor (GPR) models in our evaluation, which is a nonparametric,
+Bayesian algorithm for regression with several unique benefits: working well on small datasets and having the ability
+to provide uncertainty estimation on the predictions. We use the Scikit-learn implementation of the GPR with the
+WhiteKernel and RBF kernel. The noise level of the WhiteKernel is 1, the length scale of the RBF is 1.
+
+2.3
+Evaluation criteria
+
+We evaluate model performance by splitting a whole dataset into 90% as training and 10% as testing and then train the
+model and make predictions. This process is repeated ten times to get the average performance scores. As a standard
+
+4
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+regression problem, the following three performance criteria have been used to compare the performance of different
+models, including the root mean square error (RMSE), mean absolute error (MAE), determination of coefficient (R2).
+
+RMSE =
+
+�
+�
+�
+� 1
+
+n
+
+n
+�
+
+i=1
+
+�
+aexp
+i
+− apred
+i
+�2
+(1)
+
+MAE = 1
+
+n
+
+n
+�
+
+i=1
+
+���aexp
+i
+− apred
+i
+���
+(2)
+
+R2 =
+
+
+
+
+
+
+
+
+
+�(aexp
+i
+apred
+i
+) −
+�� aexp
+i
+Σapred
+i
+�
+/n
+
+��� aexp2
+i
+−
+
+�� aexp2
+i
+�
+
+n
+
+� �� apred2
+i
+−
+
+�
+Σapred2
+i
+�
+
+n
+
+�
+
+
+
+
+
+
+
+
+
+2
+
+(3)
+
+where aexp
+i
+denotes experimental lattice constant a/b/c of sample i; apred
+i
+is the predicted lattice constant value of
+a/b/c for sample i.
+
+3
+Experiments
+
+3.1
+Datasets
+
+We use the Materials Project API to download the crystal lattice information of known inorganic materials deposited
+in the Materials Project database http://www.materialsproject.org. We observe that direct use of MPDataRe-
+trievav.get_dataframe function with structure.lattice.a/b/c/alpha/beta/gamma leads to inconsistent dataset because these
+lattices are the primitive lattice parameters. However, for cubic crystals, about 13,000 of the crystals’ primitives are
+smaller units with α/β/γ equal to 60 degree instead of 90 degree while the remaining 5000 or so cubic crystals have
+a cubic unit cell representation with 90 degrees for α/β/γ. To address this inconsistency issue, we instead download
+all the structural cif files of the crystals in the conventional_standard format, and read the lattice parameters from
+them. In total, we get 125278 materials on September 10,2020 from the Materials Project database, which we call
+it as MP dataset. These materials can be divided into seven groups by their crystal system types with corresponding
+sample numbers: Triclinic (15297), Monocinic (29872), Orthorhombic(26801), Tetragonal(14654), Trigonal(11086),
+Hexagonal(9243), and Cubic(18325). For these materials, the distribution of the lattice cell lengths a, b, c are shown in
+Figure3. It can be found that most of the values of a and b are distributed between 2.5 Å and 17.5 Å and peaks are
+around 6 Å. The values of lattice parameter c are mainly distributed between 2 and 25 Å with more flat distribution.
+
+(a) Histogram of a
+(b) Histogram of b
+(c) Histogram of c
+
+Figure 3: Histogram of the lattice constant(edge length a/b/c) distribution.
+
+As one of the major focus of this study, we also show the lattice parameter a of cubic materials in Figure 4. The
+distribution is similar to the overall distribution of a in Figure 3 with two peaks around 4 and 6 Å. In addition, we show
+
+5
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+the distribution of samples in terms of element number in the crystals in our overall dataset in Table 1. It is found that
+most of the samples are ternary and quaternary, and binary materials.
+
+Figure 4: Histogram of the lattice constant(edge length a) distribution for cubic materials
+
+Table 1: The distribution of samples in terms of element number in the crystal.
+
+The number of elements in each crystal
+1
+2
+3
+4
+5
+6
+>=7
+
+The number of crystal
+713
+19123
+58592
+34866
+10200
+1601
+183
+
+Percentage
+0.57%
+15.26%
+46.77%
+27.83%
+8.14%
+1.28%
+0.15%
+
+3.2
+Results
+
+3.2.1
+Prediction performance of MLatticeABC for cubic materials
+
+(a) Parity plot of predicted lattice parameter a of cubic
+materials
+(b) Correlation
+
+Figure 5: High prediction performance for lattice parameter a prediction for cubic materials and the key parameter,
+the total number of atoms. (a) True and predicted lattice constant parameter a by MLatticeABC where the descriptors
+include the enhanced Magpie feature + total atom number. (b) Correlation of total atom number with lattice a of cubic
+materials.
+
+6
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+We run 10 times of random hold-out experiments and report the average and standard deviation of performance measures
+of these runs in terms of R2, RMSE, and MAE. For our random forest model with the enhanced mapgie+total atom
+number feature, the average R2, RMSE and MAE for unit cell length a prediction for the cubic crystals is 0.979,0.138
+and 0.416, which are much better than the baseline results reported in [5]. In their report(Table 4), the length a prediction
+performances are reported for three cubic Bravais lattices with R2 of 0.80, 0.83, and 0.85 respectively. Figure 5(a)
+shows the parity plot of one of our hold-out experiments for lattice a prediction of cubic materials, which shows it fits
+well with the predictions.
+
+To understand why the number of atoms in a material is so critical to the prediction of lattice edge length a for cubic
+systems, we plot the parity plot of a against the total atom number in Figure5. It shows that there is a strong correlation
+of the number of atoms in the unit cell and the lattice edge length a for cubic crystals. Due to the varying volume of
+atoms of different elements, for crystals with a specific lattice parameter a, the number of atoms also varies.
+
+3.2.2
+Prediction performance of MLatticeABC for all crystal materials
+
+We conduct extensive experiments to evaluate our model performance in predicting the a, b, c over all the crystal
+systems in the downloaded MP dataset using the same 10-repeats random cross-validation evaluation approach. The
+results are shown in Table2. It is found our RF model can achieve up to R2 of 0.979 in lattice parameter a prediction for
+cubic materials using only composition as input. The performances over other crystal systems except Monoclinic are
+also good ranging from 0.77 to 0.892. In general, the higher the symmetry, the better the prediction performance. It is
+also interesting to find that the prediction performance over lattice b and c are all lower than those on lattice a with all
+R2 scores are between 0.489 and 0.77.
+
+Table 2: Prediction performance of MLatticeABC in terms of R2 score for a, b, c over different crystal systems
+
+Crystal system
+train set size
+test set size
+a
+b
+c
+
+Cubic
+16492
+1833
+0.979±0.016
+
+Hexagonal
+8318
+925
+0.892±0.019
+0.760±0.061
+
+Trigonal
+9977
+1109
+0.843±0.025
+0.705±0.065
+
+Tetragonal
+13188
+1466
+0.846±0.024
+0.685±0.044
+
+Orthorhombic
+24120
+2681
+0.770±0.019
+0.579±0.074
+0.638±0.028
+
+Monoclinic
+26884
+2988
+0.520±0.021
+0.507±0.016
+0.489±0.029
+
+Triclinic
+13767
+1530
+0.800±0.022
+0.771±0.014
+0.650±0.056
+
+We also compare our model performance over all lattice systems with those of the baseline algorithm, cryspnet[5],
+which is a neural network based model for generic lattice parameter, crystal system, and space group prediction using
+the composition as the only input. In this approach, Matminer library were used to generate descriptors, which are
+then fed to the neural network to predict the Bravais lattice, space group and lattice parameters. The performance
+comparison is shown in Figure6. We find that for all the crystal systems, the performance of MLatticeABC is better,
+with significant improvements for Triclinic crystals. The performance gap may be due to the fact that cryspnet does not
+use global composition feature such as the total atom number and the statistics of atoms of different elements.
+
+7
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+Figure 6: Performance comparison of MLatticeABC and cryspnet for lattice constant (a, b, c) prediction in terms of R2.
+For cryspnet, the shown scores are the average for crystal systems with multiple Bravais lattice types. Since there is no
+simple way to map trigonal crystals to Cryspnet lattice type models, their performances on this crystal system is not
+reported.
+
+3.2.3
+Prediction performance of MLatticeABC with data augmentation
+
+It is also known that crystals of different crystal/lattice systems have some special patterns in terms of their lattice
+parameters. Table3 shows the relationship of lattice parameters of the crystals. In previous work on generic lattice
+parameter prediction [5], a separate model is trained for each Bravais lattice type. However, we wonder if the training
+samples from other lattice systems can help to improve the performance. For example, can we build more accurate
+model for lattice parameter a prediction of cubic materials by including other rectangular cuboid crystals as training
+samples since they are strongly related? To verify this hypothesis, we did the following experiments by first splitting
+the cubic samples into 90% training and 10% testing sets. And then we use the 90% training plus the samples of
+tetragonal and orthorhombic to train the model and evaluate their performance on the original 10% test samples. We
+repeat this 10 times to get the average scores. The descriptor set and the machine learning model are the same as in
+MLatticeABC. The results are shown in Table 4. The crystal system in the parenthesis is the crystal type of the test set.
+We find that the performance of the ML model with extended training samples always decreases for lattice constant
+a prediction for both cubic (from line 2 to line 7) and orthorhombic crystals (from line 8 to line 11). This means the
+data augmentation strategy which train models with samples from other lattice systems have an adverse effect for the
+prediction performance and it is wise to train separate lattice parameter prediction models for different crystal systems
+using samples of that specific crystal systems only.
+
+Table 3: lattice parameter relationships for materials of different lattice systems.
+
+Crystal system
+Edge lengths
+Axial angles
+Space groups
+
+Cubic
+a = b = c
+α = β = γ = 90
+195-230
+
+Hexagonal
+a = b
+α = β = 90, γ = 120
+168-194
+
+Trigonal
+a = b ̸= c
+α = β = 90, γ = 120
+143-167
+
+Tetragonal
+a = b ̸= c
+α = β = γ = 90
+75-142
+
+Orthorhombic
+a ̸= b ̸= c
+α = β = γ = 90
+16-74
+
+Monoclinic
+a ̸= c
+α = γ = 90, β ̸= 90
+3-15
+
+Triclinic
+all other cases
+all other cases
+1-2
+
+8
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+Table 4: Prediction performance comparison for lattice parameter a of cubic materials with data augmentation
+
+Descriptors
+Train sample no
+Test sample no
+a
+
+(Cubic)
+16492
+1833
+0.979±0.016
+
+(Cubic)+Tetragonal
+31146
+1833
+0.971±0.010
+
+(Cubic)+Orthorhombic
+43293
+1833
+0.916±0.023
+
+(Cubic)+Tetragonal+Orthorhombic
+57947
+1833
+0.934±0.009
+
+(Cubic)+Hexagonal+Trigonal
+36821
+1833
+0.960±0.019
+
+(Cubic)+Tetragonal+Orthorhombic+Hexagonal+Trigona
+78276
+1833
+0.933±0.009
+
+(Orthorhombic)
+24120
+2681
+0.770±0.019
+
+(Orthorhombic)+Cubic
+42445
+2681
+0.731±0.032
+
+(Orthorhombic)+Cubic+Tetragonal
+57099
+2681
+0.718±0.024
+
+(Orthorhombic)+Cubic+Tetragonal+Trigona
+68185
+2681
+0.701±0.027
+
+3.2.4
+Performance comparison of different algorithms
+
+Many different machine learning algorithms and descriptors have been used for lattice parameter prediction. Here we
+evaluate how DNN, Random Forest, and Gaussian process regressor perform with different feature sets. We use the
+cubic crystal dataset and repeat 10 times of hold-out experiments. The performance comparison is shown in Figure
+7 and Table 5, which shows the baseline algorithm performance as reported in [5]. First from Figure7, we find that
+the performances of RF model in terms of both R2 and RMSE are always better than those of NN, which are better
+than the performance of GPR. Second, it is found that the enhanced Magpie features can clearly boost the prediction
+performance. Moreover, the figure shows that the performance improvements due to the inclusion of atom number is
+significant. The parity plots in Figure8 further shows that the RF with our descriptor set has the best performance.
+
+(a) Performance comparison in terms of R2
+(b) Performance comparison in terms of RMSE
+
+Figure 7: Performance comparison of different algorithms for lattice constant a prediction
+
+Table 5: Prediction performance comparison with baselines.
+
+Algorithm
+R2
+MAE
+RMSE
+
+GPR with Magpie
+0.613±0.029
+1.140±0.048
+1.870±0.132
+
+DNN with Magpie
+0.671±0.044
+0.948±0.054
+1.719±0.157
+
+RF with Magpie
+0.718±0.028
+0.800±0.033
+1.588±0.108
+
+GPR with Enhanced Magpie
+0.650±0.017
+1.084±0.033
+1.773±0.093
+
+DNN with Enhanced Magpie
+0.741±0.024
+0.769±0.029
+1.534±0.104
+
+RF with Enhanced magpie
+0.801±0.027
+0.517±0.028
+1.334±0.122
+
+GPR with Element_atom_no_stat + Enhanced Eagpie
+0.921±0.012
+0.500±0.009
+0.836±0.058
+
+DNN with Element_atom_no_stat + Enhanced Eagpie
+0.954±0.007
+0.336±0.038
+0.642±0.041
+
+RF with Element_atom_no_stat + Enhanced Eagpie
+0.979±0.016
+0.138±0.010
+0.416±0.142
+
+9
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+(a) DNN+ complete descriptor set
+(b) RF+ complete descriptor set
+(c) GPR+ complete descriptor set
+
+Figure 8: Parity plots of different algorithms for lattice constant (a) prediction for cubic materials
+
+4
+Discussion
+
+Our extensive experiments show that the prediction performance is strongly affected by the available dataset including
+its size and sample distribution and also the descriptors used. Our data augmentation results show that including the
+samples from other lattice systems can deteriorate the prediction performance for the crystal system specific ML models,
+which is contrary to the common practice of data augmentation or transfer learning. Here it is more appropriate to train
+individual models using only samples of that lattice system.
+
+To gain further understanding of how descriptor combinations affect the model performance, we compare performance
+of different feature combinations using a set of ablation experiments. We evaluate the RF models only on the cubic
+system for simplicity. From Table 6, we first find that the element_atom_no_stat descriptor set is better than both
+Magpie and enhanced Magpie as proposed in [5] with a R2 score of 0.890 compared to 0.801 and 0.718 of Magpie and
+Enhanced Magpie respectively. When combined with Enhanced Magpie, the prediction performance of RF is greatly
+improved by including the element atom number statistics in the unit cell.
+
+Table 6: RF Prediction performance comparison with different descriptor combinations.
+
+Feature sets
+R2
+MAE
+RMSE
+
+Magpie
+0.718±0.028
+0.800±0.033
+1.588±0.108
+
+Enhanced Magpie
+0.801±0.027
+0.517±0.028
+1.334±0.122
+
+Element_atom_no_stat
+0.890±0.018
+0.670±0.020
+0.972±0.069
+
+Element_atom_no_stat + Magpie
+0.972±0.015
+0.142±0.009
+0.500±0.135
+
+Element_atom_no_stat + Enhanced Magpie
+0.979±0.016
+0.138±0.010
+0.416±0.142
+
+We also compare our model performance with Roost[30], a powerful graph neural network based prediction model
+using only composition as the input. In this approach, a composition formula is represented as a complete graph, which
+are then fed to a message passing graph neural network for feature extraction and regression. This approach has been
+shown to have strong extrapolation performance compared to other composition features [31] in formation energy
+prediction. However, we find that since roost does not use global composition feature such as the total atom number,
+its performance is not good compared to our MLatticeABC. It achieves a R2 score of only 0.78 for lattice length a
+prediction of cubic materials.
+
+5
+Conclusion
+
+Computational prediction of crystal unit cell lattice constants has wide applications in property investigation and
+crystal structure prediction. While previous studies have focused on models for specialized chemical systems with
+the same structure (a single space group) and identical anonymous formula and trained with small datasets, this study
+aims on developing a generic lattice constant predictor for crystal materials with more than 125,278 samples and
+18,325 samples for the cubic system. We propose MLatticeABC, a random forest machine learning model with a
+
+10
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+new feature set combined with the standard composition features such as Magpie descriptors for effective lattice
+constant (edge length) prediction. Extensive standard and ablation experiments show that our random forest models
+with the new descriptors can achieve a high prediction performance with R2 as high as 0.98 for the cubic system
+covering more than 18,000 samples. These machine learning models along with our easy-to-use open source code at
+https://github.com/usccolumbia/MLatticeABC can contribute to downstream tasks such as materials property
+prediction, materials screening, and crystal structure prediction.
+
+6
+Contribution
+
+Conceptualization, J.H. and Y.L.; methodology, Y.L. and J.H.; software, Y.L. and J.H.; validation, Y.L. and J.H.;
+investigation, Y.L.,J.H., R.D. and W.Y.; resources, J.H.; writing–original draft preparation, J.H. and Y.L.; writing–review
+and editing, J.H and Y.L.; visualization, Y.L.,J.H, R.D; supervision, J.H.; funding acquisition, J.H.
+
+7
+Acknowledgement
+
+Research reported in this work was supported in part by NSF under grant and 1940099 and 1905775 and by NSF SC
+EPSCoR Program under award number (NSF Award OIA-1655740 and GEAR-CRP 19-GC02). The views, perspective,
+and content do not necessarily represent the official views of the SC EPSCoR Program nor those of the NSF.
+
+8
+Data Availability
+
+The data that support the findings of this study are openly available in Materials Project database [28] at http:
+//www.materialsproject.org.
+
+References
+
+[1] Joseph W McCaffrey, James R Anderson, and Dimitrios A Papaconstantopoulos. Electronic structure of calcium
+as a function of the lattice constant. Physical Review B, 7(2):674, 1973.
+
+[2] Monica Pozzo, Dario Alfe, Paolo Lacovig, Philip Hofmann, Silvano Lizzit, and Alessandro Baraldi. Thermal
+expansion of supported and freestanding graphene: lattice constant versus interatomic distance. Physical review
+letters, 106(13):135501, 2011.
+
+[3] Xiaotian Wang, Zhenxiang Cheng, Rabah Khenata, Yang Wu, Liying Wang, and Guodong Liu. Lattice constant
+changes leading to significant changes of the spin-gapless features and physical nature in a inverse heusler
+compound zr2mnga. Journal of Magnetism and Magnetic Materials, 444:313–318, 2017.
+
+[4] LQ Jiang, JK Guo, HB Liu, M Zhu, X Zhou, P Wu, and CH Li. Prediction of lattice constant in cubic perovskites.
+Journal of Physics and Chemistry of Solids, 67(7):1531–1536, 2006.
+
+[5] Haotong Liang, Valentin Stanev, A Gilad Kusne, and Ichiro Takeuchi. Cryspnet: Crystal structure predictions via
+neural network. arXiv preprint arXiv:2003.14328, 2020.
+
+[6] Jianjun Hu, Wenhui Yang, Rongzhi Dong, Yuxin Li, Xiang Li, and Shaobo Li. Contact map based crystal structure
+prediction using global optimization. arXiv preprint arXiv:2008.07016, 2020.
+
+[7] Jianjun Hu, Wenhui Yang, and Edirisuriya M Dilanga Siriwardane. Distance matrix based crystal structure
+prediction using evolutionary algorithms. arXiv preprint arXiv:2009.13955, 2020.
+
+[8] Menad Nait Amar, Mohammed Abdelfetah Ghriga, Mohamed El Amine Ben Seghier, and Hocine Ouaer. Prediction
+of lattice constant of a2xy6 cubic crystals using gene expression programming. The Journal of Physical Chemistry
+B, 124(28):6037–6045, 2020.
+
+11
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+[9] Logan Williams, Arpan Mukherjee, and Krishna Rajan. Deep learning based prediction of perovskite lattice
+parameters from hirshfeld surface fingerprints. The Journal of Physical Chemistry Letters, 2020.
+
+[10] Li Chonghe, Thing Yihao, Zeng Yingzhi, Wang Chunmei, and Wu Ping. Prediction of lattice constant in
+perovskites of gdfeo3 structure. Journal of Physics and Chemistry of Solids, 64(11):2147–2156, 2003.
+
+[11] Syed Gibran Javed, Asifullah Khan, Abdul Majid, Anwar M Mirza, and J Bashir. Lattice constant prediction of
+orthorhombic abo3 perovskites using support vector machines. Computational materials science, 39(3):627–634,
+2007.
+
+[12] Keisuke Takahashi, Lauren Takahashi, Jakub D Baran, and Yuzuru Tanaka. Descriptors for predicting the lattice
+constant of body centered cubic crystal. The Journal of chemical physics, 146(20):204104, 2017.
+
+[13] Zhuo Cao, Yabo Dan, Zheng Xiong, Chengcheng Niu, Xiang Li, Songrong Qian, and Jianjun Hu. Convolutional
+neural networks for crystal material property prediction using hybrid orbital-field matrix and magpie descriptors.
+Crystals, 9(4):191, 2019.
+
+[14] Abdul Majid, Asifullah Khan, and Tae-Sun Choi. Predicting lattice constant of complex cubic perovskites using
+computational intelligence. Computational Materials Science, 50(6):1879–1888, 2011.
+
+[15] Yun Zhang and Xiaojie Xu. Machine learning lattice constants for cubic perovskite a2xy6 compounds. Journal of
+Solid State Chemistry, page 121558, 2020.
+
+[16] Roberto L Moreira and Anderson Dias. Comment on “prediction of lattice constant in cubic perovskites”. Journal
+of Physics and Chemistry of Solids, 68(8):1617–1622, 2007.
+
+[17] Abdul Majid, Asifullah Khan, Gibran Javed, and Anwar M Mirza. Lattice constant prediction of cubic and
+monoclinic perovskites using neural networks and support vector regression. Computational materials science,
+50(2):363–372, 2010.
+
+[18] R Ubic, K Tolman, K Talley, B Joshi, J Schmidt, E Faulkner, J Owens, M Papac, A Garland, C Rumrill, et al.
+Lattice-constant prediction and effect of vacancies in aliovalently doped perovskites. Journal of alloys and
+compounds, 644:982–995, 2015.
+
+[19] Rick Ubic and G Subodh. The prediction of lattice constants in orthorhombic perovskites. Journal of alloys and
+compounds, 488(1):374–379, 2009.
+
+[20] Abdul Majid, Muhammad Farooq Ahmad, and Tae-Sun Choi. Lattice constant prediction of a 2 bb’o 6 type double
+perovskites. In International Conference on Computational Science and Its Applications, pages 82–92. Springer,
+2009.
+
+[21] Rashid Ahmad, Aqsa Gul, and Nasir Mehmood. Artificial neural networks and vector regression models for
+prediction of lattice constants of half-heusler compounds. Materials Research Express, 6(4):046517, 2019.
+
+[22] Zheng Xiong, Yuxin Cui, Zhonghao Liu, Yong Zhao, Ming Hu, and Jianjun Hu. Evaluating explorative prediction
+power of machine learning algorithms for materials discovery using k-fold forward cross-validation. Computational
+Materials Science, 171:109203, 2020.
+
+[23] Logan Ward, Ankit Agrawal, Alok Choudhary, and Christopher Wolverton. A general-purpose machine learning
+framework for predicting properties of inorganic materials. npj Computational Materials, 2(1):1–7, 2016.
+
+[24] AS Verma and VK Jindal. Lattice constant of cubic perovskites. Journal of alloys and compounds, 485(1-2):514–
+518, 2009.
+
+[25] Mikhail G Brik, Andrzej Suchocki, and Agata Kaminska. Lattice parameters and stability of the spinel compounds
+in relation to the ionic radii and electronegativities of constituting chemical elements. Inorganic chemistry,
+53(10):5088–5099, 2014.
+
+[26] MG Brik and IV Kityk. Modeling of lattice constant and their relations with ionic radii and electronegativity of
+constituting ions of a2xy6 cubic crystals (a= k, cs, rb, tl; x= tetravalent cation, y= f, cl, br, i). Journal of Physics
+and Chemistry of Solids, 72(11):1256–1260, 2011.
+
+[27] A Kumar and AS Verma. Lattice constant of orthorhomic perovskite solids. Journal of alloys and compounds,
+480(2):650–657, 2009.
+
+[28] Anubhav Jain, Shyue Ping Ong, Geoffroy Hautier, Wei Chen, William Davidson Richards, Stephen Dacek, Shreyas
+Cholia, Dan Gunter, David Skinner, Gerbrand Ceder, et al. Commentary: The materials project: A materials
+genome approach to accelerating materials innovation. Apl Materials, 1(1):011002, 2013.
+
+[29] Yabo Dan, Yong Zhao, Xiang Li, Shaobo Li, Ming Hu, and Jianjun Hu. Generative adversarial networks
+(gan) based efficient sampling of chemical composition space for inverse design of inorganic materials. npj
+Computational Materials, 6(1):1–7, 2020.
+
+12
+
+
+A PREPRINT - NOVEMBER 2, 2020
+
+[30] Rhys EA Goodall and Alpha A Lee. Predicting materials properties without crystal structure: Deep representation
+learning from stoichiometry. arXiv preprint arXiv:1910.00617, 2019.
+
+[31] Christopher J Bartel, Amalie Trewartha, Qi Wang, Alex Dunn, Anubhav Jain, and Gerbrand Ceder. A critical
+examination of compound stability predictions from machine-learned formation energies. npj Comput Mater 6,
+97, 2020.
+
+[32] Andy Liaw, Matthew Wiener, et al. Classification and regression by randomforest. R news, 2(3):18–22, 2002.
+
+13
+
+

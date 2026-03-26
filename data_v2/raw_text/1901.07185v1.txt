@@ -1,0 +1,2330 @@
+Acta Crystallographica Section A
+Foundations of
+Crystallography
+
+ISSN 0108-7673
+
+c⃝ 0000 International Union of Crystallography
+Printed in Singapore – all rights reserved
+
+Algorithm for distance list extraction from pair
+distribution functions
+
+Ran Gu,a Soham Banerjee,a Qiang Dua* and Simon J. L. Billingea,b
+
+aDepartment of Applied Physics and Applied Mathematics, Fu Foundation School of Engineering &
+
+Applied Sciences, Columbia University, USA, and b Condensed Matter Physics and Materials Science
+
+Department, Brookhaven National Laboratory, Upton, NY 11973, USA. Correspondence e-mail: qd2125@columbia.edu
+
+We present an algorithm to extract the distance list from atomic pair distribution
+functions (PDFs) in a highly automated way. The algorithm is constructed via
+curve fitting based on a Debye scattering equation model. Due to the non-convex
+nature of the resulting optimization problem, a number of techniques are devel-
+oped to overcome various computational difficulties. A key ingredient is a new
+approach to obtain a reasonable initial guess based on the theoretical properties of
+the mathematical model. Tests on various nanostructured samples show the effec-
+tiveness of the initial guess and the accuracy and overall good performance of
+the extraction algorithm. This approach could be extended to any spectrum that is
+approximated as a sum of Gaussian functions.
+
+1. Introduction
+
+Determining the three-dimensional atomic positions in a nanos-
+tructure is one of the great challenges in materials science
+and engineering (Billinge & Levin, 2007). One experimentally
+accessible encoding of the local structure is the atomic pair dis-
+tribution function (PDF), which is fundamentally a list of inter-
+atomic distaces in the material (Egami & Billinge, 2012; War-
+ren, 2012). This fact has led to a mathematical description
+of the nanostructure inverse problem as the unassigned dis-
+tance geometry problem (uDGP) (Billinge et al., 2018; Duxbury
+et al., 2016; Billinge et al., 2016; Juh´as et al., 2010; Juh´as
+et al., 2006). The PDF can be obtained by taking a Fourier
+transform of the structure function, which is extracted from the
+measured total scattering of x-rays, neutrons or electrons from
+a sample. The PDF method is widely used to study nanostruc-
+tures (Egami & Billinge, 2012; Billinge & Kanatzidis, 2004;
+Billinge & Levin, 2007; Young & Goodwin, 2011; Proffen &
+Neder, 1997; Page et al., 2011; Cliffe et al., 2010)
+The experimental peak width is determined by both physi-
+cal properties and experimental resolution (Egami & Billinge,
+2012). In high symmetry structures such as bulk Ni, which crys-
+tallizes in a face-centered cubic lattice, distances of the same
+length occur frequently and the degeneracy of each distance
+can be estimated from the integrated area of each peak (Egami
+& Billinge, 2012). However, a major challenge in determining
+the list of inter-atomic distances from a measured PDF comes
+from the fact that different interatomic vectors with similar
+lengths cannot be resolved due to peak overlap. This is not a
+problem if we have a good structural model which can be fit
+to the data, which is the basis of PDF fitting programs such
+as PDFgui (Billinge, 1998; Proffen & Billinge, 1999b; Farrow
+et al., 2007), an approach that is the real-space equivalent of
+Rietveld refinement of powder diffraction data (Rietveld, 1969).
+However, it presents a significant problem for programs that
+extract peak positions and intensities in the absence of a
+
+structural model, which would be the real-space equivalent of
+LeBail (Le Bail et al., 1987) and Pawley (Pawley, 1981) refine-
+ment in the powder diffraction world.
+
+A program for extracting distance-lists from measured PDFs
+has been reported. PARSCAPE is an algorithm which can
+extract this complete set of information from the PDF by
+using the information-theoretic Akaike information criterion
+(AIC) (Granlund et al., 2015), available as a program SRMISE
+on Diffpy.org. However, the PDF baseline must be specified
+before peak extraction, and results are conditioned upon it. The
+correct estimations of PDF baselines, especially from nanopar-
+ticle PDFs, remains challenging and requires human inter-
+vention, which is a drawback preventing full automation of
+SRMISE.
+
+Developing an algorithm for peak extraction which is
+automatable and robust to details of the baseline is our main
+goal here. From the curve fitting point of view, an estimated
+distance list can be regarded as a variable to generate a sim-
+ulated PDF based on the given mathematical model, then one
+may minimize the residual of the simulated PDF with respect to
+a target PDF to obtain the optimized distance list. However the
+resulting curve fitting is generically a non-convex programming
+problem. In order to solve the problem more effectively, we
+analyze the properties of the mathematical model which allows
+us to construct, automatically, the initial guess of the variables,
+with good fitting results demonstrated in preliminary tests using
+simulated and experimental PDF data.
+
+This paper is organized as follows: In Section 2, we briefly
+introduce the PDF method and present the mathematical model
+that we use to approximate the experimental PDF. Section 3
+is a theory section containing the analysis of properties of the
+mathematical model. This leads to an approach to guess the ini-
+tial values of all variables. Section 4 describes the formulation
+of the PDF distance list optimization. In Section 5, we present
+results from simulated and experimental PDF datasets used for
+
+arXiv:1901.07185v1  [cond-mat.mtrl-sci]  22 Jan 2019
+
+
+testing the algorithm, and Section 6 contains a summary of the
+main points of the paper.
+
+2. Mathematical Model of PDF
+We consider a nanostructure with a set of atoms. Let N be the
+total number of atoms in the structure, and {r j}N
+j=1 denote the
+positions of the atoms. The ideal PDF is defined by (Farrow &
+Billinge, 2009; Egami & Billinge, 2012)
+
+g(r) = 1
+
+r
+1
+
+N⟨ f⟩2
+�
+
+j̸=l
+f ∗
+j flδ(r − r jl).
+(1)
+
+Here, for j = 1 . . . N and l = 1, . . . N, r jl is the distance
+between atoms j and l located at positions rj, and rl so that
+r jl = ||rl − rj||, where ||.|| is the Euclidean norm, f j is the scat-
+tering power of the atom at position r j, and f ⋆
+j is its complex
+conjugate.
+The ideal PDF (1) may also be obtained from measured data
+according to
+
+G(r) = 2
+
+π
+
+� ∞
+
+0
+F(Q) sin(Qr)dQ,
+(2)
+
+where F(Q) = Q[S(Q) − 1] is the normalized and corrected
+powder diffraction intensity, which is expressed in the Debye
+Scattering Equation as
+
+F(Q) =
+1
+
+N⟨ f⟩2
+�
+
+l̸=j
+f ⋆
+j fl
+sin(Qrjl)
+
+r jl
+.
+(3)
+
+Here the quantity S(Q) is called the structure function and F(Q)
+the reduced structure function (Warren, 2012) and Q is the mag-
+nitude of the scattering vector.
+Due to physical constraints in the experiment, the variable
+Q takes only values in the interval [Qmin, Qmax]. Thus, different
+from the standard Fourier transform, the PDF is obtained by the
+integral on this confined interval, (Farrow & Billinge, 2009)
+
+G(r) = 2
+
+π
+
+� Qmax
+
+Qmin
+F(Q) sin(Qr)dQ.
+(4)
+
+To compute G(r) numerically from F(Q) on the discrete Qi
+grid, we approximate G(r) by using the finite sum
+
+G(r) ≈ 2
+
+π
+
+NQ
+�
+
+i=1
+F(Qi) sin(Qir)∆Qi,
+(5)
+
+where NQ is the number of discrete values of Q, and ∆Qi is the
+difference between two adjacent values of Q.
+By ignoring the finite Qmax, G(r) and the radial distribution
+function R(r) are related by
+
+G(r) = R(r)
+
+r
+− 4πρ0γ0(r)r
+(6)
+
+where ρ0 is the average density and γ0 is the characteristic func-
+tion of the sample shape (Fournet & Guinier, 1955; Farrow &
+Billinge, 2009). The term
+
+4πρ0γ0(r)r = 2
+
+π
+
+� Qmin
+
+0
+F(Q) sin(Qr)dQ
+
+is a baseline, and we may think of G(r) as the baseline plus
+peaks. In the literature to-date the shape of the baseline is
+either determined directly from the shape of the structural
+model (Juh´as et al., 2015; Farrow et al., 2007), or approximated
+using expansions of ad hoc mathematical functions (Korsunskiy
+& Neder, 2005; Neder & Korsunskiy, 2005; Korsunskiy et al.,
+2007; Neder et al., 2007). In the case of bulk crystals, γ0(r) ≈ 1,
+is a linear baseline (Egami et al., 1998; Proffen & Billinge,
+1999a; Farrow et al., 2007). However in general, without a good
+structural model, the baseline is not known a priori.
+The experimental signal is a time and ensemble average of
+large numbers of atoms and the Dirac delta-function peaks
+given in the ideal PDF (1) broaden into nearly Gaussian
+peaks. In reciprocal space, to account for atomic motion, (3)
+is replaced by a version that includes Debye-Waller effects,
+
+F(Q) =
+1
+
+N⟨ f⟩2
+�
+
+l̸= j
+f ⋆
+j fl(e− 1
+
+2 σ2
+jlQ2)sin(Qrjl)
+
+r jl
+.
+(7)
+
+Here, σ jl is the correlated broadening factor for the atom
+pair (Proffen & Billinge, 1999a; Thorpe et al., 2002; Jeong
+et al., 2003). This mathematical model has been successfully
+used to study nanostructures by a number of authors (Zhang
+et al., 2003; Cervellino et al., 2006).
+For the case of samples made of a single atom type, the
+atomic form factors f j can be factored out resulting in new func-
+tions
+
+ˆF(Q) = F(Q)
+
+f ⋆
+j fl
+and
+ˆG(r) = 2
+
+π
+
+� Qmax
+
+Qmin
+ˆF(Q) sin(Qr)dQ.
+
+(8)
+We regard
+
+ˆF(Q) =
+1
+
+N⟨ f⟩2
+�
+
+l̸=j
+(e− 1
+
+2 σ2
+jlQ2)sin(Qrjl)
+
+r jl
+(9)
+
+as our mathematical model. If the material contains different
+atomic types, we use Equation (7) instead.
+In Equation (9), we want to merge distances of the same
+length together. Notice that distances of the same length may
+have different σ. Nevertheless, we still put them together
+because peaks at the same position are more difficult to differ-
+entiate. We then obtain the following mathematical model,
+
+ˆF(Q) =
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri).
+(10)
+
+Here, k is the number of different values of unresolved dis-
+tances. mi represents the relative multiplicity which is equal to
+multiplicity times 1/(N⟨ f⟩2) .
+During curve fitting, we first determine the value of k. Then
+we recognize all the ri, mi, σi as variables. In the next section,
+we discuss how to construct the initial guesses for these vari-
+ables.
+
+3. Mathematical Model Analysis and Initial Guess
+
+
+This section is divided into several parts. We first present some
+properties of the mathematical model used to calculate PDFs,
+and then describe a few approaches for determining an initial
+guess distance list, using different atomic structures as exam-
+ples.
+
+3.1. Properties
+In real experiments, the intensities are measured only over
+a range Qmin < Q < Qmax, which introduces aberrations to
+the data that must be handled by our automated algorithm. To
+explore this in more detail we first consider a low energy 18-
+atom Lennard-Jones decahedral cluster (Wales et al., 2001).
+Figure 1(a) shows the function ˆF(Q), calculated from Equa-
+tion (10) using the decahedral structure model, over the Q-range
+from Qmin = 0 ˚A
+−1 to Qmax = 30 ˚A
+−1, with σi set to 0.1 ˚A.
+
+0
+5
+10
+15
+20
+25
+30
+
+Q(Å
+)
+
+10
+
+0
+
+10
+
+20
+
+30
+
+(Å
+)
+
+(a)
+
+0
+2
+4
+6
+8
+10
+
+r(Å)
+
+0
+
+25
+
+50
+
+75
+
+100
+
+125
+
+(Å
+)
+
+(b)
+
+Figure 1
+(a) Simulated F(Q) for an 18-atom Lennard-Jones decahedron (shown in inset)
+using Equation (10) with fixed σi = 0.1 ˚A. (b) PDFs after Fourier transforma-
+tion of the simulated F(Q) in (a) following Equation (5) and using (Qmin, Qmax)
+values, in units ˚A−1: red (0, 30), dark blue (0.5, 30), and green (0.5, 20).
+
+The three curves in the bottom panel of Figure 1 show the
+function ˆG(r), calculated from Equation (5) where σi is kept
+fixed at 0.1 ˚A, and the Q-ranges are varied in order to illus-
+trate the effects on the transformed PDFs. There are a number
+of peaks in ˆG(r) where each peak represents one or more dis-
+tances. We take as reference a PDF calculated with a small but
+finite Qmin, and a large Qmax (Qmin = 0.5 ˚A
+−1, Qmax = 30 ˚A
+−1)
+which is shown as the dark blue curve, and compare it with the
+
+red curve (Qmin = 0 ˚A
+−1, Qmax = 30 ˚A
+−1), where we find that a
+larger Qmin makes the ˆG(r) baseline deeper, as expected (Farrow
+& Billinge, 2009; Egami & Billinge, 2012). Comparing the
+same dark blue curve with the green curve (Qmin = 0.5 ˚A
+−1,
+Qmax = 20 ˚A
+−1), we find that smaller Qmax leads to larger oscil-
+lations in ˆG(r), again as expected (Egami & Billinge, 2012).
+The coordinates of the atoms in the structure models were deter-
+mined algorithmically using the Atomic Simulation Environ-
+ment (ASE) Python package (Larsen et al., 2017), as described
+in (Banerjee et al., 2018).
+To consider the effects of the Q-range we decompose the
+PDF into different contributions from the different ranges of Q.
+According to Equations (8) and (10), we have
+
+ˆG(r) = 2
+
+π
+
+� Qmax
+
+Qmin
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri) sin(Qr)dQ
+(11)
+
+= 2
+
+π
+
+�� ∞
+
+0
+−
+� Qmin
+
+0
+−
+� ∞
+
+Qmax
+
+�
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri)
+
+sin(Qr)dQ
+(12)
+
+= ˆG1(r) + ˆG2(r) + ˆG3(r)
+(13)
+
+Here we split ˆG(r) to three parts. If Qmax is large enough, we
+regard the integral from Qmax to ∞ as 0 due to the exponen-
+tial term. The termination of the Fourier transform varies with
+the type of material and with the amplitude of lattice vibrations
+but, in general, termination with Q > 30 ˚A
+−1 produces min-
+imal errors (Toby & Egami, 1992). However, for lower Qmax
+the ripples may be signicant (e.g., green PDF in the bottom
+panel of Figure 1), in which case, in the absence of a structural
+model, the oscillations may be mistaken as physical peaks. This
+increases the computational effort for extraction. We can use
+the following inequality as a threshold to reduce the number of
+mis-identified peaks,
+
+�� ˆG3(r)
+�� =
+
+�����
+2
+π
+
+� ∞
+
+Qmax
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri) sin(Qr)dQ
+
+�����
+
+≤ 2
+
+π
+
+k
+�
+
+i=1
+
+mi
+ri
+
+� ∞
+
+Qmax
+e− 1
+
+2 σ2
+i Q2dQ
+(14)
+
+≤ 1
+
+π
+N
+
+r1⟨ f⟩2
+
+� ∞
+
+Qmax
+e− 1
+
+2 σ2Q2dQ
+(15)
+
+where r1 is the smallest distance and σ is a lower bound of all
+σi.
+The unattenuated term contains the atomic-scale structural
+information and is given by
+
+ˆG1(r) = 2
+
+π
+
+� ∞
+
+0
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri) sin(Qr)dQ
+(16)
+
+=
+1
+√
+
+2π
+
+k
+�
+
+i=1
+
+mi
+riσi
+
+�
+
+e
+− (r−ri)2
+
+2σ2
+i
+− e
+− (r+ri)2
+
+2σ2
+i
+
+�
+
+,
+(17)
+
+which is a sum of Gaussians as expected.
+
+
+The part that determines the baseline is given by (Farrow &
+Billinge, 2009)
+
+ˆG2(r) = 2
+
+π
+
+� Qmin
+
+0
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri) sin(Qr)dQ
+(18)
+
+= 2
+
+π
+
+� Qmin
+
+0
+
+k
+�
+
+i=1
+
+mi
+ri
+(1 + O(σ2
+i Q2)) sin(Qri) sin(Qr)dQ
+
+(19)
+
+= 1
+
+π
+
+k
+�
+
+i=1
+
+mi
+ri
+
+�sin((r − ri)Qmin)
+
+r − ri
+− sin((r + ri)Qmin)
+
+r + ri
+
+�
+
+(20)
+
++
+
+k
+�
+
+i=1
+
+miσ2
+i
+
+ri
+O(Q3
+min)
+
+which has been simplified here by taking terms only up to sec-
+ond order in a Taylor series expansion. Approximating the base-
+line by
+
+1
+π
+
+k
+�
+
+i=1
+
+mi
+ri
+
+�sin((r − ri)Qmin)
+
+r − ri
+− sin((r + ri)Qmin)
+
+r + ri
+
+�
+(21)
+
+does provide a good approximation as shown in Figure 2.
+
+0
+2
+4
+6
+8
+10
+
+r(Å)
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+(Å
+)
+
+Figure 2
+The blue curve is the simulated PDF for an 18-atom Lennard-Jones decahedron
+transformed from the F(Q) shown in Figure 1, with the following configura-
+tion: Qmin = 0.5 ˚A−1, Qmax = 30 ˚A−1, σi = 0.1 ˚A. The red dashed line is an
+approximation to the baseline for ˆG(r) following Equation (21), using the same
+values used for the simulated PDF in blue.
+
+3.2. Initial Guess on a single peak
+If the target function is a sum of Gaussians, one can make
+an initial guess using the second order derivative (Goshtasby &
+Oneill, 1994). Approaches using higher order derivatives and
+wavelet transforms have been applied to a variety of experi-
+mentally measured spectra to find local maxima, often com-
+bined with gaussian denoising filters (Huang, 1988; Gregoire
+et al., 2011; Savitzky & Golay, 1964). However, our mathemat-
+ical model is not exactly a sum of Gaussians. The Gaussians
+
+are contained in ˆG1(r), but in general our signal also includes
+a baseline term, ˆG2(r), and termination effects, ˆG3(r). We now
+consider the effects from these different Q-dependent contribu-
+tions on our ability to accurately extract peak parameters using
+second and higher order derivatives.
+We begin by considering ˆG1(r), which contains the structural
+signal. The second derivative of ˆG1(r), following Equation (17),
+is
+
+ˆG′′
+1 (r) =
+1
+√
+
+2π
+
+k
+�
+
+i=1
+
+−mi
+riσ3
+i
+
+��
+1 − (r − ri)2
+
+σ2
+i
+
+�
+e
+− (r−ri)2
+
+2σ2
+i
+
+−
+�
+1 − (r + ri)2
+
+σ2
+i
+
+�
+e
+− (r+ri)2
+
+2σ2
+i
+
+�
+
+.
+
+(22)
+
+First, we take the simplest case of an isolated single peak that
+we label as the i-th peak. Due to the characteristics of the expo-
+nential function, other peaks are some distance away and may
+affect the single peak slightly. Then, ri can be extracted by using
+the location of the local maximum of ˆG(r) or − ˆG′′(r). Consider
+r around ri,
+
+ˆG′′
+1 (r) =
+1
+√
+
+2π
+−mi
+riσ3
+i
+
+�
+1 − (r − ri)2
+
+σ2
+i
+
+�
+e
+− (r−ri)2
+
+2σ2
+i .
+(23)
+
+We have two zero crossing points of ˆG′′
+1 (r), z⋆
+1 = ri − σi and
+z⋆
+2 = ri + σi. Then we take as the initial guess of σi,
+
+σi = z⋆
+2 − z⋆
+1
+
+2
+.
+(24)
+
+This result will be accurate if the curved baseline contribution
+to ˆG, ˆG2(r), does not introduce a significant shift on the zero
+crossing points.
+Consider the second order derivative of ˆG2(r),
+
+ˆG′′
+2 (r) = 2
+
+π
+
+� Qmin
+
+0
+−Q2
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2 sin(Qri) sin(Qr)dQ
+
+(25)
+
+= 2
+
+π
+
+� Qmin
+
+0
+−Q2
+k
+�
+
+i=1
+
+mi
+ri
+(1 + O(σ2
+i Q2)) sin(Qri) sin(Qr)dQ
+
+(26)
+
+= 1
+
+π
+
+k
+�
+
+i=1
+
+mi
+ri
+
+��−Q2
+min sin((r − ri)Qmin)
+
+r − ri
++ −2Qmin cos((r − ri)Qmin)
+
+(r − ri)2
+
+(27)
+
++2 sin((r − ri)Qmin)
+
+(r − ri)3
+
+�
+−
+�−Q2
+min sin((r + ri)Qmin)
+
+r + ri
+
++−2Qmin cos((r + ri)Qmin)
+
+(r + ri)2
++ 2 sin((r + ri)Qmin)
+
+(r + ri)3
+
+��
++ O(Q5
+min)
+
+where we have again used the Taylor expansion. Define η =
+
+
+(r − ri)Qmin. If η is close to zero, by Taylor expansion,
+
+−Q2
+min sin((r − ri)Qmin)
+
+r − ri
++ −2Qmin cos((r − ri)Qmin)
+
+(r − ri)2
+(28)
+
++ 2 sin((r − ri)Qmin)
+
+(r − ri)3
+
+= − Q3
+min
+sin(η)
+
+η
+− 2Q3
+min
+cos(η)η − sin(η)
+
+η3
+(29)
+
+= − 1
+
+3Q3
+min + O(η2Q3
+min).
+(30)
+
+On the other hand, if η is away from zero, then
+
+−Q2
+min sin((r − ri)Qmin)
+
+r − ri
++ −2Qmin cos((r − ri)Qmin)
+
+(r − ri)2
+(31)
+
++2 sin((r − ri)Qmin)
+
+(r − ri)3
+= O(Q3
+min).
+
+Therefore,
+ˆG′′
+2 (r) = O(Q3
+min).
+(32)
+
+This is small and we can, with confidence, set z⋆ and z to be the
+zero crossings on the same side of ˆG′′
+1 (r) and ˆG′′
+1 (r) + ˆG′′
+2 (r),
+respectively. Further, we can ignore G′′
+3 because when Qmax is
+large enough, we can approximate it as zero due to its expo-
+nential term. This means that although G(r) is not purely a sum
+of Gaussians, the multiple derivative zero crossings method can
+still be expected to give acceptably good initial estimates of sin-
+gle peak positions. Then, we have
+
+ˆG′′
+1 (z⋆) = 0,
+ˆG′′(z) = 0.
+(33)
+
+and by the Mean Value Theorem,
+
+z − z⋆ =
+ˆG′′
+1 (z) − ˆG′′
+1 (z⋆)
+
+ˆG′′′
+1 (ˆz)
+= − ˆG′′
+2 (z)
+
+ˆG′′′
+1 (ˆz) ,
+(34)
+
+where ˆz is a real number between z and z⋆. For r around ri,
+
+ˆG′′′
+1 (r) =
+1
+√
+
+2π
+mi
+riσ4
+i
+
+�
+3r − ri
+
+σi
+− (r − ri)3
+
+σ3
+i
+
+�
+e
+− (r−ri)2
+
+2σ2
+i .
+(35)
+
+When r ∈ (ri −
+√
+
+2σi, ri − 0.2σi) ∪ (ri + 0.2σi, ri +
+√
+
+2σi),
+
+| ˆG′′′
+1 (r)| >
+1
+√π
+mi
+riσ4
+i
+e−1 .
+(36)
+
+Therefore, we have
+
+z − z⋆ = O(σ4
+i Q3
+min),
+(37)
+
+σi = z2 − z1
+
+2
++ O(σ4
+i Q3
+min).
+(38)
+
+To compute different even order derivatives of ˆG(r) numeri-
+cally, we do not use finite difference approximations, because it
+is very easy to produce numerical instabilities when calculating
+higher order derivatives. Instead, we calculate the derivatives
+directly on the formula
+
+ˆG(r) = 2
+
+π
+
+� Qmax
+
+Qmin
+ˆF(Q) sin(Qr)dQ.
+(39)
+
+We only consider even order derivatives of ˆG(r), which give the
+peaked functions that we seek for the zero crossing analysis.
+Intuitively, r⋆ is the maximizer/minimizer of ˆG(2s)(r) and then
+ˆG(2s)+1(r⋆) = 0. Therefore,
+
+ˆG(2s)(r) = 2
+
+π
+
+� Qmax
+
+Qmin
+(−1)sQ2s ˆF(Q) sin(Qr)dQ.
+(40)
+
+When the measured ˆF(Q) is taken only at a finite point Qi, we
+approximate
+
+ˆG(2s)(r) ≈ 2
+
+π
+
+NQ
+�
+
+i=1
+(−1)sQ2s
+i ˆF(Qi) sin(Qir)∆Qi,
+(41)
+
+where NQ is the number of discrete values of Q, and ∆Qi is
+the difference between two adjacent Q. The high order deriva-
+tives obtained from ˆF(Q) by this method are more stable. When
+ˆF(Q) is not available from experimental data, a finite difference
+approximation can be used to calculate higher order derivatives
+from experimentally measured G(r).
+In Figure 3, the blue curve, ˆG(r), is the simulated PDF of
+an 18-atom decahedron introduced in Section 3.1, with Qmin =
+0.5 ˚A
+−1, Qmax = 30 ˚A
+−1 and σi = 0.1 ˚A for all i = 1, . . . , k.
+
+0
+2
+4
+6
+8
+10
+
+r(Å)
+
+5.0
+
+2.5
+
+0.0
+
+2.5
+
+5.0
+
+7.5
+
+10.0
+
+(Å
+)
+
+3.0
+3.5
+4.0
+4.5
+5.0
+
+r(Å)
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+(Å
+)
+
+Figure 3
+The blue curve is the simulated PDF for an 18-atom Lennard-Jones decahedron
+as shown in Figures 1-2. Overlaid in red is the scaled second order derivative,
+− ˆG′′(r), calculated by Equation (41). The inset is a zoom-in to the zero cross-
+ings before ∼5.3 ˚A.
+
+The red curve, − ˆG′′(r), is calculated as given in Equa-
+tion (41). A magnified view is shown in the inset from ∼2.5-
+5.3 ˚A. The distances between the zero crossing of the first two
+peaks are very close to 0.2 ˚A which is twice the value of σ used
+to generate this PDF. This shows that it is reasonable to guess
+the initial value of σi using the zero-crossing estimation given
+in Equation (24).
+
+
+3.3. Initial guess for the case of overlapped peaks
+Figure 3 shows another interesting phenomenon. The over-
+lapped peaks near 4.8 ˚A appear as two well separated peaks in
+the second derivative curve shown in red. This motivates us to
+use higher derivatives to search for overlapped peaks.
+We consider the n-th derivative, where n is an even number,
+n = 2s. Using the fact that
+
+(e− x2
+
+2 )(n) = (−1)s
+s
+�
+
+j=0
+(−1)jC2 j
+n (n − 2j − 1)!!x2 je− x2
+
+2 ,
+(42)
+
+where Ck
+n is the number of combinations of n items taken k at
+a time which is defined as n!/k!(n − k)!, ! is factorial, and !! is
+double factorial. Considering r around ri and following Equa-
+tion (17), we again take a Taylor expansion giving
+
+ˆG(n)
+1 (r) =(−1)s
+1
+√
+
+2π
+mi
+
+riσn+1
+i
+(n − 1)!!
+(43)
+
+(1 − s(r − ri)2
+
+σ2
+i
++ O((r − ri)4
+
+σ4
+i
+))e
+− (r−ri)2
+
+2σ2
+i .
+
+The two nearest zero crossing points of ˆG(n)
+1 (r) are z⋆
+1 ≈ ri −
+1
+√sσi and z⋆
+2 ≈ ri +
+1
+√sσi. Similar to Equation (32), we obtain
+
+that ˆG(n)
+2 (r) does not affect this guess too much due to
+
+ˆG(n)
+2 (r) = O(Qn+1
+min ),
+(44)
+
+we can again use
+
+σi ≈ z2 − z1
+
+2
+
+�n
+
+2
+(45)
+
+as the initial guess of σi.
+The PDF simulated from a different model, a 39-atom dec-
+ahedral cluster, provides an illustration of another interesting
+point of using zero-crossings from higher order derivatives to
+locate peaks. Figure 4(a) shows the PDF calculated from this
+model. We set all σi to be 0.1 ˚A, Qmin = 0.5 ˚A
+−1, Qmax =
+30 ˚A
+−1.
+The peak in the interval from 8.1 ˚A to 8.5 ˚A looks sin-
+gle valued but contains two true peaks at 8.23 ˚A and 8.40 ˚A,
+respectively. In Figure 4(b) we magnify this narrow r-range and
+overlay the 2nd order (red) and 4th order (green) derivatives
+on top of the simulated PDF (light blue). This shows that the
+2nd order derivative with only two zero-crossings cannot suffi-
+ciently resolve the split peak, whereas the 4th order derivative
+can. In Figure 4(b), the initial guesses for the position of the two
+peaks are highlighted with teal arrows, which are determined
+from the four zero-crossings (purple markers).
+In this case, ˆG(4)(r), was optimal for separating these two
+peaks. In practice, higher derivatives give greater selectivity for
+finding overlapped peaks, but also dramatically increases the
+number of zero crossings originating from noise, and a balance
+must be struck between these two competing factors. As a rule
+of thumb, we have found that the (n+2)-th derivative should be
+considered only when the n-th derivative does not result in rea-
+sonable initial guesses for ri and σi. In practice, for a fully auto-
+mated peak extraction program we do not want human involve-
+ment in the decision making. We have found that ˆG(4)(r) is a
+
+good balance between sensitivity and noise suppression in the
+examples we have tried. In the future, we may experiment with
+different protocols, for example, adaptively trying derivatives of
+different order, and even changing the order used to extract sig-
+nals from specific peaks in the PDF. These improvements to the
+automated heuristic have not proven to be necessary to date.
+
+0
+2
+4
+6
+8
+10
+r(Å)
+
+0
+
+2
+
+4
+
+(Å
+)
+
+(a)
+
+8.1
+8.2
+8.3
+8.4
+8.5
+
+r(Å)
+
+0.1
+
+0.0
+
+0.1
+
+(Å
+)
+
+(b)
+
+Figure 4
+(a) Simulated PDF (blue) from a 39-atom decahedron, shown in the inset. (b):
+A magnified view of the highlighted r-range from (a) where the same simu-
+lated PDF is shown in light blue and overlaid with the 2nd (red) and 4th (green)
+order derivatives, − ˆG′′(r) and ˆG(4)(r) respectively. Zero-crossings for ˆG(4)(r)
+are marked in purple and the initial guesses for the two overlapped peaks within
+this r-range are shown with teal arrows.
+
+3.4. Initial guess for the peak amplitude, mi
+After giving the initial guesses for ri and σi, we can estimate
+values for the peak amplitudes, mi, by using the following stan-
+dard box constrained least square,
+
+min
+m1,...,mk
+
+nQ
+�
+
+j=1
+
+�
+
+ˆF(Qj) −
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2
+j sin(Qjri)
+
+�2
+
+(46)
+
+s.t.
+mi ≥ 0, i = 1, . . . , k
+(47)
+
+where nQ is the number of discrete values of Q and the ri and
+σi values are held constant. This is a convex quadratic pro-
+gramming problem which can be easily solved without hav-
+ing to specify initial values for the mi. For example, here
+we use the primal-dual interior-point algorithm (Nesterov &
+Todd, 1997; Nesterov & Todd, 1998).
+
+
+4. Optimization
+
+With initial values for the variables we can continue to the opti-
+mization step. A standard box constrained least square problem
+is used to fit either the ˆF(Q) or the ˆG(r) curve according to
+
+min
+ri,σi,mi
+
+nq
+�
+
+j=1
+
+�
+
+ˆF(Qj) −
+
+k
+�
+
+i=1
+
+mi
+ri
+e− 1
+
+2 σ2
+i Q2
+j sin(Qjri)
+
+�2
+
+(48)
+
+s.t.
+mi ≥ 0, i = 1, . . . , k
+
+and
+
+min
+ri,σi,mi
+
+nr
+�
+
+l=1
+
+�
+2
+π
+
+nq
+�
+
+j=1
+
+�
+k
+�
+
+i=1
+
+mi
+ri e− 1
+
+2 σ2
+i Q2
+j sin(Q jri)
+
+�
+
+sin(Q jrl)∆Qj − G(rl)
+
+�2
+
+.
+
+(49)
+
+s.t.
+mi ≥ 0, i = 1, . . . , k
+
+We have found that compared to fitting on ˆF(Q), the real space
+optimization is more computationally intensive, but can yield
+better solutions. For the optimization we use a subspace trust-
+region method based on the interior-reflective Newton method
+described in (Coleman & Li, 1996). Each iteration involves the
+approximate solution of a large linear system using the method
+of preconditioned conjugate gradients (PCG). Due to the high
+nonlinearity and non-convexity of this least square problem,
+the solutions calculated by the solver depend sensitively on the
+starting values. Nonetheless, the initial values we obtained from
+the differential zero crossings have proven to be stable.
+
+5. Testing the approach
+
+Two target PDFs are tested for our extraction algorithm in this
+section. One shows the peaks extracted from a simulated PDF,
+and the other from an experimental PDF of atomically precise
+clusters where the structure has been satisfactorily solved.
+
+5.1. Test on simulated data.
+
+We revisit the 18-atom Lennard-Jones decahedron discussed
+in Sections 3.1-3.2 to generate a simulated PDF for this test.
+Here we set Qmin = 0.5 ˚A
+−1, Qmax = 30 ˚A
+−1, and all
+σi = 0.1 ˚A. The distances extracted using our approach are
+reproduced in Table 1 and the resulting PDF curves after the
+initial guess and the full refinement steps are shown in Figure 5.
+For this relatively high resolution (Qmax = 30 ˚A−1) case the
+extraction is working rather well. The only peaks that could not
+be extracted separately by the program were very close to each
+other and the extraction returns single peaks with the full inte-
+grated intensities of both unresolved distances.
+
+0
+10
+20
+30
+
+Q(Å
+)
+
+10
+
+0
+
+10
+
+20
+
+30
+
+(Å
+)
+
+(a)
+
+10
+20
+30
+
+Q(Å
+)
+
+(b)
+
+0
+2
+4
+6
+8
+10
+
+r(Å)
+
+0
+
+25
+
+50
+
+75
+
+100
+
+(Å
+)
+
+(c)
+
+2
+4
+6
+8
+10
+
+r(Å)
+
+(d)
+
+Figure 5
+Simulated (light blue) and extracted (red) ˆF(Q) (top) and ˆG(r) (bottom) curves
+from initial guesses (a,c) and following optimization (b, d) for an 18-atom
+Lennard-Jones decahedron.
+
+The first three columns in the table show the ground-truth
+parameters we set to generate the PDF. There are 11 differ-
+ent distances, of which we find seven. The program could not
+resolve the peaks at 2.8921 ˚A and 2.9443 ˚A in the first fea-
+ture. A single peak was returned at 2.9008 ˚A, very close to the
+weighted average position of the ground-truth peaks, 2.9013 ˚A.
+The program also returned a multiplicity of 56.9680, very close
+to the sum of the true multiplicities of the unresolved peaks,
+57. The second and fourth peaks were also unresolved dou-
+blets. The widest unresolved splitting was 0.075 ˚A. The peak
+at 4.7640 ˚A and the unresolved doublet at 4.99 ˚A were success-
+fully resolved and they are a little over 0.2 ˚A apart, very close to
+the expected resolution of data with a Qmax = 30 ˚A
+−1 (Farrow
+et al., 2011).
+In general, we may be working with data that were measured
+at lower real-space resolutions, for example, Qmax = 23 ˚A
+−1,
+which we also tested. Smaller Qmax results in less resolution but
+also in termination ripples, or oscillations, that might confuse
+the extraction process. In the initial guess stage, our program
+finds 36 peaks. In fact, most of them are from termination rip-
+ples. However, after the optimization stage, a subset of the peak
+amplitudes are close to 0. In Table 1, we filter these distances
+programmatically, and only list the peaks which return a multi-
+plicity larger than 1 and compare them with the extracted peaks
+when Qmax = 30 ˚A
+−1. The quality of the extraction is worse for
+Qmax = 23 ˚A
+−1 compared to Qmax = 30 ˚A
+−1, but it is still quite
+reasonable, containing a small number of false positives with
+very little weight. The program still successfully resolved the
+peaks at 4.76 ˚A and 4.99 ˚A but this time it misassigned some
+weight between these two peaks. However, all in all, it was a
+satisfactory extraction.
+
+
+An example with experimental data.
+Next we test our dis-
+tance extraction algorithm on experimental PDF data collected
+from 144-atom gold nanoclusters capped with 60 thiolate sta-
+ples, Au144(SC6)60. Sample preparation is described in (Qian
+& Jin, 2011) and data acquisition and processing to obtain the
+PDF are described in (Jensen et al., 2016). A well-established
+DFT structure model exists for this sample (Lopez-Acevedo
+et al., 2009) (LA model) which was previously shown to be in
+good agreement with the measured PDFs (Jensen et al., 2016;
+
+Banerjee et al., 2018). The relaxed LA cluster structure is com-
+plex, with low symmetry chiral and staple arrangements of shell
+atoms on top of a higher symmetry Mackay icosahedral core. In
+Figure 6 we show the PDF resulting from the initial guess (a, c)
+and final fitting (b, d) to extract distances from the experimen-
+tal ˆF(Q) and ˆG(r) curves. A Q-range from Qmin = 0.8 ˚A
+−1 to
+Qmax = 25 ˚A
+−1 was used for the PDF transformation, and a 4th
+order derivative was used to obtain initial guesses for ri and σi.
+
+5
+10
+15
+20
+25
+
+Q(Å
+)
+
+0.5
+
+0.0
+
+0.5
+
+1.0
+
+(Å
+)
+
+(a)
+
+5
+10
+15
+20
+25
+
+Q(Å
+)
+
+(b)
+
+0
+3
+6
+9
+12
+15
+18
+
+r(Å)
+
+0
+
+1
+
+2
+
+3
+
+(Å
+)
+
+(c)
+
+3
+6
+9
+12
+15
+18
+
+r(Å)
+
+(d)
+
+(e)
+
+3
+6
+9
+12
+15
+18
+
+r(Å)
+
+(f)
+
+Figure 6
+Experimental (light blue) and extracted (red) ˆF(Q) (top) and ˆG(r) (bottom) curves from initial guesses (a,c) and following optimization (b, d) for a Au144(SC6)60
+cluster sample. Histograms from the (Lopez-Acevedo et al., 2009) structure solution distances (e) and the optimized-extracted distances (f) obtained from the fit to
+the experimental data shown in (d).
+
+To improve the extraction, we provided an additional con-
+straint such that {σi ≤ 0.16 ˚A} to bound all the σi’s. Values
+above this bound would yield isotropic atomic displacement
+parameters (ADPs) greater than ∼0.025 ˚A2, which are unphys-
+ically large for homogeneous, atomically precise nanocluster
+samples. The fitted PDF and F(Q) of the peak models con-
+verges nicely to the data, as evident in Figure 6. The fit of the
+extracted PDF to the measured one indicates we have obtained
+good convergence, but it is not a measure of the quality of the
+extraction, which is rather determined by how well the extracted
+distances agree with the actual ones. In Figure 6(e) and (f)
+we show histograms of the actual, and optimized-extracted dis-
+tances, respectively from the Au144(SC6)60 experimental data.
+A visual comparison suggests that the distribution of distances
+
+from the experimental data is very similar to the true distance
+histogram obtained from the LA structure solution; the over-
+all shape and many of the fine features match well, albeit more
+coarse-grained for the extracted peaks due to unresolved over-
+lapping peaks. A truncated list (2.68 < r < 7.81 ˚A) of the
+extracted peak parameters (ri, mi) is provided in Table 2, in
+addition to the optimized σi values needed to calculate ˆF(Q)
+and ˆG(r). Due to the dense distribution of true distances, we
+assigned each extracted distance to a group of true distances,
+and summed the multiplicities per bin as the total multiplic-
+ity. To determine estimated multiplicities from the experimental
+Au144(SC6)60 data, we performed an additional extraction from
+data simulated from the LA structure model. The simulated
+PDF was generated with Qmin = 0.8 ˚A
+−1, Qmax = 25 ˚A
+−1 and
+
+
+all σi = 0.1 ˚A. This normalization results in good agreement
+between the experimental and simulated multiplicities from the
+LA model. The results from the simulated extraction are also
+provided in Table 2 next to the experimental extraction. This is
+a challenging low-symmetry nanostructure, but the auto extrac-
+tion nonetheless seems to be working well.
+
+6. Conclusion
+
+In this paper, we have proposed an algorithm to extract distance
+lists from a target PDF with no a priori structural information.
+We use a mathematical model utilizing the sum of Guassians
+nature of the Debye scattering equation and the PDF to auto-
+matically recover peak position, and therefore interatomic dis-
+tance information. It firstly uses an automated approach to find
+an initial guess for all the variables and then solves a global opti-
+mization problem. The preliminary tests show the effectiveness
+of the initial guess and good performance and accuracy of the
+extraction. The approach has been successfully tested on PDFs
+simulated from known nanoparticle clusters as well as from a
+challenging low-symmetry experimental dataset.
+
+Acknowledgment
+The authors thank Chia-Hao Liu and Yun-
+zhe Tao for useful discussions. S.B and S.J.B. also thank
+Christopher J. Ackerson and Kirsten Marie Jensen for the syn-
+thesis and characterization of cluster samples. This research
+is supported by the U.S. National Science Foundation (NSF)
+through grant DMREF-1534910. S.B. acknowledges support
+from the National Defense Science and Engineering Gradu-
+ate Fellowship (DOD-NDSEG) program. Data collected at the
+Advanced Photon Source at Argonne National Laboratory was
+supported by the U.S. Department of Energy, Office of Science,
+Office of Basic Energy Sciences (DOE-BES), under contract
+number DE-AC02-06CH11357.
+
+References
+Banerjee, S., Liu, C.-H., Lee, J. D., Kovyakh, A., Grasmik, V., Prymak,
+O., Koenigsmann, C., Liu, H., Wang, L., Abeykoon, A. M. M.,
+Wong, S. S., Epple, M., Murray, C. B. & Billinge, S. J. L. (2018).
+J. Phys. Chem. C, 122(51), 29498–29506.
+
+Billinge, S. J. & Kanatzidis, M. (2004). Chemical communications, (7),
+749–760.
+
+Billinge, S. J. & Levin, I. (2007). Science, 316(5824), 561–565.
+Billinge, S. J. L. (1998). In Local Structure from Diffraction, edited by
+S. J. L. Billinge & M. F. Thorpe, p. 137. New York: Plenum.
+
+Billinge, S. J. L., Duxbury, P. M., Gonalves, D. S., Lavor, C. &
+Mucherino, A. (2016). 4OR-Q J Oper Res, 14, 337–376.
+
+Billinge, S. J. L., Duxbury, P. M., Gonalves, D. S., Lavor, C. &
+Mucherino, A. (2018). Ann. Oper. Res. pp. 1–43.
+
+Cervellino, A., Giannini, C. & Guagliardi, A. (2006). Journal of com-
+putational chemistry, 27(9), 995–1008.
+
+Cliffe, M. J., Dove, M. T., Drabold, D. A. & Goodwin, A. L. (2010).
+Phys. Rev. Lett. 104(12), 125501.
+
+Coleman, T. F. & Li, Y. (1996). SIAM Journal on optimization, 6(2),
+418–445.
+
+Duxbury, P. M., Granlund, L., Gujarathi, S. R., Juh´as, P. & Billinge, S.
+J. L. (2016). Discrete Applied Mathematics, 204, 117–132.
+
+Egami, T., Billinge, S. & Thorpe, M. (1998). In Eds. SJL Billinge and
+MF Thorpe, p. 1.
+
+Egami, T. & Billinge, S. J. L. (2012). Underneath the Bragg peaks:
+structural analysis of complex materials. Amsterdam: Elsevier,
+2nd ed.
+
+Farrow, C. L. & Billinge, S. J. L. (2009). Acta Crystallogr. A, 65(3),
+232–239.
+
+Farrow, C. L., Juh´as, P., Liu, J., Bryndin, D., Boˇzin, E. S., Bloch, J.,
+Proffen, T. & Billinge, S. J. L. (2007). J. Phys: Condens. Mat.
+19, 335219.
+
+Farrow, C. L., Shaw, M., Kim, H.-J., Juh´as, P. & Billinge, S. J. L.
+(2011). Phys. Rev. B, 84, 134105.
+
+Fournet, G. & Guinier, A. (1955). Translated by Walker, CB and
+Yudowitch, KL In: New York: John Wiley & Sons, pp. 7–78.
+
+Goshtasby, A. & Oneill, W. D. (1994). CVGIP: Graphical Models and
+Image Processing, 56(4), 281–288.
+
+Granlund, L., Billinge, S. & Duxbury, P. (2015). Acta Crystallograph-
+ica Section A: Foundations and Advances, 71(4), 392–409.
+
+Gregoire, J. M., Dale, D. & van Dover, R. B. (2011). Rev. Sci. Instrum.
+82(1), 015105.
+
+Huang, T. (1988). Aust. J. Phys. 41(2), 201.
+Jensen, K. M. Ø., Juh´as, P., Tofanelli, M. A., Heinecke, C. L., Vaughan,
+G., Ackerson, C. J. & Billinge, S. J. L. (2016). Nat. Commun. 7,
+11859.
+
+Jeong, I.-K., Heffner, R., Graf, M. & Billinge, S. (2003). Physical
+Review B, 67(10), 104301.
+
+Juh´as, P., Cherba, D. M., Duxbury, P. M., Punch, W. F. & Billinge, S.
+J. L. (2006). Nature, 440(7084), 655–658.
+
+Juh´as, P., Farrow, C. L., Yang, X., Knox, K. R. & Billinge, S. J. L.
+(2015). Acta Crystallogr. A, 71(6), 562–568.
+
+Juh´as, P., Granlund, L., Gujarathi, S. R., Duxbury, P. M. & Billinge, S.
+J. L. (2010). J. Appl. Crystallogr. 42(3), 623–629.
+
+Korsunskiy, V. & Neder, R. (2005). Journal of applied crystallography,
+38(6), 1020–1027.
+
+Korsunskiy, V. I., Neder, R. B., Hofmann, A., Dembski, S., Graf, C.
+& R¨uhl, E. (2007). Journal of Applied Crystallography, 40(6),
+975–985.
+
+Larsen, A. H., Mortensen, J. J., Blomqvist, J., Castelli, I. E., Chris-
+tensen, R., Marcin Dułak, Friis, J., Groves, M. N., Hammer,
+B., Hargus, C., Hermes, E. D., Jennings, P. C., Jensen, P. B.,
+Kermode, J., Kitchin, J. R., Kolsbjerg, E. L., Kubal, J., Kristen
+Kaasbjerg, Lysgaard, S., Maronsson, J. B., Maxson, T., Olsen,
+T., Pastewka, L., Andrew Peterson, Rostgaard, C., Schiøtz, J.,
+Sch¨utt, O., Strange, M., Thygesen, K. S., Tejs Vegge, Vilhelm-
+sen, L., Walter, M., Zeng, Z. & Jacobsen, K. W. (2017). J. Phys.:
+Condens. Matter, 29(27), 273002.
+
+Le Bail, A., Duroy, H. & Fourquet, J. L. (1987). 23(3), 447–452.
+Lopez-Acevedo, O., Akola, J., Whetten, R. L., Gronbeck, H. & Hakki-
+nen, H. (2009). J. Phys. Chem. C, 113(13), 5035–5038.
+
+Neder, R., Korsunskiy, V., Chory, C., M¨uller, G., Hofmann, A., Demb-
+ski, S., Graf, C. & R¨uhl, E. (2007). physica status solidi (c), 4(9),
+3221–3233.
+
+Neder, R. B. & Korsunskiy, V. I. (2005). Journal of Physics: Con-
+densed Matter, 17(5), S125.
+
+Nesterov, Y. E. & Todd, M. J. (1997). Mathematics of Operations
+research, 22(1), 1–42.
+
+Nesterov, Y. E. & Todd, M. J. (1998). SIAM Journal on optimization,
+8(2), 324–364.
+
+Page, K., Hood, T. C., Proffen, T. & Neder, R. B. (2011). J. Appl. Crys-
+tallogr. 44(2), 327–336.
+
+Pawley, G. S. (1981). J. Appl. Crystallogr. 14(6), 357–361.
+Proffen, T. & Billinge, S. (1999a). Journal of Applied Crystallography,
+32(3), 572–575.
+
+Proffen, T. & Billinge, S. J. L. (1999b). J. Appl. Crystallogr. 32, 572–
+575.
+
+Proffen, Th. & Neder, R. B. (1997). J. Appl. Crystallogr. 30, 171–175.
+Qian, H. & Jin, R. (2011). Chem. Mater. 23(8), 2209–2217.
+Rietveld, H. M. (1969). J. Appl. Crystallogr. 2, 65–71.
+Savitzky, A. & Golay, M. J. E. (1964). Anal. Chem. 36(8), 1627–1639.
+Thorpe, M. et al. (2002). From semiconductors to proteins: Beyond the
+average structure. Boom Koninklijke Uitgevers.
+
+Toby, B. & Egami, T. (1992). Acta Crystallographica Section A: Foun-
+dations of Crystallography, 48(3), 336–346.
+
+
+Table 1: True and extracted peak parameters for the simulated PDF of an 18-atom Lennard-Jones decahedron.
+
+True values
+Qmax =30 ˚A−1
+Qmax =23 ˚A−1
+
+Initial guess
+Final extraction
+Final extraction
+
+r( ˚A)
+σ( ˚A)
+m
+r( ˚A)
+σ( ˚A)
+m
+r( ˚A)
+σ( ˚A)
+m
+r( ˚A)
+σ( ˚A)
+m
+
+2.8921
+0.1
+47
+2.9000
+0.1040
+57.5527
+2.9008
+0.1019
+56.9680
+2.9007
+0.1023
+57.3677
+2.9443
+0.1
+10
+
+4.0525
+0.1
+5
+4.1020
+0.1100
+15.2690
+4.1027
+0.1061
+14.9729
+4.1026
+0.1038
+14.7513
+4.1271
+0.1
+10
+
+4.4167
+0.2925
+1.7502
+
+4.7640
+0.1
+15
+4.7450
+0.0800
+14.1855
+4.7647
+0.1001
+15.0521
+4.7454
+0.0891
+11.9304
+
+4.9787
+0.1
+10
+5.0110
+0.0880
+19.8334
+4.9942
+0.1007
+19.8774
+4.9786
+0.1128
+23.6725
+5.0092
+0.1
+10
+
+5.5732
+0.1
+30
+5.5740
+0.1045
+31.0025
+5.5755
+0.1023
+30.6557
+5.5748
+0.1036
+31.4847
+
+5.7841
+0.1
+1
+
+6.2230
+0.2271
+1.4548
+
+6.7147
+0.1
+10
+6.7120
+0.0970
+9.8322
+6.7147
+0.0996
+9.9450
+6.7168
+0.1050
+10.9121
+
+7.2787
+0.1356
+1.0148
+
+7.7084
+0.1
+5
+7.7190
+0.1000
+4.9749
+7.7084
+0.0993
+4.9490
+7.7079
+0.1093
+5.9554
+
+8.6454
+0.1834
+1.2553
+
+Table 2: Interatomic distances from the Lopez-Acevedo (LA) structure model (ground truth) and optimized-extracted peak parame-
+ters for the case of data simulated from the LA model, and from experimental PDF data from Au144(SC6)60 clusters
+
+LA model distances
+Simulated extraction
+Experimental extraction
+
+r( ˚A)
+m
+r( ˚A)
+σ( ˚A)
+m
+r( ˚A)
+σ( ˚A)
+m
+
+2.68-3.06
+528.00
+2.87
+0.13
+552.80
+2.85
+0.12
+565.68
+
+3.08-3.33
+102.00
+3.21
+0.11
+105.76
+3.15
+0.14
+128.01
+
+3.35-3.49
+12.00
+3.45
+0.09
+16.95
+3.40
+0.13
+73.61
+
+3.67
+0.08
+7.66
+
+3.82
+1.00
+3.79
+0.12
+38.66
+
+3.87-4.20
+179.00
+4.03
+0.13
+198.15
+4.03
+0.11
+181.19
+
+4.30
+1.00
+
+4.40-4.47
+40.00
+4.44
+0.12
+28.49
+4.41
+0.09
+58.26
+
+4.49-4.80
+214.00
+4.64
+0.16
+220.81
+4.68
+0.14
+270.63
+
+4.82-5.25
+468.00
+4.98
+0.16
+497.69
+5.00
+0.14
+415.99
+
+5.26-5.54
+387.00
+5.41
+0.13
+399.73
+5.38
+0.11
+363.49
+
+5.55-5.81
+369.00
+5.66
+0.13
+355.96
+5.64
+0.13
+349.33
+
+5.83-6.11
+105.00
+5.93
+0.16
+132.43
+5.91
+0.15
+126.89
+
+6.13-6.25
+43.00
+6.19
+0.09
+30.64
+6.19
+0.16
+29.33
+
+6.27-6.37
+14.00
+
+6.40-6.85
+442.00
+6.62
+0.16
+444.94
+6.47
+0.12
+113.53
+395.06
+6.66
+0.13
+281.53
+
+6.87-6.96
+26.00
+
+6.98-7.81
+1425.00
+
+7.19
+0.16
+528.45
+
+1335.57
+
+7.09
+0.13
+254.19
+
+1233.05
+7.49
+0.16
+721.79
+7.33
+0.15
+496.30
+
+7.71
+0.11
+85.33
+7.59
+0.16
+482.56
+
+
+Wales, D., Doye, J., Dullweber, A., Hodges, M., Naumkin, F.,
+Calvo, F., Hern´andez-Rojas, J. & Middleton, T. (2001). URL
+http://www-wales. ch. cam. ac. uk/CCD. html, 117.
+
+Warren, B. (2012). X-Ray Diffraction. Courier Corporation.
+
+Young, C. A. & Goodwin, A. L. (2011). J. Mater. Chem. 21, 6464–
+6476.
+
+Zhang, H., Gilbert, B., Huang, F. & Banfield, J. F. (2003). Nature,
+424(6952), 1025.
+
+

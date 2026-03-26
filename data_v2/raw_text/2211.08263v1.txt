@@ -1,0 +1,3518 @@
+An implicit FFT-based method for wave propagation in
+
+elastic heterogeneous media
+
+R. Sancho1, V. Rey de Pedraza1, P. Lafourcade2,3, R.A. Lebensohn ∗4 and J.
+
+Segurado†1,5
+
+1Departamento de Ciencia de Materiales, ETSI Caminos, Canales y Puertos, Universidad Polit´ecnica de
+
+Madrid, C/ Profesor Aranguren s/n, 28040 Madrid, Espa˜na
+
+2CEA, DAM, DIF, F-91297 Arpajon, France
+
+3Universit´e Paris-Saclay, CEA, LMCE, 91680 Bruy`eres-le-Chˆatel, France
+
+4Los Alamos National Laboratory, MS B216, Los Alamos, NM, 87544, USA
+
+5 Fundaci´on IMDEA Materiales, C/ Eric Kandel 2, 28906, Getafe, Madrid, Espa˜na
+
+November 16, 2022
+
+Abstract
+
+An FFT-based algorithm is developed to simulate the propagation of elastic waves in
+
+heterogeneous d-dimensional rectangular shape domains. The method allows one to prescribe
+
+the displacement as a function of time in a subregion of the domain, emulating the application
+
+of Dirichlet boundary conditions on an outer face. Time discretization is performed using
+
+an unconditionally stable beta-Newmark approach. The implicit problem for obtaining the
+
+displacement at each time step is solved by transforming the equilibrium equations into
+
+Fourier space and solving the corresponding linear system with a preconditioned Krylov
+
+solver. The resulting method is validated against analytical solutions and compared with
+
+implicit and explicit finite element simulations and with an explicit FFT approach.
+The
+
+accuracy of the method is similar to or better than that of finite elements, and the numerical
+
+1
+
+arXiv:2211.08263v1  [math.NA]  15 Nov 2022
+
+
+performance is clearly superior, allowing the use of much larger models. To illustrate the
+
+capabilities of the method, some numerical examples are presented, including the propagation
+
+of planar, circular, and spherical waves and the simulation of the propagation of a pulse in a
+
+polycrystalline medium.
+
+Keywords— FFT-based homogenization, micromechanics, wave propagation, polycrystals, acoustics,
+
+elastodynamics, scattering
+1
+
+∗lebenso@lanl.gov
+†javier.segurado@upm.es
+1Article accepted in Computer Methods in Applied Mechanics and Engineering
+
+2
+
+
+Notation
+
+Vector and tensor notation
+
+x, ξ, u
+Vectors xi, ξi, qi
+
+σ, ϵ, g
+Second-order tensors σij, ϵij, gij
+
+C, G, K
+Fourth-order tensors Cijkl, Gijkl, Kijkl
+
+A = τ · F
+Dot product Aij = τipFpj
+
+e = σ : ε
+Double dot product e = σijεij
+
+I
+Second-order identity tensor Iij = δij
+
+Differential operators
+
+v(x) = A(u(x))
+Linear differential operator
+
+U = ∇u
+Gradient of a vector field Uij = ∂ui
+
+∂Xj
+
+ε = ∇su
+Symmetric gradient of a vector field εij = 1
+
+2
+�
+∂ui
+∂Xj + ∂uj
+
+∂Xi
+
+�
+
+F = ∇ · σ
+Divergence of tensor field Fi = ∂σij
+
+∂Xj
+
+Fourier Transforms and convolutions
+
+ˆf = F(f)
+Fourier transform of f
+
+f = F−1( ˆf)
+Inverse Fourier transform of ˆf
+
+G ∗ P
+Convolution operation
+
+3
+
+
+1
+Introduction
+
+The effect of the microstructure on the mechanical response of heterogeneous materials has been thor-
+
+oughly studied from both the experimental and modeling point of view. In the case of quasistatic behavior,
+
+it is well-known that the microstructure affects the stiffness, yield, and fracture. In the case of dynamic
+
+excitation, the microstructure also plays a fundamental role. For low energies, the microstructure has a
+
+strong effect on the acoustic response of the material, as has been reported in many studies in polycrystals
+
+[1], composites [2, 3], porous [4], or architectured materials [5]. For higher energies, the microstructure
+
+also controls the nonlinear response and failure of these materials [6, 7, 8].
+
+Modeling the dependency of the mechanical response with the microstructure at the mesoscopic scale
+
+relies on continuum micromechanics, in which the domain under study incorporates the microstructure
+
+but the continuum hypothesis still applies.
+In the quasistatic regime, computational homogenization
+
+[9, 10] and many multiscale models [11] are based on numerical simulation of the mechanical response of
+
+representative volume elements (RVE) of the microstructure, usually under periodic boundary conditions.
+
+For dynamical problems, computational approaches based on representative unit cells can still be used in
+
+simulations performed in the frequency domain, using the Bloch wave formalism [12, 13, 14]. However,
+
+in many other cases, such as the study of the propagation of short waves or impulses, the simulations
+
+require a dynamic time-domain solution. Moreover, in these cases the study of periodic cells is no longer
+
+valid, and full domains that include the microstructure are used [15, 16] or multiscale simulations are
+
+considered [17].
+
+The resolution of dynamical problems in domains which explicitly represnt the microstructure is com-
+
+putationally very demanding and requires the use of efficient and stable numerical approaches. Moreover,
+
+wave propagation can lead to spurious oscillations in the vicinity of wave fronts, and various studies have
+
+been dedicated to the development of efficient time-integration schemes that help to reduce these oscilla-
+
+tions [18, 19, 20]. Implicit time integration schemes are potentially the most appropriate choice because
+
+they can be unconditionally stable allowing large time increments. Due to their interest, implicit schemes
+
+have been recently introduced to study wave propagation with numerical schemes alternative to standard
+
+FE such as isogeometrical methods [21] or discontinuous Galerkin [22]. However, implicit solvers require
+
+to solve a full mechanical problem at each time step and their computational cost in general very expen-
+
+sive. Therefore, numerical methods such as finite elements (FE) or finite differences tend to overcome
+
+this issue using an explicit integration, and almost every attempt to study wave propagation and other
+
+4
+
+
+types of dynamical problems explicitly considering the microstructure is based on explicit integration
+
+schemes. In fact, many researchers have made an important effort to develop new and more efficient
+
+explicit-based approaches using standard FE [23, 24], discontinuous Galerkin [22, 25], or isogeometric
+
+methods [26]. However, explicit FE methods are conditionally stable, so the time step is still limited in
+
+terms of the highest frequency of the system. Therefore, the maximum time step is inversely proportional
+
+to the discretization level. In the particular case of full-field micromechanical models, the requirement of
+
+fine meshes to represent the complex microstructures imposes extremely small time steps, so the resulting
+
+models are still very expensive. An example of this extreme computational demand is the study of wave
+
+propagation and attenuation in polycrystals, massively parallelized in large computer clusters [15, 16].
+
+In computational homogenization for the quasistatic regime, FFT-based homogenization approaches
+
+are nowadays a mature and very extended alternative to FE models, see the articles [27, 28] for a compre-
+
+hensive review. The main benefit of this technique, introduced for micromechanics in the seminal work
+
+of Moulinec and Suquet [29], is its excellent numerical performance, which allows one to simulate very
+
+complex microstructures with fine discretizations in a fraction of the time needed for FE models. Fur-
+
+thermore, the FFT methods are based on voxelized grids, which allows the construction of RVEs in a very
+
+simple manner synthetically or using tomographic data as input [30]. The method has been successfully
+
+applied to a wide range of micromechanical quasistatic problems including non-linear homogenization
+
+[31], phase field fracture [32, 33], multiscale modeling [34, 35], etc.
+
+However, the use of FFT based methods for dynamical problems is very scarce. One of the first
+
+and few approaches that use spectral solvers for elastodynamic problems and that analyze the advantage
+
+of implicit over explicit time-integration schemes is the work presented by Zampieri and Tagliani [36].
+
+Further studies on wave propagation methods relying on spectral approaches have been performed by the
+
+same group, including the use of spectral finite elements with explicit [37, 38] or implicit [39] integration
+
+methods. All these approaches have been developed for the wave equation with constant coefficients to
+
+represent a homogeneous medium.
+An alternative direction within spectral approaches was proposed
+
+by Amlani and Bruno [40], who developed an elastodynamic solver based on the Fourier Continuation
+
+method ([41]). The proposed method is capable of considering nonperiodic domains and boundary con-
+
+ditions and, due to its spectral nature, is free from dispersion errors. However, the method proposed is
+
+explicit (is implemented using a fourth-order Adams-Bashforth method), and therefore the time step for
+
+stable solutions decreases linearly with the number of discretization points, still being very expensive for
+
+5
+
+
+coarsediscretizations. Regarding the extension of FFT-based homogenization to elastodynamic problems
+
+in heterogeneous microstructures, the only work available in the literature (to the authors knowledge)
+
+was a very interesting work proposed recently by Morin et. al. [42]. The focus of this work was the
+
+study of fracture propagation in heterogeneous media including dynamical effects. In this work the load
+
+was prescribed by macroscopic homogeneous strain/stress history. However, the approach proposed relied
+
+on explicit dynamics, with the computational cost associated for fine discretizations. Moreover, in [42]
+
+as well as in almost every computational homogenization study, standard periodic boundary conditions
+
+are imposed, discarding the introduction of a local perturbation to study wave propagation. The only
+
+exception to periodicity, to the authors knowledge, is the introduction of Dirichlet boundary conditions
+
+in elastic problems proposed in [43].
+
+In summary, an FFT-based method for elastodynamic problems in heterogeneous materials which
+
+allows to prescribe a local excitation and which relies on implicit integration to eliminate the inverse
+
+dependency of the time increment size with discretization is still missing.
+
+The main objective of this work is to develop a novel and efficient approach for wave propagation
+
+in heterogeneous media based on implicit time integration and FFT solvers. The method will allow us
+
+to prescribe the displacement as a function of time on a subregion, emulating time-dependent Dirichlet
+
+boundary conditions, and allowing us to solve propagation of pulses or impacts in a heterogeneous solid.
+
+The method will be applied for studying the propagation of waves in polycrystals to illustrate the potential
+
+of the technique proposed for these studies.
+
+The article is organized as follows. Section 2 presents the method and the associated algorithms.
+
+In Section 3, the accuracy and numerical efficiency of the method will be evaluated against analytical
+
+solutions and finite element simulations. Section 4 presents some numerical examples in heterogeneous
+
+media, and finally, conclusions and open issues will be given in Section 5.
+
+2
+Theory and numerical approach
+
+2.1
+One dimensional case
+
+The objective is to solve the propagation of elastic waves in a one-dimensional domain Ω = {0 ≤ x ≤ L}
+
+occupied by a heterogeneous linear elastic medium. The wave is introduced in the domain by perturb-
+
+ing a planar region Γ, perpendicular to the propagation direction, and which in the one dimensional
+
+6
+
+
+representation corresponds to a single point, here named x0 (Figure 1). The perturbation consists in a
+
+prescribed displacement U(t) , so that u(x ∈ Γ, t) = u(x0, t) = U(t). Longitudinal waves are considered to
+
+particularize the problem, but the equations can be directly adapted for shear waves. The heterogeneous
+
+elastic domain is defined by a spatial distribution of Young’s modulus E(x) and density ρ(x). Periodic
+
+boundary conditions apply for all fields involved, as a requirement of the Fourier-based approach.
+
+Γ = {x = x0}
+Ω
+
+u x0, 𝑡 = U(𝑡)
+x
+
+𝐿
+
+Figure 1: 1D-problem definition.
+
+The prescription of a displacement at the region Γ is made by introducing an artificial body force field
+
+whose value is set to meet the displacement condition. Let f(x, t) be a singular body force density field
+
+concentrated around Γ (which corresponds to the point x0). The field f(x, t) can then be represented
+
+using a Dirac delta function
+
+f(x, t) = F(t)δΓ(x) = F(t)δ(x − x0)
+(1)
+
+such that
+� L
+
+0
+f(x, t)dx =
+� L
+
+0
+F(t)δ(x − x0)dx = F(t).
+
+The value of the total force prescribed at every time, F(t), is obtained to fulfill the displacement
+
+condition at that point. Within this framework, the linear momentum balance for the problem can be
+
+written as
+
+
+
+
+
+
+
+
+
+
+
+
+
+∂
+∂x [σ(x, t)] + f(x, t) = ρ(x)¨u(x, t)
+
+u(x0, t) = U(t)
+;
+u(x, t), σ(x, t)periodic
+
+u(x, 0) = u0(x)
+;
+˙u(x, 0) = ˙u0(x)
+
+(2)
+
+where u0(x) and ˙u0(x) correspond to the initial value of the displacement and velocity fields respectively
+
+and the body force field f(x, t) is given by Eq. (1).
+
+The constitutive equation is the one-dimensional Hooke’s law, which defines the relation between the
+
+7
+
+
+stress σ and the strain ε at every point of the domain,
+
+σ(x, t) = E(x)ε(x, t) = E(x) ∂
+
+∂xu(x, t).
+(3)
+
+The unknowns of the problem for a time interval [0, T] are the field u(x, t) : Ω × [0, T] → R and the
+
+function F(t) : [0, T] → R.
+
+2.1.1
+Time discretization and integration scheme
+
+The time interval [0, T] is discretized in N time increments of size ∆t = T/N, such that
+
+
+
+
+
+
+
+
+tn = n · ∆t
+
+u(x, tn) = un(x)
+; ˙u(x, tn) = ˙un(x)
+; ¨u(x, tn) = ¨un(x)
+(4)
+
+Eq. (2) has to be integrated in time, and the implicit Newmark integration scheme is used for this purpose.
+
+The velocity ˙u and the acceleration ¨u of the time step n are expressed as
+
+˙un = ˙un−1 + ∆t(1 − γ)¨un−1 + ∆tγ¨un
+
+¨un =
+1
+
+β∆t2
+�
+un − un−1 − ∆t ˙un−1 − ∆t2(0.5 − β)¨un−1
+�
+(5)
+
+where β and γ are two non-negative real numbers that define the version of the Newmark-β method. The
+
+values β = 0.25 and γ = 0.5 are used to define the implicit unconditionally stable integration used.
+
+2.1.2
+Continuum solution
+
+Introducing the acceleration ¨un for a time tn, from Eq. (5) in the conservation of linear momentum (Eq.
+
+(2)) leads to
+
+d
+dx
+
+�
+E(x) d
+
+dxun
+
+�
++ fn(x) = ρ(x)
+
+β∆t2
+�
+un − un−1 − ∆t ˙un−1 − ∆t2(0.5 − β)¨un−1
+�
+,
+(6)
+
+where fn stands for the force density field prescribed at time tn and, for brevity, un(x) has been written
+
+as un. Grouping the terms (unknown left, known right) and multiplying by the factor −β∆t2 allows us
+
+to write the equation as
+
+− β∆t2 d
+
+dx[E(x) d
+
+dxun] + ρ(x)un = β∆t2fn(x) + ρ(x)
+�
+un−1 + ∆t ˙un−1 + ∆t2(0.5 − β)¨un−1
+�
+.
+(7)
+
+8
+
+
+Equation (7) is a differential equation of the displacement at time tn, and will be solved using Fourier
+
+transforms. To this aim, the derivatives therein have been computed using the definition of the derivatives
+
+in Fourier space of a scalar field V (x):
+
+F{V ′(x)} = iξF{V (x)} = iξ ˆV (ξ)
+(8)
+
+where F corresponds to the Fourier transform, F{V (x)} = ˆV , i is the imaginary unit and ξ is the spatial
+
+frequency. Equation (7) in Fourier space reads
+
+− β∆t2iξF
+�
+E(x)F−1 {iξˆun}
+�
++ F
+�
+ρ(x)F−1{ˆun}
+�
+=
+
+F
+�
+ρ(x)
+�
+un−1 + ∆t ˙un−1 + ∆t2(0.5 − β)¨un−1
+��
++ β∆t2F(fn),
+(9)
+
+where the Fourier transform of the force density field has an explicit form as
+
+F(fn) = ˆfn = Fne−iξx0.
+
+The left-hand side of Eq. (9) corresponds to a linear operator ˆ
+A(·) in Fourier space that acts on the
+
+displacement field defined in Fourier space.
+
+ˆ
+A(ˆun) = −β∆t2iξF
+�
+E(x)F−1 {iξˆun}
+�
++ F
+�
+ρ(x)F−1ˆun
+�
+(10)
+
+On the right-hand side, let ˆbn−1 be a term that groups the Fourier transform of all fields from the
+
+previous step,
+
+ˆbn−1 = F
+�
+ρ(x)
+�
+un−1 + ∆t ˙un−1 + ∆t2(0.5 − β)¨un−1
+��
+.
+(11)
+
+Therefore, Eq. (9) can be condensed as;
+
+ˆ
+A(ˆun) = β∆t2 ˆfn + ˆbn−1
+(12)
+
+The displacement field ˆun in Fourier space is computed by solving two linear algebraic problems. The
+
+first provides ˆub,
+
+ˆ
+A(ˆub) = ˆbn−1,
+(13)
+
+9
+
+
+and the second one provides the effect of a force F on x0, ˆuf,
+
+ˆ
+A(ˆuf) = ˆfn.
+(14)
+
+Note that the solution of this problem provides the Green’s function of the operator A(·) for a force Fn
+
+on the point x0, g(x, x0) which is defined as
+
+uf(x) = g(x, x0)Fn
+(15)
+
+In the case of a homogeneous medium, the linear operator A defines a Helmholtz equation with constant
+
+coefficients, and its Green’s function for an infinite medium has an analytical expression in real space,
+
+which is shown in appendix A. For a heterogeneous medium, the Green’s function g(x, x0) can be obtained
+
+numerically and stored once at the beginning of the simulation by solving this linear problem.
+
+The solution of the displacement can then be expressed as
+
+ˆun = β∆t2Fnˆuf + ˆub
+(16)
+
+which in real space corresponds to
+
+un = β∆t2FnF−1{ˆuf} + ub = β∆t2Fng(x, x0) + F−1{ˆub}
+(17)
+
+Introducing in Eq. (17) the prescribed displacement at x0, un(x = x0) = U(tn) provides an equation
+
+to obtain the force Fn,
+
+Fn =
+1
+
+β∆t2 g−1(x0, x0) (U(tn) − ub(x0))
+(18)
+
+where g−1(x0, x0) is the inverse of the Green’s function on x0, which represents the unit force to be applied
+
+at a point to produce a unit displacement. It is important to note that g(x, x) is not singular at x0, as it
+
+is shown in the appendix A.
+
+Finally, once Fn is determined by the previous equation , the displacement field un(x) is obtained
+
+from Eq. (17).
+
+10
+
+
+2.1.3
+Spatial discretization and solution algorithm
+
+In order to numerically solve the problem, the domain Ω will be divided into N equal segments, and the
+
+values of the functions will be represented by their value in the center of each segment,
+
+E(x) → E(xm) = Em,
+
+ρ(x) → ρ(xm) = ρm
+
+u(t = tn, x = xm) → um
+n ,
+(19)
+
+with xm = L
+
+N ( 1
+
+2 + m) and m ∈ [0, N − 1]. The point force defined using a delta function, Fn =
+�
+
+Ω fnδ(x −
+
+x0)dΩ, is introduced in the discrete version as
+
+fn(xm) =
+
+
+
+
+
+
+
+
+Fn if xm = x0
+
+0 if xm ̸= x0
+
+The Fourier transform and its inverse will be approximated with the discrete Fourier transform that
+
+can be computed with the efficient FFT algorithm. The corresponding N discrete frequencies in Fourier
+
+space are
+
+ξk =
+
+
+
+
+
+
+
+
+2π
+L (k − (N−1)
+
+2
+)
+for N odd
+
+2π
+L (k − N
+
+2 )
+for N even
+for
+k = 0, . . . , N − 1
+(20)
+
+The discrete version of the problem defined in Eqs. 10, 12 and 14 will be solved numerically using
+
+Krylov linear solvers. In particular, the linear equations will be solved in real space using the conjugate
+
+11
+
+
+gradient. The resulting algorithm is given in Algorithm 1.
+
+Algorithm 1: FFT-based elastodynamic algorithm –1D–
+
+Data: Microstructure: E(x), ρ(x),
+
+Prescribed fields on Γ: U(t, x0), ˙U(t, x0), ¨U(t, x0),
+
+Initial conditions: u0(x), ˙u0(x); Time discretization [t0, n∆t, ..., tf] and space discretization
+
+x = [0, xm, ..., L], for n and m ∈ Z;
+
+Newmark constants, β = 0.25, γ = 0.5
+
+Result: u(t, x), ˙u(t, x), ¨u(t, x), F(t)
+
+Form function ˆ
+A() eq. (10) and compute ¨u0(x) = F−1 �
+iξF
+�
+E(x)F−1 {iξˆu0}
+��
+;
+
+g(x, x0) = F−1 �
+ˆ
+A−1(e−iξx0)
+�
+; ˆ
+A−1(·) using CG ( ˆ
+A, ˆδ(x = x0)) ;
+
+while tn ≤ tf do
+
+tn = tn−1 + ∆t;
+
+ˆbn = F
+�
+ρ(x)
+�
+un−1(x) + ∆t ˙un−1(x) + ∆t2(0.5 − β)¨un−1(x)
+��
+;
+
+ˆubn = F−1 �
+ˆ
+A−1(ˆbn)
+�
+; ˆ
+A−1(·) using CG ( ˆ
+A,ˆbn);
+
+Fn = U(tn) − ubn(x0)
+
+β∆t2g(x0, x0) ;
+
+un(x) = β∆t2Fng(x, x0) + ubn(x);
+
+¨un(x) =
+1
+
+β∆t2
+�
+un(x) − un−1(x) − ∆t ˙un−1(x) − ∆t2(0.5 − β)¨un−1(x)
+�
+;
+
+˙un(x) = ˙un−1(x) + ∆t(1 − γ)¨un−1(x) + ∆t γ¨un(x);
+
+end
+
+Solution for a homogeneous material: In the case of a homogeneous material, Young’s modulus
+
+and density are constant along the space material E(x) = E and ρ(x) = ρ. In this case,
+ˆ
+A−1 has a
+
+closed-form expression,
+
+ˆ
+A−1(·) =
+1
+
+(β∆t2Eξ2 + ρ)(·),
+(21)
+
+and there is no need to use CG to solve Eqs. (13) and (14).
+
+12
+
+
+2.2
+Multidimensional case
+
+2.2.1
+Problem statement
+
+Let Ω be a periodic prismatic domain in d = 2 or d = 3 dimensions, Ω = {x | 0 ≤ xi ≤ Li; 1 ≤ i ≤ d},
+
+Fig.
+2.
+The domain is occupied by a heterogeneous linear elastic medium, whose microstructure is
+
+characterized by the spatial distribution of the stiffness tensor and density C(x), ρ(x), respectively.
+
+𝐮 𝐱, 𝑡 = 𝐔(𝑡)
+
+Ω
+
+Γ
+
+𝒆!
+
+𝒆"
+𝒆#
+
+L1
+
+L2
+
+L3
+
+Figure 2: 3D periodic domain Ω and the plane Γ in which displacement is prescribed as U(t)
+
+The problem consists in finding the periodic displacement field for a time interval [0, T], u(x, t) :
+
+Ω x [0, T] :→ Rd such that the problem is in equilibrium, and the value of u(x, t) = U(t) is prescribed
+
+in a lower-dimensional embedded manifold Γ in Rd, a curve if d = 2 and a surface if d = 3. To impose
+
+the displacement value at Γ, a force field F(x, t) that acts only on x ∈ Γ is introduced and its value is
+
+calculated at each time to satisfy the displacement condition on Γ. Note that since u is set as periodic,
+
+the macroscopic strain E =< ∇su > becomes equal to zero.
+
+The starting point for solving the problem is the conservation of the linear momentum.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+∇ · [σ((x, t)] + f(x, t) = ρ(x)¨u(x, t)
+
+u(x ∈ Γ, t) = U(t)
+;
+u(x, t), σ(x, t) periodic
+
+u(x, 0) = u0(x)
+;
+˙u(x, 0) = ˙u0(x),
+x ∈ Ω
+
+(22)
+
+where f(x, t) is a force density field defined in Ω, with dimensions of force per unit area or force per unit
+
+volume for d = 2 and d = 3, respectively. This force density field is zero everywhere but on the points
+
+lying on Γ and can be expressed as
+
+f(x, t) = F(x, t)δΓ(x),
+(23)
+
+where δΓ(x) denotes the delta function extended to Γ [44] and F(x, t) denotes a force density applied in
+
+13
+
+
+Γ, with dimensions of force per unit length or force per unit volume, for d = 2 and d = 3, respectively.
+
+The properties of δΓ(x) are equivalent to the original Dirac delta,
+
+�
+
+Ω
+f(x, t)δΓ(x)dΩ =
+�
+
+Γ
+F(x, t)dΓ.
+
+The value of F(x, t) along Γ is obtained to satisfy the prescribed displacement on Γ
+
+u(x, t) = U(t)
+for
+x ∈ Γ,
+(24)
+
+where U(t) is the time function defining the value of the displacement vector of all the points in Γ. The
+
+constitutive equation is the Hooke law for a general heterogeneous medium, characterized by the spatial
+
+distribution of its fourth-order stiffness tensor C(x),
+
+σ(x) = C(x) : ε(x, t) = C(x) : ∇s [u(x, t)]
+(25)
+
+2.2.2
+Continuum solution
+
+As in the one-dimensional case, the Newmark integration scheme is applied to the linear momentum
+
+conservation (Eq. (22)) by substituting the acceleration definition given by Eq. (5). The linear momentum
+
+for time tn can then be written as a function of the displacement field un and the force density fn in step
+
+n (current step) and displacement un−1, velocity ˙un−1 and acceleration ¨un−1 in the previous step n − 1.
+
+∇ · [C(x) : ∇sun] + fn(x) = ρ(x)
+
+β∆t2
+�
+un − un−1 − ∆t ˙un−1 − ∆t2(0.5 − β)¨un−1
+�
+.
+(26)
+
+Grouping the terms and multiplying by −β∆t2 results in
+
+− β∆t2∇ · [C(x) : ∇sun] + ρ(x)un = β∆t2fn(x) + ρ(x)
+�
+un−1 + ∆t ˙un−1 + ∆t2(0.5 − β)¨un−1
+�
+.
+(27)
+
+Naming the unknown fields fn, un as f, u, respectively, Eq. (27) is transformed into Fourier space, leading
+
+to
+
+− β∆t2iξkF
+�
+Cjklm(x)F−1
+� i
+
+2 (ˆulξm + ˆumξl)
+��
++ F
+�
+ρ(x)F−1{ˆuj}
+�
+=
+
+F
+�
+ρ(x)
+�
+un−1
+j
++ ∆t ˙un−1
+j
++ ∆t2(0.5 − β)¨un−1
+j
+��
++ β∆t2F {fj} ,
+
+(28)
+
+14
+
+
+where ξ is the frequency vector.
+
+As in the one-dimensional case, the left-hand side of Eq. (28) corresponds to a linear operator ˆ
+A(·)
+
+in Fourier space. Therefore, Eq. (28) can be written as
+
+ˆ
+A (ˆu) = β∆t2�f + �b,
+(29)
+
+where �f is the Fourier transform of the force density field at time t = tn (Eq. (23)) and ˆ
+A (ˆu) and ˆb are
+
+defined as (in components):
+
+ˆ
+A (ˆu)j = −β∆t2iξkF
+�
+Cjklm(x)F−1
+� i
+
+2 (ˆulξm + ˆumξl)
+��
++ F
+�
+ρ(x)F−1{ˆuj}
+�
+(30)
+
+ˆbj = F
+�
+ρ(x)
+�
+un−1
+j
++ ∆t ˙un−1
+j
++ ∆t2(0.5 − β)¨un−1
+j
+��
+.
+(31)
+
+Due to the linearity of the operator ˆ
+A (ˆu), the problem can be split into two linear systems whose
+
+solutions will be added later. The first linear problem is
+
+ˆ
+A (ˆub) = ˆb
+(32)
+
+whose solution provides the field ub = F−1 {ˆub}. The second problem consists in finding the effect of the
+
+force density field f, defined in Eq. (23), for a given value of the force F acting on Γ at time t = tn,
+
+ˆ
+A ( ˆ
+uf) = ˆf.
+(33)
+
+The solution un in real space corresponds to the sum of the solution of the two problems (Eqs. (32) and
+
+(33)),
+
+un(x) = β∆t2uf(x) + ub(x).
+(34)
+
+At this stage, the value of the force density F acting at each point of Γ is not yet known and should be
+
+obtained to meet the prescribed displacement. To obtain its value, Green’s functions will be used. Green’s
+
+function of the operator A provides the effect of a point force P concentrated on x′ on the displacement
+
+at a point x,
+
+u(x) = g(x, x′) · P(x′).
+
+15
+
+
+The effect of a field f is then
+
+u(x) =
+�
+
+Ω
+g(x, x′) · f(x′)dΩ =
+�
+
+Γ
+g(x, x′) · F(x′)dΓ = (g ∗ F)Γ,
+(35)
+
+where the convolution is performed at the points on Γ. The value of the force distributed on Γ must be
+
+determined at each time step to satisfy the value of the prescribed displacement for the points in x ∈ Γ,
+
+un(x ∈ Γ) = U(t) = β∆t2(g ∗ F(x, t))Γ + ub(x ∈ Γ)
+(36)
+
+and can be obtained inverting the previous equation,
+
+find F(x, t) | (g∗F(x, t))Γ =
+1
+
+β∆t2 (U(t) − ub(x)) for x ∈ Γ → F(x, t) =
+1
+
+β∆t2 g−1∗(U(t) − ub(x)) (37)
+
+where g−1 stands for the inverse of Green’s function. Solving Eq. (37) can be easily handled when the
+
+manifold Γ is discretized. In this case, g(x, x′) can be replaced by a matrix that links the forces and
+
+displacement of every point in Γ.This matrix is formed by solving Eq. (33) for each point in Γ and its
+
+inverse, g−1, is calculated and only once and then is stored and used during the simulation. At each time
+
+step, F(x, t) is obtained using that inverse matrix. Finally, the force field f(x, t) = δΓF(x, t) is used as
+
+the RHS of Eq. (33) to obtain uf, and the displacement field is obtained using Eq. (34).
+
+2.2.3
+Spatial discretization and algorithm
+
+Focusing on the numerical resolution of the three-dimensional case, the periodic domain is discretized in
+
+N1 · N2 · N3 equispaced voxels, whose centers are given by
+
+xi,j,k =
+� L1
+
+N1
+(1
+2 + i), L2
+
+N2
+(1
+2 + j), L3
+
+N3
+(1
+2 + k)
+�
+(38)
+
+with (i, j, k) ∈ [0, N1 − 1] × [0, N2 − 1] × [0, N3 − 1]. The values of the properties of the material in each
+
+voxel C(xi,j,k) and ρ(xi,j,k) correspond to the property of the material that occupies that position. The
+
+displacement vector is discretized using its value in the center of each voxel, u(xi,j,k).
+
+The discrete fields in Fourier space have the same dimension as their counterparts in real space. The
+
+16
+
+
+corresponding N1 · N2 · N3 discrete frequencies in Fourier space are
+
+ξk1,k2,k3 = (ξk1, ξk2, ξk3)
+(39)
+
+being the frequencies in each direction ξk1, ξk2, ξk3 defined as in the 1D case, (Eq. 20).
+
+After discretization, the linear operator ˆ
+A defined in equation (30) is replaced by its discrete counter-
+
+part in which the Fourier and inverse Fourier transforms are substituted by discrete Fourier transforms,
+
+and the frequencies used are the discrete set defined in equation (39). The equations of the type ˆ
+A(u) = b,
+
+as Eqs. ((32),(33)), correspond to a linear system of equations, which can be solved efficiently using Krylov
+
+iterative solvers. In the present case, the conjugate gradient can be used because of the Hermitian nature
+
+of the operator. Moreover, as proposed in [45] and [14] for similar problems, preconditioners can be built
+
+that strongly improve numerical performance. The proposed preconditioner is the exact solution of the
+
+linear equation for a homogeneous medium with average volume stiffness and density C = C(x) and
+
+ρ = ρ(x), and corresponds to
+
+ˆ
+M(ˆu) =
+�
+β∆t2K(ξ) + ρI
+�−1 · ˆu(ξ),
+(40)
+
+where I is the identity tensor and K(ξ) is the acoustic tensor, defined for each frequency as
+
+Kij(ξ) = Cikjmξkξm.
+(41)
+
+The preconditioner, Eq.(40), is formed and stored once at the beginning of the simulation. Its computation
+
+is not expensive computationally since it only requires the inversion of a 3×3 matrix for each frequency.
+
+This step is indeed equivalent to form the Gamma operator in a standard homogenization FFT simulation.
+
+The use of the preconditioner within the conjugate gradient implies just adding a multiplication of the
+
+current value of ˆu by
+ˆ
+M at each iteration.
+
+For obtaining the force distribution on Γ at every time step, the Eq. (37) have to be solved. To
+
+perform this efficiently, the discrete inverse Green operator will be constructed once at the beginning of
+
+the simulation and used in subsequent time steps. Let xp be the position of a point lying in Γ, 1 ≤ p ≤ Np
+
+and let fj
+p(x), be a force density field defined as
+
+fj
+p(x) =
+
+
+
+
+
+
+
+
+ej
+if x = xp
+
+0
+elsewhere
+(42)
+
+17
+
+
+for every point p and direction j = 1, 2, 3. The displacement result of applying this field is obtained by
+
+solving the linear system,
+
+ˆ
+A(ˆu(p,j)) = ˆfj
+p
+(43)
+
+where u(p,j)(x) = F−1(ˆu(p,j)). The result of solving the problem for each applied field around p allows
+
+to form the Green’s tensor for each other point q lying on Γ, g(q, p), p, q = 1, Np, with dimensions 3 × 3
+
+which is defined as
+
+gij(q, p) = ui
+(p,j)(xq)
+(44)
+
+The assembly of all g(p, q) matrices defines a new matrix, G, with dimension 3Np × 3Np as
+
+GIJ = gij(q, p) with I = 3 · (p − 1) · (i − 1) , J = 3 · (q − 1) · (j − 1)
+p, q = 1, ..., Np; i, j = 1, 2, 3 (45)
+
+which express the relation between displacement and the forces of the Np nodes in Γ. The convolution
+
+restricted to the manifold Γ defined in Eq. (35) is therefore written, for the discrete case, as the matrix
+
+vector product in Eq. (46).
+
+
+
+
+
+u1
+1
+
+u2
+1
+
+u3
+1
+...
+
+u1
+Np
+
+u2
+Np
+
+u3
+Np
+
+
+
+
+
+=
+
+
+
+
+
+g(1, 1)
+· · ·
+g(1, Np)
+...
+...
+...
+
+g(Np, 1)
+· · ·
+g(Np, Np)
+
+
+
+
+
+
+
+
+
+F 1
+1
+
+F 2
+1
+
+F 3
+1
+...
+
+F 1
+Np
+
+F 2
+Np
+
+F 3
+Np
+
+
+
+
+
+(46)
+
+The matrix G is non-singular but is in general non-symmetric for a heterogeneous medium, since in
+
+this case the Green’s operator is not translation invariant. G is computed once at the beginning of the
+
+simulation and then it is inverted using a direct method to obtain G−1, which will be stored. Finally,
+
+18
+
+
+from the prescribed displacement for all nodes in Γ, u(x, t) = U(t), the vector V(t) can be formed;
+
+V =
+
+
+
+
+
+U 1(t) − u1
+b1
+
+U 2(t) − u2
+b1
+
+U 3(t) − u3
+b1
+...
+
+U 1(t) − u1
+bNp
+
+U 2(t) − u2
+bNp
+
+U 3(t) − u3
+bNp
+
+
+
+
+
+(47)
+
+and the vector F for the points in Γ can be calculated as
+
+F(t) =
+1
+
+β∆t2 G−1 · V(t)
+(48)
+
+and the solution un(x) is obtained for every point of equation (34) once F is obtained.
+
+The algorithm described in this section is presented in the Algorithm box 2. The method is pro-
+
+grammed in Python, integrated into the FFT homogenization code FFTMAD [46, 45]. FFTW is used
+
+for Fourier transforms (through the pyfftw project), and the scipy.sparse functions are the core for the
+
+resolution of iterative linear problems.
+
+19
+
+
+Algorithm 2: FFT based elastodynamic algorithm –2D and 3D–
+
+Data: Microstructure: C(x), ρ(x) and definition of Γ: xp ∈ Γ
+
+Prescribed fields on Γ: U(t), ˙U(t), ¨U(t),
+
+Initial conditions: u0(x), ˙u0(x) ,
+
+Time discretization [t0, n∆t, ..., tf] and space discretization x = [0, xm, ..., L], for n and m ∈ Z;
+
+Newmark constants, β = 0.25, γ = 0.5
+
+Result: u(x, t), ˙u(x, t), ¨u(x, t), F(t)
+
+Preprocessing: Form function ˆ
+A() eq. (30) and compute
+
+¨u0(x) = F−1
+�
+iξF
+�
+C(x) : F−1
+� i
+
+2 (ˆu0 ⊗ ξ + ξ ⊗ ˆu0)
+���
+;
+
+Obtain matrix G−1:
+
+• Solve Np linear problems in Eq.(43) for each point p in Γ and each d.o.f. using CG with
+
+preconditioner
+ˆ
+M (Eq. 40)
+
+• Form matrix g(p, q) for every p, q = 1, Np from the solution (Eq. 44)
+
+• Form matrix G (Eq. 45)
+
+• Invert matrix G using a direct L, U solver. The factorization in matrices L, U is stored.
+
+while t ≤ tf do
+
+t = t0 + ∆t;
+
+ˆbn = F
+�
+ρ(x)
+�
+un−1 + ∆t ˙un−1 + ∆t2(0.5 − β)¨un−1
+��
+;
+
+ubn = F−1 �
+ˆ
+A−1(ˆbn)
+�
+; ˆ
+A−1(·) using CG ( ˆ
+A, ˆbn) with preconditioner
+ˆ
+M (Eq. 40);
+
+Form V(t) using ubn and U(t) (Eq. 47);
+
+F(t) =
+1
+
+β∆t2 G−1 · V(t) using the factorization of G;
+
+uf = β∆t2F−1 �
+ˆ
+A−1(ˆfn)
+�
+; ˆ
+A−1(·) using CG ( ˆ
+A,ˆfn) with preconditioner
+ˆ
+M (Eq. 40);
+
+un(x) = uf(x) + ubn(x);
+
+¨un(x) =
+1
+
+β∆t2
+�
+un − un−1 − ∆t ˙un−1 − ∆t2(0.5 − β)¨un−1
+�
+;
+
+˙un(x) = ˙un−1 + ∆t(1 − γ)¨un−1 + ∆tγ¨un;
+
+end
+
+20
+
+
+2.3
+Explicit Integration Scheme
+
+An explicit algorithm based on FFT is developed to solve the wave propagation problem, in order to
+
+compare its accuracy and efficiency with the implicit scheme and FE. The method chosen is the explicit
+
+central difference scheme, which is the particularization of the Newmark-β method for β = 0 and γ = 1/2.
+
+Given a constant time increment ∆t, the displacement and velocity fields in current time are obtained
+
+using β = 0 and γ = 1/2 in Eq.(5), leading to
+
+un = un−1 + ∆t ˙un−1 + ∆t2
+
+2 ¨un−1
+
+˙un = ˙un−1 + 1
+
+2∆t¨un−1 + ∆t
+
+2 ¨un
+
+(49)
+
+Note that now, the displacement at current time step n is obtained explicitly from velocities and ac-
+
+celeration from previous time step n − 1. With respect to stability, the explicit scheme is conditionally
+
+stable and the maximum time increment for stability is given by the so-called Courant–Friedrichs–Lewy
+
+condition, usually called the CFL time. CFL time increment is defined from the highest eigenvalue ωmax
+
+of the problem.
+
+∆t ≤
+2
+
+ωmax
+.
+(50)
+
+2.3.1
+One dimensional case
+
+The problem to be solved is the one described in section 2.1 and consists in the propagation of an elastic
+
+wave in a one-dimensional domain with a prescribed condition on a point. Introducing the expressions of
+
+un and ¨un, given in Eq. (49), in the conservation of linear momentum of the problem (Eq. 2) leads to
+
+d
+dx
+
+
+
+E(x) d
+
+dx
+
+�
+un−1 + ∆t ˙un−1 + ∆t2
+
+2 ¨un−1
+
+�
+
+�
+��
+�
+un
+
+
+
+ + fn(x) = 2ρ(x)
+
+∆t
+
+�
+˙un − ˙un−1 − ∆t1
+
+2 ¨un−1
+
+�
+(51)
+
+where the velocity term ˙un is the unknown that must be determined. Grouping terms (unknown on the
+
+left and known on the right), the equation can be written as:
+
+˙un =
+�
+˙un−1 + 1
+
+2∆t¨un−1
+
+�
++
+∆t
+
+2ρ(x)
+d
+dx
+
+�
+E(x) d
+
+dxun(x)
+�
++
+∆t
+
+2ρ(x)fn(x) = ˙ub(x) +
+∆t
+
+2ρ(x)fn(x)
+(52)
+
+21
+
+
+In Eq. (52) the right hand side depends only on fields at the previous time step n − 1, with the
+
+exception of the force fn. The term dependent on fields at tn−1, ˙ub, and can be computed applying the
+
+differential operator in Fourier space as
+
+˙ub(x) =
+�
+˙un−1 + 1
+
+2∆t¨un−1
+
+�
++
+∆t
+
+2ρ(x)F−1 �
+iξF
+�
+E(x)F−1[iξ�un]
+��
+.
+(53)
+
+The value of the body force fn(x) can be obtained directly form the prescribed velocities on Γ, here the
+
+point x0,
+
+˙un(x = x0) = ˙U(t) = ˙ub(x0) +
+∆t
+
+2ρ(x)fn(x)
+
+leading to
+
+Fn = 2ρ(x)
+
+∆t ( ˙U(t) − ˙ub(x0))
+(54)
+
+It is interesting to note that, contrary to the implicit algorithm (Eq. 18), there is no need to pre-compute
+
+the effect of the body force to obtain its value.
+
+2.3.2
+Three dimensional case
+
+The extension of the 1D algorithm to three dimensions is straightforward and only the resulting equations
+
+will be provided.
+
+The velocity field at time n is obtained by introducing the time integration expressions in Eq. (49)
+
+into the conservation of linear momentum (Eq. 22).
+
+˙un =
+�
+˙un−1 + 1
+
+2∆t¨un−1
+
+�
++
+∆t
+
+2ρ(x)∇ · [C(x) : ∇sun] +
+∆t
+
+2ρ(x)fn(x) = ˙ub(x) +
+∆t
+
+2ρ(x)fn(x)
+(55)
+
+where ˙ub(x) is computed similarly to Eq. 53 by differentiation in Fourier space as
+
+˙ub (j)(x) =
+�
+˙un−1 (j) + 1
+
+2∆t¨un−1 (j)
+
+�
++
+∆t
+
+2ρ(x)F−1
+�
+iξkF
+�
+Cjklm(x)F−1
+� i
+
+2 (ˆulξm + ˆumξl)
+���
+
+The value of the force field fn(x) is set using the condition of the velocity ˙U(t)in Γ as
+
+fn(x) =
+
+
+
+
+
+
+
+
+0
+x ̸∈ Γ
+
+2ρ(x)
+
+∆t ( ˙U(t) − ˙ub(x))
+x ∈ Γ
+(56)
+
+22
+
+
+2.3.3
+Stable time increment
+
+For the stability of the solution, the maximum ∆t to be used in a simulation must be computed based on
+
+the eigenvalues of the discrete problem. In the case of a homogeneous medium (C(x) = C0 and ρ(x) = ρ),
+
+the eigenvalues ω of the problem are obtained from the eigenvalues of the acoustic tensor. Following the
+
+work of Segurado and Lebensohn [14], the eigenvalues of the problem for a given spatial frequency vector
+
+ξ are the three eigenvalues of the matrix Q
+
+Qik(ξ) = 1
+
+ρ0
+[Cijklξjξl].
+(57)
+
+The three largest eigenvalues ω1,2,3 are obtained substituting in Eq. (57) the largest frequency vector of
+
+the discretization used (Eq. 20), ξi = Nπ
+
+Li , and correspond to the longitudinal and the two transverse
+
+modes. Finally, stability is given by
+
+∆t ≤
+2
+
+max(ω1, ω2, ω3).
+(58)
+
+In the case of a heterogeneous medium, the eigenvalues do not have a closed form expression and can be
+
+found by solving the discrete eigenvalue problem, as proposed in [14].
+
+3
+Validation and accuracy of the approach
+
+In this section, the developed numerical framework will be validated by comparing it with analytical
+
+solutions and the results obtained with the finite element method. All simulations have been performed
+
+using the same computer, a desktop computer with 6 cores i5-9500@3GHz and 8 GB RAM memory. The
+
+simulation times refer to this system.
+
+3.1
+One dimension
+
+First, the proposed approach will be used to study the propagation of elastic waves in a one-dimensional
+
+medium. Two different problems will be analyzed: (1) wave propagation in a homogeneous medium and
+
+(2) wave propagation in a layered medium. In both cases, analytical solutions can be obtained and are
+
+described in Appendix C.
+
+The simulated example consists of a 1D periodic domain Ω = {0 ≤ x ≤ L} with L = 2m. A prescribed
+
+23
+
+
+bell-shaped pulse, U(t), is set at point x0 = 0, given by Eq. (59)
+
+U(t) =
+
+
+
+
+
+
+
+
+
+
+A (t(π/ω − t))α
+
+((π/ω)2/4)α
+for 0 ≤ t ≤ π/ω
+
+0
+for the rest
+
+(59)
+
+where the parameters that define the shape of the pulse are A = 0.001m, α = 4 and ω = 5πc0/L s−1 with
+
+c0 the wave velocity in the one-dimensional medium.
+
+The material considered in the simulation of the homgeneous domain is aluminum, while in case (2),
+
+two different configurations of materials were considered to have different contrast of elastic properties:
+
+aluminum-iron and aluminum-uranium. The elastic constants of the three materials are given in Table 1.
+
+The wave velocity for longitudinal 1D waves c0 =
+�
+
+E/ρ is also provided in the table.
+
+Table 1: Parameters of metallic materials. Data from [47]
+
+Material
+E (GPa)
+ρ (kg/m3)
+λ (GPa)
+µ (GPa)
+ν
+c0 in 1D (m/s)
+
+Aluminium
+70.3
+2700.0
+58.2
+26.1
+0.345
+5102.6
+
+Iron
+211.4
+7850.0
+115.7
+81.6
+0.293
+5189.4
+
+Uranium
+172.0
+18950.0
+99.2
+66.1
+0.3
+3012.7
+
+The simulation time was set as 3.919 · 10−4s−1, which is approximately the time the wave needs to
+
+travel the entire length of the aluminum bar.
+
+The homogeneous problem is solved using four different approaches, the implicit and explicit FFT
+
+schemes introduced in previous section and implemented in FFTMAD, and implicit and explicit finite
+
+element solvers. The finite element solutions are obtained using Abaqus [48]. The implicit solution in FE
+
+is obtained with the same implicit Newmark solver and a unidimensional mesh of linear truss elements
+
+with the same number of elements as the points used in the FFT approach. Periodic boundary conditions
+
+u(x = 0) = u(x = L)
+
+are applied using multipoint constraints. The prescribed pulse is introduced as a time-dependent Dirichlet
+
+boundary condition at the point x = 0. The explicit simulations are also performed in Abaqus, using in
+
+this case central differences with an identical integration scheme as the one proposed in Section 3 for the
+
+FFT approach. To avoid instabilities produced by the use of multipoint constraints in explicit FE [49],
+
+24
+
+
+the periodic boundary conditions are prescribed in this case applying the same pulse at the two model
+
+external nodes.
+
+The 1D bar is discretized with eight different number of voxels, ranging from N = 256 to N=32768
+
+voxels. The problem is solved also using different time increments. The reference time increment was
+
+the one given by Courant’s condition, computed using the standard definition in explicit FE, CFL =
+
+∆x/c0, and which varies with discretization.
+The time increments used correspond to ∆t/CFL =
+
+[0.5, 1, 2, 3, 4, 8, 10, 15, 20, 50]. The 80 feasible combinations were simulated with the implicit FFT
+
+method presented, while only the problem with N=6561 was used with the implicit FE (∆t/CFL =
+
+0.5, 1, 2, 5, 10, 15), explicit FE (∆t/CFL = 0.1, 0.7, 1) and explicit FFT (∆t/CFL = 0.1, 0.5, 1) solvers for
+
+comparative purposes.
+
+To illustrate the solution of the problem and the numerical response obtained, a fixed discretization
+
+of N = 6561 voxels is analyzed first. The displacement field in the homogeneous material given by the
+
+analytical solution (Annex C) is represented in Fig. 3 for three different times. The graphs also include
+
+the solution obtained by the implicit FFT method proposed here, using a time increment of ∆t = 10CFL.
+
+The solutions of explicit FFT and FE are very similar and are not represented in the graph for the sake of
+
+clarity. Two pulses traveling in opposite directions are obtained, a consequence of the periodic boundary
+
+conditions. The perturbation is applied on x = 0 therefore, one pulse propagates from that point to the
+
+right. The other pulse propagates from that point to the left, appearing then in the right corner, which
+
+is the periodic point of x = 0, and moving to the left. In the figure, it can be seen that qualitatively the
+
+numerical response is indistinguishable from the analytical solution. To quantify the errors, in table 2 the
+
+L2-norm of the difference between the analytical solution u(x) and the numerical ones uh(x),
+
+error = ∥u(x) − uh(x)∥L2
+
+∥u(x)∥L2
+.
+(60)
+
+is presented. It can be observed that using implicit FFT, the relative error increases slightly with increasing
+
+time step but is always behind 10−3. The error using explicit FE was always well above the implicit
+
+schemes, around one order of magnitude larger. In the case of the explicit FFT, the error was similar to
+
+the implicit version. Finally, the implicit FE error was also greater than that of FFT (around a factor of
+
+2).
+
+The second one dimensional case analyzed is a layered medium. The periodic domain is made, in the
+
+first example, of aluminum from x = 0 to x = 0.6mm, iron from 0.6 to 1.2 mm, and again aluminum
+
+25
+
+
+Figure 3: 1D wave propagation (displacement field) along the Al homogeneous domain discretized
+with 6561 voxels.
+
+Table 2: Accuracy and performance of simulation results for Al homogeneous domain discretized
+with 6561 voxels. 1 core computation
+
+∆t/CFL
+t (s) ABQ
+er ABQ
+t (s) FFT
+er FFT
+
+1
+-
+-
+7.23
+2.59 · 10−3
+
+2
+-
+-
+4.26
+2.48 · 10−3
+
+5
+-
+-
+1.66
+2.09 · 10−3
+
+10
+184
+7.48 · 10−3
+0.92
+5.36 · 10−3
+
+Explicit scheme
+
+1
+.4
+1.20 · 10−1
+4.88
+2.64 · 10−3
+
+between 1.2 mm and 2 mm. In the second example iron is replaced by uranium, achieving a higher property
+
+contrast at the materials interface. Again, the solution at three different times is shown in Fig. 4 together
+
+with the analytical solution, provided in Appendix C. The pulse, when moving to a different medium,
+
+is partially reflected and transmitted, and the numerical methods are able to accurately reproduce this
+
+effect, providing a response almost coincident with the analytical solution (Fig. 4). Differences between
+
+numerical approaches and analytical solutions are quantified using Eq. (60) and represented in Table 3.
+
+Conclusions are similar to the homogeneous case, errors are very small (about 10−3) and similar for both
+
+FE and FFT.
+
+26
+
+
+Figure 4: 1D wave propagation (displacement field) along the layered domain. N = 6561 voxels
+
+Numerical performance
+
+The calculation times for the two cases studied, with a discretization of N=6561 voxels, are represented
+
+in tables 2 and 3 respectively. First, it can be observed that the stability of the implicit solver allows one
+
+to obtain a solution as good as that for ∆t = CFL using ∆t = 10CFL with almost an order of magnitude
+
+lower computational cost. The deviation from an inverse linear scaling with time increment size is small;
+
+e.g., the ratio of simulation times for CFL and ∆t = 10CFL for the heterogeneous simulation is 8.32
+
+instead of 10, and its origin can be found in iterative linear solver. To solve u at time n, the solution
+
+un−1 is used as the initial guess in the conjugate gradient method, and this guess is closer to the solution
+
+for shorter time steps, so the number of iterations per time step decreases slightly.
+
+Regarding the comparison of the computational cost of the different schemes, the time spent with the
+
+implicit FFT approach to solve this relatively small problem compared to FE with the same integrator,
+
+discretization, and time step was remarkably shorter. The FFT-based solution was 200 times faster for
+
+the homogeneous case and 50 times faster for the heterogeneous. This increase in performance will be
+
+even more clear in large three-dimensional problems, as will be presented in Section 3.3, due to the order
+
+27
+
+
+Table 3: Accuracy and performance of simulation results for the layered medium. 1 core compu-
+tation
+
+Aluminium-Iron
+Aluminium-Uranium
+
+∆t/CFL
+t (s) ABQ
+er ABQ
+t (s) FFT
+er FFT
+t (s) ABQ
+er ABQ
+t (s) FFT
+er FFT
+
+1
+-
+-
+33.37
+3.46 · 10−3
+-
+-
+44.28
+4.12 · 10−3
+
+2
+-
+-
+16.68
+3.40 · 10−3
+-
+-
+23.22
+4.00 · 10−3
+
+5
+-
+-
+7.12
+3.03 · 10−3
+-
+-
+10.02
+3.53 · 10−3
+
+10
+194
+8.50 · 10−3
+4.01
+3.50 · 10−3
+181
+8.99 · 10−3
+5.61
+3.54 · 10−3
+
+Explicit scheme
+
+1
+1
+6.24 · 10−2
+7.69
+4.21 · 10−3
+1
+6.37 · 10−2
+7.15
+4.51 · 10−3
+
+n log n of the computational cost in FFT-based methods. Moreover, it is important to note that the
+
+FFT-based method needs larger times to solve the problem when the contrast between phases increases.
+
+This behavior is expected since the preconditioner that is used to solve the corresponding linear systems
+
+is based on the homogeneous solution. Regarding the comparison with explicit schemes, explicit FE is
+
+for this relatively small problem the fastest approach, but paying the prize of having much less accuracy.
+
+Explicit FFT is much more accurate than explicit FE , but is also computationally more demanding.
+
+Order of accuracy
+
+To extend the analysis of the methods in terms of precision, the results of homogeneous material are
+
+analyzed for all combinations of discretization of time and space. The results are presented in Fig.5,
+
+showing error vs time step (left) and spatial discretization (right). The proposed method shows an order
+
+of accuracy in time of two, the same as the implicit FE solver, for time steps greater than the CFL
+
+condition (second marker of each curve). However, the results also show that there is a critical time step
+
+that depends on the spatial discretization, below which the error remains constant and does not decrease
+
+as the time step decreases. This kind of behavior is common in implicit integrators [50], and a similar
+
+trend can be inferred from the two lowest points of the FE -implicit results (∆t/CFL = 0.5, 1). However,
+
+the implicit FE solver critical time is shorter than the FFT one, so it is capable of achieving more accurate
+
+results for time steps on the order of CFL number. Looking at the results of the explicit schemes, it can
+
+be observed that the error keeps also constant when decreasing the time step below the CFL number
+
+(larger time increment). It is interesting to note that the accuracy of explicit FFT for time steps below
+
+28
+
+
+CFL is similar to the implicit version and one order of magnitude higher in the FE solver. Regarding
+
+the order of convergence in space, it is observed that the FFT-implicit method converges linearly for
+
+times steps similar to the CFL condition and presents a quadratic convergence for times steps larger than
+
+ten times the CFL condition. Therefore, from these results, it is clear that the proposed implicit FFT
+
+method is optimal for problems which involve fine spatial discretization in space because it allows the use
+
+of large time steps preserving accuracy and efficiency. As will be presented in the forthcoming examples,
+
+wave propagation in heterogeneous microstructures that require fine discretizations are ideal systems for
+
+this approach.
+
+Figure 5: Order of accuracy in time (left) and space (right) of the presented method for wave
+propagation in 1D homogeneous elastic medium. The time convergence is compared with the FE
+-implicit, -explicit and FFT-explicit method.
+
+3.2
+Three dimensional problem
+
+In this section, we consider the propagation of plane waves in a periodic 3D medium, represented by
+
+the domain Ω. A uniform displacement (Eq. (62)) is applied to one of the planes at the cell boundary
+
+Γ = {x| x3 = 0}. Two cases are considered, longitudinal waves, when the applied displacement is normal
+
+to Γ and shear waves (distortional) when the prescribed displacement is parallel to that plane.
+
+Note that, because Γ corresponds to a plane and due to periodicity, the solution is equivalent to a 1D
+
+case under plane strain. Therefore, the analytical solution to the problem is simply given by the 1D-wave
+
+solution (see Appendix C) in which the velocity constant c0 has now a different definition depending on
+
+29
+
+
+whether the wave is longitudinal or distortional (Eq. 61).
+
+c0 =
+
+
+
+
+
+
+
+
+
+
+
+
+�λ + 2µ
+
+ρ
+;
+for longitudinal waves
+�µ
+
+ρ ;
+for shear waves
+(61)
+
+The periodic domain used Ω, is defined as Ω = {0 ≤ x1 ≤ L1 × 0 ≤ x2 ≤ L2 × 0 ≤ x3 ≤ L3} with
+
+L1 = 0.1 m, L2 = 1 m, L3 = 2 m and is discretized with N1 = 1, N2 = 27 and N3 = 2187 points. The
+
+bell-shaped pulse is introduced prescribing a displacement on Γ given by Eq. (62).
+
+u(x3 = 0, t) =
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+u1 = 0; u2 = 0; u3 = U(t);
+for longitudinal waves
+
+u1 = 0; u2 = U(t); u3 = 0;
+for shear waves
+
+being U(t) defined as in the 1D problem, Eq. (59)
+
+(62)
+
+The simulation final time was set equal to the time required by a longitudinal wave to travel the length
+
+of L3 = 2 m. As in the one-dimensional problem, two cases are considered, a homogeneous material and
+
+a layered medium. The materials used are the same as in the one-dimensional case, Al and Fe. A time
+
+step of time step of ∆t = 10CFL is considered, and therefore only the implicit solvers are considered in
+
+this analysis.
+
+In the case of FE simulations, trilinear 3D continuum elements with reduced integration (C3D8R in
+
+Abaqus) are used. The mesh had the same number of elements as the number of voxels in the FFT-based
+
+model. For the implicit FE solver, periodic boundary conditions along the three axes are introduced using
+
+multipoint constraints and the prescribed displacement is introduced as an applied displacement on the
+
+boundary x3 = 0.
+
+The displacement along the axis x3 for different times using a is represented in Fig. 6 for both cases,
+
+together with the analytical solution. It is important to note that, for simplicity, the analytical solution
+
+was only computed up to the interaction of any wave with the starting or end point of the simulated
+
+domain.
+
+Conclusions are almost the same as for the one dimensional case. Qualitatively, analytical solution
+
+is indistinguishable from the implicit FFT result, regardless the reflections and transmissions through
+
+the heterogeneity. To quantify the accuracy, the L2-norm of the difference in the displacement field with
+
+the analytical solution has been computed, and the results are provided in table 4 and table 5 for the
+
+30
+
+
+(a) Homogeneous medium
+(b) Heterogeneous medium
+
+Figure 6: 1D-like wave propagation (displacement field) along a 3D Al homogeneous domain and
+Al-Fe layered medium.
+
+31
+
+
+homogeneous and heterogeneous medium.
+
+It can be seen that the errors are below 5 · 10−2. The difference with the analytical solution was equal
+
+to or smaller than the implicit FE results.
+
+Another interesting result of the simulation is the wave group velocity, which can be obtained from
+
+the numerical simulations as the difference between the position of the wave at two different times divided
+
+by the time difference. The results, presented in Tables 4 and 5, capture the theoretical wave speed for
+
+both modes, given in Eq. (61), with an error for the largest time increment of around 10−2.
+
+Simulation times for both cases (homogeneous and heterogeneous medium) using FE and FFT have
+
+been summarized in tables 4 and 5. Note that in the case of FFT-based simulations, the simulation time
+
+includes the preprocessing step in which the Green’s functions for the nodes in Γ are computed. In the
+
+preprocessing time of the 3D simulations, the time needed for computing the effect of each point in the
+
+manifold Γ was 1.5 the time to perform the simulation of one time step. This is because for each point in
+
+Γ the linear problem in Eq. 43 has to be solved three times, one for each direction, while in a standard
+
+time step, the system is solved twice, once to obtain the value of F on Γ and another to include the effect
+
+of the obtained eigenforces. In addition to this, a matrix of size 3m × 3m with m the number of points
+
+in Γ have to be factorized. This last time is usually negligible compared to forming the system. As an
+
+example of the preprocessing time, in the layered case with N1 = 1, N2 = 27 and N3 = 2187 points, the
+
+preprocessing took 45s and the rest of the simulation took 211s. The ratio of these times corresponds to
+
+0.21, near to the time estimated of 27*3/2 knowing that the simulation took 215 increments. Furthermore,
+
+the the preprocessing of a RVE can be stored and reused for any other dynamic simulation with the same
+
+RVE.
+
+Including preprocessing times, in the homogeneous simulation, the FFT-based approach took 14 times
+
+less than FE. In the case of the heterogeneous medium, this ratio was reduced and the FFT-based model
+
+was more than 2.5 times faster. If the preprocessing time is subtracted from the total time, the FFT-
+
+based simulation time becomes approximately 1/3 of the FE time. Although these times illustrate well
+
+the benefit of the proposed approach, they are just obtained for a particular model size which is indeed
+
+quite small. For a deeper analysis of the numerical performance, a more detailed analysis involving large
+
+3D problems (millions of voxels) will be made in the next section.
+
+32
+
+
+Table 4:
+Accuracy and performance of the FFT-based simulations for the 3D homogeneous
+medium. 6-core computation. tpre refers to the preprocessing time to compute the Green’s func-
+tions.
+
+∆t/CFL
+t (s) ABQ
+er ABQ
+ttot (s) FFT
+tpre (s) FFT
+er FFT
+cFFT m/s
+creal m/s
+
+10 (P wave)
+552
+4.04 · 10−2
+40.0
+4
+2.47 · 10−2
+6398.4
+6395.5
+
+10 (S wave)
+481
+3.34 · 10−2
+41.2
+4
+2.80 · 10−2
+3105.4
+3111.1
+
+Table 5: Accuracy and performance of the FFT-based simulations for the 3D layered medium.
+6-core computation. tpre refers to the preprocessing time to compute the Green’s functions.
+
+∆t/CFL
+t (s) ABQ
+er ABQ
+ttot (s) FFT
+tpre (s) FFT
+er FFT
+
+10 shear
+637
+5.29 · 10−2
+256.5
+45
+2.73 · 10−2
+
+10 lon
+680
+2.96 · 10−2
+280.1
+44
+1.70 · 10−2
+
+3.3
+Numerical performance
+
+With the aim of checking the performance of the FFT scheme developed in large 3D problems, the
+
+propagation of a longitudinal wave in an Al-Fe-Al layered medium is simulated using a variable number
+
+of elements. The problem is solved using the proposed implicit FFT approach as well as with the explicit
+
+version of FFT and both implicit and explicit FE. In all cases, implicit simulations are performed using
+
+Newmark-β and explicit ones using central differences, as explained in Section 3. The dimensions of the
+
+prismatic bar used for the simulation are 0.1 x 0.1 x 2 m and are discretized with N1 = 5, N2 = 5, N3 =
+
+[243, 729, 2187, 6561, 19683, 59049, 177147] voxels. The reason for choosing this problem is twofold
+
+(1) is simple, so an analytical solution is available to compute the error of each simulation, and (2) it
+
+symmetry allows us to use standard Dirichlet and Neumann boundary conditions to impose the periodicity,
+
+avoiding the use of multipoint constraints which lead to instabilities in explicit FE [49].These conditions
+
+correspond to displacements in the x and y directions on planes X = 0, X1 = L1, X2 = 0, X3 = L3.
+
+The elements used in explicit FE are the same as in the implicit simulations, reduced order 8 node
+
+quadrilateral elements. Regarding the time step, it is important to note that in the implicit simulations,
+
+the time increment was set equal to the CFL condition of the coarsest mesh, with N=5,5,243 voxels.
+
+33
+
+
+With this setting, the time steps for the finest models with N3 = 59049 and N3 = 177147 have been done
+
+with steps of 243 and 729 times, respectively, the CFL condition for these discretizations.
+
+Fig. 7 represents the simulation times obtained as function of the number of elements/voxels. It can
+
+be observed that the implicit FFT method becomes the fastest approach for problems with more than
+
+2·106 voxels. For these sizes, even explicit FE —which is considerably less accurate but faster— becomes
+
+less competitive due to the small time step needed for such fine models. The order of growth of the cost
+
+of implicit FE and implicit FFT methods with the number of elements is very different, and the first one
+
+becomes orders of magnitude slower than the proposed method for a large number of voxels. Note that the
+
+conditions used for both methods are almost identical: same number of integration points and nodes than
+
+voxels, same boundary conditions, same linear solver (conjugate gradient) with same tolerance (10−6). It
+
+has also to be noted that the efficiency of the proposed FFT approach has still place for improvement.
+
+For example, current simulations are performed using an odd number of voxels but the algorithms can be
+
+adapted for an even number of points which would improve the performance using the number of elements
+
+powers of 2.
+
+Figure 7: Performance comparison among the FFT method, FE explicit and FE implicit consid-
+ering the computational cost. The time increment in FE -explicit is the one given by the CFL
+condition, while in FFT and FE -implicit is constant and set as the CFL condition for the smallest
+problem.
+
+Regarding the precision in these simulations, the error in the FFT solution was lower than for the
+
+explicit and implicit FE methods for all cases except for the two coarsest meshes, where the time step
+
+34
+
+
+was close to CFL, reaching the point where the error decay loses quadratic convergence. To give some
+
+examples, for the problem with 1476225 voxels, the error of the FFT method was 9.40 · 10−3, while it was
+
+equal to 1.02 · 10−2 and 1.38 · 10−2 for explicit and implicit FE solvers.
+
+4
+Results
+
+In this section, three different problems will be solved to show the capabilities of the proposed method.
+
+The cases do not have full analytical solutions and the validation of the results is done by analyzing some
+
+physical outputs such as the resulting wave velocities, the amplitude attenuation, etc.
+
+4.1
+Circular and spherical waves
+
+4.1.1
+Circular waves in a homogeneous plate
+
+This example simulates the deformation of a plate caused by the application of an excitation at its center.
+
+The material is Al. The domain is a square plate of dimensions 0.001×1×1m, discretized in 1×1025×1025
+
+voxels, resulting in a model with more than 1 million voxels. Due to the periodicity and the use of a
+
+single voxel in x1, this 3D case is equivalent to a 2D plane strain simulation. The time increment is
+
+∆t = 10 CFL = 1.9 · 10−6s and the final time was T = 2.86 · 10−4 s. The displacement is imposed in the
+
+center of the plate, in a region with radius R = 2.5mm, suing the pulse of amplitude 1mm defined in Eq.
+
+(59). The direction of the pulse is in x1, perpendicular to the plate section, causing transverse waves.
+
+The contour plots of the transverse displacement at three different times are represented in Fig. 8,
+
+where the colors represent the displacement in the perpendicular direction. The simulations show how the
+
+amplitude of the traveling wave decays with the distance to the center. Note that although the maximum
+
+displacement decays, the colors in Fig. 8 are rescaled to the maximum displacement at each time for
+
+a clearer representation. To assess the accuracy of the simulation, we calculated the reduction in wave
+
+amplitude with time and compared it with the analytical solution. The amplitude decay is represented
+
+in Fig. 9. Denoting r as the distance to the center of the plate, it can be observed that the envelope of
+
+the front waves adjusts perfectly with the theoretical trend 1/√r for circular waves originating from a
+
+punctual perturbation [47].
+
+35
+
+
+Figure 8: Transverse displacement for circular waves in plane strain traveling in Al, t = 1.91·10−5s,
+1.115 · 10−4s, 2.3 · 10−4s, 2.86 · 10−4s. Disp0 refers to the displacement in the x direction.
+
+36
+
+
+Figure 9: Circular-wave amplitude evolution, in the homogeneous case, along the line z = 0 for
+the positive y values. All times plotted are previous to the wave-front - plate-edges interaction.
+The point y = 0 corresponds to the center of the plate. r value in the legend refers to the distance
+to the origin.
+
+4.1.2
+Circular waves in a framed plate
+
+This case is a modification of the previous one using a heterogeneous medium. The size and shape of the
+
+domain are the same, a square plate of dimensions 0.001×1×1m, but the material occupying an internal
+
+square of dimensions 0.39 × 0.39m is made of Al, while the external frame is made of Fe. The properties
+
+of both materials are given in table 1. The simulation conditions are the same as in the homogeneous
+
+case, including time discretization, grid of 1 × 1025 × 1025 voxels, shape of the pulse applied, and area
+
+where applied. The results of this simulation are represented in Fig. 10, which shows the contour plots
+
+of the displacement in the direction perpendicular to the plate at three different times.
+
+37
+
+
+Figure 10: Transverse displacement for circular waves in plane strain traveling in Al framed in Fe,
+t = 1.91 · 10−5s, 1.115 · 10−4s, 2.3 · 10−4s, 2.86 · 10−4s
+
+The solutions of both cases are identical until the wave reaches the frame. In terms of computational
+
+cost, the homogeneous problem requires only evaluating the preconditioner at each time step, and the
+
+total simulation time was 10 minutes on the desktop computer. The heterogeneous problem required
+
+approximately 10 CG iterations per time step for a tolerance 10−8, and the total time was 1 hour and 50
+
+minutes using the same computer. These numbers are remarkable for a three-dimensional problem with
+
+a million points and a standard desktop computer. As an illustration, we tried to solve the same problem
+
+in FE with one element per voxel and periodic boundary conditions, but the required memory exceeded
+
+the computed RAM of 8GB. In order to use the same computer for clear time comparisons, periodicity
+
+was eliminated in the FE model to reduce the memory needs. In this case, the total simulation time
+
+was 3 days. The comparison shows that the FFT-based model was ≈ × 36 faster than the implicit FE
+
+38
+
+
+simulation, even after eliminating the limiting periodicity condition for FE.
+
+4.1.3
+Spherical waves in a homogeneous solid
+
+This simulation corresponds to the propagation of waves in a homogeneous solid medium caused by the
+
+application of an excitation in its center. The material is Al. The periodic domain is a cube of dimensions
+
+1 × 1 × 1m, discretized in 129 × 129 × 129 voxels, with around 2 · 106 voxels. The time increment used is
+
+dt = 1.52 · 10−6 s, above CFL, but sufficiently small to have a complete deformation map in 6 time steps
+
+before reaching the periodic boundary. The final time was T = 2.2 · 10−4s. The displacement is imposed
+
+in the center of the volume, in a region with radius R = 1cm, using the pulse of amplitude 1mm defined
+
+in Eq. (59). The direction of the pulse is forced in x1, and the resulting wave has a mixed character,
+
+being longitudinal or transverse depending on the position of the point with respect to the origin, which
+
+defines the propagation direction for that point.
+
+The results of the simulation are represented in Fig. 11. Figs. a-c show the locus of the points in
+
+which the amplitude is equal to 0.5 and 0.9 the maximum amplitude (Amax) for three different times. It
+
+can be observed that the shape of the constant amplitude locus has cylindrical symmetry with respect to
+
+x1, but, contrary to the 2D case, the point symmetry is lost. The locus of the points with 0.5 normalized
+
+amplitude is an elongated spheroid in the direction x1, as the waves are longitudinal in this direction.
+
+The locus of the points with maximum amplitude (in Fig. 11) is a ring with axis x1 that corresponds
+
+to the points of the front more near the origin of the pulse, in which excitation is a transverse wave.
+
+A contour plot showing the amplitude values in x1 − x2 is represented in Fig. 11(d). The amplitude
+
+decay with the distance to the center, r, accurately follows the theoretical relation of ≈ 1/r, and no
+
+numerical dissipation has been found. Moreover, the results do not show any spurious oscillations. It
+
+should be noted that, in this homogeneous simulation, the implicit integration has a closed expression in
+
+Fourier space (the preconditioner in Eq. 40) and therefore the solution of the system does not require
+
+the use of the conjugate gradient. The time needed for the entire simulation was only 20 minutes on the
+
+desktop computer. In FE, the memory requirements exceeded the computer’s capabilities even after the
+
+periodicity was removed.
+
+39
+
+
+Figure 11: (a-c) Surfaces having displacements amplitudes of 0.5Amax (blue) and 0.9Amax (red)
+for t = 3.04 · 10−6s ,9.13 · 10−6s ,1.37 · 10−5. (d) Contour plot of the amplitude value in the plane
+x1 − x3 passing through the cell center.
+
+4.2
+Spherical waves in a framed solid
+
+This next example corresponds to the propagation of spherical waves in a solid medium composed of two
+
+different materials. The inner cube, with length 0.62 m, is made of aluminum, while the outer frame with
+
+thickness of 0.194 m on each face is made of iron. The properties of both materials are the same as in the
+
+rest of the article. The applied perturbation, spatial discretization, time increment size, and final time
+
+40
+
+
+are the same as in the homogeneous case. The results of the simulation are represented in Fig. 12.
+
+Figure 12: (a-c) Surfaces having displacements amplitudes of 0.5Amax (blue) and 0.9Amax (red)
+for t = 3.04 · 10−6s ,9.13 · 10−6s ,1.37 · 10−5. (d) Contour plot of the amplitude value in the plane
+x1 − x3 passing through the cell center.
+
+Figs. 12 (a)—(c) show the locus of the points in which the amplitude is equal to 0.5 and 0.9 the
+
+maximum amplitude for three different times. The shape and symmetries of the constant amplitude locus
+
+are the same as in the homogeneous case before the wave reaches the frame (Fig. 12(a)), and changes
+
+after reaching those points (Figs. 12(b-c)). Axial symmetry is also lost when the wave touches the frame
+
+because of the lack of spherical symmetry of the cubic unit cell. The contour plot of the displacement
+
+41
+
+
+amplitude represented in Fig. 12(d) corresponds to the incipient contact of the wave with the frame,
+
+showing a slightly different shape than the one represented in Fig. 11(d) for the homogeneous solid at
+
+the same time.
+
+The solution in this heterogeneous solid preserves the smoothness and accuracy of the solution in
+
+the homogeneous medium. Regarding the computational cost, the number of iterations of the conjugate
+
+gradient was less than 10 at each time step. The total time needed for the entire simulation was less than
+
+3 hours on the same computer. Again, simulation with FE for time comparison was not possible on the
+
+same computer due to memory restrictions, even using standard Dirichlet boundary conditions.
+
+4.3
+Wave propagation in polycrystal
+
+Finally, we study the propagation of the elastic wave in a polycrystalline RVE in which the grains are
+
+explicitly represented. The domain is a prismatic bar of dimensions 0.35 × 0.35 × 5.67mm, discretized
+
+in 35 × 35 × 567 voxels. The 3D periodic microstructure is represented in Figure 13 and was generated
+
+using a weighted Voronoi tessellation to statistically represent a log-normal grain size distribution with
+
+a mean grain diameter of dg = 100 µm and a standard deviation of 5 µm. The properties of the single
+
+crystal correspond to Ni, a very anisotropic crystal with a Zener ratio greater than 2 with elastic constants
+
+C11 = 249GPa, C12 = 155GPa, C44 = 114GPa and density ρ = 8908 kg/m3 . The crystallographic texture
+
+was adopted to be random and therefore the elastic stiffness tensor differ from grain to grain in a random
+
+fashion, resulting in a macroscopic isotropic elastic response.
+
+42
+
+
+Figure 13: Microstructure of the polycrystal. 35 × 35 × 567 voxels and 0.35 × 0.35 × 5.67 mm.
+Mean grain diameter = 100 µm
+
+As in Sections 3.1 and 3.2, the bell-shaped pulse U(t) defined in Eq. (59) is used to prescribe the
+
+displacement boundary conditions u3 = U(t); u1 = u2 = 0 in the plane x3 = 0. The amplitude is set to
+
+A = 5.67 · 10−3mm while two different pulse lengths (by changing the parameter ω) are used to analyze
+
+two situations: 1) a short pulse with respect to the grain size, approximately, 3 dg (ω = π
+�
+
+c11/ρ/(3dg))
+
+and 2) a long pulse with respect to the grain size, 20 dg (ω = π
+�
+
+c11/ρ/(20dg)). The total time of the
+
+first simulation (3dg) was around 11 hours, with approximately 80% of the time consumed in calculating
+
+the Green’s functions. Reusing the G matrix built with Green’s functions, the second simulation (20dg)
+
+only took 2 hours.
+
+Figure 14 shows the contour plot of the field u3 for the two cases for a time in which waves have
+
+propagated to approximately 1/4 of the domain length. In the first case, it can be seen that the grains
+
+promote the scattering of the wave, whereas in the second case the wave interaction with the micostructure
+
+is minimal and behaves similarly to a wave traveling in a homogeneous solid.
+
+43
+
+
+(a) Pulse length = 2-3 grain sizes
+
+(b) Pulse length = 20 grain sizes
+
+Figure 14: u3 displacement field at the same time for the same micro-structure but for two different
+pulse lengths.
+
+To further analyze the interaction of the waves with the single crystal grains, the longitudinal dis-
+
+placement along a line in the x3 direction is represented in Fig. 15 for the two wave lengths at different
+
+times. The results in Fig. 15 also include the results for a homogeneous equivalent isotropic solid. The
+
+44
+
+
+properties of the homogeneous material are obtained by elastic computational homogenization of the
+
+same domain, using the DBFFT approach [45]. Owing to the random texture of the polycrystalline unit
+
+cell, the homogenized material was isotropic with elastic constants E = 198 GPa, ν = 0.306. It can be
+
+observed that when the pulse is sufficiently larger than the characteristic length of the microstructure,
+
+the solid behaves similarly to a homogeneous material, as observed in similar simulations using FE [15].
+
+Nevertheless, even for the long wave, the maximum of the wave traveling in the polycrystal was slightly
+
+delayed with respect to the homogeneous material. This reduction in group velocity is in agreement with
+
+the results obtained by Segurado and Lebensohn [14] using a completely different approach based on
+
+computing the dispersion relations. The results in the case of a short pulse are very different. In this
+
+case, it can be observed that the displacement behind the wave front is extremely wavy (Fig. 15). This
+
+oscillation corresponds to the reflections and refractions of the traveling wave on the grain boundaries. As
+
+a result, although the total elastic energy is conserved in the full bar, the energy around the wave front is
+
+progressively reduced. This loss of energy will eventually lead to the disappearance of the traveling wave,
+
+as reproduced using massive parallel FE simulations [15, 51]. The technique proposed here will allow
+
+us to study the maximum propagation distance for a general microstructure in a very efficient manner
+
+compared to full-field simulations using explicit FE.
+
+Figure 15: u3 field along the polycrystalline bar length
+
+45
+
+
+5
+Conclusions
+
+A novel FFT-based algorithm has been described to simulate propagation of elastic waves in heterogeneous
+
+d-dimensional rectangular shape domains. The method allows prescribing the displacement as a function
+
+of time in a subregion of the domain, emulating the application of Dirichlet boundary conditions on an
+
+outer face of the domain. Time discretization is performed using an unconditionally stable implicit beta-
+
+Newmark approach. The implicit problem for obtaining the displacement at each time step is solved by
+
+transforming the equilibrium equations into Fourier space and solving the corresponding linear system
+
+with a preconditioned Krylov solver. For comparison purposes, an explicit version of the FFT model is
+
+also proposed, following a central difference integration scheme.
+
+The main conclusions of this work are:
+
+• The framework is capable of reproducing the propagation of plane, circular, and spherical waves
+
+very accurately and without numerical noise.
+
+• The Green’s function method used to impose the prescribed displacement was totally equivalent to
+
+applying time-dependent Dirichlet boundary conditions in a boundary value problem using FE .
+
+• The use of Newmark implicit integration allows us to resolve large models, preserving the same
+
+accuracy and absence of noise, using time steps orders of magnitude larger than Courant’s CFL
+
+condition.
+
+• The study of the order of accuracy show that the error reduction with time is quadratic up to a
+
+limiting time, near the Courant condition. Below that time increment, accuracy is not improved
+
+by time increment reduction.
+
+• The order of growth of the computational cost of the FFT implicit model is much lower than for
+
+implicit FE. The difference in time using the exact conditions in both solvers becomes order of
+
+magnitude smaller for sufficiently large models.
+
+• The implicit FFT method using a fixed time step became also faster than the explicit FE, due to the
+
+progressive reduction of the time step in explicit FE. This improvement in efficiency is important
+
+considering that the accuracy in FFT was much better than in explicit FE.
+
+• The use of very large phase contrasts reduces computational efficiency and introduces noise in the
+
+results
+
+46
+
+
+• In summary, the method is an ideal framework for studying the propagation of waves in heteroge-
+
+neous media where very fine discretizations are needed. The present approach allows one to solve
+
+large problems with the same or better accuracy at a fraction of the cost of using FE.
+
+We have identified several features and possible improvements, that will be covered in upcoming
+
+research:
+
+• The periodicity enforces the presence of two traveling waves. It will be interesting to suppress one
+
+of the waves for a more clear analysis of the results. The use of a buffer of a very compliant medium
+
+or a viscous material is a potential solution.
+
+• The use of staggered grids or discrete finite difference differentiation rules could be explored to
+
+reduce noise in the presence of large mechanical contrast.
+
+These potential extensions and improvements will allow us to use this approach to study complex problems
+
+explicitly considering microstructure, including simulations of impact, resonant ultrasound spectroscopy
+
+(RUS), spallation, Hopkinson-bar tests, etc.
+
+47
+
+
+6
+Acknowledgments
+
+Javier Segurado acknowledges the European Union’s Horizon 2020 research and innovation program for
+
+the MOAMMM project, grant agreement No. 862015, of the H2020-EU.1.2.1. - FET Open Program and
+
+the Spanish Ministry of Science for the project ADSORBENT, Plan estatal de I+D+i-20019: PID2019-
+
+106759GB-I00.
+
+Ricardo Lebensohn acknowledges support from Los Alamos National Laboratory’s Laboratory-Directed
+
+Research & Development (LDRD) Program.
+
+Rafael Sancho-Cadenas gratefully acknowledges the support received for this work under grant PID2020-
+
+116440RA-I00 funded by MCIN/AEI/10.13039/501100011033.
+
+A
+One dimensional Green’s function
+
+In this Appendix, the analytical expression of the Green’s function of the spatial operator resulting
+
+from Newmark integration in the case of homogeneous materials is analyzed in order to show that it is
+
+nonsingular everywhere and to analyze its numerical representation in FFT.
+
+In the one dimensional case, the linear operator of the equation of linear momentum conservation
+
+integrated using β−Newmark for a homogeneous medium is obtained by particularizing Eq. (7) to E(x) =
+
+E and ρ(x) = rho
+
+A(un) = d2un
+
+dx2 −
+ρ
+
+β∆t2E un.
+(63)
+
+This equation corresponds to a 1D Helmholtz equation as
+
+d2u
+dx2 − K2u = 0
+
+with K =
+�
+ρ
+
+β∆t2E
+�1/2
+.
+The Green´s function of this linear operator in an infinite medium where
+
+limx→±∞ u = 0 can be easily found integrating the equation with a delta function as right hand side. The
+
+resulting expression is
+
+g(x, x′) = −exp(−K|x − x′|)
+
+2K
+.
+(64)
+
+It can be observed that the function is not singular when evaluated at x = x′, being its value g(x, x) =
+
+−1/2K.
+
+48
+
+
+−0.50
+−0.25
+0.00
+0.25
+0.50
+
+x/L ()
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+u (m)
+
+×10−1
+
+analytical
+FFT, n=33
+
+Figure 16: 1D Green operator, numerical solution with N=33 and analytical solution
+
+The FFT resolution of equation A(un) = δ, provides a numerical result of the Green’s function in the
+
+case of a periodic domain, that is the one that is used in the simulations. To illustrate the accuracy of
+
+the numerical Green’s function, in the figure 16 the analytical expression Eq. (64) is represented together
+
+with the FFT solution for a coarse grid size (33 voxels) in a sufficiently long domain to avoid the effect
+
+of periodicity. It can be observed that points of the numerical solution lie on the analytical one even for
+
+this coarse discretization.
+
+In the case of a heterogeneous medium, the Green’s function depends on the particular microstructure.
+
+However, if a homogeneous reference medium E, ρ is defined, the heterogeneity can be accounted as a
+
+source field acting on that reference medium, and the Green’s function is preserved. This is the usual
+
+approach in FFT-based homogenization approaches based on polarization.
+
+B
+Three dimensional Green’s function
+
+In this appendix, the analytical expression of the Green’s function of the 3D operator for a homogeneous
+
+materials and its FFT representation are analyzed.
+
+The linear operator of Eq. (27) for a homogeneous medium corresponds, as in the 1D case, to a
+
+Helmholtz equation with a negative identity term. To simplify the analysis, an idealized homogeneous
+
+medium with stiffness equals to C = EIs is considered. In this case, the problem becomes scalar and
+
+49
+
+
+corresponds to
+
+∇2u − K2u = 0
+(65)
+
+with K =
+�
+ρ
+
+β∆t2E
+�1/2
+. The Green’ s function of this problem is
+
+g(x, x′) = g(x − x′) = g(r) = −
+� K
+
+8π3r
+
+�1/2
+K1/2(Kr)
+(66)
+
+with K(·) the modified Bessel function of the second kind. Contrary to the 1D case, this function is singular
+
+at x = x′, and therefore the displacement caused by a unit force on its application point diverges. This
+
+means that g−1(x, x) is not well defined, contrary to the 1D case. As a consequence, the FFT resolution
+
+of the linear operator A (Eq.65 ) equaled to a unit force shows a divergent behavior near the application
+
+of the force for increasing number of voxels, Fig. 17(left). This singularity of the Green’s function in
+
+higher dimensions is a common feature with other linear operators as the Laplace equation.
+
+Nevertheless, this singularity is only relevant for point forces and the 2D/3D algorithm proposed is
+
+well posed, because for higher dimensions force densities are applied on a manifold Γ with dimension
+
+greater than 0, i.e. a curve in 2D or a surface in 3D. In these cases, the displacement field resolved using
+
+FFT on Γ result of applying a force density on the same manifold does not diverge with the discretization.
+
+To show this non-singular response, the equation 65 for a force concentrated on a plane is solved using
+
+FFT and different grid sizes. In Fig. 17(right) the solution u(x in a line perpendicular to the plane Γ
+
+is represented as function of the distance to the plane. It can be observed that the displacement is not
+
+singular in the loading plane, and the solutions converge when refining the grid. This behavior allows to
+
+invert the relation between the applied force density field on Γ with the displacement on the manifold,
+
+represented with a deconvolution in Γ in the continuum case (Eq. 37) and with a matrix inversion on the
+
+discrete version (Eq. 48)
+
+C
+Analytical solution of 1D elastic wave propagation
+
+In 1D, the solution to the wave equation Eq. (67) can be written in a general form according to Eq. (68)
+
+(d’Alembert solution) [47],
+
+∂2u
+∂t2 = c2
+0
+∂2u
+∂x2
+(67)
+
+50
+
+
+−0.4
+−0.2
+0.0
+0.2
+0.4
+
+x/L ()
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+u (m)
+
+×102
+
+FFT, n=33
+FFT, n=65
+FFT, n=129
+FFT, n=257
+
+−0.4
+−0.2
+0.0
+0.2
+0.4
+
+x/L ()
+
+−1
+
+0
+
+1
+
+2
+
+3
+
+4
+
+u (m)
+
+×10−3
+
+FFT, n=33
+FFT, n=65
+FFT, n=129
+FFT, n=257
+
+Figure 17: 1D Green operator, numerical solution with N=33 and analytical solution
+
+u(x, t) = F(x − c0t) + G(x + c0t)
+(68)
+
+where F and G are two functions that describe the shape of the pulses propagating, along the x axis, in
+
+the positive and negative directions at a velocity c0 =
+�
+
+E/ρ.
+
+In the layered case, when the propagating wave encounters a medium with different impedance Z =
+
+ρc0, it is reflected and refracted (transmitted) at the boundary. In this situation, the propagation of the
+
+refracted and reflected waves is also governed by Eq. (68) but with different amplitude of the signals (F
+
+& G). Considering the equilibrium and continuity conditions at the boundary Eq. (69), the amplitude of
+
+the transmitted AT and reflected AR waves can be calculated according to Eq. (70)
+
+σI = σR + σT
+;
+˙uI = ˙uR + ˙uT
+(69)
+
+AT =
+2
+
+1 + (Z2/Z1)AI ;
+AR = 1 − (Z2/Z1)
+
+1 + (Z2/Z1)AI
+(70)
+
+with AI being the amplitude of the incident wave in the first material [47]
+
+References
+
+[1] A. B. Bhatia. Scattering of high-frequency sound waves in polycrystalline materials. The Journal of
+
+the Acoustical Society of America, 31(1):16–23, 1959.
+
+51
+
+
+[2] Y. Tanaka, Y. Tomoyasu, and S.I. Tamura. Band structure of acoustic waves in phononic lattices:
+
+Two-dimensional composites with large acoustic mismatch. Physical Review B, 62(11):7387, 2000.
+
+[3] M. Jaafar, H. Mamtaz, M. H. Fouladi, M. Al-Atabi, and S. Narayana Namasivayam.
+Acoustic
+
+absorption of natural fiber composites. Journal of Engineering, 2016:5836107, 2016.
+
+[4] K. Attenborough. Acoustical characteristics of porous materials. Physics reports, 82(3):179–227,
+
+1982.
+
+[5] N. A. Fleck, V. S. Deshpande, and M. F. Ashby.
+Micro-architectured materials: past, present
+
+and future. Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences,
+
+466(2121):2495–2516, 2010.
+
+[6] Y. Chen and S. Ghosh. Micromechanical analysis of strain rate-dependent deformation and failure
+
+in composite microstructures under dynamic loading conditions. International Journal of Plasticity,
+
+32-33:218–247, 2012.
+
+[7] E. J. Lieberman, R. A. Lebensohn, D. B Menasche, C. A. Bronkhorst, and A. D. Rollett. Microstruc-
+
+tural effects on damage evolution in shocked copper polycrystals. Acta Materialia, 116:270–280, 2016.
+
+[8] J.D. Clayton. Modeling dynamic plasticity and spall fracture in high density polycrystalline alloys.
+
+International Journal of Solids and Structures, 42(16):4613–4640, 2005.
+
+[9] G.W. Milton and A.T. Sawicki. Theory of Composites. Cambridge Monographs on Applied and
+
+Computational Mathematics. Applied Mechanics Reviews, 56(2):B27–B28, 03 2003.
+
+[10] J. Segurado, R. A. Lebensohn, and J. LLorca.
+Chapter one - computational homogenization of
+
+polycrystals. In Advances in Crystals and Elastic Metamaterials, volume 51 of Advances in Applied
+
+Mechanics, pages 1 – 114. Elsevier, 2018.
+
+[11] K. Matouˇs, M. G.D. Geers, V. G. Kouznetsova, and A. Gillman. A review of predictive nonlinear
+
+theories for multiscale modeling of heterogeneous materials.
+Journal of Computational Physics,
+
+330:192–220, 2017.
+
+[12] M. S. Kushwaha, P. Halevi, L. Dobrzynski, and B. Djafari-Rouhani. Acoustic band structure of
+
+periodic elastic composites. Phys. Rev. Lett., 71:2022–2025, 1993.
+
+52
+
+
+[13] H. I. Mahmoud. Reduced bloch mode expansion for periodic media band structure calculations.
+
+Proceedings of the Royal Society A, 465:2825–2848, 2009.
+
+[14] J. Segurado and R. A. Lebensohn. An fft-based approach for bloch wave analysis: application to
+
+polycrystals. Computational Mechanics, 68(5):981–1001, 2021.
+
+[15] A. Van Pamel, G. Sha, S. I. Rokhlin, and M. J. S. Lowe. Finite-element modelling of elastic wave
+
+propagation and scattering within heterogeneous media. Proceedings of the Royal Society A: Math-
+
+ematical, Physical and Engineering Sciences, 473(2197):20160738, 2017.
+
+[16] M. Huang, G. Sha, P. Huthwaite, S. I. Rokhlin, and M. J. S. Lowe. Maximizing the accuracy of
+
+finite element simulation of elastic wave propagation in polycrystals. The Journal of the Acoustical
+
+Society of America, 148(4):1890–1910, 2020.
+
+[17] A. Sridhar, V.G. Kouznetsova, and M.G.D. Geers. A general multiscale framework for the emergent
+
+effective elastodynamics of metamaterials. Journal of the Mechanics and Physics of Solids, 111:414–
+
+433, 2018.
+
+[18] K. J. Bathe.
+Conserving energy and momentum in nonlinear dynamics: A simple implicit time
+
+integration scheme. Computers & Structures, 85(7):437–445, 2007.
+
+[19] G. Noh and K. J. Bathe. An explicit time integration scheme for the analysis of wave propagations.
+
+Computers & Structures, 129:178–193, 2013.
+
+[20] K. C. Park, S. J Lim, and H. Huh. A method for computation of discontinuous wave propagation
+
+in heterogeneous solids: basic algorithm description and application to one-dimensional problems.
+
+International Journal for Numerical Methods in Engineering, 91(6):622–643, 2012.
+
+[21] Elena Zampieri and Luca F. Pavarino. Isogeometric collocation discretizations for acoustic wave
+
+problems. Computer Methods in Applied Mechanics and Engineering, 385:114047, 2021.
+
+[22] M. Kronbichler, S. Schoeder, C. M¨uller, and W. A. Wall.
+Comparison of implicit and explicit
+
+hybridizable discontinuous galerkin methods for the acoustic wave equation. International Journal
+
+for Numerical Methods in Engineering, 106(9):712–739, 2016.
+
+53
+
+
+[23] Junqi Zhang, Ankit Ankit, Hauke Gravenkamp, Sascha Eisentr¨ager, and Chongmin Song. A massively
+
+parallel explicit solver for elasto-dynamic problems exploiting octree meshes. Computer Methods in
+
+Applied Mechanics and Engineering, 380:113811, 2021.
+
+[24] F. Auricchio, L. Beir˜ao da Veiga, T.J.R. Hughes, A. Reali, and G. Sangalli. Isogeometric collocation
+
+for elastostatics and explicit dynamics. Computer Methods in Applied Mechanics and Engineering,
+
+249-252:2–14, 2012. Higher Order Finite Element and Isogeometric Methods.
+
+[25] M. Stanglmeier, N.C. Nguyen, J. Peraire, and B. Cockburn. An explicit hybridizable discontinuous
+
+galerkin method for the acoustic wave equation.
+Computer Methods in Applied Mechanics and
+
+Engineering, 300:748–769, 2016.
+
+[26] Elena Zampieri and Luca F. Pavarino. Explicit second order isogeometric discretizations for acoustic
+
+wave problems. Computer Methods in Applied Mechanics and Engineering, 348:776–795, 2019.
+
+[27] S Lucarini, M V Upadhyay, and J Segurado. FFT based approaches in micromechanics: fundamen-
+
+tals, methods and applications. Modelling and Simulation in Materials Science and Engineering,
+
+30(2):023002, 2021.
+
+[28] M. Schneider. A review of nonlinear fft-based computational homogenization methods. Acta Me-
+
+chanica, 232(6):2051–2100, 2021.
+
+[29] H. Moulinec and P. Suquet. A fast numerical method for computing the linear and nonlinear me-
+
+chanical properties of composites. Comptes Rendus de l’Acad´emie des Sciences, 318:1417–1423, 1994.
+
+[30] S. Lucarini, L. Cobian, A. Voitus, and J. Segurado. Adaptation and validation of fft methods for
+
+homogenization of lattice based materials. Computer Methods in Applied Mechanics and Engineering,
+
+388:114223, 2022.
+
+[31] T.W.J. de Geus, J. Vondˇrejc, J. Zeman, R.H.J. Peerlings, and M.G.D. Geers.
+Finite strain fft-
+
+based non-linear solvers made simple. Computer Methods in Applied Mechanics and Engineering,
+
+318:412–430, 2017.
+
+[32] Yang Chen, Dmytro Vasiukov, Lionel G´el´ebart, and Chung Hae Park. A fft solver for variational
+
+phase-field modeling of brittle fracture. Computer Methods in Applied Mechanics and Engineering,
+
+349:167–190, 2019.
+
+54
+
+
+[33] Felix Ernesti, Matti Schneider, and Thomas B¨ohlke. Fast implicit solvers for phase-field fracture
+
+problems on heterogeneous microstructures. Computer Methods in Applied Mechanics and Engineer-
+
+ing, 363:112793, 2020.
+
+[34] No´e Brice Nkoumbou Kaptchouang and Lionel G´el´ebart. Multiscale coupling of fft-based simulations
+
+with the ldc approach. Computer Methods in Applied Mechanics and Engineering, 394:114921, 2022.
+
+[35] Christian Gierden, Julian Kochmann, Johanna Waimann, Tobias Kinner-Becker, Jens S¨olter, Bob
+
+Svendsen, and Stefanie Reese. Efficient two-scale fe-fft-based mechanical process simulation of elasto-
+
+viscoplastic polycrystals at finite strains. Computer Methods in Applied Mechanics and Engineering,
+
+374:113566, 2021.
+
+[36] Elena Zampieri and A Tagliani. Numerical approximation of elastic waves equations by implicit
+
+spectral methods. Computer methods in applied mechanics and engineering, 144(1-2):33–50, 1997.
+
+[37] Elena Zampieri and Luca F. Pavarino.
+Approximation of acoustic waves by explicit newmark’s
+
+schemes and spectral element methods.
+Journal of Computational and Applied Mathematics,
+
+185(2):308–325, 2006. Special Issue: International Workshop on the Technological Aspects of Math-
+
+ematics.
+
+[38] Elena Zampieri and Luca F. Pavarino. An explicit second order spectral element method for acoustic
+
+waves. Advances in Computational Mathematics, 25(4):381–401, 2006.
+
+[39] Elena Zampieri and Luca F. Pavarino. Implicit spectral element methods and neumann–neumann
+
+preconditioners for acoustic waves.
+Computer Methods in Applied Mechanics and Engineering,
+
+195(19):2649–2673, 2006.
+
+[40] F. Amlani and O. P. Bruno.
+An fc-based spectral solver for elastodynamic problems in general
+
+three-dimensional domains. Journal of Computational Physics, 307:333–354, 2016.
+
+[41] O. P Bruno and M. Lyon. High-order unconditionally stable fc-ad solvers for general smooth domains
+
+i. basic elements. Journal of Computational Physics, 229(6):2009–2033, 2010.
+
+[42] L. Morin and A. Acharya. Analysis of a model of field crack mechanics for brittle materials. Computer
+
+Methods in Applied Mechanics and Engineering, 386:114061, 2021.
+
+55
+
+
+[43] L. Gelebart. A modified fft-based solver for the mechanical simulation of heterogeneous materials
+
+with dirichlet boundary conditions. Comptes Rendus M´ecanique, 348:693–704, 2020.
+
+[44] L. Onural. Impulse functions over curves and surfaces and their applications to diffraction. Journal
+
+of Mathematical Analysis and Applications, 322(1):18–27, 2006.
+
+[45] S. Lucarini and J. Segurado. DBFFT: A displacement based FFT approach for non-linear homog-
+
+enization of the mechanical behavior.
+International Journal of Engineering Science, 144:103131,
+
+2019.
+
+[46] S. Lucarini and J. Segurado. On the accuracy of spectral solvers for micromechanics based fatigue
+
+modeling. Computational Mechanics, 63:365 – 382, 2019.
+
+[47] M. A. Meyers. Dynamic Behavior of Materials. John Wiley and Sons, Inc, 1981.
+
+[48] Michael Smith. ABAQUS/Standard User’s Manual, Version 6.9. Dassault Syst`emes Simulia Corp,
+
+United States, 2009.
+
+[49] S. S´adaba, M. Herr´aez, F. Naya, C. Gonz´alez, J. Llorca, and C.S. Lopes. Special-purpose elements
+
+to impose periodic boundary conditions for multiscale computational homogenization of composite
+
+materials with the explicit finite element method. Composite Structures, 208:434–441, 2019.
+
+[50] Kurt J. Marfurt. Accuracy of finite-difference and finite-element modeling of the scalar and elastic
+
+wave equations. Geophysics, 49(5):533–549, 1984.
+
+[51] M. Ryzy, T. Grabec, P. Sedl´ak, and I. A. Veres. Influence of grain morphology on ultrasonic wave
+
+attenuation in polycrystalline media with statistically equiaxed grains. The Journal of the Acoustical
+
+Society of America, 143(1):219–229, 2018.
+
+56
+
+

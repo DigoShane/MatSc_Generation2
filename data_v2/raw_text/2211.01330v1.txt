@@ -1,0 +1,2903 @@
+Bayesian Nonlocal Operator Regression (BNOR): A Data-Driven Learning
+
+Framework of Nonlocal Models with Uncertainty Quantification
+
+Yiming Fan1, Marta D’Elia2, Yue Yu1,*, Habib N. Najm2, and Stewart Silling3
+
+1Department of Mathematics, Lehigh University, Bethlehem, PA 18015, USA
+
+2Sandia National Laboratories, Livermore, CA
+
+3Center for Computing Research, Sandia National Laboratories, Albuquerque, NM
+
+*Corresponding author: Yue Yu, Email: yuy214@lehigh.edu
+
+ABSTRACT
+
+We consider the problem of modeling heterogeneous materials where micro-scale dynamics and
+
+interactions affect global behavior. In the presence of heterogeneities in material microstructure it
+
+is often impractical, if not impossible, to provide quantitative characterization of material response.
+
+The goal of this work is to develop a Bayesian framework for uncertainty quantification (UQ) in
+
+material response prediction when using nonlocal models. Our approach combines the nonlocal
+
+operator regression (NOR) technique and Bayesian inference.
+Specifically, we use a Markov
+
+chain Monte Carlo (MCMC) method to sample the posterior probability distribution on parameters
+
+involved in the nonlocal constitutive law, and associated modeling discrepancies relative to higher
+
+fidelity computations. As an application, we consider the propagation of stress waves through a
+
+one-dimensional heterogeneous bar with randomly generated microstructure. Several numerical
+
+tests illustrate the construction, enabling UQ in nonlocal model predictions. Although nonlocal
+
+models have become popular means for homogenization, their statistical calibration with respect
+
+to high-fidelity models has not been presented before. This work is a first step towards statistical
+
+characterization of nonlocal model discrepancy in the context of homogenization.
+
+1
+Fan, November 3, 2022
+
+arXiv:2211.01330v1  [cond-mat.mtrl-sci]  6 Oct 2022
+
+
+INTRODUCTION
+
+Nonlocal models have become viable alternatives to partial differential equation (PDE) models
+
+when the effects of the small-scale behavior of a system affect its global state (Beran and McCoy
+
+1970; Cherednichenko et al. 2006; Karal Jr and Keller 1964; Rahali et al. 2015; Smyshlyaev and
+
+Cherednichenko 2000; Willis 1985; Eringen and Edelen 1972; Bobaru et al. 2016; Du et al. 2020).
+
+These models are characterized by integral operators (as opposed to differentiable operators) that
+
+embed time and length scales in their definition; as such, they are able to capture long-range effects
+
+that classical PDE models fail to describe (Silling 2000). These effects include the anomalous
+
+behavior often observed in coarse-grained measurements of a diffusive quantity, often referred to as
+
+anomalous or non-standard diffusion (Du and Zhou 2011; Du et al. 2013; Suzuki et al. 2022). In the
+
+context of materials response, it is often impractical to solve equations at the small (e.g. micro) scale
+
+either because small-scale properties are not available and/or uncertain, or because the simulations
+
+are computationally infeasible. Thus, a lot of effort has been dedicated to homogenization theory
+
+with the purpose of designing large-scale models that accurately reproduce the effects of small-scale
+
+behavior (Zohdi 2017; Bensoussan et al. 2011; Weinan and Engquist 2003; Efendiev et al. 2013;
+
+Junghans et al. 2008; Kubo 1966; Santosa and Symes 1991; Dobson et al. 2010; Ortiz 1987; Moës
+
+et al. 1999; Hughes et al. 2004). In this context, it is important to keep in mind that coarse-grained
+
+data do not obey the same governing laws that are valid at the small scale. Classical homogenization
+
+techniques (e.g., the use of effective quantities) are not satisfactory in representing coarse-grained
+
+behavior, creating the need for more accurate models that, while acting at a computationally feasible
+
+scale, still capture the effects of small-scale behavior. Due to their ability to capture long-range
+
+effects, nonlocal models are the best candidates for this task (Du et al. 2020). Their use in the
+
+context of homogenization is not new and started with the development of homogenized models
+
+for subsurface transport (Suzuki et al. 2022). Here, fractional models were identified as the best
+
+means for describing super- and sub-diffusive effects, and a Bayesian approach was developed in
+
+(Trillos and Sanz-Alonso 2017), to recover the order and the diffusion coefficient of an elliptic
+
+fractional partial differential equation. More recently, the concept of nonlocal homogenization
+
+2
+Fan, November 3, 2022
+
+
+was successfully applied in the context of material response (Silling 2021; Silling et al. 2022).
+
+Furthermore, with the explosion of machine learning, optimized nonlocal models were designed
+
+with the purpose of accurately reproducing observed coarse-grained behavior and predicting unseen
+
+behavior with the learnt model. We refer the reader to (You et al. 2021a; You et al. 2021b; You et al.
+
+2022; Xu et al. 2021; Xu et al. 2022; Zhang et al. 2022; de Moraes et al. 2022) for several examples
+
+of the use of machine learning for the design of homogenized nonlocal operators and the rigorous
+
+analysis of its learning theory (Lu et al. 2022; Zhang et al. 2022). Although successful in providing
+
+a deterministic answer to the homogenization problem, none of these approaches characterizes the
+
+discrepancy incurred when using a nonlocal model as a coarse-grained, homogenized surrogate.
+
+The characterization of surrogate/reduced-order modeling discrepancy is a well-known problem
+
+in the PDE literature, while it is absent in the context of nonlocal modeling. In this work, for the first
+
+time, we employ Bayesian inference for statistical estimation of nonlocal model parameters using
+
+statistical descriptions for the discrepancy from high-fidelity data. Bayesian methods (Laplace
+
+1814; Casella and Berger 1990; Jaynes 2003; Robert and Casella 2004; Sivia and Skilling 2006;
+
+Carlin and Louis 2011) have been used increasingly over recent decades for the probabilistic
+
+estimation of parameters of complex physical models given data on model predictions (Kennedy
+
+and O’Hagan 2001; Higdon et al. 2003; Oliver and Moser 2011; Cui et al. 2016; Hakim et al.
+
+2018; Huan et al. 2018).
+The Bayesian framework provides a number of advantages in this
+
+regard, including means of (1) incorporating prior information which can be based on expert
+
+knowledge, prior/other experiments, or physical laws; (2) using arbitrary data models that can
+
+incorporate physical model complexity as well as generalized statistical models of discrepancy
+
+between data and model predictions; and (3) model comparison, selection, and averaging, with
+
+formal connections to information theory. We use Bayesian inference here, relying on an adaptive
+
+Markov chain Monte Carlo (MCMC) construction (Haario et al. 2001), to estimate parameters of
+
+a homogenized nonlocal model given data from a higher-fidelity PDE model. In this context, the
+
+discrepancy between model predictions and the data is due to predictive errors resulting from the
+
+necessary approximations employed in the homogenized nonlocal model construction.
+
+3
+Fan, November 3, 2022
+
+
+Specifically, we employ Bayesian calibration in the context of a one-dimensional, nonlocal wave
+
+equation that describes the propagation of stress waves through an elastic bar with a heterogeneous
+
+microstructure.
+We use Bayesian inference to learn the posterior probability distributions of
+
+parameters of the nonlocal constitutive law (i.e. the nonlocal kernel function). The data model
+
+includes an additive noise term to represent the discrepancy between the high-fidelity, PDE models
+
+and the (homogenized) nonlocal model. Our key contributions are summarized below.
+
+1. We introduce and demonstrate, for the first time, a Bayesian inference framework for the
+
+statistical estimation of parameters in homogenized nonlocal models.
+
+2. We develop a multi-step algorithm that enables efficient Bayesian inference via effective
+
+initialization and hyper-parameter choice.
+
+3. Through several numerical tests we illustrate the prediction capability of the proposed
+
+approach by successfully using the calibrated model to predict unseen scenarios.
+
+Paper outline. In Section “Dispersion in Heterogeneous Materials” we introduce the classical
+
+problem of stress wave propagation through heterogeneous materials and describe the numerical
+
+solver used for the generation of the high-fidelity data set. In Section “Background and Related
+
+Mathematical Formulation” we summarize relevant prior work on (deterministic) NOR: we describe
+
+the mathematical formulation of the regression problem and discuss the choice of hyperparameters
+
+for efficient training. In Section “Bayesian Nonlocal Operator Regression” we introduce a Bayesian
+
+approach to nonlocal model calibration. We break down the MCMC-based algorithm in several
+
+steps with the purpose of initializing distributions and hyperparameters in an efficient manner. In
+
+Section “Application to a Heterogeneous Elastic Bar” we illustrate through several numerical tests
+
+how our approach predicts the posterior distribution of the nonlocal model predictions, enabling
+
+uncertainty quantification (UQ) in nonlocal simulations. Section “Conclusion” concludes the paper
+
+with a summary of our contributions and a list of potential follow-up work.
+
+DISPERSION IN HETEROGENEOUS MATERIALS
+
+The classical (local) wave equation for a heterogeneous one-dimensional linearly elastic body
+
+4
+Fan, November 3, 2022
+
+
+reads as follows:
+
+𝜌(𝑥) 𝜕2𝑢
+
+𝜕𝑡2 (𝑥, 𝑡) = 𝜕
+
+𝜕𝑥
+
+�
+𝐸(𝑥) 𝜕𝑢
+
+𝜕𝑥 (𝑥, 𝑡)
+�
++ 𝑓 (𝑥, 𝑡)
+(1)
+
+where 𝑥 is the reference position, 𝜌 is the mass density, 𝑡 is time, 𝑢 is the displacement, 𝑓 is
+
+the external load density (assumed to be continuous), and 𝐸 is the elastic modulus which varies
+
+spatially. The quantity in the large parentheses in (1) is the stress, usually denoted by 𝜎, which
+
+is continuous even if 𝐸 has jump discontinuities. If 𝐸 has a jump discontinuity at some 𝑥0, the
+
+following jump conditions hold:
+
+[𝑢] = 0,
+�
+𝐸 𝜕𝑢
+
+𝜕𝑥
+
+�
+= 0
+(2)
+
+where the notation for jumps is [𝑤] = 𝑤(𝑥+
+0) − 𝑤(𝑥−
+0 ) for any function 𝑤. In this paper, 𝐸 is
+
+piecewise continuous. The particular choice of the function 𝐸(𝑥) describes a microstructure. For
+
+simplicity, 𝐸 is assumed to take on only one of two values, but the spatial distribution can be either
+
+periodic or random (see the left plot of Figure 1). Also for simplicity, 𝜌 is assumed to be constant
+
+throughout the body. Open subregions that have constant 𝐸 will be called “grains” in analogy with
+
+materials science.
+
+In the case of a random microstructure, the grain sizes 𝐿1 and 𝐿2 for materials 1 and 2 are
+
+generated using the following expressions:
+
+𝐿1
+∼
+U
+�
+(1 − 𝐷)(1 − 𝜙)𝐿, (1 + 𝐷)(1 − 𝜙)𝐿
+�
+
+𝐿2
+∼
+U
+�
+(1 − 𝐷)(1 + 𝜙)𝐿, (1 + 𝐷)(1 + 𝜙)𝐿
+�
+
+(3)
+
+where 𝐿 is the mean value of grain size and 𝜙 determines the volume fraction of material 2. In
+
+this work, we take 𝜙 = 0 without loss of generality. This choice leads to equal volume fractions for
+
+the two materials. U[𝑎, 𝑏] denotes a uniform random distribution between 𝑎 and 𝑏. 𝐷 ∈ [0, 1] is
+
+the disorder parameter that determines the overall variation in grain size, with 𝐷 = 0 leading to a
+
+periodic microstructure with no randomness. Within any grain, any wave 𝑞 of the following form
+
+5
+Fan, November 3, 2022
+
+
+is a solution to (1):
+
+𝑣(𝑥, 𝑡) = 𝑞(𝑥 ± 𝑐𝑡),
+𝑐 =
+
+√︄
+
+𝐸
+𝜌
+(4)
+
+where 𝑐 is the wave speed and 𝑣 = 𝜕𝑢/𝜕𝑡 is the velocity of a material point. In the expression
+
+𝑥 ± 𝑐𝑡, the + sign is for a “left-running” wave and the − is for a “right-running” wave. Because
+
+the system is linear, arbitrary superpositions of waves in both directions are also solutions to (1).
+
+In the direct numerical simulation (DNS) technique that is used in this study, the waves that are
+
+superposed are composed of finite jumps in velocity, so that 𝑞 = 𝐻 in (4), where 𝐻 denotes the
+
+Heaviside step function.
+
+2𝐿
+
+𝜆
+𝛿
+
+Periodic (Ordered) Microstructure
+
+Random (Disordered) Microstructure
+
+Material 1
+𝐿! = 1 − 𝜙 𝐿
+
+Material 2
+𝐿" = 1 + 𝜙 𝐿
+
+position
+
+time
+
+left-running 
+incident wave
+
+right-running 
+transmitted wave
+
+right-running 
+incident wave
+
+left-running 
+transmitted wave
+
+ 
+
+Fig. 1. Left: One-dimensional heterogeneous bars composed of materials 1 and 2. The oscillatory
+curve represents a moving wave with wavelength 𝜆. The horizon 𝛿 for the nonlocal continuum
+model is shown.
+Left Top: Periodic microstructure with period 2𝐿.
+Left Bottom: Random
+microstructure. Right: Interaction of two waves in the DNS method.
+
+Later in the paper, the group velocity 𝑣𝑔(𝜔) will be used, where 𝜔 is the angular frequency of
+
+a wave. In a homogeneous medium, the group velocity is defined by 𝑣𝑔(𝜔) = 𝑑𝜔
+
+𝑑𝑘 , where 𝑘 = 2𝜋/𝜆
+
+is the wave number. With the DNS solver or any other simulation method, the group velocity can
+
+be estimated from the velocity of a wave packet with nominal frequency 𝜔 (see Figure 2). In both
+
+periodic and random bars, the qualitative dependence of 𝑣𝑔 on 𝜔 is similar. Both have the same
+
+large-wavelength (low frequency) dependence, because 𝜆 ≫ 𝐿 for long waves. In particular, both
+
+𝑣𝑔 functions have the same curvature as 𝜔 → 0. At smaller wavelengths, there are differences in
+
+𝑣𝑔 between periodic and random systems. The method for evaluating 𝑣𝑔 from wave packets is also
+
+susceptible to error near the band stop, because in this limit, the wave packet attenuates to nearly
+
+6
+Fan, November 3, 2022
+
+
+Fig. 2. Left: Group velocity estimation from the speed of a wave packet, which can attenuate
+significantly in random media. Right: Qualitative dependence of group velocity on frequency.
+
+undetectable amplitudes as it propagates.
+
+The goal of our learning algorithm is to learn a surrogate model that is able to predict wave
+
+propagation over distances that are much larger than the size of the microstructure and provide error
+
+estimation. For both training and validation purposes, we first generate high-fidelity data by solving
+
+the classical wave equation within a detailed model of the microstructure using the DNS solver,
+
+which will now be briefly described. For a given forcing term 𝑓 (𝑥, 𝑡) and boundary and initial
+
+conditions, the DNS solver provides a solution for the velocity field 𝑣(𝑥, 𝑡). The bar is discretized
+
+into nodes, {𝑥𝛾}, such that it takes a constant amount of time Δ𝑡𝐷𝑁𝑆 for a wave to travel through
+
+the cell between 𝑥𝛾 and 𝑥𝛾+1, regardless of the elastic wave speed in the material between these
+
+two nodes (see the right plot of Figure 1 and (You et al. 2021a) for further details). The interval
+
+between two adjacent nodes is called a “cell.” Each cell is composed entirely of one material or the
+
+other, with elastic modulus 𝐸1 or 𝐸2. These materials have wave speeds 𝑐1 and 𝑐2, given by (4).
+
+The right plot of Figure 1 shows left-running and right-running waves on an 𝑥-𝑡 diagram (also
+
+called a wave diagram). Because the wave speed varies between cells, the slopes shown in the
+
+diagram also vary. Because the wave transit time within any cell must be constant, the spacing
+
+between DNS nodes varies along the bar. The DNS solver works by assuming that in each time
+
+step, a step wave travels from any node 𝛾 to its neighbor on the left or right. These neighbors also
+
+7
+Fan, November 3, 2022
+
+
+send waves to node 𝛾. Within any cell, the two waves obey the jump condition
+
+[𝜎] = ±𝜌𝑐[𝑣],
+(5)
+
+which is a consequence of the momentum balance. Note that the jump condition (5) applies to the
+
+moving waves, while (2) applies at fixed points. From these conditions, the DNS solver computes
+
+updated the material velocity 𝑣𝑛+1
+𝛾
+explicitly from the values at the adjacent nodes in time step 𝑛.
+
+Details of the DNS solver can be found in (Silling 2021; You et al. 2021a).
+
+After the velocity 𝑣𝑛+1
+𝛾
+is computed, the displacement is updated by integrating the velocity over
+
+time:
+
+𝑢𝐷𝑁𝑆(𝑥𝛾, 𝑡𝑛+1) ≈ 𝑢𝑛+1
+𝛾
+= 𝑢𝑛
+𝛾 + Δ𝑡𝐷𝑁𝑆𝑣𝑛+1
+𝛾
+.
+
+The displacements are mapped onto a mesh with constant spacing by interpolation between the
+
+irregularly spaced DNS node positions.
+The mapped displacements are used as training and
+
+validation data as described below.
+
+Since this DNS solver does not use numerical approximations for derivatives, it does not
+
+introduce truncation error, nonphysical dispersion of waves, or similar undesirable numerical
+
+effects. It allows us to model the propagation of waves through many thousands of microstructural
+
+interfaces and generate the high-fidelity solution for the corresponding displacement field.
+
+BACKGROUND AND RELATED MATHEMATICAL FORMULATION
+
+In this section we introduce the nonlocal surrogate model used in this work and the proposed
+
+Bayesian learning approach. Consider the simulation on a spatial domain Ω and time domain
+
+[0,𝑇], and 𝑆 observations of forcing terms 𝑓 𝑠(𝑥, 𝑡) and their corresponding high-fidelity solution
+
+and/or experimental measurements of displacement fields 𝑢𝑠
+𝐷𝑁𝑆(𝑥, 𝑡). In the following we employ
+
+these solutions as the ground-truth dataset, denoted as D := {𝑢𝑠
+𝐷𝑁𝑆}𝑆
+𝑠=1. Here we assume that both
+
+𝑓 𝑠 and 𝑢𝑠
+𝐷𝑁𝑆 measurements are provided on a set of time instances 𝑡𝑛 ∈ [0,𝑇] and discretization
+
+points 𝑥𝑖 ∈ Ω. Without loss of generality, we assume that all measurements are provided on
+
+uniformly spaced spatial and time instances, with fixed spatial grid size Δ𝑥 and time step size
+
+8
+Fan, November 3, 2022
+
+
+Δ𝑡, and we denote the collection of all discretization points as 𝜒 = {𝑥𝑖}𝐿
+𝑖=1. The overall goal of
+
+nonlocal operator regression is to provide a nonlocal model surrogate for the simulation of wave
+
+propagation in heterogeneous materials. Thus, we claim that given the same forcing terms 𝑓 𝑠(𝑥, 𝑡),
+
+the corresponding solution, 𝑢𝑠
+𝑁𝐿(𝑥, 𝑡), (𝑥, 𝑡) ∈ Ω× [0,𝑇], of the nonlocal surrogate model provides
+
+a good approximation of the ground-truth data, i.e., 𝑢𝑠
+𝑁𝐿(𝑥, 𝑡) ≈ 𝑢𝑠
+𝐷𝑁𝑆(𝑥, 𝑡).
+
+Throughout this paper, for any vector v = [𝑣1, · · · , 𝑣𝑞] ∈ R𝑞, we use ||v||𝑙2 to denote its 𝑙2
+
+norm, i.e., ||v||𝑙2 :=
+√︃�𝑞
+𝑖=1 𝑣2
+𝑖 . For a function 𝑢(𝑥, 𝑡) with (𝑥, 𝑡) ∈ Ω × [0,𝑇], its discrete 𝑙2 norm
+
+is defined as
+
+||𝑢||𝑙2(Ω×[0,𝑇]) :=
+
+�
+�
+�
+
+Δ𝑡Δ𝑥
+
+𝑇/Δ𝑡
+∑︁
+
+𝑛=0
+
+∑︁
+
+𝑥𝑖∈𝜒
+𝑢2(𝑥𝑖, 𝑡𝑛),
+
+which can be interpreted as a numerical approximation of the 𝐿2(Ω × [0,𝑇]) norm of 𝑢. Finally,
+
+in what follows, I𝑝 denotes the 𝑝 × 𝑝 identity matrix; with an abuse of notation, when there is no
+
+confusion on its dimension, we simply use I to denote the identity matrix.
+
+Nonlocal Operator Regression: learning nonlocal kernels
+
+In this section we review the general nonlocal operator regression (NOR) approach developed in
+
+(You et al. 2021a). The goal of NOR is to find a nonlocal model that best describes the evolution of
+
+a homogenized quantity such as the propagation of stress waves in highly heterogeneous materials.
+
+NOR starts from the assumption that a high-fidelity data set, satisfying an underlying high-
+
+fidelity model, is available. Given a force loading term 𝑓 (𝑥, 𝑡), (𝑥, 𝑡) ∈ Ω× [0,𝑇], proper boundary
+
+conditions and initial conditions, we represent the high-fidelity (HF) model as:
+
+𝜕2𝑢𝐻𝐹
+
+𝜕𝑡2
+(𝑥, 𝑡) − L𝐻𝐹[𝑢𝐻𝐹](𝑥, 𝑡) = 𝑓 (𝑥, 𝑡).
+(6)
+
+Here, L𝐻𝐹 is the HF operator that accounts for the detailed microstructure, and 𝑢𝐻𝐹(𝑥, 𝑡) is
+
+the HF solution which can be provided either from fine-scale simulations or from experimental
+
+measurements in practice. In this work, we take 𝑢𝐻𝐹 as the numerical solution generated from the
+
+DNS solver as described in Section “Dispersion in Heterogeneous Materials”, i.e., 𝑢𝐻𝐹 = 𝑢𝐷𝑁𝑆.
+
+9
+Fan, November 3, 2022
+
+
+Analogously, we will refer to the homogenized effective nonlocal (NL) model as the homogenized
+
+surrogate, and assume it has the form
+
+𝜕2𝑢𝑁𝐿
+
+𝜕𝑡2
+(𝑥, 𝑡) − L𝑁𝐿[𝑢𝑁𝐿](𝑥, 𝑡) = 𝑓 (𝑥, 𝑡),
+(7)
+
+where the operator L𝑁𝐿 := L𝐾C is an integral operator associated with a nonlocal kernel 𝐾C:
+
+L𝐾C[𝑢](𝑥, 𝑡) =
+∫
+
+Ω
+𝐾C(𝑥, 𝑦)(𝑢(𝑦, 𝑡) − 𝑢(𝑥, 𝑡))𝑑𝑦,
+(8)
+
+and 𝑢𝑁𝐿(𝑥, 𝑡) is the nonlocal solution. Here C := {𝐶𝑚}𝑀
+𝑚=0 ∈ R𝑀+1 is the parameter set of kernel
+
+𝐾C, which will be optimized during training. As shown in (Du et al. 2017), the second-order-in-
+
+time nonlocal equation in (7) is guaranteed to be well-posed as far as the kernel 𝐾C is uniformly
+
+Lipschitz continuous. That means, the resultant surrogate model is guaranteed to be solvable in
+
+applications, when proper boundary conditions and numerical discretization methods are employed.
+
+Following (You et al. 2021b; You et al. 2022; You et al. 2021a), we choose to take 𝐾C as a radial,
+
+sign-changing, nonlocal kernel function, compactly supported on the ball of radius 𝛿 centered at
+
+𝑥, i.e., 𝐵𝛿(𝑥). Then, we parameterize the nonlocal kernel 𝐾C as a linear combination of Bernstein
+
+basis polynomials:
+
+𝐾C
+
+� |𝜉|
+
+𝛿
+
+�
+=
+
+𝑀
+∑︁
+
+𝑚=0
+
+𝐶𝑚
+𝛿𝑑+2 𝐵𝑚,𝑀
+
+�����
+𝜉
+𝛿
+
+����
+
+�
+,
+(9)
+
+where 𝑑 = 1 is the dimension of the physical domain, Ω, and the Bernstein basis functions are
+
+defined as
+
+𝐵𝑚,𝑀(𝜉) =
+���
+�
+
+𝑀
+
+𝑚
+
+���
+�
+
+𝜉𝑚(1 − 𝜉)𝑀−𝑚
+for 0 ≤ 𝜉 ≤ 1.
+
+This choice ensures that the learnt model can be readily applied in simulation problems.
+
+To obtain the optimal nonlocal surrogate operator L𝑁𝐿, the nonlocal operator regression ap-
+
+proach seeks the best C through an optimization-based procedure. For each forcing term 𝑓 𝑠(𝑥, 𝑡),
+
+let 𝑢𝑠
+𝑁𝐿,C(𝑥, 𝑡), (𝑥, 𝑡) ∈ Ω × [0,𝑇] be the nonlocal solution of (7) corresponding to a specific set
+
+10
+Fan, November 3, 2022
+
+
+of kernel parameter C := {𝐶𝑚}𝑀
+𝑚=0. We aim to find the optimal parameter set C such that the
+
+(approximated) nonlocal solution 𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) for a common loading 𝑓 𝑠 is as close as possible
+
+to the HF solution 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛), for all provided observation pairs {(𝑢𝑠
+𝐷𝑁𝑆, 𝑓 𝑠)}𝑆
+𝑠=1 and 𝑥𝑖 ∈ 𝜒,
+
+𝑡𝑛 = 0, · · · ,𝑇/Δ𝑡. To do so, for each given forcing term 𝑓 𝑠(𝑥, 𝑡) we need to provide a numerical
+
+approximation of its corresponding nonlocal solution, (𝑢𝑠
+𝑁𝐿,C)𝑛
+𝑖 ≈ 𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛). Here, with the
+
+initial condition (𝑢𝑠
+𝑁𝐿,C)0
+𝑖 := 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 0) and proper boundary conditions, we discretize (7) with
+
+the central difference scheme in time and Riemann sum approximation of the nonlocal operator in
+
+space, and obtain the approximated nonlocal solution at time 𝑡𝑛+1 as follows:
+
+(𝑢𝑠
+𝑁𝐿,C)𝑛+1
+𝑖
+:=2(𝑢𝑠
+𝑁𝐿,C)𝑛
+𝑖 − (𝑢𝑠
+𝑁𝐿,C)𝑛−1
+𝑖
++ Δ𝑡2 𝑓 𝑠(𝑥𝑖, 𝑡𝑛) + Δ𝑡2 �
+L𝐾C,ℎ[𝑢𝑠
+𝑁𝐿,C]
+�𝑛
+
+𝑖
+
+=2(𝑢𝑠
+𝑁𝐿,C)𝑛
+𝑖 − (𝑢𝑠
+𝑁𝐿,C)𝑛−1
+𝑖
++ Δ𝑡2 𝑓 𝑠(𝑥𝑖, 𝑡𝑛)
+
++ Δ𝑡2Δ𝑥
+∑︁
+
+𝑥 𝑗∈𝐵𝛿(𝑥𝑖)∩𝜒
+𝐾C(|𝑥 𝑗 − 𝑥𝑖|)((𝑢𝑠
+𝑁𝐿,C)𝑛
+𝑗 − (𝑢𝑠
+𝑁𝐿,C)𝑛
+𝑖 ),
+(10)
+
+where L𝐾C,ℎ is an approximation of L𝐾C by the Riemann sum with uniform grid spacing Δ𝑥. The
+
+optimal parameters C∗ = {𝐶∗
+𝑚} and the corresponding nonlocal surrogate operator L𝑁𝐿 := L𝐾C∗
+
+can be obtained by considering the normalized squared-loss of displacement in Ω × [0,𝑇]:
+
+C∗ = argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+���𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝜆||C||2
+𝑙2,
+(11)
+
+s.t. L𝐾C satisfies physics-based constraints.
+(12)
+
+Here 𝜆 is a regularization parameter, and (12) depends on the partial physical knowledge of the
+
+heterogeneous material, which we will discuss later on in Section “Physics Constraints”.
+
+Initialization for Parameters and Hyper-parameters
+
+We note that the solution of (10) has numerical errors accumulated from 𝑡 = 0 to 𝑡 = 𝑇,
+
+and hence in practice the optimization problem (11) aims to minimize the accumulated error of
+
+displacement fields. This setting was originally proposed and employed in (You et al. 2021a),
+
+11
+Fan, November 3, 2022
+
+
+where the authors found that minimizing the accumulated error would help to learn physically-
+
+stable surrogate models, and such a stability plays a critical role in long-term prediction tasks. On
+
+the other hand, we also point out that in some application scenarios one can also choose to minimize
+
+the step-by-step time integration error. In (Lu et al. 2022; Zhang et al. 2022), an approximated
+
+nonlocal solution with one-step temporal error was considered:
+
+( ˜𝑢𝑠
+𝑁𝐿,C)𝑛+1
+𝑖
+:= 2(𝑢𝑠
+𝐷𝑁𝑆)𝑛
+𝑖 − (𝑢𝑠
+𝐷𝑁𝑆)𝑛−1
+𝑖
++ Δ𝑡2 𝑓 𝑠(𝑥𝑖, 𝑡𝑛) + Δ𝑡2 �L𝐾C,ℎ[𝑢𝑠
+𝐷𝑁𝑆]�𝑛
+𝑖
+
+= 2(𝑢𝑠
+𝐷𝑁𝑆)𝑛
+𝑖 − (𝑢𝑠
+𝐷𝑁𝑆)𝑛−1
+𝑖
++ Δ𝑡2 𝑓 𝑠(𝑥𝑖, 𝑡𝑛) + Δ𝑡2Δ𝑥
+∑︁
+
+𝑥 𝑗∈𝐵𝛿(𝑥𝑖)∩𝜒
+𝐾C(|𝑥 𝑗 − 𝑥𝑖|)((𝑢𝑠
+𝐷𝑁𝑆)𝑛
+𝑗 − (𝑢𝑠
+𝐷𝑁𝑆)𝑛
+𝑖 ),
+
+where (𝑢𝑠
+𝐷𝑁𝑆)𝑛
+𝑖 := 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛) represents the high-fidelity solution. A step-by-step loss of dis-
+
+placement is then formulated as
+
+˜C∗ = argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝜆||C||2
+𝑙2,
+(13)
+
+s.t. L𝐾C satisfies physics-based constraints.
+(14)
+
+The loss function in (13) is in fact a quadratic equation with respect to C. As such, NOR is
+
+equivalent to a linear regression model and solving (13) becomes a trivially linear problem. This
+
+fact makes hyper-parameter tuning, such as the selection of the regularization parameter 𝜆, more
+
+efficient in (13). For instance, one can identify the optimal 𝜆 as the maximizer of the curvature of
+
+the curve, following the L-curve method (Hansen 2000; Lang and Lu 2022; Lu et al. 2022). Let 𝑙
+
+be a parametrized curve in R2, satisfying
+
+𝑙(𝜆) = (𝛼(𝜆), 𝛽(𝜆)) := (log(E(C∗(𝜆))), log(R(C∗(𝜆))),
+(15)
+
+where E(C∗(𝜆)) := �𝑆
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁 𝐿,C∗ (𝜆)−𝑢𝑠
+𝐷𝑁 𝑆
+
+���
+���
+2
+
+𝑙2 (Ω×[0,𝑇 ])
+
+||𝑢𝑠
+𝐷𝑁 𝑆||
+2
+𝑙2 (Ω×[0,𝑇 ])
+is the loss function without regularization, and
+
+R(C∗(𝜆)) is the regularization term, which is taken as ||C∗(𝜆)||2
+𝑙2 in (13). Here, we used C∗(𝜆)
+
+to highlight the fact that the optimal parameter, C∗, depends on the choice of the regularization
+
+12
+Fan, November 3, 2022
+
+
+parameter 𝜆. The optimal parameter for 𝜆 then taken as the maximizer of the curvature of 𝑙 as
+
+𝜆∗ = argmax
+𝜆
+
+𝛼′𝛽′′ − 𝛼′𝛽′′
+
+(𝛼′ 2 + 𝛽′ 2)3/2 .
+(16)
+
+This optimal parameter 𝜆∗ balances the loss E and the regularization. For further details of the
+
+L-curve method and discussions, we refer interested readers to (Hansen 2000).
+
+In this work, we use the step-by-step loss formulation in (13) to provide an efficient estimation
+
+for C and to select the optimal regularization parameter 𝜆. Then, the selected parameter set and
+
+hyperparameter will be employed in the optimization problem with accumulated loss, as an initial
+
+guess for the optimization solver and an estimated regularization parameter, respectively. Further
+
+details and discussions will be provided in Section “A Two-Phase Learning Algorithm”.
+
+Physics Constraints
+
+As illustrated in (You et al. 2021a), when some physical knowledge is available, such as the
+
+effective wave speed for infinitely long wavelengths and the curvature of the dispersion curve in the
+
+low-frequency limit, this knowledge can be incorporated into the optimization problem as physics-
+
+based constraints in (12) and (14). In particular, when the effective wave speed for infinitely long
+
+wavelengths, 𝑐0, is available, the corresponding physics-based constraint is:
+
+∫ 𝛿
+
+0
+𝜉2𝐾C(|𝜉|)𝑑𝜉 = 𝜌𝑐2
+0,
+(17)
+
+where 𝜌 is the effective material density. Discretizing (17) by Riemann sum, we obtain the first
+
+constraint on {𝐶𝑚}:
+
+𝜌𝑐2
+0 =
+
+𝑀
+∑︁
+
+𝑚=0
+𝐶𝑚
+
+⌊𝛿/Δ𝑥⌋
+∑︁
+
+𝜂=1
+
+𝜂2Δ𝑥3
+
+𝛿3
+𝐵𝑚,𝑀
+
+�����
+𝜂Δ𝑥
+
+𝛿
+
+����
+
+�
+=
+
+𝑀
+∑︁
+
+𝑚=0
+𝐶𝑚𝐴1𝑚
+(18)
+
+13
+Fan, November 3, 2022
+
+
+where 𝐴1𝑚 := �⌊𝛿/Δ𝑥⌋
+𝜂=1
+𝜂2Δ𝑥3
+
+𝛿3 𝐵𝑚,𝑀
+
+�����
+𝜂Δ𝑥
+
+𝛿
+
+����
+
+�
+. Furthermore, when the curvature of the dispersion curve
+
+in the low-frequency limit, 𝑅, is also available, the corresponding physics-based constraint is:
+
+∫ 𝛿
+
+0
+𝜉4𝐾C(|𝜉|)𝑑𝜉 = −4𝜌𝑐3
+0𝑅.
+(19)
+
+Discretizing (19) with the Riemann sum approximation yields the second constraint on {𝐶𝑚}:
+
+− 4𝜌𝑐3
+0𝑅 =
+
+𝑀
+∑︁
+
+𝑚=0
+𝐶𝑚
+
+⌊𝛿/Δ𝑥⌋
+∑︁
+
+𝜂=1
+
+𝜂4Δ𝑥5
+
+𝛿3
+𝐵𝑚,𝑀
+
+�����
+𝜂Δ𝑥
+
+𝛿
+
+����
+
+�
+=
+
+𝑀
+∑︁
+
+𝑚=0
+𝐶𝑚𝐴2𝑚
+(20)
+
+where 𝐴2𝑚 := �⌊𝛿/Δ𝑥⌋
+𝜂=1
+𝜂4Δ𝑥5
+
+𝛿3 𝐵𝑚,𝑀
+
+�����
+𝜂Δ𝑥
+
+𝛿
+
+����
+
+�
+. These two physics-based equations are imposed as linear
+
+constraints on {𝐶𝑚}. In this work, we consider the heterogeneous bar composed of alternating
+
+layers of two dissimilar materials, with (averaged) layer sizes 𝐿1 = (1 − 𝜙)𝐿, 𝐿2 = (1 + 𝜙)𝐿 for
+
+materials 1 and 2, respectively. Then the effective material density, Young’s modulus and the
+
+wave speed are given by 𝜌 = ((1 − 𝜙)𝜌1 + (1 + 𝜙)𝜌2)/2, 𝐸 = 2/((1 − 𝜙)𝐸−1
+1 + (1 + 𝜙)𝐸−1
+2 ), and
+
+𝑐0 =
+√︁
+
+𝐸/𝜌. 𝑅 is the second derivative of the wave group velocity with respect to frequency at 𝜔=0.
+
+As discussed in Section “Dispersion in Heterogeneous Materials”, the group velocity is estimated
+
+from the speed of wave packets using the DNS solver. For the periodic microstructure, the curvature
+
+𝑅 of the function 𝑣𝑔(𝜔) at 𝜔 = 0 is found by numerically differentiating this function. The value
+
+obtained for the present bar composition is 𝑅 =
+𝑑2𝑣𝐷𝑁𝑆
+𝑔
+
+𝑑𝜔2
+(0) = −0.006135. The same value of 𝑅
+
+is also employed for the random microstructure because, as discussed in Section “Dispersion in
+
+Heterogeneous Materials”, the same dispersion properties apply to both periodic and random media
+
+with the same 𝜙 and 𝐿 if the wavelength is much greater than the microstructural length scale.
+
+When applying (18) and (20) in the optimization problem (11) or (13), we reformulate this
+
+constrained optimization problem such that an unconstrained optimization problem is obtained.
+
+In particular, denoting C𝐿 := [𝐶0, · · · , 𝐶𝑀−2]𝑇 and C𝑅 := [𝐶𝑀−1, 𝐶𝑀]𝑇, (18) and (20) can be
+
+14
+Fan, November 3, 2022
+
+
+rewritten as
+
+A𝐿C𝐿 + A𝑅C𝑅 =
+
+
+
+𝜌𝑐2
+0
+
+−4𝜌𝑐3
+0𝑅
+
+
+
+, where A𝐿 :=
+
+
+
+𝐴10
+· · ·
+𝐴1,𝑀−2
+
+𝐴20
+· · ·
+𝐴2,𝑀−2
+
+
+
+, A𝑅 :=
+
+
+
+𝐴1,𝑀−1
+𝐴1,𝑀
+
+𝐴2,𝑀−1
+𝐴2,𝑀
+
+
+
+.
+
+Hence, one can eliminate C𝑅 by writting it as a linear expression in C𝐿:
+
+C𝑅 = A−1
+𝑅
+���
+�
+
+
+
+𝜌𝑐2
+0
+
+−4𝜌𝑐3
+0𝑅
+
+
+
+− A𝐿C𝐿
+���
+�
+
+,
+(21)
+
+and substituting into the optimization problem (11) or (13). Therefore, in the later sections we only
+
+need to solve for C𝐿, and will demonstrate the algorithm for the unconstrained problem.
+
+BAYESIAN NONLOCAL OPERATOR REGRESSION
+
+Given observations of forcing terms 𝑓 𝑠(𝑥, 𝑡), the corresponding DNS solution of displacement
+
+fields at time instance 𝑡𝑛 ∈ [0,𝑇], and discretization points 𝑥𝑖 ∈ 𝜒, in this section we formulate
+
+the Bayesian inference problem. Here, we stress that while the DNS data can be observed, the
+
+ground truth model is unknown. Moreover, due to the fact that the target surrogate homogenized
+
+model is supposed to act at a larger scale without resolving the detailed microstructure, the model
+
+discrepancy would be the largest contributor to the overall modeling error and correspondingly the
+
+predictive uncertainty. For the 𝑠−th observation, we model the discrepancy between 𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛)
+
+and the ground truth measurement 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛) as additive independent unbiased Gaussian random
+
+noise 𝜖, with:
+
+𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛) = 𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) + 𝜖𝑠,𝑖,𝑛,
+𝜖𝑠,𝑖,𝑛 ∼ N (0, ˜𝜎2
+𝑠 ).
+(22)
+
+Here, with 𝜎 a constant independent of 𝑠, ˜𝜎𝑠 := 𝜎·
+���
+���𝑢𝑠
+𝑁𝐿,C(𝑥, 𝑡)
+���
+���
+𝑙2(Ω×[0,𝑇]), and N (0, ˜𝜎2
+𝑠 ) represents
+
+the normal distribution with zero mean and standard deviation ˜𝜎𝑠. Thus, 𝜎 is the standard deviation
+
+of
+�
+𝑢𝑠
+𝐷𝑁𝑆 − 𝑢𝑠
+𝑁𝐿,C
+�𝑆
+
+𝑠=1 after normalization w.r.t. the 𝑙2-norm of
+�
+𝑢𝑠
+𝑁𝐿,C
+�𝑆
+
+𝑠=1. For each observation,
+
+15
+Fan, November 3, 2022
+
+
+the likelihood function at (𝑥𝑖, 𝑡𝑛) is
+
+𝑓 (𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛)|C) =
+1
+√︁
+
+2𝜋 ˜𝜎2𝑠
+exp
+���
+�
+
+−
+
+���𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) − 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛)
+���
+2
+
+2˜𝜎2𝑠
+
+���
+�
+
+.
+
+Therefore, given the independent noise construction, the likelihood for all the observations is
+
+𝑓 (D|C) =
+
+𝑆,𝐿,𝑇/Δ𝑡
+�
+
+𝑠,𝑖,𝑛=1
+
+
+
+
+
+1
+√︂
+
+2𝜋𝜎2
+���
+���𝑢𝑠
+𝑁𝐿,C
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+exp
+����
+�
+
+−
+
+���𝑢𝑠
+𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) − 𝑢𝑠
+𝐷𝑁𝑆(𝑥𝑖, 𝑡𝑛)
+���
+2
+
+2𝜎2
+���
+���𝑢𝑠
+𝑁𝐿,C
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+����
+�
+
+
+
+
+
+.
+(23)
+
+We employ priors as a means of regularization. We use a multivariate normal prior distribution
+
+on the kernel parameter, C ∼ N ( ˆC, ˆ𝜎2
+
+𝜆 I). Here ˆC is the learnt parameter from the deterministic non-
+
+local operator regression technique introduced in Section “Background and Related Mathematical
+
+Formulation”, ˆ𝜎 is defined as the 𝜎2 estimated in Step 1b of Algorithm 1 below, and 𝜆 is the chosen
+
+regularization parameter from the L-curve method, to achieve a good balance between the prior
+
+and the likelihood contributions. Since the normalized standard deviation of model discrepancy,
+
+𝜎, is anticipated to be smaller than 1, in our implementation we infer log(𝜎) instead of 𝜎, and limit
+
+its range to [−10, 0]. Moreover, since we have no other prior knowledge about log(𝜎), we assume
+
+that its prior satisfies a uniform random distribution, i.e., log(𝜎) ∼ U[−10, 0]. Then, combining
+
+the prior and likelihood in (23), we define the (unnormalized) posterior 𝜋(C|D) ∝ 𝑓 (D|C)𝑃(C),
+
+and obtain the associated negative log-posterior formulation after eliminating the constant terms:
+
+− 𝑙𝑜𝑔(𝜋(C|D)) =
+
+𝑆
+∑︁
+
+𝑠=1
+
+
+
+
+
+���
+���𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+2𝜎2
+���
+���𝑢𝑠
+𝑁𝐿,C
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
++ 𝑁 log
+�
+𝜎
+���
+���𝑢𝑠
+𝑁𝐿,C
+���
+���
+𝑙2(Ω×[0,𝑇])
+
+�
+
+
+
++ 𝜆
+
+����C − ˆC
+����2
+𝑙2
+
+2ˆ𝜎2
+,
+
+(24)
+
+where 𝑁 = 𝐿 𝑇
+
+Δ𝑡 is the total number of measurements for each observation pair, ( 𝑓 𝑠, 𝑢𝑠
+𝐷𝑁𝑆).
+
+16
+Fan, November 3, 2022
+
+
+Algorithm 1 A Two-Phase Learning Algorithm
+
+1: Find a good initial state
+1a) Learning C1 by minimizing the step-by-step error via:
+
+C1 := argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝜆||C||2
+𝑙2.
+(25)
+
+Then calculate 𝜎1 as the standard deviation of 𝑢𝑁𝐿,C1 − 𝑢𝐷𝑁𝑆, and update the regularization
+parameter, 𝜆1, following (29).
+1b) With initial values C1 and regularization parameter 𝜆1 obtained from step 1a), find
+C2 and 𝜎2 as follows:
+
+(C2, 𝜎2) := argmin
+C,𝜎
+
+𝑆
+∑︁
+
+𝑠=1
+
+
+
+
+
+���
+���𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+2𝜎2����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝑁 log
+�
+𝜎
+����𝑢𝑠
+𝐷𝑁𝑆
+����
+𝑙2(Ω×[0,𝑇])
+�
+
+
+
+
++𝜆1
+||C||2
+𝑙2
+
+2𝜎2
+1
+.
+
+(26)
+1c) With the initial values ˆC := C2, determine the regularization parameter by solving the
+linear regression problem with the quadratic loss function:
+
+C3 := argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+���
+���𝑢𝑠
+𝑁𝐿,C
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
++ 𝜆
+����C − ˆC
+����2
+𝑙2,
+(27)
+
+and update the regularization parameter 𝜆2 following (34).
+
+2: Perform MCMC
+With the initial values (C2, 𝜎2) and the regularization parameter 𝜆2 from phase 1, run
+MCMC and sample the posterior 𝑝(C, 𝜎|D), where the negative log-posterior, up to an additive
+constant, is given by
+
+𝑆
+∑︁
+
+𝑠=1
+
+
+
+
+
+���
+���𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+2𝜎2
+���
+���𝑢𝑠
+𝑁𝐿,C
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
++ 𝑁 log
+�
+𝜎
+����𝑢𝑠
+𝑁𝐿
+����
+𝑙2(Ω×[0,𝑇])
+�
+
+
+
+
++ 𝜆2
+||C − C2||2
+𝑙2
+
+2𝜎2
+2
+.
+(28)
+
+3: Postprocesing
+Extract effective samples from the MCMC chain, and estimate statistical moments of the
+corresponding solutions and other quantities of interests.
+
+17
+Fan, November 3, 2022
+
+
+A Two-Phase Learning Algorithm
+
+To learn the posterior distribution (24), we employ an adaptive Markov chain Monte Carlo
+
+(MCMC) method (Haario et al. 2001; Andrieu et al. 2003; Andrieu and Thoms 2008; Debusschere
+
+et al. 2017). MCMC is an effective applied Bayesian estimation procedure, generating random
+
+samples from the target posterior distribution. Particularly in high dimensional chains, MCMC
+
+benefits from a good initial guess to reduce burn-in. In order to accelerate convergence and obtain
+
+a good sampling of the posterior, we provide a good initial parameter estimate to start the chain.
+
+To this end, a two-phase learning algorithm is proposed, with the main steps summarized in
+
+Algorithm 1. In this algorithm, an initialization phase, denoted as phase 1, is proposed before
+
+the MCMC algorithm in phase 2, with the purpose of providing good initial values that are close
+
+enough to the maximum a posteriori (MAP) parameter estimate from (24).
+
+Phase 1 is composed of a sequence of deterministic optimization problems. First, in step 1a)
+
+we consider the quadratic problem of minimizing the step-by-step error
+
+C1 = argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝜆||C||2
+𝑙2,
+
+s.t. L𝐾C satisfies physics-based constraints,
+
+to provide estimates for the parameter solution, C1. Based on the estimated parameter, the approx-
+
+imated nonlocal solution 𝑢𝑠
+𝑁𝐿,C1 can then be obtained following the numerical scheme (10), and an
+
+estimate of the parameter 𝜎, which is denoted as 𝜎1, is provided by calculating the (normalized)
+
+standard deviation of 𝑢𝑁𝐿,C1 − 𝑢𝐷𝑁𝑆. We also estimate the regularization parameter, 𝜆1, as:
+
+𝜆1 :=
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+���𝑢𝑠
+𝑁𝐿,C1 − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])||C1||2
+𝑙2
+.
+(29)
+
+Intuitively, this parameter guarantees that the accumulated error and the regularization term have
+
+similar scales. Then, based on the estimated parameter C1 and the regularization parameter 𝜆1, in
+
+18
+Fan, November 3, 2022
+
+
+step 1b) we solve a deterministic optimization problem:
+
+(C2, 𝜎2) := argmin
+C,𝜎
+
+𝑆
+∑︁
+
+𝑠=1
+
+
+
+
+
+���
+���𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+
+2𝜎2����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝑁 log
+�
+𝜎
+����𝑢𝑠
+𝐷𝑁𝑆
+����
+𝑙2(Ω×[0,𝑇])
+�
+
+
+
+
++ 𝜆1
+||C||2
+𝑙2
+
+2𝜎2
+1
+,
+
+(30)
+
+s.t. L𝐾C satisfies physics-based constraints.
+(31)
+
+In the above formulation, the first two terms of the loss function are taken from the closed form of
+
+the negative log-posterior formulation in (24), and the last term provides regularization. This step
+
+is solved with the L-BFGS method. Then, based on the estimated solution C2, in step 1c) we set
+
+ˆC := C2 consider the quadratic formulation which can be seen as an approximation of the first and
+
+last term in (24):
+
+C3 := argmin
+C
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁𝐿,C − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+����𝑢𝑠
+𝐷𝑁𝑆
+����2
+𝑙2(Ω×[0,𝑇])
++ 𝜆
+����C − ˆC
+����2
+𝑙2,
+(32)
+
+s.t. L𝐾C satisfies physics-based constraints,
+(33)
+
+and can be solved as a linear problem. Here, the L-curve method is again employed with the
+
+loss function defined as E(C(𝜆)) := �𝑆
+𝑠=1
+
+���
+��� ˜𝑢𝑠
+𝑁 𝐿,C(𝜆)−𝑢𝑠
+𝐷𝑁 𝑆
+
+���
+���
+2
+
+𝑙2 (Ω×[0,𝑇 ])
+
+||𝑢𝑠
+𝐷𝑁 𝑆||
+2
+𝑙2 (Ω×[0,𝑇 ])
+and the regularization term as
+
+R(C(𝜆)) :=
+����C(𝜆) − ˆC
+����2
+𝑙2. With the estimated solution C3, we then update the regularization
+
+parameter for phase 2, which will be denoted as 𝜆2:
+
+𝜆2 :=
+
+𝑆
+∑︁
+
+𝑠=1
+
+���
+���𝑢𝑠
+𝑁𝐿,C3 − 𝑢𝑠
+𝐷𝑁𝑆
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])
+���
+���𝑢𝑠
+𝑁𝐿,C3
+
+���
+���
+2
+
+𝑙2(Ω×[0,𝑇])||C3 − C2||2
+𝑙2
+.
+(34)
+
+Finally, with the initial values (C2, 𝜎2) and the regularization parameter 𝜆2 from phase 1, we
+
+apply adaptive MCMC using the log-posterior (24), where the pair ( ˆC, ˆ𝜎) as well as the initial
+
+19
+Fan, November 3, 2022
+
+
+guess of (C, 𝜎) are set as (C2, 𝜎2). MCMC is implemented using the Uncertainty Quantification
+
+toolkit (UQTk) (Debusschere et al. 2004; Debusschere et al. 2017).
+
+APPLICATION TO A HETEROGENEOUS ELASTIC BAR
+
+In this section, we examine the efficacy of the proposed BNOR model and the two-phase
+
+learning algorithm, by considering the stress wave propagation problem described in Section
+
+“Dispersion in Heterogeneous Materials”. Here, we seek a nonlocal homogenized model for the
+
+stress wave propagation in one-dimensional heterogeneous bars. Two exemplar heterogeneous bars
+
+are considered, one with periodic microstructure and one with random microstructure. For this
+
+problem, the goal is to obtain an effective nonlocal surrogate model from ground truth datasets
+
+generated by the DNS solver, acting at a much larger scale than the size of the microstructure.
+
+Since this problem has no ground-truth nonlocal kernel, we evaluate the surrogate by measuring its
+
+effectiveness in reproducing DNS data in applications that are subject to different loading conditions
+
+with a much longer time than the problems used as training data. To directly examine the extent
+
+to which our surrogate model reproduces the dispersion properties in the heterogeneous material,
+
+we also compare the group velocity curves from our model with the curves computed with DNS.
+
+Finally, we require that the learnt surrogate should provide a physically stable material model.
+
+To check this, we report the dispersion curve, whose positivity indicates that the learnt nonlocal
+
+model is physically stable. Besides the predicted MAP solutions, the Bayesian model also provides
+
+estimation of the predictive uncertainty for all above quantities of interests.
+
+Example 1: A Bar with Periodic Microstructure
+
+Data generation and settings.
+First, we consider a heterogeneous bar with a periodic microstruc-
+
+ture. As illustrated in the left top plot in Figure 1, the bar is a layered medium composed of two
+
+components, with the size of each layer 𝐿 = 0.2. Components 1 and 2 have the same density 𝜌 = 1
+
+and Young’s moduli 𝐸1 = 1 and 𝐸2 = 0.25, respectively. For the purpose of training and validation,
+
+we generate the DNS dataset with three types of data, and use the first two for training and the last
+
+one for validation of our algorithm. For all data we set the discretization parameters for the DNS
+
+solver as Δ𝑡𝐷𝑁𝑆 = 0.01, max{Δ𝑥𝐷𝑁𝑆} = 0.01, and consider the symmetric domain Ω = [−𝑏, 𝑏].
+
+20
+Fan, November 3, 2022
+
+
+In what follows, 𝑢 represents the displacement, 𝑣 the velocity, and 𝑓 an external loading. The three
+
+types of data are chosen to follow a similar setting as in (You et al. 2021a):
+
+Type 1: Oscillating source (20 observations). We set 𝑏 = 50. The bar starts from rest such that
+
+𝑣(𝑥, 0) = 𝑢(𝑥, 0) = 0, and an oscillating loading is applied with 𝑓 (𝑥, 𝑡) = 𝑒−( 2𝑥
+
+5𝑘𝐿)
+2
+𝑒−
+� 𝑡−𝑡0
+
+𝑡𝑝
+
+�2
+cos2 �
+2𝜋𝑥
+𝑘𝐿
+�
+
+with 𝑘 = 1, 2, . . . , 20. Here we take 𝑡0 = 𝑡𝑝 = 0.8.
+
+Type 2: Plane wave with ramp (11 observations). We also set the domain parameter as 𝑏 = 50.
+
+The bar starts from rest (𝑢(𝑥, 0) = 0) and is subject to zero loading ( 𝑓 (𝑥, 𝑡) = 0). For the velocity
+
+on the left end of the bar, we prescribe
+
+𝑣(−𝑏, 𝑡) =
+
+
+
+
+
+sin(𝜔𝑡) sin2 � 𝜋𝑡
+
+30
+
+�
+,
+𝑡 ≤ 15
+
+sin(𝜔𝑡),
+𝑡 > 15
+
+for 𝜔 = 0.35, 0.7, · · · , 3.85.
+
+Type 3: Wave packet (3 observations). We consider a longer bar with 𝑏 = 133.3, with the bar
+
+starting from rest (𝑢(𝑥, 0) = 0), and is subject to zero loading ( 𝑓 (𝑥, 𝑡) = 0). The velocity on the left
+
+end of the bar is prescribed as 𝑣(−𝑏, 𝑡) = sin(𝜔𝑡) exp (−(𝑡/5 − 3)2) with 𝜔 = 2, 3.9, and 5.
+
+For all data types, parameters for the nonlocal solver and the optimization algorithm are set to
+
+Δ𝑥 = 0.05, Δ𝑡 = 0.02, 𝛿 = 1.2, and 𝑀 = 24. For training purposes, we generate data of types 1 and
+
+2 till 𝑇 = 2. Then, to investigate the performance of our surrogate model in long-term prediction
+
+tasks we simulate till 𝑇 = 100 for data type 3.
+
+Results from Bayesian inference
+An MCMC chain with 300,000 steps is generated, with ap-
+
+proximately 30% acceptance rate.
+To present the results, we post-process the chain based on
+
+3,856 equally spaced samples, where the effective sample size (ESS) was calculated following the
+
+formulation in (Vats et al. 2019). Figure 3 shows a trace plot of the MCMC chain, illustrating
+
+good mixing of the chain. In Figure 4(a), the nonlocal kernels using the learnt parameters are
+
+demonstrated, with predictive uncertainty ranges of 68%, 95% and 99.7% provided. Here, the
+
+confidence ranges were calculated based on the push-forward of the marginal posterior on C (using
+
+21
+Fan, November 3, 2022
+
+
+(a) First parameter
+(b) Second parameter
+(c) log(𝜎)
+
+Fig. 3. The first two kernel parameters 𝐶0, 𝐶1 and log(𝜎) for a bar with periodic microstructure,
+plotted against the iteration number after eliminating the burn-in stage (the trace plot of MCMC).
+
+the samples from MCMC), through the nonlocal model (7). Both the averaged nonlocal kernel
+
+from the proposed BNOR algorithm and the deterministic nonlocal kernel from the original NOR
+
+are reported for comparison. Specifically, denoting the posterior mean of C, as ¯C, here the averaged
+
+nonlocal kernel is evaluated as 𝐾 ¯C
+�
+|𝜉|
+𝛿
+�
+. One can see that the averaged kernel from BNOR is close
+
+to the original NOR kernel when 𝜉 = |𝑦 − 𝑥| is relatively large (> 0.6) with an almost negligible
+
+predictive uncertainty, while the discrepancy becomes more significant when 𝜉 approaches zero.
+
+However, the kernel values at 𝜉 ≈ 0 have a relatively small impact on the nonlocal operator L𝐾C,
+
+and consequently also on the corresponding nonlocal solution 𝑢𝑁𝐿 as well as the loss function
+
+in our optimization problems. Moreover, sign-changing behaviors are observed on both kernels,
+
+which are consistent with literature (Xu and Foster 2020; You et al. 2021b). Then, in Figure 4(b) we
+
+illustrate the deterministic and mean estimates, and predictive uncertainty ranges, of the dispersion
+
+curve. Here, we can see that both the averaged model from BNOR and the deterministic model from
+
+NOR possess positivity, indicating that both models correspond to a family of physically stable
+
+material models. Finally, in Figure 4(c) we plot the estimated group velocity against frequency
+
+𝜔, in comparison with the group velocity profile from the DNS simulation. These results indicate
+
+that both the averaged model from BNOR and the deterministic model from original NOR are able
+
+to match the DNS behavior for low frequency values 𝜔. When the frequency is getting closer to
+
+the band stop, 𝜔𝑏𝑠, comparing with the deterministic model from original NOR, we notice that
+
+the averaged model from BNOR has reproduced the group velocity of the DNS model with better
+
+22
+Fan, November 3, 2022
+
+
+(a) Optimal kernel
+(b) Dispersion curve
+
+(c) Group velocity
+
+Fig. 4. Optimal kernel, group velocity and dispersion curve for a bar with periodic microstructure.
+Here, the confidence region almost coincides with the curve of average BNOR, since the uncertainty
+in the kernel parameters is low.
+
+accuracy. Here, we stress that since the method for evaluating the DNS 𝑣𝑔 from wave packets is
+
+susceptible to error near the band stop, it is generally infeasible to expect our nonlocal surrogate
+
+model to match perfectly with the DNS group velocity. For both the dispersion curve and group
+
+velocity, predictive uncertainties are again negligible.
+
+We note in particular that the evident negligible level of predictive uncertainty in these results
+
+is due to the fact that (1) our error model is rather simple, presuming independent noise, such that
+
+each additional data point adds information, and (2) we have a large number of data points. The
+
+23
+Fan, November 3, 2022
+
+
+Fig. 5. Comparison of two posterior uncertainty results for the prediction of two exemplar examples
+from the training dataset, on the periodic microstructure case. Left: displacement field prediction
+and confidence regions from the push-forward posterior (PFP) approach. Right: displacement field
+prediction and confidence regions from the posterior predictive (PP) approach.
+
+combination of both factors results in the posterior on C being highly concentrated, thus exhibiting
+
+minimal uncertainty, even though the discrepancy between the two models is non-negligible.
+
+In order to endow the nonlocal predictive model with uncertainties that better approximate the
+
+discrepancy between it and the high-fidelity model, one can resort to a more elaborate statistical
+
+construction to represent model error (Kennedy and O’Hagan 2000), particularly as embedded
+
+in the model construction (Sargsyan et al. 2015; Sargsyan et al. 2019). We reserve this pathway
+
+forward for future work.
+
+We illustrate further, in Fig. 5, posterior uncertainty on two predicted solutions that are part of
+
+the training data. In each case, we highlight two posterior uncertainty results. The first, commonly
+
+termed the push-forward posterior (PFP), is the push-forward of the marginal posterior 𝑝(C|𝐷)
+
+through the non-local model 𝑢𝑁𝐿,C(𝑥, 𝑡). The second, termed the posterior predictive (PP), is the
+
+push-forward of the full posterior 𝑝(C, 𝜎|𝐷) through the data model 𝑢𝑁𝐿,C(𝑥, 𝑡) + 𝜖. The PFP
+
+24
+Fan, November 3, 2022
+
+
+provides the posterior uncertainty on the model predictions given posterior knowledge of C. On the
+
+other hand, the PP provides a posterior density on predictions of the data model, which serves as a
+
+diagnostic measure of the quality of this model, composed of the physical model and the proposed
+
+error model, as a predictor of the data1. It is expected that the PP would exhibit higher uncertainty
+
+on predictions than the PFP. Further, an ideal PP should span the data, and its samples ought to be
+
+statistically indistinguishable from the data. Considering the results in Fig. 5, we can see that the
+
+BNOR solution with the mean C, the deterministic NOR, and the DNS solution are all very well
+
+matched for the plane wave case, with discernible differences in the displacement magnitudes in
+
+the oscillating source case. Further, we see that the PFP results in negligible predictive uncertainty,
+
+as already observed in Fig. 4 for the kernel and associated quantities of interest. On the other
+
+hand, the PP results exhibit non-negligible uncertainty, particularly at low mean-output levels for
+
+positions beyond ±10 for the oscillating source case, and above position -15 for the plane wave case.
+
+However, we find that the PP uncertainty is again negligible at high signal levels around position
+
+0 in the oscillating source case, and below position -15 in the plane wave case. Moreover, the PP
+
+uncertainty is small relative to the discrepancy between the model and the data at large signal levels
+
+in the oscillating source case, while it is larger than the discrepancy at low signal levels. Clearly,
+
+the PP does not do an ideal job of spanning the discrepancy from the data, indicating that a more
+
+flexible/accurate, perhaps embedded, error model would be needed to better capture the data error.
+
+Validation on wave packet
+In order to further test the predictive performance of our surrogate
+
+model, we now demonstrate its capability in reproducing DNS simulations through the prediction
+
+error of 𝑢 on data type 3, involving wave packet problems where a long time simulation is conducted
+
+on a long bar, and the loading scenario is substantially different from the training cases. With
+
+the proposed BNOR approach, for each loading scenario both the prediction of displacement
+
+field 𝑢𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) and the 68% − 95% − 99.7% confidence regions are provided. Specifically,
+
+we present both the PFP 𝑝(𝑢𝑁𝐿,C(𝑥𝑖, 𝑡𝑛)|𝐷) and PP 𝑝(𝑢𝑁𝐿,C(𝑥𝑖, 𝑡𝑛) + 𝜖|𝐷) results, where 𝜖 ∼
+
+1Note that, in an additive model error framework (Kennedy and O’Hagan 2001) where the 𝜖 term, defined to
+include some correlation structure, would be included in “corrected" model, such that the associated PP & PFP are
+equivalent.
+
+25
+Fan, November 3, 2022
+
+
+N (0, 𝜎2||𝑢𝑁𝐿,C(𝑥, 𝑡)||2
+𝑙2([−𝑏,𝑏]×[0,𝑇])).
+
+Fig. 6. Validation on the wave packet traveling problem for a bar with periodic microstructure,
+illustrating PFP uncertainty.
+Plots from top to bottom are corresponding to different loading
+frequencies: (top) 𝜔 = 2 < 𝜔𝑏𝑠, (middle) 𝜔 = 3.9 ≈ 𝜔𝑏𝑠, and (bottom) 𝜔 = 5 > 𝜔𝑏𝑠. Left column
+shows the simulation results on a relatively short time (𝑇 = 20), and the right column demonstrates
+long time simulation results (𝑇 = 100).
+
+In Figures 6 and 7 we consider solutions corresponding to three values of frequency 𝜔: 𝜔1 =
+
+2 < 𝜔𝑏𝑠, 𝜔2 = 3.9 ≈ 𝜔𝑏𝑠 and 𝜔3 = 5 > 𝜔𝑏𝑠, respectively. Further, results in the two figures
+
+illustrate PFP (Fig. 6) and PP (Fig. 7) uncertainty as indicated. For the the first two values of 𝜔,
+
+the exact stress wave is anticipated to be traveling in time. For the last case, since the value of 𝜔 is
+
+beyond the band stop and corresponds to a zero DNS group velocity, the exact wave does not travel
+
+in time. Both short time (𝑡 = 20) and long time (𝑡 = 100) predictions are considered for each case.
+
+26
+Fan, November 3, 2022
+
+
+Fig. 7. Validation on the wave packet traveling problem for a bar with periodic microstructure,
+illustrating PP uncertainty. Plots from top to bottom are corresponding to different loading fre-
+quencies: (top) 𝜔 = 2 < 𝜔𝑏𝑠, (middle) 𝜔 = 3.9 ≈ 𝜔𝑏𝑠, and (bottom) 𝜔 = 5 > 𝜔𝑏𝑠. Left column
+shows the simulation results on a relatively short time (𝑇 = 20), and the right column demonstrates
+long time simulation results (𝑇 = 100).
+
+The deterministic solution from the standard NOR algorithm and the DNS data are also reported for
+
+comparison. We observe at the outset the negligible PFP uncertainty (Fig. 6), as already observed
+
+in Fig. 5 for training data predictions, while larger PP uncertainty is evident (Fig. 7), and quite
+
+prominently as the displacement goes to zero.
+
+Further, for the loading frequency 𝜔 = 2.0 case, we observe good agreement between the
+
+mean of the nonlocal solutions and the DNS data for both 𝑡 = (20, 100) cases. Thus, the optimal
+
+27
+Fan, November 3, 2022
+
+
+nonlocal surrogate corresponding to our learnt samples can accurately reproduce both short and
+
+long-time stress wave propagation in this frequency range. Here, we stress that although we refer to
+
+𝑡 = 20 as a relative short term, it is still much longer (10×) than the total time interval our training
+
+algorithm has seen from the training samples. These findings illustrate the generalization property
+
+of our algorithm in extrapolation tasks in this frequency range. On the other hand, considering the
+
+wave propagation results for the loading frequency 𝜔 = 3.9 case, which is close to the band stop
+
+frequency, a larger discrepancy between the DNS solution and the predicted displacement field is
+
+observed, especially in the region near the wave front. More specifically, at 𝑡 = 20, the mean of the
+
+nonlocal solutions is slightly off from the DNS solution, while the latter still lies inside the 68% PP
+
+confidence region (Fig. 7). This discrepancy grows appreciably as time moves forward, as can be
+
+seen for the 𝑡 = 100 case, extending well beyond the PP range. Clearly, our extrapolative behavior
+
+is poor for loading frequencies in the vicinity of the band stop frequency. Finally, when the loading
+
+frequency 𝜔 = 5.0 > 𝜔𝑏𝑠 and the wave barely propagates, as shown in both figures, our model
+
+successfully captures the phenomenon that the wave stops traveling.
+
+Generally, based on these results, we can say that the proposed nonlocal surrogate model per-
+
+forms well in short term extrapolative prediction tasks, and the posterior predictive associated with
+
+the current additive error model provides an adequate coverage of the DNS data, even in extrapo-
+
+lation, when the loading frequency is away from the band stop frequency, 𝜔𝑏𝑠. To further improve
+
+the prediction accuracy and the model discrepancy representation, more training observations on
+
+a longer time and/or a more flexible and sophisticated error model employing a Gaussian process
+
+construction should help, allowing always for the lack of expected accuracy from the statistical
+
+model in extrapolation if the mean model itself is failing.
+
+Example 2: A Bar with Random Microstructure
+
+Data generation and settings.
+We now consider a heterogeneous bar with random microstructure,
+
+where the size of each layer is now defined by a random variable. In particular, the density for
+
+both components is still set as 𝜌 = 1 and the Young’s moduli are 𝐸1 = 1 and 𝐸2 = 0.25. The
+
+layer sizes 𝐿1, 𝐿2 are two random variables, both satisfying a uniform distribution: 𝐿1, 𝐿2 ∼
+
+28
+Fan, November 3, 2022
+
+
+U[(1 − 𝐷)𝐿, (1 + 𝐷)𝐿], with the averaged layer size 𝐿 = 0.2 and the disorder parameter 𝐷 = 0.5.
+
+To generate the training dataset, we simulate the wave propagation using the DNS solver, under
+
+the same settings as in data type 1 and data type 2 of the periodic bar case. Then, the wave
+
+packet problem is again considered for the purpose of validation. Comparing with the periodic
+
+microstructure case, from the group velocity generated by the DNS simulations (see Figure 2 bottom
+
+plot) we note that the band stop generally occurs at a lower frequency in the random microstructure
+
+case. In fact, for the microstructure considered in this bar, an estimated band stop frequency 𝜔𝑏𝑠 ≈ 3
+
+can be obtained from the DNS simulations. Thus, in this section, wave packets with frequencies
+
+𝜔 = 1, 2, 3 and 4 are considered as the validation samples, with the purpose of investigating the
+
+performance of our nonlocal surrogate model when the loading frequencies are below (𝜔 = 1, 2),
+
+around (𝜔 = 3), and above (𝜔 = 4) the estimated band stop frequency 𝜔𝑏𝑠.
+
+(a) First parameter
+(b) Second parameter
+(c) log(𝜎)
+
+Fig. 8. The first two kernel parameters 𝐶0, 𝐶1 and log(𝜎) for a bar with random microstructure,
+plotted against the iteration number after eliminating the burn-in stage (the trace plot of MCMC).
+
+Results from Bayesian inference.
+We run an MCMC chain with 3×105 steps, with a 31%
+
+acceptance rate, and post-process it using 4,212 equally spaced samples guided by an estimated
+
+ESS. The ESS, the trace plot, the predicted averaged kernel, and its dispersion properties are all
+
+calculated similarly as for the periodic bar. Figure 8 shows the exemplar trace plot of the MCMC
+
+chain for two kernel parameters, 𝐶0 and 𝐶1, and 𝜎, illustrating good mixing. Compared with the
+
+periodic bar, slightly larger values of 𝜎 are obtained here. Hence, the randomness in material
+
+microstructure is anticipated to induce a larger model discrepancy. Then, in Figure 9 we plot the
+
+29
+Fan, November 3, 2022
+
+
+(a) Optimal kernel
+(b) Dispersion curve
+
+(c) Group velocity
+
+Fig. 9. Optimal kernel, group velocity and dispersion curve for a bar with random microstructure.
+Since the uncertainty in the kernel parameters remains low, the confidence regions generally
+coincide with the curve of average BNOR.
+
+predicted averaged nonlocal kernel, the dispersion curve, and the group velocity profiles, together
+
+with the 68% − 95% − 99.7% PFP confidence regions. The results from original NOR algorithm
+
+are also reported for comparison. For the estimated nonlocal kernels, as demonstrated in Figure
+
+9(a) we observe a small discrepancy between the averaged kernel and the deterministic kernel
+
+from NOR, together with very small confidence regions. These trends are also observed in Figure
+
+9(b) and Figure 9(c), for the dispersion curves and group velocity profiles, respectively. As in the
+
+periodic bar case, for this random microstructure the predicted nonlocal model from BNOR again
+
+30
+Fan, November 3, 2022
+
+
+possesses physical stability, and successfully identifies the band stop. In Figure 9(c), a relatively
+
+larger discrepancy is observed between the group velocity from the DNS solver and profile from
+
+the estimated nonlocal surrogate, possibly due to the fact that the material randomness introduces
+
+larger errors in the approximated DNS group velocity, 𝑣𝑔, especially for the frequencies near the
+
+band stop, as discussed in Section “Dispersion in Heterogeneous Materials”.
+
+Fig. 10.
+Comparison of two posterior uncertainty results for the prediction of two exemplar
+examples from the training dataset, on the random microstructure case.
+Left: displacement
+field prediction and confidence regions from the push-forward posterior (PFP) approach. Right:
+displacement field prediction and confidence regions from the posterior predictive (PP) approach.
+
+We illustrate again, in Fig. 10, posterior uncertainty on two predicted solutions that are part
+
+of the random microstructure training data, including both the PFP and PP posterior uncertainty
+
+results. We can see that the BNOR solution with the mean C, the deterministic NOR, and the
+
+DNS solution are all very well matched for the plane wave case. On the other hand, again, the
+
+oscillating source case exhibits discernible displacement magnitude differences between the two
+
+nonlocal solutions and the DNS solution. We also see that the PFP results in negligible predictive
+
+uncertainty, as already observed in Fig. 9. On the other hand, the PP results exhibit non-negligible
+
+31
+Fan, November 3, 2022
+
+
+uncertainty at low mean-output levels for both the oscillating source and plane wave case, while
+
+exhibiting again negligible uncertainty at high displacement levels even where the discrepancy with
+
+the DNS data is large. Here again, the PP with the current data model does not span the discrepancy
+
+from the data well, and is a candidate for improvement in future work.
+
+Validation on wave packet
+Following the same procedure as for the periodic microstructure case,
+
+here we again demonstrate the generalization capability of the learnt nonlocal surrogate model on
+
+different domains, boundary conditions, and longer simulation time, by considering the wave packet
+
+problem. Prediction results subject to four loading frequencies, 𝜔 = 1.0 < 𝜔𝑏𝑠, 𝜔 = 2.0 < 𝜔𝑏𝑠,
+
+𝜔 = 3.0 ≈ 𝜔𝑏𝑠, and 𝜔 = 4.0 > 𝜔𝑏𝑠, are provided on a relatively short time (𝑡 = 20) and a longer
+
+time (𝑡 = 100) simulations. The validation results are illustrated in Figures 11 and 12 illustrating
+
+PFP and PP uncertainty respectively. The deterministic nonlocal solution from the original NOR
+
+algorithm and the DNS data are also reported for comparison.
+
+We can see here again the negligible PFP uncertainty, even under extrapolation, in Fig. 11,
+
+while significant PP uncertainty is evident in Fig. 12. Further, for the short time prediction task
+
+(𝑡 = 20), a good agreement between the mean of the uncertain nonlocal solution and the DNS data
+
+is observed for 𝜔 = 1, 2, validating the generalizability of the learnt nonlocal surrogate under these
+
+loading conditions up to this time. However, there is clear mismatch with DNS for 𝜔 = 3, 4 in the
+
+region near the wave front. For long time prediction (𝑡 = 100), the extrapolated learnt nonlocal
+
+surrogate model exhibits discernible differences from the DNS solution under all loading cases,
+
+with the minimal differences being evident at 𝜔 = 1. At this loading the differences are confined to
+
+small magnitude differences in the oscillatory trace. On the other hand, more significant differences
+
+in both magnitude and phase are evident for 𝜔 = 2, 3, 4. Qualitatively, a satisfactory result is indeed
+
+obtained when the loading frequency 𝜔 = 4.0 > 𝜔𝑏𝑠 in that the wave barely travels in time. Except
+
+for the case with 𝑡 = 100 and 𝜔 = 3, the DNS solution always lies inside the 68% PP confidence
+
+region, highlighting the efficacy of our additive error model under these conditions in extrapolation.
+
+CONCLUSION
+
+32
+Fan, November 3, 2022
+
+
+Fig. 11. Validation on the wave packet traveling problem for a bar with random microstructure,
+illustrating PFP uncertainty.
+Plots from top to bottom are corresponding to different loading
+frequencies: 1) 𝜔 = 1 < 𝜔𝑏𝑠, 2) 𝜔 = 2 < 𝜔𝑏𝑠, 3) 𝜔 = 3 ≈ 𝜔𝑏𝑠, and 4) 𝜔 = 4 > 𝜔𝑏𝑠. Left column
+shows the simulation results on a relatively short time (𝑇 = 20), and the right column demonstrates
+long time simulation results (𝑇 = 100).
+
+33
+Fan, November 3, 2022
+
+
+Fig. 12. Validation on the wave packet traveling problem for a bar with random microstructure,
+illustrating PP uncertainty. Plots from top to bottom are corresponding to different loading fre-
+quencies: 1) 𝜔 = 1 < 𝜔𝑏𝑠, 2) 𝜔 = 2 < 𝜔𝑏𝑠, 3) 𝜔 = 3 ≈ 𝜔𝑏𝑠, and 4) 𝜔 = 4 > 𝜔𝑏𝑠. Left column
+shows the simulation results on a relatively short time (𝑇 = 20), and the right column demonstrates
+long time simulation results (𝑇 = 100).
+
+34
+Fan, November 3, 2022
+
+
+In this paper, we have proposed BNOR – an approach for learning the optimal nonlocal surrogate
+
+together with modeling discrepancy characterization for heterogeneous material homogenization.
+
+Our work is built based on the nonlocal operator regression approach (You et al. 2021b), which aims
+
+to provide a well-posed and generalizable nonlocal surrogate model from high-fidelity simulations
+
+and/or experimental measurements of the displacement fields, and allows for accurate simulations
+
+at a larger scale than the microstructure. Because of these desired properties, the nonlocal surrogate
+
+model from NOR is readily applicable for unseen prediction tasks, such as to find the solutions
+
+at much larger times than the time instants used for training, and on problem settings that are
+
+substantially different from the training data set. On the other hand, since the nonlocal surrogate
+
+model from NOR serves as a homogenized surrogate of the original complex physical system
+
+without resolving its heterogeneities at the microscale, unavoidable modeling discrepancy will be
+
+introduced, which contribute to the overall prediction error and uncertainty.
+
+To quantify the model predictions and associated uncertainty in future prediction tasks, in this
+
+work we used an independent additive Gaussian data model centered on the NOR approach, in
+
+order to represent and quantify the homogenization modeling discrepancies. The framework is
+
+developed within a Bayesian inference context, where NOR model parameters are inferred simul-
+
+taneously along with parameters that characterize errors relative to the data. To solve the Bayesian
+
+inference problem efficiently, a two-phase MCMC algorithm is proposed, enabling an efficient
+
+and non-intrusive procedure for approximate likelihood construction and model discrepancy esti-
+
+mation. Lastly, the proposed BNOR framework is validated on the wave propagation problem in
+
+heterogeneous bars. It is found that the learnt model has 1) captured the correct band gap and the
+
+group velocity; 2) reproduced high-fidelity data for a composite material in applications that are
+
+substantially different from the training data under a significant range of conditions; 3) provided a
+
+characterization for the posterior distribution of the parameters as well as the confidence region for
+
+further prediction tasks.
+
+In this work, we have focused on the high-fidelity measurements so the modeling discrepancy
+
+acts as the main contributor of uncertainties. As a natural follow-up, we plan to consider noisy
+
+35
+Fan, November 3, 2022
+
+
+observational data, for which a more sophisticated error model would be required to provide
+
+a principled way of attributing predictive uncertainties to components due to data noise/error,
+
+modeling discrepancy, as well as any additional errors associated with the lack-of-information.
+
+Another interesting future direction would be to incorporate our model while enabling targeted
+
+model improvement and optimal experimental design. Last but not least, to illustrate the efficiency
+
+of our algorithm, two- and three-dimensional test cases will also be considered. For example,
+
+one may use the BNOR framework to characterize the homogenization error in the coarse-grained
+
+nonlocal model from molecular dynamics simulations, as an extension of the development in (You
+
+et al. 2022).
+
+Acknowledgments
+
+Y. Fan and Y. Yu would like to acknowledge support by the National Science Foundation under
+
+award DMS-1753031 and the AFOSR grant FA9550-22-1-0197. Portions of this research were
+
+conducted on Lehigh University’s Research Computing infrastructure partially supported by NSF
+
+Award 2019035.
+
+S. Silling and M. D’Elia would like to acknowledge the support of the Sandia National Labora-
+
+tories (SNL) Laboratory-directed Research and Development program and by the U.S. Department
+
+of Energy (DOE), Office of Advanced Scientific Computing Research (ASCR) under the Collabo-
+
+ratory on Mathematics and Physics-Informed Learning Machines for Multiscale and Multiphysics
+
+Problems (PhILMs) project. H. Najm acknowledges support by the U.S. DOE ASCR office, Scien-
+
+tific Discovery through Advanced Computing (SciDAC) program. This article has been authored
+
+by an employee of National Technology and Engineering Solutions of Sandia, LLC under Contract
+
+No. DE-NA0003525 with the U.S. Department of Energy (DOE). The employee owns all right,
+
+title and interest in and to the article and is solely responsible for its contents. The United States
+
+Government retains and the publisher, by accepting the article for publication, acknowledges that
+
+the United States Government retains a non-exclusive, paid-up, irrevocable, world-wide license to
+
+publish or reproduce the published form of this article or allow others to do so, for United States
+
+Government purposes. The DOE will provide public access to these results of federally sponsored
+
+36
+Fan, November 3, 2022
+
+
+research in accordance with the DOE Public Access Plan https://www.energy.gov/downloads/doe-
+
+public-access-plan.
+
+REFERENCES
+
+Andrieu, C., De Freitas, N., Doucet, A., and Jordan, M. I. (2003). “An introduction to mcmc for
+
+machine learning.” Machine learning, 50(1), 5–43.
+
+Andrieu, C. and Thoms, J. (2008). “A tutorial on adaptive mcmc.” Statistics and computing, 18(4),
+
+343–373.
+
+Bensoussan, A., Lions, J.-L., and Papanicolaou, G. (2011). Asymptotic analysis for periodic struc-
+
+tures, Vol. 374. American Mathematical Soc.
+
+Beran, M. and McCoy, J. (1970). “Mean field variations in a statistical sample of heterogeneous
+
+linearly elastic solids.” International Journal of Solids and Structures, 6(8), 1035–1054.
+
+Bobaru, F., Foster, J. T., Geubelle, P. H., and Silling, S. A. (2016). Handbook of peridynamic
+
+modeling. CRC press.
+
+Carlin, B. P. and Louis, T. A. (2011). Bayesian Methods for Data Analysis. Chapman and Hall/CRC,
+
+Boca Raton, FL.
+
+Casella, G. and Berger, R. L. (1990). Statistical inference, Vol. 70. Duxbury Press Belmont, CA.
+
+Cherednichenko, K., Smyshlyaev, V. P., and Zhikov, V. (2006). “Non-local homogenised limits for
+
+composite media with highly anisotropic periodic fibres.” Proceedings of the Royal Society of
+
+Edinburgh Section A Mathematics, 136(1), 87–114.
+
+Cui, T., Marzouk, Y., and Willcox, K. (2016). “Scalable posterior approximations for large-scale
+
+Bayesian inverse problems via likelihood-informed parameter and state reduction.” Journal of
+
+Computational Physics, 315, 363–387.
+
+de Moraes, E. A. B., D’Elia, M., and Zayernouri, M. (2022). “Nonlocal machine learning of
+
+micro-structural defect evolutions in crystalline materials.” arXiv preprint arXiv:2205.05729.
+
+Debusschere, B., Najm, H., Pébay, P., Knio, O., Ghanem, R., and Le Maître, O. (2004). “Numerical
+
+challenges in the use of polynomial chaos representations for stochastic processes.” SIAM Journal
+
+on Scientific Computing, 26(2), 698–719.
+
+37
+Fan, November 3, 2022
+
+
+Debusschere, B., Sargsyan, K., Safta, C., and Chowdhary, K. (2017). “The uncertainty quantifica-
+
+tion toolkit (uqtk).” Handbook of Uncertainty Quantification, R. Ghanem, D. Higdon, and H.
+
+Owhadi, eds., Springer, 1807–1827.
+
+Dobson, M., Luskin, M., and Ortner, C. (2010). “Sharp stability estimates for the force-based
+
+quasicontinuum approximation of homogeneous tensile deformation.” Multiscale Modeling &
+
+Simulation, 8(3), 782–802.
+
+Du, Q., Engquist, B., and Tian, X. (2020). “Multiscale modeling, homogenization and nonlocal
+
+effects: Mathematical and computational issues.” Contemporary mathematics, 754.
+
+Du, Q., Gunzburger, M., Lehoucq, R. B., and Zhou, K. (2013). “A nonlocal vector calculus,
+
+nonlocal volume-constrained problems, and nonlocal balance laws.” Mathematical Models and
+
+Methods in Applied Sciences, 23(03), 493–540.
+
+Du, Q., Tao, Y., and Tian, X. (2017). “A peridynamic model of fracture mechanics with bond-
+
+breaking.” Journal of Elasticity, 1–22.
+
+Du, Q. and Zhou, K. (2011). “Mathematical analysis for the peridynamic nonlocal continuum
+
+theory.” ESAIM: Mathematical Modelling and Numerical Analysis, 45(02), 217–234.
+
+Efendiev, Y., Galvis, J., and Hou, T. Y. (2013). “Generalized multiscale finite element methods
+
+(gmsfem).” Journal of computational physics, 251, 116–135.
+
+Eringen, A. C. and Edelen, D. G. B. (1972). “On nonlocal elasticity.” International Journal of
+
+Engineering Science, 10(3), 233–248.
+
+Haario, H., Saksman, E., and Tamminen, J. (2001). “An adaptive Metropolis algorithm.” Bernoulli,
+
+7, 223–242.
+
+Hakim, L., Lacaze, G., Khalil, M., Sargsyan, K., Najm, H., and Oefelein, J. (2018). “Probabilistic
+
+parameter estimation in a 2-step chemical kinetics model for n-dodecane jet autoignition.”
+
+Combustion Theory and Modeling, 22(3), 446–466.
+
+Hansen, P. C. (2000). The L-Curve and its Use in the Numerical Treatment of Inverse Problems.
+
+WIT Press.
+
+Higdon, D., Lee, H., and Holloman, C. (2003). “Markov chain Monte Carlo-based approaches for
+
+38
+Fan, November 3, 2022
+
+
+inference in computationally intensive inverse problems.” Bayesian Statistics, 7, 181–197.
+
+Huan, X., Safta, C., Sargsyan, K., Geraci, G., Eldred, M. S., Vane, Z. P., Lacaze, G., Oefelein, J. C.,
+
+and Najm, H. N. (2018). “Global Sensitivity Analysis and Estimation of Model Error, toward
+
+Uncertainty Quantification in Scramjet Computations.” AIAA Journal, 56(3), 1170–1184.
+
+Hughes, T. J., Wells, G. N., and Wray, A. A. (2004). “Energy transfers and spectral eddy viscos-
+
+ity in large-eddy simulations of homogeneous isotropic turbulence: Comparison of dynamic
+
+smagorinsky and multiscale models over a range of discretizations.” Physics of Fluids, 16(11),
+
+4044–4052.
+
+Jaynes, E. (2003). Probability Theory: The Logic of Science, G.L. Bretthorst, Ed. Cambridge
+
+University Press, Cambridge, UK.
+
+Junghans, C., Praprotnik, M., and Kremer, K. (2008). “Transport properties controlled by a ther-
+
+mostat: An extended dissipative particle dynamics thermostat.” Soft Matter, 4(1), 156–161.
+
+Karal Jr, F. C. and Keller, J. B. (1964). “Elastic, electromagnetic, and other waves in a random
+
+medium.” Journal of Mathematical Physics, 5(4), 537–547.
+
+Kennedy, M. and O’Hagan, A. (2000). “Predicting the output from a complex computer code when
+
+fast approximations are available.” Biometrika, 87(1), 1–13.
+
+Kennedy, M. C. and O’Hagan, A. (2001). “Bayesian calibration of computer models.” Journal of
+
+the Royal Statistical Society: Series B, 63(3), 425–464.
+
+Kubo, R. (1966). “The fluctuation-dissipation theorem.” Reports on progress in physics, 29(1),
+
+255.
+
+Lang, Q. and Lu, F. (2022). “Learning interaction kernels in mean-field equations of first-order
+
+systems of interacting particles.” SIAM Journal on Scientific Computing, 44(1), A260–A285.
+
+Laplace, M. d. (1814). Essai philosophique sur les probabilités. Gauthier-Villars, Paris English
+
+Ed.: "A Philosophical Essay on Probabilities", Dover Pub., 6𝑡ℎ ed., 1995.
+
+Lu, F., An, Q., and Yu, Y. (2022). “Nonparametric learning of kernels in nonlocal operators.” arXiv
+
+preprint arXiv:2205.11006.
+
+Moës, N., Oden, J. T., Vemaganti, K., and Remacle, J.-F. (1999). “Simplified methods and a
+
+39
+Fan, November 3, 2022
+
+
+posteriori error estimation for the homogenization of representative volume elements (rve).”
+
+Computer methods in applied mechanics and engineering, 176(1-4), 265–278.
+
+Oliver, T. A. and Moser, R. D. (2011). “Bayesian uncertainty quantification applied to RANS
+
+turbulence models.” J. Phys.: Conf. Ser., 318.
+
+Ortiz, M. (1987). “A method of homogenization of elastic media.” International journal of engi-
+
+neering science, 25(7), 923–934.
+
+Rahali, Y., Giorgio, I., Ganghoffer, J., and dell’Isola, F. (2015). “Homogenization à la piola
+
+produces second gradient continuum models for linear pantographic lattices.” International
+
+Journal of Engineering Science, 97, 148–172.
+
+Robert, C. and Casella, G. (2004). Monte Carlo Statistical Methods. Springer Texts in Statistics.
+
+Springer.
+
+Santosa, F. and Symes, W. W. (1991). “A dispersive effective medium for wave propagation in
+
+periodic composites.” SIAM Journal on Applied Mathematics, 51(4), 984–1005.
+
+Sargsyan, K., Huan, X., and Najm, H. (2019). “Embedded model error representation for Bayesian
+
+model calibration.” Int. J. UQ, 9(4), 365–394.
+
+Sargsyan, K., Najm, H., and Ghanem, R. (2015). “On the Statistical Calibration of Physical Models.”
+
+International Journal of Chemical Kinetics, 47(4), 246–276.
+
+Silling, S. A. (2000). “Reformulation of elasticity theory for discontinuities and long-range forces.”
+
+Journal of the Mechanics and Physics of Solids, 48(1), 175–209.
+
+Silling, S. A. (2021). “Propagation of a stress pulse in a heterogeneous elastic bar.” Journal of
+
+Peridynamics and Nonlocal Modeling, 3(3), 255–275.
+
+Silling, S. A., D’Elia, M., Yu, Y., You, H., and Fermen-Coker, M. (2022). “Peridynamic model for
+
+single-layer graphene obtained from coarse-grained bond forces.” Journal of Peridynamics and
+
+Nonlocal Modeling, 1–22.
+
+Sivia, D. S. and Skilling, J. (2006). Data Analysis: A Bayesian Tutorial, Second Edition. Oxford
+
+University Press.
+
+Smyshlyaev, V. P. and Cherednichenko, K. D. (2000). “On rigorous derivation of strain gradient
+
+40
+Fan, November 3, 2022
+
+
+effects in the overall behaviour of periodic heterogeneous media.” Journal of the Mechanics and
+
+Physics of Solids, 48(6-7), 1325–1357.
+
+Suzuki, J., Gulian, M., Zayernouri, M., and D’Elia, M. (2022). “Fractional modeling in action: A
+
+survey of nonlocal models for subsurface transport, turbulent flows, and anomalous materials.”
+
+Journal of Peridynamics and Nonlocal Modeling.
+
+Trillos, N. G. and Sanz-Alonso, D. (2017). “The bayesian formulation and well-posedness of
+
+fractional elliptic inverse problems.” Inverse Problems, 33(6), 065006.
+
+Vats, D., Flegal, J. M., and Jones, G. L. (2019). “Multivariate output analysis for markov chain
+
+monte carlo.” Biometrika, 106(2), 321–337.
+
+Weinan, E. and Engquist, B. (2003). “Multiscale modeling and computation.” Notices of the AMS,
+
+50(9), 1062–1070.
+
+Willis, J. R. (1985). “The nonlocal influence of density variations in a composite.” International
+
+Journal of Solids and Structures, 21(7), 805–817.
+
+Xu, X., D’Elia, M., Glusa, C., and Foster, J. T. (2022). “Machine-learning of nonlocal kernels for
+
+anomalous subsurface transport from breakthrough curves.” NACO.
+
+Xu, X., D’Elia, M., and Foster, J. T. (2021). “A machine-learning framework for peridynamic
+
+material models with physical constraints.” Computer Methods in Applied Mechanics and Engi-
+
+neering, 386, 114062.
+
+Xu, X. and Foster, J. T. (2020). “Deriving peridynamic influence functions for one-dimensional
+
+elastic materials with periodic microstructure.” Journal of Peridynamics and Nonlocal Modeling,
+
+2(4), 337–351.
+
+You, H., Yu, Y., Silling, S., and D’Elia, M. (2021a). “Data-driven learning of nonlocal models:
+
+from high-fidelity simulations to constitutive laws.” AAAI Spring Symposium: MLPS.
+
+You, H., Yu, Y., Silling, S., and D’Elia, M. (2022). “A data-driven peridynamic continuum model
+
+for upscaling molecular dynamics.” Computer Methods in Applied Mechanics and Engineering,
+
+389, 114400.
+
+You, H., Yu, Y., Trask, N., Gulian, M., and D’Elia, M. (2021b). “Data-driven learning of non-
+
+41
+Fan, November 3, 2022
+
+
+local physics from high-fidelity synthetic data.” Computer Methods in Applied Mechanics and
+
+Engineering, 374, 113553.
+
+Zhang, L., You, H., and Yu, Y. (2022). “MetaNOR: A meta-learnt nonlocal operator regression
+
+approach for metamaterial modeling.” MRS Communications.
+
+Zohdi, T. I. (2017). “Homogenization methods and multiscale modeling.” Encyclopedia of Com-
+
+putational Mechanics Second Edition, 1–24.
+
+42
+Fan, November 3, 2022
+
+

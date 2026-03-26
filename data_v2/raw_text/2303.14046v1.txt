@@ -1,0 +1,2689 @@
+Updates to the DScribe Library: New Descriptors and Derivatives
+Jarno Laakso,1 Lauri Himanen,1 Henrietta Homm,1 Eiaki V. Morooka,1 Marc O. J. J¨ager,1 Milica Todorovi´c,2
+
+and Patrick Rinke1
+
+1)Department of Applied Physics, Aalto University, P.O. Box 11100, 00076 Aalto,
+Finland
+2)Department of Mechanical and Materials Engineering, University of Turku, FI-20014 Turku,
+Finland
+
+(Dated: 27 March 2023)
+
+We present an update of the DScribe package, a Python library for atomistic descriptors. The update extends
+DScribe’s descriptor selection with the Valle-Oganov materials fingerprint and provides descriptor derivatives
+to enable more advanced machine learning tasks, such as force prediction and structure optimization. For
+all descriptors, numeric derivatives are now available in DSribe. For the many-body tensor representation
+(MBTR) and the Smooth Overlap of Atomic Positions (SOAP), we have also implemented analytic derivatives.
+We demonstrate the effectiveness of the descriptor derivatives for machine learning models of Cu clusters and
+perovskite alloys.
+
+I.
+INTRODUCTION
+
+DScribe is a software library that provides atomistic
+descriptors to researchers in the natural sciences and
+engineering.1 Descriptors represent the atomic structure
+of molecules, nanostructures and materials in machine-
+readable format. To facilitate machine learning (ML), de-
+scriptors should be invariant under transformations that
+conserve physical quantities, such as translations, mirror-
+ing, rotations and atomic permutations.2 Descriptors are
+also a powerful tool for defining distance metrics between
+atomic structures, which is helpful in many ML tasks,
+such as clustering or kernel-based regression. While ML
+is one of the main applications of descriptors, their use-
+fulness is not limited to that. They can also be utilized,
+for example, in similarity analysis of atomic structures or
+visualization of atomistic data. In this article we present
+new features that we have added to DScribe, including a
+new descriptor and the capability to calculate descriptor
+derivatives with respect to atomic positions.
+
+At the time of its publication in 2019, DScribe included
+six descriptors: the Coulomb matrix,3 the sine matrix,4
+
+the Ewald sum matrix,4 the Many-Body Tensor Repre-
+sentation (MBTR),5 the Atom-centered Symmetry Func-
+tions (ACSF)6 and the Smooth Overlap of Atomic Posi-
+tions (SOAP).7 The first four descriptors in this list are
+global descriptors and the remaining two local. DScribe
+made these descriptors available to a wide community
+and facilitated a variety of machine learning applica-
+tions including property prediction,8–13 global structure
+search,14 and data analysis and visualization.15–17 All
+DScribe descriptors can output the representations in
+vector form, which makes them compatible with a mul-
+titude of existing ML methods and algorithms.
+Thus
+far, they have been employed, for example, with linear
+regression models,9,12,13 neural networks,8,9,11,12 random
+forests,9,12 and Gaussian processes.14
+
+In this work, we present a new descriptor we recently
+added to DScribe.
+It is based on a structural finger-
+print proposed by Valle and Oganov for similarity anal-
+
+ysis of crystal structures.18 Since its formulation, it has
+been adopted for other applications. Bisbo et al. used
+the Valle-Oganov fingerprint to represent atomic struc-
+tures in their global structure optimization algorithm.19
+
+Arrigoni et al.
+combined it with principal component
+analysis (PCA) for dimensionality reduction to facilitate
+data analysis.20 According to its original definition, the
+Valle-Oganov fingerprint is constructed from the inter-
+atomic distances in an atomic structure. It greatly re-
+sembles the k=2-term of the MBTR descriptor, but un-
+like MBTR, it was specifically tailored for periodic sys-
+tems. The more specific use-case reduces the number of
+user-defined parameters, which makes the Valle-Oganov
+descriptor easier to use than MBTR. Other studies have
+extended on the Valle-Oganov fingerprint by adding an
+angular term.21 We also included such a higher-order
+term in our implementation of the Valle-Oganov descrip-
+tor, but allow the user to decide whether to use it or
+not.
+Structural descriptors have facilitated quick and accu-
+rate property prediction of molecules and materials us-
+ing ML.4,22,23 Many useful properties are derivatives of
+other quantities, which means that the same ML models
+can be used to predict multiple quantities. For atomic
+structures, gradients of the energy give access to atomic
+forces. Differentiating an ML model for the energy with
+respect to atomic positions would therefore also provide
+force predictions. This is the working principle of ML
+potentials that are increasingly employed in simulating
+the dynamics of atomic systems.24–26 Having access to
+the derivatives of an ML model also helps with optimiza-
+tion of the predicted property. Energy minimization, for
+example, is one of the most common tasks in compu-
+tational chemistry and physics. Using an ML model to
+relax atomic positions by optimizing the surrogate po-
+tential energy surface instead of using a more expensive
+method such as density functional theory (DFT) saves
+computational resources. Descriptor derivatives enable
+these ML tasks but they have not been generally avail-
+able to date.
+In this article, we present our work on
+implementing descriptor derivatives in DScribe, with the
+
+arXiv:2303.14046v1  [cond-mat.mtrl-sci]  24 Mar 2023
+
+
+2
+
+goal to make them more accessible to the research com-
+munity.
+Descriptor derivatives can be calculated either analyt-
+ically or numerically. Numerical derivatives are easy to
+implement and can be transferred to all descriptors in
+the library. Their disadvantage is the increased numeri-
+cal cost and potential discretization errors. The number
+of descriptor evaluations required to calculate the numer-
+ical derivatives with respect to all atomic coordinates, for
+example, scales linearly with the system size. Analytical
+derivatives do not suffer from limited accuracy, and the
+computational time for calculating all the derivatives of
+a descriptor analytically is usually comparable to a single
+descriptor calculation. The downside of analytical deriva-
+tives is that they need to be implemented separately for
+every descriptor, which can be very tedious. Here, we
+have implemented analytical derivatives for SOAP and
+MBTR and numerical derivatives for all descriptors. We
+demonstrate the effectiveness of the SOAP derivatives by
+employing them in a neural network model to fit a sim-
+ple ML potential. We also showcase the application of
+MBTR derivatives in a structure optimization task.
+This article is organized as follows: Section II presents
+a description of the numerical and analytical descriptor
+derivatives, as well as the Valle-Oganov descriptor. In
+Section III, we elaborate on the practical implementation
+of the new features in DScribe, and provide a guide on
+their usage. Section IV presents the results for tests that
+we conducted to make sure that the descriptor derivatives
+function properly and showcase their usefulness with two
+demonstrations. Finally, in Section V, we conclude our
+work.
+
+II.
+METHODS
+
+In this section we detail the computational methods
+behind the features that we added to DScribe. We de-
+scribe our approach for computing numerical descriptor
+derivatives with the central difference method and detail
+our implementations of the analytic SOAP and MBTR
+derivatives. We then briefly present two ML tasks that
+demonstrate the effectiveness of our implementation. We
+close the section by introducing the additional descriptor
+that is based on the structural fingerprint by Valle and
+Oganov, and showing how we implemented it with small
+changes to the existing MBTR implementation.
+
+A.
+Descriptor derivatives
+
+1.
+Numerical derivatives
+
+The derivatives of any atomic representation F(R)
+with respect to the atomic positions can be approximated
+
+using the central finite difference method.
+
+∂F(R)
+∂Rij
+≈ F(R + h
+
+2 Eij) − F(R − h
+
+2 Eij)
+
+h
+,
+(1)
+
+where Eij is a single-entry matrix:
+
+(Eij)ab =
+
+�
+1,
+when a = i and b = j
+0,
+otherwise
+(2)
+
+and h quantifies the magnitude of the atomic displace-
+ment. The error made by the central difference approxi-
+mation is proportional to h2, which means that the accu-
+racy of the numerical derivatives improves quickly with
+smaller values of h. In practice, however, the limited
+floating-point accuracy makes the derivatives unstable
+when h is too small.
+In order to determine the opti-
+mal value of h for our implementation, we conducted a
+test comparing the numerical derivatives computed with
+different h values to the analytical derivatives that we de-
+rived for MBTR and SOAP descriptors. We calculated
+the relative error between the numerical and analytical
+derivatives using the mean relative percentage difference
+
+MRPD =
+2
+
+3NM
+
+�
+
+i,j,k
+
+�����
+∂a
+ijFk − ∂n
+ijFk
+
+|∂a
+ijFk| + |∂n
+ijFk|
+
+����� ,
+(3)
+
+where i iterates over the atoms in an atomic structure,
+j runs over the three Cartesian coordinates, and k runs
+over the components of the representation vector. N is
+the number of atoms in the structure and M the number
+of components in the representation vector. ∂a
+ij and ∂n
+ij
+are the analytical and numerical derivatives with respect
+to coordinate Rij, respectively.
+
+2.
+MBTR derivatives
+
+In DScribe three MBTR terms are implemented, each
+corresponding to atomic motifs of a different size. The
+k = 1 term encodes single atoms, the k = 2 term atomic
+pairs, and the k = 3 term atom triples. Each term is
+defined as
+
+F(x) = N
+�
+
+i
+widi(x),
+(4)
+
+where the sum runs over the motifs in an atomic struc-
+ture. N is a normalization term, wi is the weight related
+to motif i and di(x) is a distribution function. DScribe
+uses the Gaussian distribution:
+
+di(x) =
+1
+
+σ
+√
+
+2π exp
+�
+−(x − gi)2
+
+2σ2
+
+�
+,
+(5)
+
+where σ is the standard deviation of the distribution and
+gi is a function that maps atomic motif i to a scalar value.
+Assuming that N is independent of the atomic positions,
+
+
+3
+
+FIG. 1. The ML model for Cu cluster energy prediction. All
+55 atomic environments of a Cu cluster are first represented
+in vector form using SOAP (Pi). Then the dimensionality of
+these vectors is reduced with PCA. The PCA-reduced SOAP
+vectors P PCA
+i
+are mapped to atomic energies Ei with a feed-
+forward neural network with two hidden layers. Finally, Ei
+are summed together to obtain the total potential energy Etot
+of the Cu cluster.
+
+the gradient of the representation function with respect
+to the coordinates of an atom is
+
+∇F(x) = N
+�
+
+i
+di(x)
+�
+∇wi + wi 1
+
+σ2 (x − gi)∇gi
+�
+.
+(6)
+
+∇wi and ∇gi depend on the choice of the weighting and
+geometry functions. The assumption of N being indepen-
+dent of atomic positions is not true for the normalization
+option l2 each that normalizes the L2-norm of the rep-
+resentation vector to one, and analytical derivatives are
+currently not available for it. For a detailed derivation of
+the MBTR gradients with the different options for ∇wi
+
+and ∇gi we refer to Section S2.B of the Supplementary
+Material (SM).
+
+To demonstrate the analytical MBTR derivatives, we
+used them in geometry optimization of perovskite ma-
+terials.
+We fitted an energy ML model that combines
+the MBTR with kernel ridge regression (KRR) for a
+CsPb(Cl/Br)3 data set. We generated the data set and
+used the same ML model for an earlier study that con-
+tains detailed information on model fitting and structure
+optimization.27 For this demonstration, we optimized the
+atomic positions of 25 perovskite structures using the ML
+model and compared the obtained energies and geome-
+tries to DFT relaxation results.
+
+3.
+SOAP derivatives
+
+The SOAP descriptor represents local atomic environ-
+ments in a rotationally invariant way by expanding Gaus-
+sian smeared atomic densities in a basis of spherical har-
+monics and radial basis functions.
+In DScribe, SOAP
+outputs a vector of partial power spectra28 p, where the
+
+individual components are defined as
+
+pZ1,Z2
+nn′l
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+�
+cZ1
+nlm
+�∗
+cZ2
+n′lm
+(7)
+
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+
+
+
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm
+
+
+
+ .
+(8)
+
+The complex conjugation in 7 can be omitted, because
+DScribe uses real spherical harmonics. The summations
+for j and k run over atoms in the environment with the
+atomic numbers Z1 and Z2, respectively.
+Coefficients
+ci
+nlm are defined as
+
+ci
+nlm =
+���
+
+R3 dV gnl(r)ρ(r, Ri)Ylm(θ, φ),
+(9)
+
+where ρ(r, Ri) is the Gaussian smeared atomic density,
+gnl(r) a radial basis function and Ylm(θ, φ) a spherical
+harmonic. The vector p consists of elements pZ1,Z2
+nn′l
+for
+all unique atomic number pairs (Z1, Z2), and unique com-
+binations of radial and spherical basis functions (n, n′, l).
+The gradient of pZ1,Z2
+nn′l
+with respect to the coordinates
+of an atom is
+
+∇pZ1,Z2
+nn′l
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+
+
+
+
+
+
+
+
+|Z1|
+�
+
+j
+∇cj
+nlm
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm
+
++
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+|Z2|
+�
+
+k
+∇ck
+n′lm
+
+
+
+
+
+
+
+ . (10)
+
+The final derivative equation depends on the choice of
+radial basis function.
+For now, we have implemented
+the analytical derivatives for spherical primitive Gaussian
+type orbitals in the non-periodic case. For polynomial
+radial basis functions and periodic systems, numerical
+differentiation is used instead. See section S3.B of SM
+for the full derivation of the SOAP gradients.
+We tested the SOAP derivatives in an ML potential
+model that we trained for Cu clusters.
+We generated
+data for training and testing the ML potential by run-
+ning a classical molecular dynamics simulation of a 55-
+atom Cu cluster at 500 K for 5.0 ns and uniformly picking
+10 000 snapshots from the simulation. The simulation
+used a 5.0 fs timestep, embedded atom method29 (EAM)
+for the Cu interactions, and Nose-Hoover thermostat30
+
+for the temperature control. It was performed using the
+LAMMPS simulation tool.31
+
+We built an ML model that first represents all 55
+atomic environments in vector form using SOAP, and
+then uses a feedforward neural network to map the
+atomic environments to atomic energies,
+which are
+summed to the total energy.
+To make model training
+easier, we decreased the dimensionality of the SOAP vec-
+tors with principal component analysis (PCA) following
+an earlier study by Zhou et al.9 The full ML model ar-
+chitecture is depicted in Fig. 1.
+
+
+4
+
+To generate the SOAP vectors we used a radial cut-
+off of 6.0 ˚A and a basis of 8 radial basis functions and 6
+spherical harmonics. These settings result in 252 dimen-
+sional SOAP vectors. We reduced the dimensionality of
+these vectors to 50 with PCA. The neural network that
+we used to map these reduced SOAP vectors to atomic
+energies had two hidden layers. Both hidden layers had
+50 nodes that used the sigmoid activation function. The
+output layer used linear activation. We implemented the
+neural network using Keras32 and Tensorflow33 Python
+packages.
+The weights of the network were optimized
+using the Adam algorithm.34
+
+We trained the ML potential on total energies of 8
+000 Cu clusters. Then we assessed the quality of the fit
+by predicting the total energies of the remaining 2 000
+clusters and compared the results to the EAM energies.
+Atomic forces are derivatives of the total energy with
+respect to the atomic positions. By combining our im-
+plementation of the SOAP derivatives with the gradients
+of the neural network, we were able to use the ML model
+to predict atomic forces. We used the ML model to pre-
+dict the forces of all 2 000 test set clusters and compared
+the results to the EAM forces.
+
+B.
+Valle-Oganov descriptor
+
+In their article Valle and Oganov defined an atomic
+structure representation for periodic systems.18 The full
+representation is a matrix in pairs of elements (A, B) :
+
+FAB(x) =
+�
+
+AiBj
+
+di,j(x)
+
+4πr2
+ij(NANB/V ) − 1.
+(11)
+
+The index i runs over all atoms of type A and j over all
+atoms of type B. rij is the distance between atoms i and
+j, V the volume of the cell and NA and NB the number of
+atoms of each type. di,j(x) is the Gaussian distribution
+of equation 5 with the geometry function set to be the
+distance between the atoms gi,j = rij.
+Closer inspection of equation 11 reveals close similarity
+to the MBTR, which is already implemented in DScribe.
+The only fundamental difference between the two rep-
+resentation is the constant term −1 in the Valle-Oganov
+representation. The constant term, however, is not signif-
+icant in most use-cases, as it does not affect the distances
+between the vectors. Furthermore, if the constant term
+is needed for some application, it can be added to the
+representation vectors afterwards. We therefore decided
+to omit the constant term −1 from our implementation.
+Now FAB(x) can be cast into the general MBTR for-
+malism defined in equation 4 by setting the weighting
+function to
+
+wi,j = 1
+
+r2
+ij
+(12)
+
+FIG. 2.
+Valle-Oganov descriptor construction.
+(a) CuO
+atomic structure. (b) Second-order and (c) third-order Valle-
+Oganov fingerprints of CuO.
+The full Valle-Oganov repre-
+sentation vector is obtained by concatenating the elemental
+contributions.
+
+and the normalization term to
+
+NAB =
+V
+
+4πNANB
+.
+(13)
+
+The Valle-Oganov descriptor implementation in DScribe
+therefore only requires the addition of new weighting and
+normalization options to the already existing MBTR im-
+plementation.
+The original article by Valle and Oganov only consid-
+ers interatomic distances, but the representation has been
+extended with an angular term by Bisbo and Hammer.21
+
+We define a similar third-order term FABC(x), again uti-
+lizing the MBTR formalism. Now, the sum in equation 4
+runs over atom triplets (i, j, k) and the geometry function
+in equation 5 is the angle between the atoms gi,j,k = θijk.
+The normalization term is
+
+NABC =
+V
+
+4πNANBNC
+(14)
+
+and the weight function is
+
+wi,j,k = fc(rij)fc(rik),
+(15)
+
+where
+
+fc(r) = 1 + γ
+� r
+
+rcut
+
+�γ+1
+− (γ + 1)
+� r
+
+rcut
+
+�γ
+.
+(16)
+
+The weight function and its derivative approach 0 at the
+cutoff distance rcut beyond which the atom triplets do not
+contribute to the representation. γ controls the sharpness
+of the cutoff and in our implementation it has a default
+value of 2.
+Fig. 2 visualizes the Valle-Oganov fingerprint of CuO.
+The full representation vector is obtained by concate-
+nating the different elemental contributions of the sec-
+ond and third-order terms. Although we use the MBTR
+framework for the Valle-Oganov descriptor, analytical
+derivatives have not yet been fully implemented for its
+normalization and weighting options, and numerical dif-
+ferentiation is used instead.
+
+
+5
+
+III.
+SOFTWARE STRUCTURE
+
+Python has solidified its position as a go-to language
+for several domains, including data science. In order to
+seamlessly integrate with these Python-based data sci-
+ence workflows, the main entry point for our software is
+a Python API through which the descriptors can be con-
+figured and used. Figure 3 shows an example of the new
+DScribe interface for calculating derivatives.
+
+from
+ase.build
+import
+molecule
+
+from
+dscribe. descriptors
+import
+SOAP
+
+# Define
+the
+atomic
+systems
+
+systems = [molecule("H2"), molecule("O2")]
+
+# Setup
+the
+descriptor
+
+soap = SOAP(
+
+species =["H", "O"],
+rbf="gto",
+rcut=3,
+nmax =10,
+lmax=8,
+sparse=True
+
+)
+
+# Calculate
+derivatives
+and
+descriptor
+features
+
+derivatives , features = soap. derivatives (
+
+systems ,
+positions=None ,
+include =[0] ,
+exclude=None ,
+method="auto",
+return_descriptor =True ,
+n_jobs =2
+
+)
+
+FIG. 3. Example of creating derivatives with DScribe. All
+descriptors have the derivatives-function that can be used
+to retrieve both derivatives and descriptor features simulta-
+neously. Only the first argument that specifies the used sys-
+tems is required and the additional arguments can be used to
+further control the methodology, parallelization, and with re-
+spect to which atoms the positional derivatives are calculated
+for.
+
+DScribe works with atomic structures defined using
+the ase.Atoms-object from the ase package.35 These ob-
+jects are easy to create from existing structure files or
+build with the utilities provided by ase. In addition to
+any descriptor-specific arguments, all descriptors accept
+the sparse-parameter that controls whether the created
+output is a dense or a sparse matrix. Especially in large
+systems where the interactions between atoms and cen-
+ters of interest are very localized, sparsity provides mem-
+ory and storage efficiency. Some ML algorithms can use
+sparse matrix formats directly, but it is also easy to re-
+store the dense format for other algorithms.
+All
+descriptors
+implement
+the
+new
+derivatives
+method.
+The first argument accepts one or multiple
+atomic structures. The argument positions can be used
+to define the positions of interest for local descriptors. It
+defaults to using all individual atoms as centers and can-
+not be specified for global descriptors. The arguments
+include and exclude are used to control which atoms
+are considered in the derivative calculations. By using
+
+method, the user can explicitly change between analyti-
+cal and numerical differentiation. The default value auto
+will automatically choose the analytical implementation
+if it is available, and the numerical one otherwise. De-
+scriptors and their derivatives can be created simulta-
+neously by setting return descriptor=True as this is
+often computationally favorable. Finally, descriptor cal-
+culations can be parallelized over several CPU cores using
+the n jobs parameter. This parallelization is based on
+evenly distributing the given atomic structures to differ-
+ent cores for data parallelism.
+We have decided to retain as much structure in the
+derivative output as possible.
+This approach allows
+the user to better understand and access the differ-
+ent components, while it is still relatively easy to re-
+arrange the output into a lower-dimensional shape if
+needed. Generally, the output is a multidimensional ar-
+ray with shape [n systems, n centers, n atoms, 3,
+n features]. Here the dimension with n systems runs
+over the different atomic structures, n centers loops
+through the different centers of interest, n atoms loops
+through the atoms for which the derivatives were cal-
+culated, the second-to-last dimension with three compo-
+nents loops through the x, y, and z components, and the
+last dimension with n features loops through the dif-
+ferent descriptor features. Global descriptors effectively
+have only one region of interest that covers the entire
+structure, meaning that n centers = 1 and the corre-
+sponding dimension is not present. Similarly, when cre-
+ating the derivatives only for one system, n systems =
+1, and that dimension is left out.
+As many of the descriptor calculations require signifi-
+cant CPU resources, many of the heavier calculations are
+internally handled by an underlying C++ implementa-
+tion that is accessed through the Python interface. This
+hybrid approach is similar to many other common nu-
+merical Python packages such as numpy36 and scipy.37
+
+The communication between Python and C++ is imple-
+mented using the pybind1138 library.
+The source code is structured using an object-oriented
+programming approach. Each descriptor is represented
+by its own class which inherits from a generic base class.
+When adhering to the base class interface, the subclasses
+can automatically take advantage of the functionality al-
+ready defined in the base class - such as the numerical
+derivatives - in addition to ensuring that the user can ex-
+pect each descriptor to have similar functionality. Each
+descriptor class is associated with a code test suite that is
+used to ensure the validity of the implementation. This
+test suite forms part of a continuous integration pipeline
+that is performed every time the source code is modified.
+DScribe is distributed as a Python package and can be
+installed from the Python package index (PyPI)39 un-
+der the package name dscribe. Alternatively, the pack-
+age can be installed using the conda-forge40 ecosystem
+where it is distributed with the same name. Access to
+the full source code is also provided through GitHub
+at https://github.com/SINGROUP/dscribe.
+The full
+
+
+6
+
+FIG. 4. Relative error of numerical derivatives compared to
+analytical MBTR and SOAP derivatives with different central
+difference step sizes h.
+
+documentation and several tutorials are available on
+the DScribe homepage https://singroup.github.io/
+dscribe/.
+
+IV.
+RESULTS AND DISCUSSION
+
+This section showcases the outcomes of the tests con-
+ducted on the descriptor derivatives. First, we assessed
+the accuracy of our numerical derivative implementation
+by comparing it to analytical derivative values. We used
+the results of the test to determine the optimal h-value
+for DScribe’s numerical derivative implementation. We
+then present MBTR derivatives for the perovskite struc-
+tures and the SOAP derivative test for the Cu cluster.
+
+A.
+Numerical descriptor derivatives
+
+We tested the accuracy of our numerical descriptor
+derivative implementation by comparing it to analytical
+MBTR and SOAP derivatives. Fig. 4 shows the relative
+error between the numerical and analytical derivatives for
+a water molecule. The errors are at their highest at the
+higher end of the tested h−range. With decreasing h the
+relative error reduces due to the h2 scaling of the central
+difference error. The MBTR and SOAP errors both reach
+their minima at h = 1 × 10−4 ˚A, after which they start
+to increase again due to the limited floating-point accu-
+racy. For both descriptors the relative error reaches 10−6
+
+at its lowest. In practical applications, this is likely to be
+insignificant compared to errors related to model fitting
+or the underlying data. Based on the results of the test,
+we fixed h = 1 × 10−4 ˚A for the numerical derivatives of
+all descriptors in DScribe. The good agreement between
+the numerical and analytical derivatives shows that the
+numerical derivative implementation is highly accurate
+and that our analytical MBTR and SOAP derivatives
+are error-free.
+
+FIG. 5. Results from perovskite structure optimization tests
+utilizing MBTR gradients. a) One perovskite structure opti-
+mized with both DFT and the ML model. b) Comparison of
+ML and DFT optimized energies of 25 perovskite structures.
+
+B.
+Perovskite structure optimization with MBTR
+
+To showcase the analytical MBTR derivatives, we fit-
+ted an ML model that combines MBTR and KRR to
+predict energies of CsPb(Cl/Br)3 perovskite structures.
+To asses the accuracy of the fit, we used the model to pre-
+dict the energies and forces of structure snapshots from
+DFT relaxation of 25 perovskite test structures.
+The
+mean absolute error (MAE) of energy predictions was
+only 0.14 meV/atom while the force prediction MAE was
+16.7 meV/˚A.
+
+We then used the derivatives of the trained ML
+model to relax the atomic positions of the same 25
+CsPb(Cl/Br)3 test geometries. Fig. 5a shows an example
+of how the ML predicted energy of a perovskite structure
+decreases during ML relaxation, and how that compares
+to the DFT relaxation of the same structure. The DFT
+relaxation reaches the minimum structure in fewer it-
+erations than the ML model, but the final energies are
+very close, deviating only by 0.42 meV/atom. The final
+structures from the two relaxation methods are almost
+identical with the root-mean-square deviation (RMSD) of
+atomic positions between them being only 0.016 ˚A. Fur-
+thermore, relaxing the structure with the ML model is
+over four orders of magnitude faster than with DFT.
+
+In Fig. 5b, we plotted the relaxed energies of all 25
+perovskite test structures. For most structures, the DFT
+and ML optimized energies are nearly identical, although
+in some cases the energies differ by up to 0.70 meV/atom.
+The mean absolute error between the two energies is
+0.26 meV/atom and the average RMSD of atomic posi-
+tions is 0.031 ˚A. The good agreement in terms of both
+energy and structure demonstrates that an ML approach
+utilizing descriptor derivatives can effectively accelerate
+structure optimization computations.
+
+
+7
+
+FIG. 6. ML model predictions on the 2000 Cu clusters.
+a) ML predicted energies energies compared to EAM values.
+b) Atomic force components compared to EAM forces.
+
+C.
+Cu cluster ML potential using SOAP
+
+We assessed the accuracy of the Cu cluster model fit
+by predicting the total potential energies of 2 000 Cu test
+clusters and comparing to EAM energies. Fig. 6a shows
+the results of this comparison. The absolute error of the
+ML model predictions is only 0.43 meV/atom on average.
+Next, we tested the force prediction accuracy of the ML
+model by comparing the ML predicted atomic forces of
+the same 2 000 Cu clusters to the EAM forces.
+Fig.
+6b depicts atomic force components computed with both
+methods. The mean absolute error of the predictions is
+43 meV/˚A.
+By combining the SOAP descriptor with a simple neu-
+ral network architecture, we were able achieve good ac-
+curacy in both energy and force prediction.
+Here, we
+trained the ML model on classical MD data for demon-
+strative purposes, and no speed up was achieved. The
+same methodology, however, could be applied on data
+from a more accurate method, such as DFT, in which it
+would greatly accelerate simulations.
+
+V.
+CONCLUSIONS
+
+We have presented an update of the DScribe package.
+We have introduced a new structural representation, ex-
+panding DScribe’s descriptor selection. Additionally, we
+have extended the capabilities of DScribe by implement-
+ing descriptor derivatives. We have compared the accu-
+racy of our numerical derivative implementation to ana-
+lytical MBTR and SOAP derivatives, and observe rela-
+tive errors of less than 10−6. We have also demonstrated
+the effectiveness of the analytical derivative implementa-
+tions through two machine learning tasks involving force
+prediction and structure optimization. Our results show
+that our derivative implementations are accurate and ef-
+fective, and we believe that the new version of DScribe
+will be a valuable tool for researchers applying machine
+learning to materials science problems.
+
+SUPPLEMENTARY MATERIAL
+
+See supplementary material for the detailed derivation
+of the analytical MBTR and SOAP derivatives.
+
+ACKNOWLEDGMENTS
+
+We acknowledge funding from the European Union’s
+Horizon program under the grant agreement No 951786
+and the Academy of Finland through project No 334532
+and the Center of Excellence Virtual Laboratory for
+Molecular Level Atmospheric Transformations (VILMA;
+project No 346377).
+We further acknowledge CSC-IT
+Center for Science, Finland, and the Aalto Science-IT
+project.
+
+REFERENCES
+
+1L. Himanen, M. O. J¨ager, E. V. Morooka, F. Federici Canova,
+Y. S. Ranawat, D. Z. Gao, P. Rinke, and A. S. Foster, “Dscribe:
+Library of descriptors for machine learning in materials science,”
+Comput. Phys. Commun. 247, 106949 (2020).
+
+2M. F. Langer, A. Goeßmann, and M. Rupp, “Representations of
+molecules and materials for interpolation of quantum-mechanical
+simulations via machine learning,” npj Comput. Mater. 8, 41
+(2022).
+
+3M. Rupp, A. Tkatchenko, K.-R. M¨uller, and O. A. von Lilienfeld,
+“Fast and accurate modeling of molecular atomization energies
+with machine learning,” Phys. Rev. Lett. 108, 058301 (2012).
+
+4F. Faber, A. Lindmaa, O. A. von Lilienfeld,
+and R. Armiento,
+“Crystal structure representations for machine learning models
+of formation energies,” Int. J. Quantum Chem. 115, 1094–1101
+(2015).
+
+5H. Huo and M. Rupp, “Unified representation of molecules and
+crystals for machine learning,” arXiv:1704.06439 (2017).
+
+6J. Behler, “Atom-centered symmetry functions for construct-
+ing high-dimensional neural network potentials,” J. Chem. Phys.
+134, 074106 (2011).
+
+7A. P. Bart´ok, R. Kondor, and G. Cs´anyi, “On representing chem-
+ical environments,” Phys. Rev. B 87, 184115 (2013).
+
+8V. Fung, J. Zhang, E. Juarez, and B. G. Sumpter, “Benchmark-
+ing graph neural networks for materials chemistry,” npj Comput.
+Mater. 7, 84 (2021).
+
+9X.-Y. Zhou, J.-H. Zhu, Y. Wu, X.-S. Yang, T. Lookman,
+and
+H.-H. Wu, “Machine learning assisted design of feconicrmn high-
+entropy alloys with ultra-low hydrogen diffusion coefficients,”
+Acta Mater. 224, 117535 (2022).
+
+10A. Pihlajam¨aki, J. H¨am¨al¨ainen, J. Linja, P. Nieminen, S. Malola,
+T. K¨arkk¨ainen,
+and H. H¨akkinen, “Monte carlo simulations of
+Au38(SCH3)24 nanocluster using distance-based machine learn-
+ing methods,” J. Phys. Chem. A 124, 4827–4836 (2020).
+
+11O. Rahaman and A. Gagliardi, “Deep learning total energies and
+orbital energies of large organic molecules using hybridization
+of molecular fingerprints,” J. Chem. Inf. Model. 60, 5971–5983
+(2020).
+
+12Q. Sun, Y. Xiang, Y. Liu, L. Xu, T. Leng, Y. Ye, A. Fortunelli,
+W. A. I. Goddard, and T. Cheng, “Machine learning predicts the
+x-ray photoelectron spectroscopy of the solid electrolyte interface
+of lithium metal battery,” J. Phys. Chem. Lett. 13, 8047–8054
+(2022).
+
+13H. Hirai, T. Iizawa, T. Tamura, M. Karasuyama, R. Kobayashi,
+and T. Hirose, “Machine-learning-based prediction of first-
+
+
+8
+
+principles xanes spectra for amorphous materials,” Phys. Rev.
+Mater. 6, 115601 (2022).
+
+14M. P. Louren¸co, L. B. Herrera, J. Hostaˇs, P. Calaminici, A. M.
+K¨oster, A. Tchagang,
+and D. R. Salahub, “Taking the multi-
+plicity inside the loop: active learning for structural and spin
+multiplicity elucidation of atomic clusters,” Theor. Chem. Acc.
+140, 116 (2021).
+
+15L. Sun, Y.-X. Zhou, X.-D. Wang, Y.-H. Chen, V. L. Deringer,
+R. Mazzarello,
+and W. Zhang, “Ab initio molecular dynamics
+and materials design for embedded phase-change memory,” npj
+Comput. Mater. 7, 29 (2021).
+
+16B. Cheng, R.-R. Griffiths, S. Wengert, C. Kunkel, T. Stenczel,
+B. Zhu, V. L. Deringer, N. Bernstein, J. T. Margraf, K. Reuter,
+and G. Csanyi, “Mapping materials and molecules,” Acc. Chem.
+Res. 53, 1981–1991 (2020).
+
+17B. Monserrat, J. G. Brandenburg, E. A. Engel, and B. Cheng,
+“Liquid water contains the building blocks of diverse ice phases,”
+Nat. Commun. 11, 5757 (2020).
+
+18M. Valle and A. R. Oganov, “Crystal fingerprint space – a novel
+paradigm for studying crystal-structure sets,” Acta Crystallogr.
+A 66, 507–517 (2010).
+
+19M. K. Bisbo and B. Hammer, “Efficient global structure opti-
+mization with a machine-learned surrogate model,” Phys. Rev.
+Lett. 124, 086102 (2020).
+
+20M. Arrigoni and G. K. H. Madsen, “Evolutionary computing and
+machine learning for discovering of low-energy defect configura-
+tions,” npj Comput. Mater. 7, 71 (2021).
+
+21M. K. Bisbo and B. Hammer, “Global optimization of atomic
+structure enhanced by machine learning,” Phys. Rev. B 105,
+245404 (2022).
+
+22A. Stuke, M. Todorovi´c, M. Rupp, C. Kunkel, K. Ghosh, L. Hi-
+manen, and P. Rinke, “Chemical diversity in molecular orbital
+energy predictions with kernel ridge regression,” J. Chem. Phys.
+150, 204121 (2019).
+
+23Y. Jiang, D. Chen, X. Chen, T. Li, G.-W. Wei,
+and F. Pan,
+“Topological representations of crystalline compounds for the
+machine-learning prediction of materials properties,” npj Com-
+put. Mater. 7, 28 (2021).
+
+24J. Behler and M. Parrinello, “Generalized neural-network repre-
+sentation of high-dimensional potential-energy surfaces,” Phys.
+Rev. Lett. 98, 146401 (2007).
+
+25A. P. Bart´ok, M. C. Payne, R. Kondor, and G. Cs´anyi, “Gaussian
+approximation potentials: The accuracy of quantum mechanics,
+without the electrons,” Phys. Rev. Lett. 104, 136403 (2010).
+
+26K. T. Sch¨utt, H. E. Sauceda, P.-J. Kindermans, A. Tkatchenko,
+and K.-R. M¨uller, “SchNet – A deep learning architecture for
+molecules and materials,” J. Chem. Phys. 148, 241722 (2018).
+
+27J. Laakso, M. Todorovi´c, J. Li, G.-X. Zhang,
+and P. Rinke,
+“Compositional engineering of perovskites with machine learn-
+ing,” Phys. Rev. Mater. 6, 113801 (2022).
+
+28S. De, A. P. Bart´ok, G. Cs´anyi,
+and M. Ceriotti, “Compar-
+ing molecules and solids across structural and alchemical space,”
+Phys. Chem. Chem. Phys. 18, 13754–13769 (2016).
+
+29S. M. Foiles, M. I. Baskes,
+and M. S. Daw, “Embedded-atom-
+method functions for the fcc metals Cu, Ag, Au, Ni, Pd, Pt, and
+their alloys,” Phys. Rev. B 33, 7983–7991 (1986).
+
+30W. G. Hoover, “Canonical dynamics: Equilibrium phase-space
+distributions,” Phys. Rev. A 31, 1695–1697 (1985).
+
+31A. P. Thompson, H. M. Aktulga, R. Berger, D. S. Bolintineanu,
+W. M. Brown, P. S. Crozier, P. J. in ’t Veld, A. Kohlmeyer, S. G.
+Moore, T. D. Nguyen, R. Shan, M. J. Stevens, J. Tranchida,
+C. Trott, and S. J. Plimpton, “LAMMPS - a flexible simulation
+tool for particle-based materials modeling at the atomic, meso,
+and continuum scales,” Comput. Phys. Commun. 271, 108171
+(2022).
+
+32F. Chollet et al., “Keras,” https://keras.io (2015).
+33M. Abadi, A. Agarwal, P. Barham, E. Brevdo, Z. Chen, C. Citro,
+G. S. Corrado, A. Davis, J. Dean, M. Devin, S. Ghemawat,
+I. Goodfellow, A. Harp, G. Irving, M. Isard, Y. Jia, R. Joze-
+fowicz, L. Kaiser, M. Kudlur, J. Levenberg, D. Man´e, R. Monga,
+
+S. Moore, D. Murray, C. Olah, M. Schuster, J. Shlens, B. Steiner,
+I. Sutskever, K. Talwar, P. Tucker, V. Vanhoucke, V. Vasudevan,
+F. Vi´egas, O. Vinyals, P. Warden, M. Wattenberg, M. Wicke,
+Y. Yu, and X. Zheng, “TensorFlow: Large-scale machine learn-
+ing on heterogeneous systems,” arXiv:1603.04467 (2015).
+
+34D. P. Kingma and J. Ba, “Adam: A method for stochastic opti-
+mization,” arXiv.1412.6980 (2014).
+
+35A. H. Larsen, J. J. Mortensen, J. Blomqvist, I. E. Castelli,
+R. Christensen, M. Du�lak, J. Friis, M. N. Groves, B. Hammer,
+C. Hargus, E. D. Hermes, P. C. Jennings, P. B. Jensen, J. Ker-
+mode, J. R. Kitchin, E. L. Kolsbjerg, J. Kubal, K. Kaasbjerg,
+S. Lysgaard, J. B. Maronsson, T. Maxson, T. Olsen, L. Pastewka,
+A. Peterson, C. Rostgaard, J. Schiøtz, O. Sch¨utt, M. Strange,
+K. S. Thygesen, T. Vegge, L. Vilhelmsen, M. Walter, Z. Zeng,
+and K. W. Jacobsen, “The atomic simulation environment – a
+Python library for working with atoms,” J. Phys. Condens. Mat-
+ter 29, 273002 (2017).
+
+36C. R. Harris, K. J. Millman, S. J. van der Walt, R. Gommers,
+P. Virtanen, D. Cournapeau, E. Wieser, J. Taylor, S. Berg,
+N. J. Smith, R. Kern, M. Picus, S. Hoyer, M. H. van Kerk-
+wijk, M. Brett, A. Haldane, J. F. del R´ıo, M. Wiebe, P. Peter-
+son, P. G´erard-Marchant, K. Sheppard, T. Reddy, W. Weckesser,
+H. Abbasi, C. Gohlke, and T. E. Oliphant, “Array programming
+with NumPy,” Nature 585, 357–362 (2020).
+
+37P.
+Virtanen,
+R.
+Gommers,
+T.
+E.
+Oliphant,
+M.
+Haber-
+land, T. Reddy, D. Cournapeau, E. Burovski, P. Peterson,
+W. Weckesser, J. Bright, S. J. van der Walt, M. Brett, J. Wilson,
+K. J. Millman, N. Mayorov, A. R. J. Nelson, E. Jones, R. Kern,
+E. Larson, C. J. Carey, ˙I. Polat, Y. Feng, E. W. Moore, J. Van-
+derPlas, D. Laxalde, J. Perktold, R. Cimrman, I. Henriksen,
+E. A. Quintero, C. R. Harris, A. M. Archibald, A. H. Ribeiro,
+F. Pedregosa, P. van Mulbregt,
+and SciPy 1.0 Contributors,
+“SciPy 1.0: Fundamental Algorithms for Scientific Computing
+in Python,” Nat. Methods 17, 261–272 (2020).
+
+38W. Jakob, J. Rhinelander,
+and D. Moldovan, “pybind11 –
+seamless operability between C++11 and Python,”
+(2017),
+https://github.com/pybind/pybind11.
+
+39“Python Package Index - PyPI,” https://pypi.org/.
+40conda-forge
+community,
+“The
+conda-forge
+Project:
+Community-based
+Software
+Distribution
+Built
+on
+the
+conda Package Format and Ecosystem,”
+(2015), Zenodo.
+https://doi.org/10.5281/zenodo.4774217.
+
+
+S1
+
+Supplementary Material:
+Updates to the DScribe Library: New Descriptors and Derivatives
+
+Jarno Laakso,1 Lauri Himanen,1 Henrietta Homm,1 Eiaki V. Morooka,1 Marc O. J. J¨ager,1 Milica Todorovi´c,2 and
+Patrick Rinke1
+
+1)Department of Applied Physics, Aalto University, P.O. Box 11100, 00076 Aalto, Finland
+2)Department of Mechanical and Materials Engineering, University of Turku, FI-20014 Turku, Finland
+
+S1.
+NOTATION
+
+We adopt a notation where the vector between the coordinates of atoms l and m is
+
+Rl − Rm ≡ rlm
+(S1)
+|rlm| ≡ rlm
+(S2)
+
+S2.
+MANY-BODY TENSOR REPRESENTATION (MBTR)
+
+A.
+Definition
+
+MBTR describes atomic geometries as distributions of small structural motifs that come in different sizes k. The
+dscribe implementation has terms up to k = 3. The k = 1 term considers single atoms and relates to the elemental
+content of the atomic structure. The k = 2 term considers atom pairs and their distances. The k = 3 term corresponds
+to atom triplets and the angles between them. Each term k of the representation is a collection of functions that
+correspond to every possible combination of elements that can appear in a group of k atoms:
+
+MBTRZ1
+1 (x) =
+
+|Z1|
+�
+
+l
+wl
+1dl
+1(x)
+(S3)
+
+MBTRZ1,Z2
+2
+(x) =
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+wl,m
+2
+dl,m
+2
+(x)
+(S4)
+
+MBTRZ1,Z2,Z3
+3
+(x) =
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+
+|Z3|
+�
+
+n
+wl,m,n
+3
+dl,m,n
+3
+(x),
+(S5)
+
+where the sums run over all the atom groups that have elements Z1, Z2, and Z3. Each function is a weighted sum of
+normal distributions dk(x) :
+
+dl
+1(x) =
+1
+
+σ1
+√
+
+2π e
+−
+(x−gl
+1)2
+
+2σ2
+1
+(S6)
+
+dl,m
+2
+(x) =
+1
+
+σ2
+√
+
+2π e
+−
+(x−gl,m
+2
+)2
+
+2σ2
+2
+(S7)
+
+dl,m,n
+3
+(x) =
+1
+
+σ3
+√
+
+2π e
+−
+(x−gl,m,n
+3
+)2
+
+2σ2
+3
+,
+(S8)
+
+where σk determine the widths of the distributions. gk are so called geometry functions that map groups of atoms to
+scalar values. We use:
+
+gl
+1 =Zl
+(S9)
+
+gl,m
+2,dist. = rlm
+or
+gl,m
+2,inv.dist. =
+1
+rlm
+(S10)
+
+gl,m,n
+3
+= cos(∠(rlm, rnm)) = r2
+ml + r2
+mn − r2
+ln
+
+2rmlrmn
+(S11)
+
+
+S2
+
+wk in (S3-S5) are weighting functions that guarantee that the sums converge when calculating the MBTR represen-
+tations of periodic structures. We use:
+
+wl
+1 =1
+(S12)
+
+wl,m
+2,inv.square =
+1
+r2
+lm
+or
+wl,m
+2,exp = e−s2rlm
+(S13)
+
+wl,m,n
+3
+=e−s3(rlm+rmn+rnl)
+(S14)
+
+The MBTR vectors are obtained by evaluating the functions (S3-S5) at discreet grid points
+
+x = (xmin, xmin + ∆x, ... , xmax),
+(S15)
+
+where xmin and xmax are the limits of the grid and ∆x is the spacing between two grid points
+
+∆x = xmax − xmin
+
+Ngrid − 1 ,
+(S16)
+
+Ngrid is the number of grid points. This can be done by discretizing the distribution function dk(x) into a vector
+dk : (dk)i = dk(xi). However, instead of evaluating dk(x) directly at the grid points, we obtain the function values
+by differentiating numerically its cumulative distribution
+
+Dk(x) =
+� x
+
+−∞
+dk(x′)dx′ = 1
+
+2
+
+�
+1 + erf
+�x − gk
+
+σ
+√
+
+2
+
+��
+(S17)
+
+through
+
+dk(x) = Dk(x + ∆x
+
+2 ) − Dk(x − ∆x
+
+2 )
+
+∆x
+.
+(S18)
+
+Having obtained dk, the MBTR vectors are given by
+
+M Z1
+1
+=
+
+|Z1|
+�
+
+l
+wl,m
+1
+dl
+1
+(S19)
+
+M Z1,Z2
+2
+=
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+wl,m
+2
+dl,m
+2
+(S20)
+
+M Z1,Z2,Z3
+3
+=
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+
+|Z3|
+�
+
+n
+wl,m,n
+3
+dl,m,n
+3
+(S21)
+
+The elemental contributions are concatenated into M1, M2, and M3, which are then concatenated further to obtain
+the full vector representation:
+
+M = M ⌢
+1 M ⌢
+2 M3.
+(S22)
+
+B.
+Derivatives
+
+Let us now compute the derivatives of the MBTR vector representation with respect to the position of atom a. In
+order to derive a general result for ∇aMk for any k, we first write down the gradient of a distribution function
+
+∇adk(x) =∇a
+
+�
+1
+
+σ2
+√
+
+2π e
+−
+(x−gk)2
+
+2σ2
+k
+
+�
+
+=
+1
+
+σ2
+√
+
+2π e
+−
+(x−gk)2
+
+2σ2
+k
+∇a
+
+�
+−(x − gk)2
+
+2σ2
+k
+
+�
+
+=dk(x) 1
+
+σ2
+k
+(x − gk)∇agk
+(S23)
+
+
+S3
+
+and the weighted distribution
+
+∇a (wkdk(x)) =dk∇awk + wk∇adk(x)
+
+=dk(x)∇awk + wkdk(x) 1
+
+σ2
+k
+(x − gk)∇agk
+
+=dk(x)
+�
+∇awk − wk
+1
+σ2
+k
+gk∇agk
+
+�
++ xdk(x)
+�
+wk
+1
+σ2
+k
+∇agk
+
+�
+(S24)
+
+Here we have separated the two differently shaped distributions dk(x) and xdk(x). While discretizing the represen-
+tation, both of them need to be estimated through their cumulative distributions.
+This is already done for the
+dk(x) when calculating the representation itself. We give the second distribution its own name: ck(x) := xdk(x). Its
+cumulative distribution is
+
+Ck(x) =
+� x
+
+−∞
+x′dk(x′)dx′
+
+=
+1
+
+σk
+√
+
+2π
+
+� x
+
+−∞
+x′e
+−
+(x′−gk)2
+
+2σ2
+k
+dx′
+
+=gk
+1
+2
+
+�
+1 + erf
+�x − gk
+
+σk
+√
+
+2
+
+��
+− σk
+√
+
+2π
+
+�
+
+e
+−
+(x−gk)2
+
+2σ2
+k
+− 1
+
+�
+
+=gkDk(x) − σk
+√
+
+2π
+
+�
+
+e
+−
+(x−gk)2
+
+2σ2
+k
+− 1
+
+�
+
+(S25)
+
+Ck(x) can be used to estimate ck(x) at discrete x−values similarly to (S18) in order to obtain vectors ck.
+The
+derivative of an MBTR vector is given by
+
+∇aMk =∇a
+�
+wkdk(x)
+
+=
+�
+∇a (wkdk(x))
+
+=
+�
+dk
+
+�
+∇awk − wk
+1
+σ2
+k
+gl,m
+2
+∇agk
+
+�
++ ck
+
+�
+wl,m
+2
+1
+σ2
+2
+∇agk
+
+�
+,
+(S26)
+
+Now we can easily derive the gradients for different k. ∇aM1 = 0 because it does not depend on the atomic
+positions. ∇aM2 and ∇aM3 are nonzero. We write down some auxiliary results:
+
+∇arlm =(δal − δam)rlm
+
+rlm
+= (δal − δam)ˆrlm
+(S27)
+
+∇ar2
+lm =2rlm∇arlm = (δal − δam)2rlm
+(S28)
+
+Using (S26), the gradients of M2 are
+
+∇aM Z1,Z2
+2
+=
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+
+�
+dl,m
+2
+
+�
+∇awl,m
+2
+− wl,m
+2
+1
+σ2
+2
+gl,m
+2
+∇agl,m
+2
+
+�
++ cl,m
+2
+
+�
+wl,m
+2
+1
+σ2
+2
+∇agl,m
+2
+
+��
+,
+(S29)
+
+where the gradients for the different gl,m
+2
+and wl,m
+2
+options can be solved using (S27) and (S28):
+
+∇agl,m
+2,dist. =∇arlm = (δal − δam)ˆrlm
+(S30)
+
+∇agl,m
+2,inv.dist. =∇a
+1
+rlm
+= − 1
+
+r2
+lm
+∇arlm = −(δal − δam)rlm
+
+r3
+lm
+(S31)
+
+∇awl,m
+2,inv.square =∇a
+1
+r2
+lm
+= − 2
+
+r3
+lm
+∇arlm = −2(δal − δam)rlm
+
+r4
+lm
+(S32)
+
+∇awl,m
+2,exp =∇ae−s2rlm = −e−s2rlms2∇arlm = −(δal − δam)wl,m
+2,exps2ˆrlm.
+(S33)
+
+Similarly for M3 :
+
+∇aM Z1,Z2,Z3
+3
+=
+
+|Z1|
+�
+
+l
+
+|Z2|
+�
+
+m
+
+|Z3|
+�
+
+n
+
+�
+dl,m,n
+3
+
+�
+∇awl,m,n
+3
+− wl,m,n
+3
+1
+σ2
+3
+gl,m,n
+3
+∇agl,m,n
+3
+
+�
++ cl,m,n
+3
+
+�
+wl,m,n
+3
+1
+σ2
+3
+∇agl,m,n
+3
+
+��
+.
+(S34)
+
+
+S4
+
+The gradient of the geometry function is
+
+∇a(gl,m,n
+3
+) =∇a
+
+�r2
+ml + r2
+mn − r2
+ln
+
+2rmlrmn
+
+�
+
+=rmlrmn∇a(r2
+ml + r2
+mn − r2
+ln) − (r2
+ml + r2
+mn − r2
+ln)∇a(rmlrmn)
+
+2r2
+mlr2mn
+,
+(S35)
+
+where
+
+∇a(r2
+ml + r2
+mn − r2
+ln) = 2 [(δam − δal)ˆrml + (δam − δan)ˆrmn − (δal − δan)ˆrln]
+(S36)
+
+and
+
+∇a(rmlrmn) = (δam − δan)rmlˆrmn + (δam − δal)rmnˆrml.
+(S37)
+
+The gradient of the weight function is
+
+∇awl,m,n
+3
+=∇ae−s3(rlm+rmn+rnl)
+
+= − s3wl,m,n
+3
+∇a(rlm + rmn + rnl)
+
+= − s3wl,m,n
+3
+[(δal − δam)ˆrlm + (δam − δan)ˆrmn + (δan − δal)ˆrnl] .
+(S38)
+
+S3.
+SMOOTH OVERLAP OF ATOMIC POSITIONS (SOAP) WITH GAUSSIAN TYPE ORBITAL (GTO) RADIAL BASIS
+
+A.
+Definition
+
+The final output from our SOAP implementation is the partial power spectra vector p where the individual vector
+elements are defined as
+
+pZ1,Z2
+nn′l
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+�
+cZ1
+nlm
+�∗
+cZ2
+n′lm
+(S39)
+
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+
+
+
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm
+
+
+
+
+(S40)
+
+Because we are using real spherical harmonics, the complex conjugation in (S39) can be omitted. The summation for
+j and k run over atoms with the atomic number Z1 and Z2 respectively and the function ci
+nlm is defined as
+
+ci
+nlm =
+���
+
+R3 dV gnl(r)ρ(r, ri)Ylm(θ, φ)
+(S41)
+
+The real spherical harmonics are defined in spherical coordinates as
+
+Ylm(θ, φ) =
+
+
+
+
+
+
+
+
+√
+
+2(−1)mIm[Y |m|
+l
+(θ, φ)]
+if m < 0
+Y 0
+l
+if m = 0
+√
+
+2(−1)mRe[Y m
+l (θ, φ)]
+if m > 0
+(S42)
+
+where Y m
+l
+corresponds to the complex orthonormalized spherical harmonics defined as
+
+Y m
+l (θ, φ) =
+
+�
+
+(2l + 1)
+
+4π
+(l − m)!
+(l + m)!P m
+l (cos θ)eimφ
+(S43)
+
+and P m
+l
+are the associated Legendre polynomials. We will also be using the definition and properties of real regular
+solid harmonics Rm
+l
+which are defined as
+
+Rm
+l (r) =
+
+�
+
+4π
+
+2l + 1rlYlm(r)
+(S44)
+
+
+S5
+
+These real regular solid harmonics, expressed in Cartesian coordinates, are real-valued homogeneous polynomials of
+order l in x, y, z. Using the definition of the GTO radial basis gnl(r)
+
+gnl(r) =
+
+nmax
+�
+
+n′=1
+βnn′lrle−αn′lr2
+(S45)
+
+and the definition of the Gaussian atomic density ρ(r, ri)
+
+ρ(r, ri) = e−
+1
+
+2σ2 (r−ri)2
+(S46)
+
+= e−s(r−ri)2
+(S47)
+
+one can simplify (S41) as follows
+
+ci
+nlm =
+���
+
+R3 dV
+
+nmax
+�
+
+n′=1
+βnn′lrle−αn′lr2e−s(r−ri)2Ylm(r)
+(S48)
+
+=
+���
+
+R3 dV
+
+nmax
+�
+
+n′=1
+βnn′le−αn′lr2−s(r−ri)2rlYlm(r)
+(S49)
+
+=
+���
+
+R3 dV
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i −(s+αn′l)
+�
+r−
+sri
+
+s+αn′l
+
+�2
+rlYlm(r)
+(S50)
+
+=
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i
+���
+
+R3 dV e
+−(s+αn′l)(r−
+sri
+
+s+αn′l )2
+rlYlm(r)
+(S51)
+
+=
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i
+���
+
+R3 dV e−(s+αn′l)r2rlYlm(r +
+sri
+
+s + αn′l
+)
+(S52)
+
+=
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i
+�
+
+2l + 1
+
+4π
+
+� ∞
+
+0
+r2e−(s+αn′l)r2 � 2π
+
+0
+
+� π
+
+0
+sin θRm
+l (r +
+sri
+
+s + αn′l
+)dθdφdr
+(S53)
+
+=
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i
+�
+
+2l + 1
+
+4π
+
+� ∞
+
+0
+r2e−(s+αn′l)r2 � 2π
+
+0
+
+� π
+
+0
+
+ℓ
+�
+
+λ=0
+
+�2ℓ
+2λ
+
+�1/2
+λ
+�
+
+µ=−λ
+Rµ
+λ(r)Rm−µ
+ℓ−λ (
+sri
+
+s + αn′l
+)
+
+⟨λ, µ; ℓ − λ, m − µ|ℓm⟩dθdφdr
+
+(S54)
+
+=
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i 4π
+
+�
+
+2l + 1
+
+4π
+Rm
+l (
+sri
+
+s + αn′l
+)
+� ∞
+
+0
+r2e−(s+αn′l)r2dr
+(S55)
+
+=
+π3/2
+
+(s + αn′l)3/2
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i (
+sri
+
+s + αn′l
+)lYlm(
+sri
+
+s + αn′l
+)
+(S56)
+
+=
+π3/2sl
+
+(s + αn′l)3/2+l
+
+nmax
+�
+
+n′=1
+βnn′le
+−
+sαn′l
+
+s+αn′l r2
+i rl
+iYlm(ri)
+(S57)
+
+In the transition from (S49) to (S50) we have completed a square in the exponent in order to obtain a form containing
+(r −
+sri
+
+s+αn′l )2. This allows us to perform the substitution r → r +
+sri
+
+s+αn′l when transitioning from (S51) to (S52),
+which does not affect the differential or the limits at infinity. In the transition from (S53) to (S54) we have utilized the
+addition theorem for solid harmonics, where ⟨λ, µ; ℓ−λ, m−µ|ℓm⟩ are Clebsch–Gordan coefficients. Upon integrating
+over the angular coordinates, only the term with λ = µ = 0 remains, and the remaining radial integral contains a
+Gaussian integral with a polynomial prefactor that has a known analytical form. In the transition from (S56) to (S57)
+we have used the fact that scaling the radial variable does not affect the spherical harmonics, i.e. Ylm(ar) = Ylm(r).
+
+
+S6
+
+B.
+Derivatives
+
+The derivative of the power spectrum (S40) with respect to the Cartesian coordinate xi of atom i is given by
+
+∂pZ1,Z2
+nn′l
+∂xi
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+∂
+∂xi
+
+
+
+
+
+
+
+
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm
+
+
+
+
+
+
+
+
+(S58)
+
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+
+
+ ∂
+
+∂xi
+
+
+
+
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm +
+
+|Z1|
+�
+
+j
+cj
+nlm
+∂
+∂xi
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm
+
+
+
+
+
+
+
+
+(S59)
+
+= π
+
+�
+
+8
+
+2l + 1
+
+�
+
+m
+
+
+
+
+
+
+
+
+
+|Z1|
+�
+
+j
+
+∂cj
+nlm
+∂xi
+
+
+
+
+
+|Z2|
+�
+
+k
+ck
+n′lm +
+
+|Z1|
+�
+
+j
+cj
+nlm
+
+
+
+
+
+|Z2|
+�
+
+k
+
+∂ck
+n′lm
+∂xi
+
+
+
+
+
+
+
+
+(S60)
+
+From this form, it can be seen that the derivative calculation mainly consists of the derivatives ∂ci
+nlm
+
+∂xi . Using the
+
+definition from (S57), the required derivatives ∂ci
+nlm
+
+∂xi
+can be written as
+
+∂ci
+nlm
+∂xi
+=
+π3/2sl
+
+(s + αn′l)3/2+l
+
+nmax
+�
+
+n′=1
+βnn′e
+−
+sαn′l
+
+s+αn′l r2
+i
+�∂rl
+iYlm(ri)
+
+∂xi
+− 2αn′lxi
+
+s + αn′l
+rl
+iYlm(ri)
+�
+(S61)
+
+As rl
+iYlm(ri) is a polynomial function of xi, yi and zi it can be differentiated relatively easily. These derivatives can
+be inserted into (S61), which can be used in (S60) to obtain the final analytical formulas for the derivatives. Identical
+
+analysis can be carried out also for
+∂pZ1,Z2
+nn′l
+∂yi
+and
+∂pZ1,Z2
+nn′l
+∂zi
+.
+
+

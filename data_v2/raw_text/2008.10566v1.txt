@@ -1,0 +1,1447 @@
+Numerical continuum tensor networks in two dimensions
+
+Reza Haghshenas,∗ Zhi-Hao Cui, and Garnet Kin-Lic Chan†
+
+Division of Chemistry and Chemical Engineering, California Institute of Technology, Pasadena, California 91125, USA
+
+We describe the use of tensor networks to numerically determine wave functions of interacting two-
+dimensional fermionic models in the continuum limit. We use two different tensor network states: one based on
+the numerical continuum limit of fermionic projected entangled pair states obtained via a tensor network formu-
+lation of multi-grid, and another based on the combination of the fermionic projected entangled pair state with
+layers of isometric coarse-graining transformations. We first benchmark our approach on the two-dimensional
+free Fermi gas then proceed to study the two-dimensional interacting Fermi gas with an attractive interaction in
+the unitary limit, using tensor networks on grids with up to 1000 sites.
+
+I.
+INTRODUCTION
+
+Understanding the collective behavior of quantum many-
+body systems is a central theme in physics. While it is of-
+ten discussed using lattice models, there are systems where
+a continuum description is essential. One such case is found
+in superfluids,1 where recent progress in precise experiments
+on ultracold atomic Fermi gases has opened up new oppor-
+tunities to probe key aspects of the phases.2 On the theoret-
+ical side, this requires solving a continuum fermionic quan-
+tum many-body problem.
+For example, various quantum
+Monte Carlo (QMC) methods have been applied to study
+the cross-over from Bardeen-Cooper-Schrieffer superfluid-
+ity to Bose-Einstein condensation in two-dimensional Fermi
+gases.3–6 However, the applicability of (unbiased) quantum
+Monte Carlo is restricted to special parameter regimes due to
+the fermion sign problem.7 Thus, devising numerical meth-
+ods that can address general continuum quantum many-body
+physics remains an important objective.
+Tensor network states (TNS) are classes of variational states
+that have become widely used in quantum lattice models.
+They are complementary to QMC methods as TNS algorithms
+are typically formulated without incurring a sign problem. In
+1D, matrix product states (MPS) now provide almost exact
+numerical results via the DMRG algorithm.8 In 2D, reaching
+a similar level of success has been harder, but much progress
+has been made using projected entangled pair states (PEPS),9
+
+which generalize MPS to higher dimensions in a natural fash-
+ion.
+PEPS calculations now provide accurate results for a
+broad range of quantum lattice problems10–14 and there have
+been many developments to extend the range of the tech-
+niques, for example to long-range Hamiltonians,15–17 thermal
+states,18 and real-time dynamics.19 Also, much work has been
+devoted to improving the numerical efficiency and stability of
+PEPS computations.20–24
+
+Formulating tensor network states and the associated algo-
+rithms in the continuum remains a challenge. In 1D, so-called
+continuous MPS25 provide an analytical ansatz in the contin-
+uum and have been applied to several problems, including 1D
+interacting bosons/fermions and quantum field theories.26–29
+
+Alternatively, the continuum description can be reached by
+taking the numerical limit of a set of tensor network states
+formulated on lattices with a discretization parameter ϵ, for
+ϵ → 0. This kind of numerical continuum MPS calculation
+has also been demonstrated in conjunction with a variety of
+
+optimization algorithms.30–32
+
+In two dimensions, despite several proposals,25,31,33,34 the
+appropriate analytical form of the continuum PEPS ansatz re-
+mains unclear. In this work, we carry out continuum tensor
+network calculations in 2D by taking the numerical limit of
+a lattice discretization parameter. We explore two types of
+ansatz to approach the continuum. The first uses the numer-
+ical continuum limit of the lattice fermionic PEPS. Here, to
+connect the lattice PEPS at different scales when taking this
+limit and to ensure an efficient optimization on finer scales we
+use a multi-grid like algorithm (a generalization of the MPS
+multigrid algorithm). The second is based on a combination
+of fermionic PEPS with a tree of isometries that successively
+coarse grains the continuum into discrete lattices. Using these
+2D numerical continuum tensor network states, we demon-
+strate how we can study fermionic physics in the continuum
+limit, applying the ansatz both to the challenging (for tensor
+networks) case of the free Fermi gas, as well as the attrac-
+tive interacting Fermi gas in the unitary limit that can be real-
+ized in ultracold atom experiments. In the first case, we can
+benchmark against exact results, while in the second we can
+perform direct comparisons of the tensor network results to
+recent QMC calculations at half-filling (where there is no sign
+problem) in the continuum and thermodynamic limits.
+
+The remainder of the paper is organized as follows. We first
+introduce the fermionic continuum Hamiltonian of interest in
+Sec. II and describe how to discretize it in a manner consis-
+tent with open boundary conditions in Sec. III. The two types
+of fermionic tensor network states are discussed in Sec. IV
+along with the optimization algorithms used for them. We
+then present our numerical benchmarks for the free and in-
+teracting Fermi gases in Sec. V. We summarize our work in
+Sec. VI and discuss future research directions.
+
+II.
+INTERACTING FERMI GAS
+
+For concreteness, it is useful to define a particular contin-
+uum model. In this work we will consider the free and in-
+teracting Fermi gases in two dimensions. The Hamiltonian is
+
+arXiv:2008.10566v1  [cond-mat.str-el]  24 Aug 2020
+
+
+2
+
+{
+
+FIG. 1. (Color online) (a) A two-dimensional square L×L box con-
+taining spinful fermions. The fermions are confined to the box by an
+infinite potential at the walls of the box. (b) Lattice discretization of
+the L×L box into 8×8 grid points. Using Dirichlet boundary condi-
+tions, the wave function is zero at the gray points (boundary points).
+The active points where the wave function takes non-trivial values
+are defined on the 6 × 6 lattice, with a lattice spacing of ϵ = L
+
+7 . The
+grid points with blue and orange colors require special treatment in
+the fourth-order finite difference approximation, in order to provide
+an accurate discretization.
+
+given by
+
+H =
+�
+
+σ=↑,↓
+
+�
+dr ψ†
+σ(r)(−1
+
+2∇2 − µ)ψσ(r)
+
++g
+� �
+drdr′ψ†
+↑(r)ψ↑(r)δ(r − r′)ψ†
+↓(r′)ψ↓(r′) (1)
+
+where ψ†
+σ(r) and ψσ(r) are fermionic field operators, creating
+and annihilating a fermion with spin σ at position r, respec-
+tively. The fermionic field operators satisfy the anticommuta-
+tion relation {ψ†
+σ(r), ψσ′(r′)} = δ(r − r′)δσσ′. The coupling
+parameters µ and g denote the chemical potential (which con-
+trols the number of particles) and strength of interaction in the
+system. We assume the system is confined in a L × L square
+box (0 < rx, ry < L), so that the potential outside the box is
+V (r) = ∞. When g = 0, we have a free fermion gas confined
+to the box.
+
+III.
+HAMILTONIAN LATTICE DISCRETIZATION
+
+Because we define the continuum properties as a numerical
+limit, we need to first discretize the continuum Hamiltonian
+H. To do so, we replace the continuum space L × L box by a
+lattice containing (N + 1) × (N + 1) grid points with lattice
+spacing ϵ = L
+
+N . Due to the Dirichlet (open) boundary condi-
+tions, the wave function is zero on the boundary of the grid.
+Thus the non-trivial part of the quantum state is defined on
+(N −1)×(N −1) grid points (we refer to these as the “active
+points”). The lattice discretization is shown in Figs. 1(a, b).
+The kinetic energy operator can be represented using a fi-
+nite difference stencil on the grid.
+Using 2nd and 4th or-
+der finite difference approximations, the Laplacian operator
+
+10-4
+
+10-3
+
+10-2
+
+10-1
+
+100
+
+0.025
+0.1
+0.2
+
+∆E
+
+ε
+
+ε=L/(N)
+
+ε=L/(N+1)
+
+10-4
+
+10-3
+
+10-2
+
+10-1
+
+0.1
+0.2
+
+ε
+
+normal
+antisym
+
+FIG. 2. (Color online) Relative error of ground-state energy of two
+fermions in a 1 × 1 box as a function of lattice spacing ϵ. (a) Using
+the lattice spacing of ϵ = 1/(N + 1) (consistent with the Dirichlet
+boundary results) leads to the correct 2nd order convergence with ϵ
+using the 2nd order discretization formula. (b) Assuming an anti-
+symmetric continuation of the wave function past the boundary (an-
+tisym) in the 4th order discretization formula provides much better
+accuracy compared to assuming the wavefunction vanishes outside
+of the boundaries (normal).
+
+�
+dr ψ†
+σ(r)∇2ψσ(r) is replaced respectively by
+
+2nd order → 1
+
+ϵ2
+�
+
+⟨ij⟩,σ
+c†
+iσcjσ − 4
+
+ϵ2
+�
+
+iσ
+c†
+iσciσ + O(ϵ2)
+
+4th order →
+16
+12ϵ2
+�
+
+⟨ij⟩,σ
+c†
+iσcjσ −
+1
+
+12ϵ2
+�
+
+⟨⟨⟨ij⟩⟩⟩,σ
+c†
+iσcjσ
+
+− 60
+
+12ϵ2
+�
+
+iσ
+c†
+iσciσ + O(ϵ4)
+(2)
+
+where c, c† are fermionic lattice operators and the symbols
+⟨ij⟩ and ⟨⟨⟨ij⟩⟩⟩ denote nearest neighbor and third nearest
+neighbor pairs.
+Because the wave function is not smooth at the edge of the
+box, some care must be taken in applying the stencils to ensure
+that boundary errors of lower order in ϵ than implied by the
+stencil formula do not appear. In the 2nd order approximation,
+the second-derivative takes the form ∼ −4ψ0+ψ1+ψ−1
+
+ϵ2
+where
+the indices on ψ denote the x coordinate. Taking the index −1
+to refer to the left boundary, we see that representing the wave
+function on only the interior N − 1 active points, while using
+the spacing ϵ = 1/(N + 1) (rather than the naive spacing of
+ϵ = 1/N) is consistent with choosing the boundary condition
+ψ−1 = 0 (and similarly for the right boundary). Using this
+definition of ϵ = 1/(N + 1) we obtain the full 2nd order
+lattice discretized Hamiltonian as
+
+H(2)
+ϵ = 1
+
+ϵ2
+�
+
+⟨ij⟩,σ
+c†
+iσcjσ + h.c. − 4
+
+ϵ2
+�
+
+iσ
+c†
+iσciσ
+
++¯g
+�
+
+i
+c†
+i↑ci↑c†
+i↓ci↓ − µ
+�
+
+iσ
+c†
+iσciσ + O(ϵ2),
+
+where ¯g is a regularized δ function interaction parame-
+ter, whose regularization procedure is described in detail in
+Secs. V B and A.
+
+
+3
+
+FIG. 3. (Color online) (a) The continuum limit wave function |Ψ⟩ is
+approximated by a sequence of fPEPS of with bond dimension D on
+successively finer lattices. The fPEPS on different lattices are related
+via a multigrid algorithm. This procedure is denoted fPEPS-fine. (b)
+The same continuum wave function |Ψ⟩ can also be represented by
+a single fPEPS on a coarse lattice connected to layers of isometric
+tensors (here two layers are shown). We refer to this as fPEPS-tree.
+
+For the 4th order approximation, the second-derivative
+takes the form ∼
+−30ψ0+16ψ1+16ψ−1−ψ−2−ψ2
+
+12ϵ2
+. Again, tak-
+ing index −1 to refer to the left boundary, we see that the
+value of ψ−2 is left unspecified. To maintain the accuracy
+of the finite difference expression, we should choose ψ−2 to
+smoothly continue the wavefunction past the boundary. In
+our case, we choose ψ−2 = −ψ0 (i.e.
+the wavefunction
+is antisymmetric around the boundary). This means that at
+the boundary, the second-derivative should be replaced by
+∂2ψ
+∂x2 ≡ 29ψ0+16ψ1+ψ2
+
+12ϵ2
+. Continuing this argument, the coeffi-
+cient
+60
+
+12ϵ2 in Eq. 2 is replaced with different values depending
+on the nature of the boundary points: at the red, blue and green
+points shown in Fig. 1(b), the coefficients become
+58
+
+12ϵ2 ,
+59
+
+12ϵ2
+and
+60
+
+12ϵ2 . The final form of the 4th order discretized lattice
+Hamiltonian thus becomes
+
+H(4)
+ϵ
+=
+16
+12ϵ2
+�
+
+⟨ij⟩,σ
+c†
+iσcjσ −
+1
+
+12ϵ2
+�
+
+⟨⟨⟨ij⟩⟩⟩,σ
+c†
+iσcjσ + h.c.
+
+− 60
+
+12ϵ2
+�
+
+σ,i∈red
+c†
+iσciσ − 59
+
+12ϵ2
+�
+
+σ,i∈blue
+c†
+iσciσ − 58
+
+12ϵ2
+�
+
+σ,i∈orange
+c†
+iσciσ
+
++¯g
+�
+
+i
+c†
+i↑ci↑c†
+i↓ci↓ − µ
+�
+
+iσ
+c†
+iσciσ + O(ϵ4),
+
+with ϵ = 1/(N +1) and where the colors red, blue and orange
+correspond to the colored grid points in Fig. 1(b).
+To illustrate the importance of the correct representation of
+the Laplacian for Dirichlet boundary conditions, in Fig. 2 we
+show the relative error in the ground-state energy of two free
+fermions in the box, using different treatments of the Lapla-
+cian, as a function of ϵ. In Fig. 2(a), we compare the lattice
+spacing ϵ = 1/(N + 1) that is consistent with the boundary
+conditions to the naive spacing ϵ = 1/N for the Hamiltonian
+H(2), showing that the quadratic convergence in ϵ is achieved
+only for the former spacing. In Fig. 2(b) we show the effect
+of using an antisymmetric continuation of the wavefunction in
+H(4) compared to simply setting the value of the wave func-
+tion outside of the box to zero; much faster convergence is
+obtained using the antisymmetric continuation.
+
+IV.
+CONTINUUM FERMIONIC TENSOR NETWORK
+ANSATZ
+
+We explore two different fermionic tensor networks to ap-
+proach the continuum limit ground state |Ψ⟩, depicted in
+Fig. 3(a, b). One (Fig. 3(a)) is a standard fermionic PEPS
+(fPEPS) defined by a set of local tensors connected by virtual
+bonds corresponding to the geometry of the lattice discretiza-
+tion. The associated bond dimension of the virtual bonds is
+denoted by D and controls the accuracy of the fPEPS ansatz.
+To enforce fermion statistics (i) all fPEPS local tensors are
+set to be symmetric under the action of Z2 or U(1) symmetry
+groups, and (ii) each line crossing in the network is replaced
+by a fermionic swap gate. Such an fPEPS captures fermionic
+states obeying an entanglement area law. As the lattice spac-
+ing goes to zero, the fPEPS then provides a numerical repre-
+sentation of the continuum limit. The primary numerical chal-
+lenge is ensuring that the fPEPS tensors on the finest scales are
+properly optimized. This can be done by taking the numeri-
+cal limit, i.e. connecting fPEPS representations at different
+discretizations, using a multi-grid algorithm discussed further
+below. We refer to this numerical continuum representation
+by fPEPS as fPEPS-fine.
+The second consists of several layers of isometric tensors,
+with a fPEPS placed at the top, see Fig. 3(b). We denote
+this ansatz an fPEPS-tree.
+The isometric tensors are cho-
+sen to map four fermion sites onto one effective fermion site
+with bond dimension χo. The isometries describe a coarse-
+graining transformation, where the parameter χo controls the
+accuracy of the transformation. The amount of entanglement
+in the ansatz is controlled by the bond dimension of the top-
+most fPEPS, i.e. D, which encodes quantum entanglement
+between effective fermions on the coarsest level. The flexi-
+bility of the ansatz is thus controlled by both {χo, D}. We
+expect this representation to work well in the dilute regime,
+where the effective area occupied by each fermion represents
+a coarse-grained length-scale and the isometries connect the
+finest (continuum) scale to that length-scale; in general, we
+expect χo, D ≈ eρ, where ρ is the particle density. Although
+it is formally desirable, during coarse-graining, to decouple
+entanglement at each length-scale (as is the basis of fermionic
+multi-scale entanglement renormalization (fMERA))35,36 the
+computational cost to work with fMERA is much higher than
+that of the fPEPS-tree. Thus, in fPEPS-tree we account for the
+short-range entanglement entirely within the topmost fPEPS
+tensors.
+
+A.
+Tensor optimization and contraction techniques
+
+We now briefly summarize some of the techniques used to
+optimize and contract the different types of tensors appear-
+ing in the two ansatzes above. The fPEPS tensors are op-
+timized towards a representation of the ground state using
+imaginary-time evolution, using the “full-update” method to
+perform bond truncations.37–39 The full-update builds the en-
+vironment from the entire wave function around each bond be-
+fore truncation. We use the single-layer boundary contraction
+
+
+4
+
+FIG. 4. (Color online) Diagrammatic representation of the multigrid
+algorithm. A splitting transformation is used to transform tensors
+from the coarser lattices to finer lattices. (a) A 4×4 PEPS is obtained
+by using a splitting transformation for the coarser lattice. (b) By
+adding isometric tensors to the 4 × 4 PEPS a good initial guess is
+provided for the tensors of the finer lattice, i.e. 8 × 8. The procedure
+can be repeated to reach the desired fine lattice scale.
+
+method40 to contract the fPEPS efficiently. The accuracy of
+the contraction is controlled by the boundary bond dimension
+χb. Using these techniques, the computational cost of opti-
+mizing the fPEPS tensors is O(χ3
+bD4). Assuming a boundary
+bond dimension χb ∝ D2, this gives a computational cost of
+O(D10).
+The isometric tensors in the fPEPS-tree are optimized us-
+ing techniques similar to those used for the fMERA as de-
+scribed in Ref. 36. These are based on linearizing the respec-
+tive cost functions with respect to the isometric tensors. In
+the fPEPS-tree, contracting a single layer of isometric tensors
+costs O(χ9
+o). One advantage of the fPEPS-tree is that after a
+single isometric layer contraction, the fourth-order discretized
+Hamiltonian (H(4)
+ϵ ) is renormalized into a nearest-neighbour
+Hamiltonian, which then retains its nearest neighbour form
+through subsequent isometric layers. This simplifies the opti-
+mization of the topmost fPEPS layer, which can be performed
+using standard nearest-neighbour imaginary-time evolution.
+To improve efficiency, we exploit Z2 and U(1) symmetry in
+all tensors. We adopt the techniques developed in Refs. 41 and
+42 to implement U(1) symmetry, choosing relevant symmet-
+ric sectors during the optimization. We use a simple-update
+strategy (based on a direct SVD decomposition) to obtain an
+initial guess for the symmetry sectors, and those are then fur-
+ther dynamically updated during the full-update optimization
+by using a similar strategy.
+
+B.
+Multigrid fPEPS-fine optimization
+
+Although the fPEPS-fine wave function on the finest lattice
+is a straightforward representation of the (near)-continuum
+wave function, direct optimization of such an fPEPS leads
+to numerical difficulties, such as slow convergence and be-
+
+FIG. 5. (Color online) Steps to construct the splitting map. (a) bonds
+with the same color are grouped together and an SVD is performed
+to split the tensor into two tensors. The truncation bond dimension is
+denoted χr. (b, c) A resolution of the identity U †U = I is added to
+split a virtual bond to two virtual bonds. The green tensors denote U.
+After permutation, grouping bonds with the same color together, an
+SVD is performed. This procedure results in the final desired form.
+(d) We perform a direct optimization to further improve the accuracy
+of this transformation using the alternating least squares method.
+
+ing stuck in local minima. This is analogous to what is seen
+in MPS simulations on very fine lattices31 and also what is
+seen in solutions of partial differential equations on fine grids.
+Consequently, it is necessary to construct the fPEPS on finer
+lattices from those on coarser lattices, which can be seen as
+taking the continuum limit on the fPEPS tensors in an algo-
+rithmic sense. This we achieve using a multigrid-inspired al-
+gorithm.
+The main idea in the multigrid approach is to interleave op-
+timization and interpolation steps for the fPEPS tensors that
+are determined on lattices with different discretizations. In
+our version of the multigrid algorithm (i) we first approximate
+the ground state on the coarsest level by using a N ×N fPEPS
+ansatz where N ∈ {2, 3}, (ii) we attach a layer of isometric
+tensors to the N × N fPEPS to create an fPEPS-tree with a
+single layer of isometries for the 2N ×2N lattice, and we sub-
+sequently perform energy optimization of the isometries and
+fPEPS tensors, (iii) we use a splitting map to map the fPEPS-
+tree to a 2N × 2N fPEPS, then we relax the energy again on
+this finer lattice, (iv) we repeat steps (ii) and (iii) until the de-
+
+
+5
+
+10-4
+
+10-3
+
+10-2
+
+10-1
+
+0.5
+1
+2
+3
+
+∆E
+
+1/ρ
+
+ε=0.66
+
+10-3
+
+10-2
+
+10-1
+
+1/16 1/8
+1/4
+
+1/χo
+
+ε=0.86
+ε=0.66
+ε=0.46
+
+40
+
+42
+
+44
+
+46
+
+48
+
+51
+
+0.5
+0.8
+1
+1.25
+
+E
+
+ε
+
+ρ=0.39
+
+48
+49
+50
+
+53
+
+1/16 1/8
+1/4
+
+1/χo
+
+ε=0.67
+
+FIG. 6. (Color online) (a) The relative error of the free Fermi gas
+ground-state energy versus particle density using fPEPS-tree. The
+inset shows how the relative error behaves as a function of bond di-
+mension χo and the lattice spacing ϵ. (b) The ground-state energy
+versus lattice spacing ϵ for ρ = 0.39. The inset shows the ground-
+state energy extrapolated as a function of bond dimension 1/χo with
+fixed bond dimension D = 12.
+
+sired discretization level is reached, yielding the final fPEPS-
+fine wavefunction. A schematic of the multigrid algorithm is
+depicted in Fig. 4. Note that the above is only one realization
+of a multigrid algorithm and many alternative choices can be
+made.
+Two steps need to be further specified, namely (i) initial-
+izing the isometric tensors, and (ii) constructing the splitting
+map. We initialize the isometric tensors by diagonalizing the
+local Hamiltonian, defined on the 2 × 2 finer lattice, and pick-
+ing the χo lowest-energy eigenvectors. This provides an ap-
+proximate initial guess for the isometric tensors. The key steps
+in the splitting map are shown in Fig. 4. We first add a res-
+olution of the identity U †U = I onto the virtual bonds of
+the fPEPS, where U is an isometric matrix with dimension
+D2 × D. Such an isometric tensor U (shown in red) splits
+one virtual bond into two virtual bonds, without changing the
+overall tensor network state. Then, one approximately solves
+the equation:
+
+(3)
+
+The parameter controlling the accuracy of this transformation
+is the bond dimension of the virtual bonds connecting the ten-
+sors, denoted χr; as χr → ∞ the transformation becomes
+exact. The tensors U can in principle be considered to be
+variational parameters in order to best satisfy the above equa-
+tion. However, in this paper, we fix the form of U; some of
+the diagonal elements are set to 1, and the rest are set to 0,
+i.e. Uij,m = δi×D+j,m. This appears sufficient to obtain our
+desired accuracy (see Sec. V). To solve Eq. 3, we carry out se-
+quential SVD to obtain guesses for four resulting tensors, and
+then direct optimize the fidelity using alternating least squares
+
+10-3
+
+10-2
+
+10-1
+
+1/10 1/6
+1/4
+
+∆
+
+1/χr
+
+ε=1.2
+
+ε=0.86
+ε=0.67
+
+10-3
+
+10-2
+
+10-1
+
+1/10
+1/6
+1/4
+
+1/χr
+
+ε=1.2
+
+ε=0.86
+ε=0.67
+
+FIG. 7. (Color online) Relative error of the splitting map versus the
+bond dimension χr (a) for ρ = 0.17 and (b) for ρ = 0.27. The bond
+dimensions (D, χo) are set to (8, 12).
+
+to improve the accuracy of the splitting. In Fig. 5, we provide
+the details of this procedure.
+To summarize, the accuracy of calculations with fPEPS-
+fine using the multi-grid algorithm is controlled by four pa-
+rameters: the initial bond dimension D; the boundary bond di-
+mension χb controlling the accuracy of the environment con-
+tractions; and the accuracy of the splitting map controlled by
+parameters χo and χr, denoting the bond dimension of the
+isometries and the bond dimension of the resulting fPEPS on
+the finer lattice. In practice, we can reasonably set parameters
+χb ∼ D2 and χr ∼ D, thus the essential controlling param-
+eters are only D, χo. As an example of the bond dimensions
+used in this paper, for the 16 × 16 lattice fPEPS-fine simula-
+tion we used (D, χb) = (9, 200) and (D, χb) = (12, 250) for
+Z2 and U(1) symmetries, respectively.
+
+V.
+RESULTS
+
+A.
+Free Fermi gas benchmarks
+
+We first assess the accuracy of the wave functions and al-
+gorithms discussed above using the free Fermi gas (g = 0) as
+a benchmark system. This system is exactly solvable by re-
+duction to single-particle quantities but is a challenging prob-
+lem for tensor networks in the continuum and thermodynamic
+limit as the ground-state violates the entanglement area law
+by logarithmic terms, i.e. ∼ ρ
+1
+2 A log A, where ρ is the par-
+ticle density and A is the boundary length.43,44 Consequently,
+to obtain accurate results, large bond dimensions in all steps
+of the algorithms are required and approximation errors are
+magnified. In the calculations below, we shall use a fixed box
+side-length of L = 6.
+We first compute numerical continuum results using the
+fPEPS-tree ansatz using the 4th order spinless Hamiltonian
+discretization. Here we use an fPEPS-tree with two layers
+of isometries.
+In Fig. 6(a), we show the relative error of
+the ground-state energy ∆E as a function of particle den-
+sity ρ. As expected, the relative error increases sharply when
+we increase the particle density using fixed bond dimensions
+
+
+6
+
+45
+
+46
+
+47
+
+48
+
+5
+10
+20
+30
+40
+
+E
+
+iteration
+
+χo=8, D=8
+
+χb=250, D=8
+
+48
+
+50
+
+52
+
+54
+
+56
+
+58
+
+60
+
+62
+
+5
+10
+20
+30
+
+iteration
+
+SU guess, D=6
+MG, χo=8, D=6
+
+FIG. 8.
+(Color online) Behavior of the ground-state energy during
+the different steps of the multigrid algorithm. (a) The purple trian-
+gles denote the energies of the fPEPS ansatz after attaching isome-
+tries for ρ = 0.39 and ϵ = 0.67. It provides an initial guess for
+the fPEPS ansatz on the finer lattice. The jump in the energies ap-
+pears due to the approximate solution of the splitting equation Eq. 3
+with χr = 8. We observe that the fPEPS energies finally reach the
+exact result (blue solid line). (b) A comparison between the fPEPS
+energies optimized on the 16 × 16 fine lattice, initialized by a simple
+update guess (labeled “SU guess”), and by the multi-grid (MG) algo-
+rithm for ρ = 0.39 and ϵ = 0.35. It is observed that the multi-grid
+algorithm provides a much better initial guess, hence better accuracy.
+
+(D, χo) = (8, 16).
+However, the inset shows that going
+to a finer lattice does not affect the accuracy significantly
+(the error increases only slightly in the continuum limit). In
+Fig. 6(b), we plot the ground-state energy E versus the lattice
+spacing ϵ, where we use the fourth-order polynomial func-
+tion E(ϵ) = Eϵ→∞ + bϵ−4 to extract the numerical con-
+tinuum limit of the ground-state energy.
+Note that due to
+the use of coarse-graining, we no longer observe a simple
+4th order discretization error. For each data point for a spe-
+cific lattice spacing ϵ, we also perform a bond dimension ex-
+trapolation (χo → ∞). A second-order polynomial function
+E(χo) = Eχo→∞ + aχ−1
+o
++ bχ−2
+o
+is used to estimate the ex-
+trapolated results, as shown in the inset in Fig. 6(b). Because
+the energy is a function of the bond dimensions (D, χo, χb), to
+obtain a good extrapolated estimation, we need to make sure
+the results are converged with respect to the bond dimensions
+(D, χb). Thus at each χo, we use as large (D, χb) as possible
+(up to (12, 250)). The extrapolated results are shown in Ta-
+ble I. We find accuracies of roughly 1% or better are obtained
+with these bond dimensions for the lowest 3 densities where
+ρ < 0.4.
+We next explore the behaviour of the fPEPS-fine ansatz in
+the continuum free fermion problem. As the multi-grid op-
+timization involves several steps, we first illustrate the accu-
+racy and errors associated with the individual steps. We start
+with the accuracy of the splitting map between coarser and
+finer lattices. This incurs an error which can be measured as
+∆ = Eb−Ef
+
+Ef
+, where Eb and Ef are the energies per lattice site
+before and after the splitting map, respectively.
+As χr increases we expect this error to go to zero, and for
+a practical method, it is important that a moderate χr ∼ D is
+sufficient for good accuracy. In Fig. 7, we plot ∆ versus the in-
+
+ρ
+fPEPS-tree, H(4)
+ϵ
+fPEPS-fine, H(2)
+ϵ
+exact
+
+0.17
+10.95
+10.99
+10.966
+
+0.28
+27.34
+27.5
+27.42
+
+0.39
+49.6
+50.3
+50.17
+
+0.55⋆
+50.8
+54.0
+54.8
+
+TABLE I. Ground-state energy of the free Fermi gas for different
+particle densities in the continuum limit. Data with the symbol ⋆
+are for spin- 1
+
+2 fermions, and data with no such symbol are for spin-
+less fermions. Data is better converged (and extrapolations are more
+accurate) at low density.
+
+ternal bond dimension χr. We see that the relative error drops
+when increasing χr so that when χr ∼ D it is ∼ 10−2−10−3.
+One might expect that if we proceed to finer lattice spacings
+ϵ, (i.e. where the fine lattice has more sites), the relative error
+might increase due to the accumulation of individual tensor
+splitting errors. This is in fact seen in Fig. 7, although the rel-
+ative error increases quite slowly with ϵ. We also find that the
+accuracy of the splitting map does not depend on the particle
+density, as the relative error remains the same in the left and
+right panels.
+We further illustrate the numerical behavior of the multi-
+grid algorithm in Fig. 8(a).
+As discussed above, applying
+isometries to the fPEPS to obtain a single-layer fPEPS-tree
+provides the initial guess for the splitting map (fPEPS-fine)
+with subsequent optimization being carried out after the split-
+ting map is performed. We see that the ground-state energy
+jumps due to the infidelity of the splitting map, however, fur-
+ther optimization of the fPEPS on the finer level rapidly im-
+proves the energy. To show the importance of the multi-grid
+algorithm, in Fig. 8(b), we compare the fPEPS energies ini-
+tialized by a simple-update method45 and the ones initialized
+from coarser lattices by the multi-grid algorithm. We observe
+that the fPEPS energies obtained by the multi-grid algorithm
+are much more accurate.
+Using the above multigrid calculation with fPEPS-fine with
+up to four layers (a fine lattice of 16 × 16 sites) and the 2nd
+order Hamiltonian discretization, we can estimate the energy
+of the fPEPS-fine ansatz in the numerical continuum limit.
+We use a linear extrapolation in
+1
+D (using a few largest val-
+ues) to estimate the large-D limit for each lattice spacing.46 A
+polynomial function E(ϵ) = Eϵ→∞ + bϵ−2 + cϵ−4 is used to
+estimate the numerical continuum limit for fPEPS-tree. The
+estimated energies are shown in Table I. We see that in the
+very dilute regime, the fPEPS-tree is slightly more accurate
+than the multigrid algorithm, likely because it uses the 4th
+order Hamiltonian discretization. However, in the non-dilute
+regime, the multigrid algorithm performs significantly better.
+Indeed for densities ρ < 0.4, the fPEPS-fine results are accu-
+rate to better than 0.4%.
+
+B.
+Interacting Fermi gas
+
+We next present calculations using the fPEPS-fine ansatz
+for the spin-balanced interacting (g < 0) Fermi gas. We fo-
+
+
+7
+
+-5.5
+
+-5.3
+
+-5.1
+
+-5
+
+1/32
+1/8
+1/4
+
+1/N
+
+QMC, Ne=24
+QMC, Ne=32
+QMC, Ne=36
+
+TN, Ne=10
+TN, Ne=20
+
+-0.2
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+1/32
+1/8
+1/4
+
+E
+
+1/N
+
+QMC, Ne=32
+QMC, Ne=36
+QMC, Ne=40
+
+TN, Ne=20
+TN, Ne=40
+
+-16
+
+-12
+
+-8
+
+-4
+
+0
+
+-1.5
+0
+1.5
+
+η
+
+QMC
+
+TN
+
+FIG. 9.
+(Color online) Ground-state energy of the interacting 2D Fermi gas obtained using the fPEPS-fine ansatz. (a, b) The TN and QMC
+results for η = {1.0, −0.5} versus lattice size 1/N, respectively. The dashed lines show the inverse polynomial fitting function. (c) Ground
+state-energy as a function of the dimensionless coupling parameter η. Note that the QMC data uses periodic boundary conditions while the
+TN data uses open boundary conditions, thus they only agree in the thermodynamic limit.
+
+cus on the spin-balanced regime because at this point aux-
+iliary field quantum Monte Carlo has no sign problem, and
+thus provides a reliable comparison; however, away from this
+point, sign problems manifest, for which the methods devel-
+oped here remain suitable.
+Rather than using the interaction g appearing in the con-
+tinuum Hamiltonian, the interaction strength is commonly
+parametrized using the dimensionless coupling parameter η =
+1
+2 log(2ef/eb), where ef is the non-interacting Fermi energy
+and eb is the two-particle binding energy.
+We will be in-
+terested in the simultaneous continuum and thermodynamic
+limit, which is obtained in the simultaneous limit of infinite
+particle number and lattice size Ne, N → ∞. For each fi-
+nite lattice size N, an effective interaction ¯g can be specified
+to be consistent with a given η, which defines the numeri-
+cal fPEPS-fine lattice Hamiltonian. The procedure to deter-
+mine ¯g is given in Appendix B, and follows that in Ref. 6.
+The physics of the system is governed by η and in the limits
+η ≪ 0, η ≫ 0, the system is in the Bose-Einstein condensate
+(BEC) and Bardeen-Cooper-Schrieffer (BCS) phases, respec-
+tively. Recent QMC studies have suggested that the BCS-BEC
+crossover occurs near η ∼ 1.
+We present fPEPS-fine results for the ground-state energy
+(for various N and Ne) in units of the non-interacting Fermi
+energy E =
+⟨H⟩
+
+Neef /2.
+E = limNe,N→∞ E is the desired
+continuum and thermodynamic limit result. We compare to
+results from auxiliary field QMC (AFQMC) which is exact
+up to statistical error (for given Ne, N). The AFQMC data
+is computed using periodic boundary conditions whereas the
+fPEPS-fine energies are computed for open boundary condi-
+tions, however, in the thermodynamic limit they should ap-
+proach the same value.
+In Fig. 9(a, b), the ground-state
+TN results as a function of Ne, N are compared against the
+AFQMC data (shown as lines, extrapolated to the thermo-
+dynamic limit for each Ne). To extrapolate the TN data to
+
+the thermodynamic limit, we use the second-order polyno-
+mial function E = EN→∞ + bN −1 + cN −2. For the point
+η = −0.5 (Fig. 9(b)), the thermodynamic and continuum lim-
+its are rapidly approached as seen in both the TN and AFQMC
+data; however, this is more challenging for the crossover point
+η = 1.0 (Fig. 9(b)) where there are sizable finite-size effects
+in both the TN and AFQMC results. However, by using up
+to Ne = 40 particles, and lattices with up to 32 × 32 sites,
+the continuum TN data and AFQMC extrapolations provide
+consistent estimates.
+We further show the extrapolated continuum and thermo-
+dynamic limit fPEPS-fine and AFQMC ground-state ener-
+gies across a range of renormalized coupling parameters, in
+Fig. 9(c). We find good agreement between the fPEPS-fine
+and AFQMC energies, with the largest errors around the tran-
+sition point η ∼ 1.0, which again comes mainly from the un-
+certainty in the Ne, N → ∞ extrapolations required in both
+methods.
+
+VI.
+CONCLUSIONS
+
+We have described the numerical continuum limit of two-
+dimensional tensor network states based on two variants of
+projected entangled pair states, as well as the numerical algo-
+rithms used to work with them. Using continuum grids with
+up to approximately 1000 sites, our initial calculations show
+promising results for two fermionic continuum systems in two
+dimensions: the entanglement law violating free Fermi gas, as
+well as the interacting unitary Fermi gas of much interest in
+cold atom experiments. In the latter case, our results compare
+well to auxiliary field quantum Monte Carlo calculations that
+are feasible at the spin-balanced point. However, the strength
+of the continuum tensor network approach is that it is not lim-
+ited to special points in the phase diagram. This opens up
+
+
+8
+
+the use of tensor networks to address unresolved questions in
+spin-polarized Fermi gases,47–49 as well as in other problem
+areas, such as the realistic description of electronic structure
+with tensor networks, and the numerical study of field theories
+in two-dimensions and higher.
+
+ACKNOWLEDGMENTS
+
+This work was supported by the US National Science
+Foundation (NSF) via grant CHE-1665333. GKC acknowl-
+
+edges support from the Simons Foundation via the Many-
+Electron Collaboration and via the Simons Investigator pro-
+gram. We have used the Uni10 library50 for implementation
+and PySCF51 to obtain benchmark data. We thank H. Shi, J.
+Drut, and T. Berkelbach for helpful discussions regarding the
+unitary Fermi gas.
+
+∗ haqshena@caltech.edu
+† garnetc@caltech.edu
+1 P.W. Anderson, “Resonating valence bonds: A new kind of insu-
+lator?” Materials Research Bulletin 8, 153 – 160 (1973).
+
+2 Immanuel Bloch, Jean Dalibard, and Wilhelm Zwerger, “Many-
+body physics with ultracold gases,” Rev. Mod. Phys. 80, 885–964
+(2008).
+
+3 G. Bertaina and S. Giorgini, “Bcs-bec crossover in a two-
+dimensional fermi gas,” Phys. Rev. Lett. 106, 110403 (2011).
+
+4 Hao Shi, Simone Chiesa, and Shiwei Zhang, “Ground-state prop-
+erties of strongly interacting fermi gases in two dimensions,”
+Phys. Rev. A 92, 033603 (2015).
+
+5 Alexander Galea, Hillary Dawkins, Stefano Gandolfi,
+and
+Alexandros Gezerlis, “Diffusion monte carlo study of strongly in-
+teracting two-dimensional fermi gases,” Phys. Rev. A 93, 023602
+(2016).
+
+6 Lukas Rammelm¨uller, William J. Porter, and Joaqu´ın E. Drut,
+“Ground state of the two-dimensional attractive fermi gas: Essen-
+tial properties from few to many body,” Phys. Rev. A 93, 033639
+(2016).
+
+7 Matthias Troyer and Uwe-Jens Wiese, “Computational complex-
+ity and fundamental limitations to fermionic quantum monte carlo
+simulations,” Phys. Rev. Lett. 94, 170201 (2005).
+
+8 Steven R. White, “Density matrix formulation for quantum renor-
+malization groups,” Phys. Rev. Lett. 69, 2863–2866 (1992).
+
+9 V. Murg, F. Verstraete, and J. I. Cirac, “Exploring frustrated spin
+systems using projected entangled pair states,” Phys. Rev. B 79,
+195119 (2009).
+
+10 Philippe Corboz, Steven R. White, Guifr´e Vidal, and Matthias
+Troyer, “Stripes in the two-dimensional t-j model with infinite
+projected entangled-pair states,” Phys. Rev. B 84, 041108 (2011).
+
+11 Philippe Corboz and Fr´ed´eric Mila, “Tensor network study of the
+shastry-sutherland model in zero magnetic field,” Phys. Rev. B 87,
+115144 (2013).
+
+12 Bo-Xiao Zheng, Chia-Min Chung, Philippe Corboz, Georg
+Ehlers, Ming-Pu Qin, Reinhard M Noack, Hao Shi, Steven R
+White, Shiwei Zhang, and Garnet Kin-Lic Chan, “Stripe order in
+the underdoped region of the two-dimensional hubbard model,”
+Science 358, 1155–1160 (2017).
+
+13 R. Haghshenas, Wang-Wei Lan, Shou-Shu Gong,
+and D. N.
+Sheng, “Quantum phase diagram of spin-1 J1−J2 heisenberg
+model on the square lattice: An infinite projected entangled-pair
+state and density matrix renormalization group study,” Phys. Rev.
+B 97, 184436 (2018).
+
+14 R. Haghshenas, Shou-Shu Gong, and D. N. Sheng, “Single-layer
+tensor network study of the heisenberg model with chiral interac-
+tions on a kagome lattice,” Phys. Rev. B 99, 174423 (2019).
+
+15 Matthew J. O’Rourke, Zhendong Li, and Garnet Kin-Lic Chan,
+“Efficient representation of long-range interactions in tensor net-
+work algorithms,” Phys. Rev. B 98, 205127 (2018).
+
+16 Zhendong Li, Matthew J. O’Rourke, and Garnet Kin-Lic Chan,
+“Generalization of the exponential basis for tensor network rep-
+resentations of long-range interactions in two and three dimen-
+sions,” Phys. Rev. B 100, 155121 (2019).
+
+17 Matthew J. O’Rourke and Garnet Kin-Lic Chan, “Simplified and
+improved approach to tensor network operators in two dimen-
+sions,” Phys. Rev. B 101, 205142 (2020).
+
+18 Piotr Czarnik, Lukasz Cincio, and Jacek Dziarmaga, “Projected
+entangled pair states at finite temperature: Imaginary time evolu-
+tion with ancillas,” Phys. Rev. B 86, 245101 (2012).
+
+19 Piotr Czarnik and Jacek Dziarmaga, “Time evolution of an infinite
+projected entangled pair state: An algorithm from first principles,”
+Phys. Rev. B 98, 045110 (2018).
+
+20 Philippe Corboz, “Variational optimization with infinite projected
+entangled-pair states,” Phys. Rev. B 94, 035133 (2016).
+
+21 Laurens Vanderstraeten, Jutho Haegeman, Philippe Corboz, and
+Frank Verstraete, “Gradient methods for variational optimiza-
+tion of projected entangled-pair states,” Phys. Rev. B 94, 155123
+(2016).
+
+22 Reza Haghshenas, Matthew J. O’Rourke,
+and Garnet Kin-Lic
+Chan, “Conversion of projected entangled pair states into a canon-
+ical form,” Phys. Rev. B 100, 054404 (2019).
+
+23 Shao-Jun Dong, Chao Wang, Yongjian Han, Guang-can Guo, and
+Lixin He, “Gradient optimization of fermionic projected entan-
+gled pair states on directed lattices,” Phys. Rev. B 99, 195153
+(2019).
+
+24 Hai-Jun Liao, Jin-Guo Liu, Lei Wang, and Tao Xiang, “Differ-
+entiable programming tensor networks,” Phys. Rev. X 9, 031041
+(2019).
+
+25 F. Verstraete and J. I. Cirac, “Continuous matrix product states for
+quantum fields,” Phys. Rev. Lett. 104, 190405 (2010).
+
+26 Jutho Haegeman, J. Ignacio Cirac, Tobias J. Osborne, Henri Ver-
+schelde, and Frank Verstraete, “Applying the variational principle
+to (1 + 1)-dimensional quantum field theories,” Phys. Rev. Lett.
+105, 251601 (2010).
+
+27 Martin Ganahl and Guifre Vidal, “Continuous matrix product
+states for nonrelativistic quantum fields: A lattice algorithm for
+inhomogeneous systems,” Phys. Rev. B 98, 195105 (2018).
+
+28 Sangwoo S. Chung, Kuei Sun, and C. J. Bolech, “Matrix product
+ansatz for fermi fields in one dimension,” Phys. Rev. B 91, 121108
+(2015).
+
+29 Martin Ganahl, Juli´an Rinc´on,
+and Guifre Vidal, “Continuous
+matrix product states for quantum fields: An energy minimization
+algorithm,” Phys. Rev. Lett. 118, 220402 (2017).
+
+
+9
+
+30 EM Stoudenmire, Lucas O Wagner, Steven R White, and Kieron
+Burke, “One-dimensional continuum electronic structure with the
+density-matrix renormalization group and its implications for
+density-functional theory,” Physical review letters 109, 056402
+(2012).
+
+31 Michele Dolfi, Bela Bauer, Matthias Troyer, and Zoran Ristivoje-
+vic, “Multigrid algorithms for tensor network states,” Phys. Rev.
+Lett. 109, 020604 (2012).
+
+32 E. Miles Stoudenmire and Steven R. White, “Sliced basis density
+matrix renormalization group for electronic structure,” Phys. Rev.
+Lett. 119, 046401 (2017).
+
+33 Jutho Haegeman, Tobias J. Osborne, Henri Verschelde, and Frank
+Verstraete, “Entanglement renormalization for quantum fields in
+real space,” Phys. Rev. Lett. 110, 100402 (2013).
+
+34 Antoine Tilloy and J. Ignacio Cirac, “Continuous tensor network
+states for quantum fields,” Phys. Rev. X 9, 021040 (2019).
+
+35 G. Vidal, “Class of quantum many-body states that can be effi-
+ciently simulated,” Phys. Rev. Lett. 101, 110501 (2008).
+
+36 Philippe Corboz and Guifr´e Vidal, “Fermionic multiscale entan-
+glement renormalization ansatz,” Phys. Rev. B 80, 165129 (2009).
+
+37 Philippe Corboz, Rom´an Or´us, Bela Bauer,
+and Guifr´e Vidal,
+“Simulation of strongly correlated fermions in two spatial dimen-
+sions with fermionic projected entangled-pair states,” Phys. Rev.
+B 81, 165104 (2010).
+
+38 Michael Lubasch, J. Ignacio Cirac,
+and Mari-Carmen Ba˜nuls,
+“Algorithms for finite projected entangled pair states,” Phys. Rev.
+B 90, 064425 (2014).
+
+39 Ho N. Phien, Johann A. Bengua, Hoang D. Tuan, Philippe Cor-
+boz, and Rom´an Or´us, “Infinite projected entangled pair states al-
+gorithm improved: Fast full update and gauge fixing,” Phys. Rev.
+B 92, 035142 (2015).
+
+40 Z. Y. Xie, H. J. Liao, R. Z. Huang, H. D. Xie, J. Chen, Z. Y. Liu,
+and T. Xiang, “Optimized contraction scheme for tensor-network
+states,” Phys. Rev. B 96, 045128 (2017).
+
+41 Sukhwinder Singh, Robert N. C. Pfeifer, and Guifre Vidal, “Ten-
+sor network states and algorithms in the presence of a global u(1)
+symmetry,” Phys. Rev. B 83, 115125 (2011).
+
+42 R. Haghshenas and D. N. Sheng, “u(1)-symmetric infinite pro-
+jected entangled-pair states study of the spin-1/2 square J1−J2
+heisenberg model,” Phys. Rev. B 97, 174408 (2018).
+
+43 P. Calabrese, M. Mintchev,
+and E. Vicari, “Entanglement en-
+tropies in free-fermion gases for arbitrary dimension,” EPL (Eu-
+rophysics Letters) 97, 20009 (2012).
+
+44 Ettore Vicari, “Entanglement and particle correlations of fermi
+gases in harmonic traps,” Phys. Rev. A 85, 062104 (2012).
+
+45 H. C. Jiang, Z. Y. Weng, and T. Xiang, “Accurate determination
+of tensor network state of quantum lattice models in two dimen-
+sions,” Phys. Rev. Lett. 101, 090603 (2008).
+
+46 Philippe Corboz, “Improved energy extrapolation with infinite
+projected entangled-pair states applied to the two-dimensional
+hubbard model,” Phys. Rev. B 93, 045116 (2016).
+
+47 Aurel Bulgac, Michael McNeil Forbes,
+and Achim Schwenk,
+“Induced p-wave superfluidity in asymmetric fermi gases,” Phys.
+Rev. Lett. 97, 020402 (2006).
+
+48 Aurel Bulgac and Michael McNeil Forbes, “Zero-temperature
+thermodynamics of asymmetric fermi gases at unitarity,” Phys.
+Rev. A 75, 031605 (2007).
+
+49 Mohit Randeria and Edward Taylor, “Crossover from bardeen-
+cooper-schrieffer to bose-einstein condensation and the uni-
+tary fermi gas,” Annual Review of Condensed Matter Physics
+5, 209–232 (2014), https://doi.org/10.1146/annurev-conmatphys-
+031113-133829.
+
+50 Ying-Jer Kao, Yun-Da Hsieh, and Pochung Chen, “Uni10: an
+open-source library for tensor network algorithms,” Journal of
+Physics: Conference Series 640, 012040 (2015).
+
+51 Qiming Sun, Timothy C. Berkelbach, Nick S. Blunt, George H.
+Booth,
+Sheng Guo,
+Zhendong Li,
+Junzi Liu,
+James D.
+McClain, Elvira R. Sayfutyarova, Sandeep Sharma, Sebas-
+tian
+Wouters,
+and
+Garnet
+KinLic
+Chan,
+“Pyscf:
+the
+pythonbased simulations of chemistry framework,”
+(2017),
+
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/wcms.1340.
+
+Appendix A: Discretization of the unitary Fermi gas
+
+In the continuum limit, given an attractive interaction (g <
+0) two particles will have a bound ground-state under the con-
+tinuum Hamiltonian in Eq. 1. We can therefore use the bind-
+ing energy ϵb as a measure of the strength of this interaction.
+In the thermodynamic limit, the other parameter required to
+specify the state is the density ρ. This is reflected in the Fermi
+energy ϵf = k2
+f/2 via kf = √2πρ. Thus we can characterize
+the physics of the system via the dimensionless ratio ϵf/ϵb, or
+equivalently η = 1
+
+2 log(2ϵf/ϵb).
+In a discretized version of the problem, we can imagine a
+box of sidelength Nϵ, then ρ = Ne/N 2ϵ2 = n/ϵ2 and ϵf =
+πNe/N 2ϵ2 = ef/ϵ2. We can also write eb = ϵb/ϵ2, where
+eb is the binding energy of the lattice Hamiltonian (e.g. in the
+2nd order discretization)
+
+H(2)=
+�
+
+⟨ij⟩
+c†
+iσcjσ + h.c. − 4
+�
+
+i
+c†
+iσciσ
+
++ϵg
+�
+
+i
+µic†
+i↑ci↑c†
+i↓ci↓ − µ
+�
+
+i
+c†
+iσciσ
+
+Note that a given ratio ϵf/ϵb fixes the same ratio ef/eb, thus
+the lattice spacing ϵ drops out except via the effective coupling
+¯g = ϵg. However, since the functional relationship between g
+and ϵb is not known a priori, we can simply adjust ¯g to obtain
+the desired eb by solving for the two-particle binding energy
+on a lattice of side-length N. Thus the discretization parame-
+ter does not appear explicitly.
+
+

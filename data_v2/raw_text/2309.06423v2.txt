@@ -1,0 +1,1737 @@
+Accelerating Defect Predictions in Semiconductors Using
+Graph Neural Networks
+
+Md. Habibur Rahmana, Prince Gollapallib,c, Panayotis Manganarisa, Satyesh Kumar Yadavb,c,
+Ghanshyam Pilaniad, Brian DeCoste
+, Kamal Choudharye, and Arun Mannodi-Kanakkithodia*
+
+Abstract
+
+First principles computations reliably predict the energetics of point defects in semiconductors, but are constrained by the expense
+of using large supercells and advanced levels of theory. Machine learning models trained on computational data, especially ones that
+sufficiently encode defect coordination environments, can be used to accelerate defect predictions. Here, we develop a framework for
+the prediction and screening of native defects and functional impurities in a chemical space of Group IV, III-V, and II-VI zinc blende
+(ZB) semiconductors, powered by crystal Graph-based Neural Networks (GNNs) trained on high-throughput density functional theory
+(DFT) data. Using an innovative approach of sampling partially optimized defect configurations from DFT calculations, we generate
+one of the largest computational defect datasets to date, containing many types of vacancies, self-interstitials, anti-site substitutions,
+impurity interstitials and substitutions, as well as some defect complexes. We applied three types of established GNN techniques, namely
+Crystal Graph Convolutional Neural Network (CGCNN), Materials Graph Network (MEGNET), and Atomistic Line Graph Neural
+Network (ALIGNN), to rigorously train models for predicting defect formation energy (DFE) in multiple charge states and chemical
+potential conditions. We find that ALIGNN yields the best DFE predictions with root mean square errors around 0.3 eV, which represents
+a prediction accuracy of 98 % given the range of values within the dataset, improving significantly on the state-of-the-art. Models
+are tested for different defect types as well as for defect charge transition levels. We further show that GNN-based defective structure
+optimization can take us close to DFT-optimized geometries at a fraction of the cost of full DFT. DFT-GNN models enable prediction
+and screening across thousands of hypothetical defects based on both unoptimized and partially-optimized defective structures, helping
+identify electronically active defects in technologically-important semiconductors.
+
+1
+Introduction
+
+Semiconductors are critical for a variety of technologies
+such as consumer electronics, healthcare and biotech-
+nology,
+information
+technology,
+communication
+and
+connectivity, automotive manufacturing, renewable energy,
+and industrial automation1. With the signing of the CHIPS
+Act2, there has been a massive influx of funding into semi-
+conductor R&D, resulting in the establishment of several
+manufacturing facilities and research centers across the
+United States as well as many global partnerships between
+companies and universities.
+Developing next-generation
+semiconductor materials is crucial for addressing global
+energy needs and the demands of the electronics indus-
+try, and this process begins at the atomistic scale with
+enhanced structure-property relationships that can scale
+
+a School of Materials Engineering, Purdue University, West Lafayette, IN 47907, USA;
+E-mail: amannodi@purdue.edu
+b Department of Metallurgical and Materials Engineering, Indian Institute of Tech-
+nology (IIT) Madras, Chennai 600036, India
+c Centre for Atomistic Modelling and Materials Design, Indian Institute of Technol-
+ogy (IIT) Madras, Chennai, 600036, India
+d GE Research, Schenectady, NY, 12309, USA
+e Materials Measurement Laboratory, National Institute of Standards and Technology,
+Gaithersburg, MD, 20899, USA
+
+†Electronic Supplementary Information (ESI) available: https://github.com/
+msehabibur/defect_GNN_gen_1 See DOI: 00.0000/00000000.
+
+up to device performance and aid data-driven materials
+design and improvement3.
+
+The electronic structure of a semiconductor is heavily
+dependent on the presence of point defects in its crystal lat-
+tice, which range from intrinsic vacancies, self-interstitials,
+and anti-site substitutions, to impurities at different lattice
+sites4. Defects can introduce energy levels within the band
+gap, affecting carrier concentration and mobility, and often
+acting as traps that lead to non-radiative recombination of
+holes and electrons in optoelectronic devices5–10. Defects
+also play a crucial role in dopant activation, diffusion, and
+segregation, which are vital factors in device fabrication
+processes.
+Even at low concentrations, unwanted point
+defects or impurities can have a significant impact on the
+electronic, optical, and transport properties of semiconduc-
+tors, making it important to be able to accurately predict
+their stability and electronic signatures11.
+
+One of the applications where the effect of defects
+is felt most is solar cells, where semiconductors such
+as Si and CdTe are commonly used as absorbers7,12.
+Undesirable defects and functional dopants in semicon-
+ductor absorbers will respectively decrease and increase
+the optical absorption and thus the power conversion
+
+1– | 1
+
+arXiv:2309.06423v2  [cond-mat.mtrl-sci]  13 Sep 2023
+
+
+efficiency of single-junction, tandem, and bifacial solar
+cells13.
+Similar effects are felt in applications such as
+transistors, photodiodes, lasers, sensors, and quantum
+information sciences14–18. Canonical group IV, III-V, and
+II-VI semiconductors are some of the most important
+materials used in these applications, either as binary
+compounds or alloys, typically in the zinblende (ZB)
+or wurtzite (WZ) phases.
+In addition to Si and CdTe,
+compounds such as GaAs, SiC, CdSe, and CdS have been
+used in photovoltaics (PVs). GaAs, GaN, ZnO, and InP are
+employed in optoelectronic devices such as light-emitting
+diodes (LEDs), laser diodes, quantum dots, and quantum
+wells.
+GaN, AlN, and related compounds are desirable
+wide band gap (WBG) semiconductors for power elec-
+tronics19.
+Point defects negatively or positively impact
+the performance of each of these materials; in general,
+semiconductors with intrinsic defect tolerance and possible
+n-type or p-type dopability are desired for optoelectronic
+applications. Furthermore, defect levels in semiconductors
+(e.g., NV-centers in diamond) have also been suggested as
+qubits for quantum computing20 .
+
+Experimentally,
+defect
+levels
+are
+measured
+using
+techniques such as cathodoluminescence and deep-level
+transient spectroscopy21.
+However, these methods face
+difficulties in sample preparation and assigning measured
+levels to particular defects; e.g., it is not trivial to deter-
+mine whether a captured peak is from a specific vacancy
+or self-interstitial, or from an unwanted substitutional
+or interstitial impurity12.
+First principles-based density
+functional theory (DFT) computations have thus been
+widely used to calculate the formation energy (Ef ) of
+point defects as a function of Fermi level (EF), net charge
+in the system (q), and chemical potential (µ)22,23. Such
+computations help reliably identify the lowest energy
+donor and acceptor defects, all possible shallow and deep
+defect levels, the equilibrium conductivity as pinned by the
+lowest energy defects (p-type, intrinsic, or n-type), defect
+concentrations, electron/hole capture rates, and other
+related properties.
+When using an appropriate level of
+theory, DFT-computed charge transition levels have been
+shown to match remarkably well with measured levels12.
+Despite the successes of DFT, large-supercell charged
+calculations are rather computationally expensive, which
+makes it prohibitive to perform defect calculations across
+a very large chemical space.
+
+Predicting defect properties can be significantly ac-
+celerated by combining DFT data with state-of-the-art
+machine learning (ML) models12,24. Some recent efforts,
+including our own past work, have shown that regression
+
+models trained on a DFT dataset, using vectors encoding
+the identity and elemental properties of the coordinating
+atoms involved in creating a defect, can yield accurate
+prediction and screening over tens of thousands of defects
+and impurities25–27. In published work from 202212, we
+trained ML models to predict the formation energies and
+charge transition levels of point defects in 34 ZB semicon-
+ductors with a roughly 90% prediction accuracy, which
+enabled qualitatively reliable screening of consequential
+impurities from across a list of > 12,000. However, these
+models suffer from the following limitations: (a) for a
+wide chemical space, composition-based models28 require
+a significant amount of training data to accurately capture
+the complex relationships between the material and target
+properties, (b) all predictions are made for a supposed
+ground state defect structure which means no competing
+defective structures could be sampled and no lower energy
+defect structures could theoretically be found, (c) the
+errors are larger than desired, presumably due to lack of
+information in the model inputs about the defective geom-
+etry and how local coordination changes in the presence
+of different defects, and (d) the predictive models cannot
+trivially be applied to related but “out-of-sample" defects,
+such as complexes and alloys within the same material
+classes. A potential approach to tackle these issues arises
+in the form of a “crystal graph", which is the most general
+representation of a crystalline structure, automatically ac-
+counting for different supercell sizes, types of ionic species,
+mixing or added atoms, and metastable configurations.
+
+Graph-based Neural Networks (GNNs) have been rising
+in popularity over the last few years, and are widely
+applied today for adequately representing and predicting
+properties of molecules, polymers, and inorganic crys-
+tals25,29–35. GNNs can work directly with graph-structured
+data, converting crystal structures into crystal graphs
+where the nodes are atomic positions and edges are
+chemical bonds.
+They are capable of learning internal
+representations of crystals useful for predicting properties
+ranging from formation or decomposition energy to band
+gap to defect formation energy. ML models based only on
+vectors encoding composition and/or elemental properties
+are typically not suited to deal with crystalline polymorphs
+of a given material, often requiring hand-crafted features
+that are not generalizable. GNNs are known to be much
+more flexible than composition-based models, as they can
+be normalized with respect to system size or number of
+atoms, and have the ability to capture important struc-
+ture/chemistry information that contribute to properties of
+interest. By learning the global representation of crystals,
+GNNs can incorporate physical laws and phenomena on
+
+2 |
+1–
+
+
+Fig. 1 DFT+GNN workflow to accelerate the prediction of defect formation energies and charge transition levels in semiconductors.
+
+larger scales and be used to predict properties that are
+affected by long-range interactions.
+Predictive models
+trained using GNNs show much better accuracy than
+models that lack structural/geometry information.
+
+In this article, we present one of the most compre-
+hensive efforts undertaken to date for predicting defect
+properties in semiconductors, by combining a massive
+high-throughput (HT) DFT dataset of defect formation
+energies (DFEs) with state-of-the-art GNNs.
+We utilize
+our previously published dataset12,24, bolstered by the
+inclusion of thousands of partially-optimized and unop-
+timized structures in addition to optimized structures,
+along with several new computations, and train predictive
+models using three types of established GNN schemes:
+Crystal Graph Convolutional Neural Network (CGCNN)36,
+Materials Graph Network (MEGNET)37, and Atomistic
+Line Graph Neural Network (ALIGNN)38. We train GNN
+models on datasets ranging from a few thousand to nearly
+15,000 data points for point defects in different charge
+states, across 40 or so unique ZB compounds. We present
+a description of model optimization and visualization of
+the prediction results for different defect types and show
+how (a) ALIGNN predictions significantly improve upon
+previous DFE estimates, with a root mean square error
+(RMSE) of ∼ 0.3 eV, (b) predictions can be made for defect
+complexes and alloyed compositions by including a subset
+of them in the training data, and (c) GNN predictions
+
+for new systems can be used both for screening based on
+upper-bound energies as well as for stabilizing any defect
+by changing the defect coordination environment until the
+GNN-predicted formation energy minimizes.
+We believe
+this provides a novel and promising approach towards
+predicting defect energetics and screening important
+defects from large chemical spaces.
+Considerations of
+the level of theory and future prospects of this work
+are additionally discussed. The DFT+GNN workflow ap-
+plied for predicting defect properties is presented in Fig. 1.
+
+2
+Computational dataset
+
+The semiconductor+defect chemical space considered in
+this work is pictured in Fig.
+S1 in terms of the group
+IV, III-V, and II-VI binary ZB compounds (referred to
+henceforth as AB, with A being the cation and B the anion)
+that serve as hosts to defects, elements selected from
+across the periodic table as possible defects (henceforth
+referred to as M for any substitutional or interstitial defect,
+whereas vacancies will use V), and 5 possible symmetry
+inequivalent defect sites, namely A-site (MA), B-site (MB),
+tetrahedral interstitial site with 4 neighboring A atoms
+(Mi,A), tetrahedral interstitial site with 4 neighboring B
+atoms (Mi,B), and octahedral interstitial site with 3 A and
+3 B atoms in the neighborhood (Mi,oct). Here, we utilize 4
+types of datasets: dataset 1 (all possible single native de-
+fects in 34 binary ZB semiconductors), dataset 2 (hundreds
+
+1– | 3
+
+
+Fig. 2 Defect formation energy distribution across the four datasets, for neutral defects under A-rich chemical potential conditions.
+
+of substitutional and interstitial impurities across all ZB
+compounds), dataset 3 (native defects and impurities in a
+variety of CdSexTe1−x alloys), and dataset 4 (some defect
+complexes simulated in CdTe). Datasets 3 and 4 arise from
+a parallel study on dopant-activation in CdTe-based solar
+cells39 and are used here to evaluate the effectiveness of
+GNN-based defect predictions for alloys and complexes.
+All datasets contain DFEs calculated for at least 5 distinct
+charged states (q = 0, +2, +1, -2, -1) at two extreme
+chemical potential conditions, namely A-rich and B-rich.
+Fig.
+2 shows violin plots capturing the distribution of
+DFEs (only for neutral defects at A-rich chemical potential
+conditions) for all 4 datasets, with inset box plots show-
+ing the median, lower quartile, and upper quartile for each.
+
+The DFT details, including specific VASP input parame-
+ters, level of theory information, reciprocal space sampling,
+references for chemical potentials, and equations used for
+DFE calculation, are present in our past publication12. All
+data is from the semi-local GGA-PBE functional, which
+generally
+reproduces
+lattice
+parameters
+and
+relative
+stabilities quite well, but is not reliable for electronic band
+edges and band gaps, which is likely to affect computed
+defect levels as well.
+The non-local hybrid HSE06 func-
+tional40 is preferred for electronic and defect properties,
+but is much more expensive and often requires tuning
+of the mixing parameter (which determines the fraction
+in which exact exchange from Hartree-Fock is combined
+with the exchange-correlation energy from PBE), which
+is very system-specific and not trivially applied across
+large datasets41.
+Beyond-DFT methods such as the GW
+approximation, which expands the self-energy in terms of
+the single-particle Green’s function G and the screened
+Coulomb interaction W42, are more reliable but too
+prohibitively expensive to be applied high-throughput. In
+past work12, we showed that PBE computed defect charge
+transition levels, when plotted to span the experimentally-
+known band gap of the semiconductor, match rather well
+with measured defect levels for a dataset of ∼ 80 defects
+
+in binary ZB compounds collected from the literature,
+showing a PBE vs experiment RMSE of 0.21 eV.
+
+Thus, PBE-level DFEs and transition levels may be
+sufficient for a first-level screening of low-energy defects.
+Inaccuracies will still persist from incorrectly locating VBM
+and CBM, but appropriate corrections can be applied af-
+terwards using different higher-accuracy bulk calculations
+once PBE-level DFEs are predicted for multiple q and µ
+conditions. Two such possible correction methods include
+using the modified band alignment approach based on
+PBE and HSE06 band gap values43, and shifting both
+band edge positions using GW quasiparticle energies44.
+The focus of present work is to demonstrate the acceler-
+ated prediction of PBE-level defect energetics, and the
+aforementioned corrections will be considered in future
+work. In the next few subsections, a detailed description
+is provided for the four datasets generated at the PBE level.
+
+2.1
+Dataset 1
+Dataset 1 contains DFEs for all possible native defects in
+each AB compound, namely VA (vacancy at A-site), VB,
+Ai,A (A self-interstitial at A-coordinated tetrahedral site),
+Ai,B, Ai,oct (A self-interstitial at octahedral site), Bi,A, Bi,B,
+Bi,oct, AB (A on B anti-site substitution), and BA. All AB
+compounds, simulated in the cubic ZB structure with A
+atoms occupying an FCC lattice and B atoms occupying
+tetrahedral sites, are listed as follows: 8 II-VI compounds
+(ZnO, ZnS, ZnSe, ZnTe, CdO, CdS, CdSe, and CdTe), 16
+III–V compounds (AlN, AlP, AlAs, AlSb, BN, BP, BAs, BSb,
+GaN, GaP, GaAs, GaSb, InN, InP, InAs, and InSb), and 10
+group IV compounds (SiC, GeC, SnC, SiGe, SiSn, GeSn,
+C, Si, Ge, and Sn).
+There are a total of 312 possible
+native defects across the 34 compounds, and DFEs were
+computed for all under both A-rich and B-rich conditions.
+From each of the 312 (× 5 q states) PBE geometry
+optimization calculations, we collected all possible “inter-
+mediate structures”, that is, geometries generated during
+
+4 |
+1–
+
+
+Dataset
+Data Points
+
+Native defects in 34 compounds (Dataset 1)
+2053 (q=+2), 1840 (q=+1), 3071 (q=0), 1966 (q=-1), 1498 (q=-2)
+
+Impurities in 34 compounds (Dataset 2)
+5326 (q=+2), 3990 (q=+1), 13966 (q=0), 3568 (q=-1), 4628 (q=-2)
+
+Native defects in CdSexTe1-x (Dataset 3)
+291 (q=+2), 322 (q=+1), 734 (q=0), 305 (q=-1), 329 (q=-2)
+
+Defect complexes in CdTe (Dataset 4)
+47 (q=0)
+
+Table 1 Number of data points for each charge state q across Datasets 1, 2, 3, and 4.
+
+the course of the optimization, all the way from pristine
+structure (which is simply the ground state semiconductor
+bulk supercell structure with a defect introduced) to the
+fully optimized structure; also collected were the total
+DFT energies corresponding to each structure. The shell
+script used to collect intermediate structures (IS) for every
+defect from XDATCAR and corresponding energies from
+OUTCAR (typical output files in VASP45) is added to the SI
+and available on GitHub. The DFE corresponding to every
+IS is estimated as E f (IS) = EDFT(IS)- EDFT(optimized
+structure) + Ef (optimized structure).
+
+This approach helps swell the DFT native defect dataset
+to 3071 data points for q = 0, and between ∼ 1500 and
+∼ 2000 points for the other q values, as reported in Table
+1. The lower number of structures for the charged systems
+as compared to the neutral defects comes from the fact
+that most of the geometry optimization takes place during
+the neutral calculation, whereas the charged calculations
+typically use the optimized neutral defect geometry as their
+starting point. All the IS serve as energetically accessible
+but not ground state defective structures, which can play
+an important role in understanding the dynamics and
+behavior of the crystal, but also provide an energetically
+and structurally diverse dataset for a GNN model to be
+trained on. This also ensures that the GNN “knows” what
+an unoptimized, partially optimized, and fully optimized
+defect structure looks like, meaning it will yield the correct
+energy corresponding to any hypothetical new structure
+and potentially help reduce the energy by subtly modifying
+the defect coordination environment.
+
+2.2
+Dataset 2
+Dataset 2 contains hundreds of impurities or extrinsic de-
+fects (M) at various sites, namely MA, MB, Mi,A, Mi,B, and
+Mi,oct, across each of the 34 unique AB compounds. The
+five distinct defect sites are considered in 30 binary com-
+pounds and three defect sites (A-site, one tetrahedral inter-
+stitial site, and one octahedral interstitial site) are consid-
+ered in the elemental systems (C, Si, Ge, and Sn). This
+dataset encompasses a wide range of singular impurity
+atoms, including groups I to VII, all transition metals, and
+
+all lanthanides, leading to a total of 77 species, as shown in
+Fig. S1. The total number of possible impurities resulting
+from this can be calculated as 77 × 5 × 30 + 77 × 3 × 4
+= 12,474 (many of these would coincide with the native
+defects described earlier). Out of this dataset of 12,474 de-
+fects, 1566 were chosen for complete neutral-state geom-
+etry optimization, and ∼ 1000 were subjected to charged
+calculations as well; points in the DFT dataset exhibit suf-
+ficient chemical diversity in terms of semiconductor type,
+element type, and defect site type, to adequately represent
+the entire chemical space.
+Once again, we collected all
+IS from the DFT optimization runs for each impurity in 5
+different q states, leading to nearly 14,000 data points for
+q=0 and between 3500 and 5300 data points for the other
+q values, as reported in Table 1.
+
+2.3
+Dataset 3
+
+This dataset includes several possible native defects in a
+series of CdSexTe1−x alloys (x = 0.125, 0.25, 0.375, 0.5,
+0.625, 0.75, and 0.875), namely VCd, VTe, VSe, Cdi, Tei,
+Sei, CdTe, CdSe, TeCd, and SeCd. This results in a total of
+82 unique defects across the 7 mixed compositions, which
+are of interest in CdTe solar cells where Se is often mixed
+at the anion site46–50. DFEs are computed for each defect
+in 5 q states at Cd-rich and Te/Se-rich conditions to obtain
+the two extreme ranges of energies, and all the IS are
+collected from the optimization runs. Total datasets of a
+few hundred points are thus compiled, as shown in Table
+1. This dataset will help examine whether GNN models
+trained on defects in pure unmixed compositions (CdTe
+and CdSe) are applicable to alloyed compositions in the
+same chemical space, and how many new alloy data points
+might need to be added to the training set to achieve
+satisfactory accuracy.
+
+2.4
+Dataset 4
+
+Finally, we posit that crystal graphs should be capable of
+representing any type of defect complexes as well in ad-
+dition to the single-point defects described above. For ex-
+haustively investigating defect tolerance and dopability of
+a semiconductor, it is vital to consider likely defect com-
+
+1– | 5
+
+
+Fig. 3 DFT unoptimized vs optimized neutral defect formation energy in Dataset 1, under (a) A-rich, and (b) B-rich chemical potential
+conditions.
+
+plexes, which are typically multiple point defects or impu-
+rities that form simultaneously in the lattice and interact
+with each other. Examples include Schhotky and Frenkel
+defects, and compensating vacancies or interstitials that
+form along with dopants. The VGa–ON–2H triple complex
+was found to have a very low energy in GaN51, and it has
+recently been suggested that As-O based complexes may
+form in CdTe39. Thus, we simulated a series of complexes
+such as VCd+AsTe and VTe+CuCd in CdTe, resulting in a
+small dataset of 47 points of neutral state defects, for both
+Cd-rich and Te/Se-rich conditions, including all the IS.
+
+3
+DFT optimized vs unoptimized formation energy
+
+Before training GNN models, we analyzed the DFT datasets
+to determine the scale of the differences between DFEs
+from full DFT-optimization and from pristine, unoptimized
+defect structures.
+For any hypothetical defect, an unop-
+timized pristine structure could be trivially generated
+simply by inserting the defect of interest in an optimized
+bulk supercell, but obtaining the ground state DFE is a
+matter of optimizing this structure, which would involve
+a PBE calculation that runs for minutes, hours, or days,
+depending on the nature of the defect.
+The purpose of
+GNN-based on-demand predictions is to reduce this time
+drastically. Since any new GNN predictions would likely
+be made using pristine defect structures, it is informative
+to examine, for a given type of defect, how low the
+energy could go starting from the unoptimized DFE if full
+optimization were to be performed.
+
+Fig.
+3 shows unoptimized DFE plotted against the
+fully optimized DFE, for the dataset of 312 native defects
+across 34 AB compounds (Dataset 1), at both A-rich and
+B-rich conditions.
+The unoptimized DFEs are obtained
+by performing fixed-volume single ionic step calculations
+on the pristine defect-introduced structures. The dataset
+is divided into vacancies, anti-site substitutions, and self-
+interstitials. It can be seen that the amount of geometry
+relaxation happening in vacancy structures is minimal,
+with the two types of DFEs almost always being very
+similar to each other.
+On the other hand, interstitials
+and anti-sites often undergo major atomic rearrangement,
+such that the optimized defect coordination environment
+may look starkly different from the starting structure,
+thus leading to DFE differences ranging from 1 eV to
+nearly 8 eV. The large differences for interstitials could be
+understood in terms of the unfavorability of introducing an
+extra cation or anion in a tetrahedral or octahedral void;
+the larger the ionic radii, the greater this unfavorability.
+Substitutions depend on the size differences between A
+and B, and may thus show either a low or high energy
+variability. These trends roughly inform the threshold that
+must be applied upon unoptimized DFEs (say, from GNN
+predictions) to determine their likelihood of stability upon
+full optimization. It should be noted that the intermediate
+structures collected from each “optimization run” essen-
+tially span the range of the unoptimized to optimized DFE,
+yielding hundreds of structures for some defects and only
+a handful for others.
+
+6 |
+1–
+
+
+4
+Graph Neural Network Architecture
+
+In this section, we briefly describe the technical details
+behind the three GNN schemes chosen in this study,
+namely CGCNN, MEGNET, and ALIGNN.
+
+4.1
+Crystal
+Graph
+Convolutional
+Neural
+Network
+(CGCNN)
+CGCNN, developed by Xie et al.36, is a deep learning ar-
+chitecture that takes a crystal graph as input and applies a
+series of convolution and pooling operations to extract fea-
+tures that capture the underlying properties of the crystal.
+These features are subsequently fed into a fully connected
+neural network (FCNN) to make predictions of the proper-
+ties of interest52. The CGCNN framework is pictured in Fig.
+S2(a) and its operation is described below:
+
+1. Structure representation: The crystal structure is rep-
+resented as a graph where the atoms are nodes and
+the bonds are edges. The nodes and edges are labeled
+with features such as atomic coordinates, and bond
+length.
+
+2. Graph convolutional layers: CGCNN applies multiple
+graph convolutional layers to the input graph wherein
+each layer aggregates information from neighboring
+nodes and edges and learns features that capture the
+local environment. Generally, the convolution opera-
+tion includes computing a weighted sum of the fea-
+tures of neighboring nodes and edges, followed by a
+non-linear activation function53,54 :
+
+H(l+1) = σ
+
+�
+∑
+j∈N (i)
+W (l)h(l)
+j +W (l)h(l)
+i
+
+�
+
+(1)
+
+Here, H(l+1) is the output feature matrix of the (l +1)-
+th layer, W (l) is the weight matrix of the l-th layer, σ
+is a non-linear activation function, h(l)
+i
+is the feature
+vector of node i in layer l, and N (i) is the set of neigh-
+boring nodes of node i in the graph.
+
+3. Pooling layer: The output of the last convolutional
+layer is passed through a global pooling layer (e.g.,
+min, max pooling), which aggregates the features of
+all nodes in the graph into a single vector53,54. This
+vector contains information about the entire crystal
+structure, including all atomic coordinates, bond dis-
+tances, and well-known elemental properties of each
+atom such as ionization energy and electronegativity.
+
+hpool = 1
+
+N
+
+N
+∑
+i=1
+h(L)
+i
+(2)
+
+Here, hpool is the output feature vector of the pooling
+layer, N is the total number of nodes in the graph, and
+h(L)
+i
+is the feature vector of node i in the last layer L.
+
+4. Fully connected neural network (FCNN): Finally, the
+output of the pooling layer is fed into an FCNN, which
+is trained like a regular NN-regression model to make
+predictions.
+y = f
+�
+Wfchpool +bfc
+�
+(3)
+
+Here, y is the predicted property, Wfc is the weight ma-
+trix of the FCNN, bfc is the bias vector, hpool is the out-
+put feature vector of the pooling layer, and f is a non-
+linear activation function such as ReLU or sigmoid.
+
+4.2
+Materials Graph Network (MEGNET)
+The MEGNET framework was developed and released by
+Chen et al. in 201937 and is pictured in Fig. S2(b). MEG-
+NET uses elemental embeddings to encode periodic chemi-
+cal trends that can be used to improve the performance of
+models with limited training data. Elemental embeddings
+are vector representations of elements that capture their
+chemical properties that are typically learned from a large
+dataset of crystals. When a new crystal is encountered, the
+embeddings can be used to predict the properties of inter-
+est. The MEGNET methodology is described below:
+
+1. Graph representation of materials:
+MEGNET repre-
+sents the crystal as a graph where the atoms are the
+nodes, and the edges represent the connections be-
+tween the atoms. Each atom is associated with a set of
+features such as its atomic number, coordinates, and
+chemical environment.
+
+2. Message passing algorithm: MEGNET uses a message-
+passing algorithm to capture the interactions between
+atoms in the crystal. Each atom sends a message to
+its neighboring atoms, which is a function of the node
+and edge features. The messages are then aggregated
+at each node and the resulting feature vector is used
+as input to a neural network.
+
+3. Readout layer: The output of the message-passing al-
+gorithm is passed through a readout layer which maps
+the learned node and edge features to target proper-
+ties, and a loss function is calculated to capture the
+difference between the predicted and actual values.
+
+4.3
+Atomistic Line Graph Neural Network (ALIGNN)
+ALIGNN is a novel approach developed by Choudhary et
+al.38, that differs from CGCNN and MEGNET in terms of
+considering three-body interactions (bond angles) as well
+in addition to two-body terms (bond lengths).
+ALIGNN
+
+1– | 7
+
+
+leverages both graph convolutional layers and line graph
+convolutional55 layers to capture both short-range and
+long-range correlations in the crystal. The framework (pic-
+tured in Fig. S2(c)) is described below:
+
+1. Atomic feature extraction: ALIGNN takes as input a
+graph representing the atomic structure of the crystal.
+Each node (atom) in the graph is associated with a
+set of atomic features, which includes properties such
+as electronegativity, group number, covalent radius,
+valence electrons, ionization energy, electron affinity,
+atomic block, and atomic volume. Each edge (bond)
+in the graph is associated with both the bond angle
+and bond distance.
+
+2. Graph convolutional layers: ALIGNN uses graph con-
+volutional layers to update the feature vectors of each
+node based on the features of its neighboring nodes.
+In each layer, the feature vectors are updated using
+a weighted sum of the features of neighboring nodes,
+similar to other models. This step captures short-range
+interactions in the structure.
+
+3. Line graph construction: To capture long-range corre-
+lations, ALIGNN constructs a line graph on top of the
+original crystal graph. The line graph has nodes that
+represent unique bonds between atoms, correspond-
+ing to edges in the crystal graph. The line graph edges
+connect pairs of bonds that share a central atom in
+the crystal graph, effectively capturing bond angle in-
+formation. ALIGNN then applies another set of graph
+convolutional layers to the line graph, which updates
+the feature vectors of each bond based on the features
+of neighboring bonds. The information from the line
+graph is then propagated back to the original crystal
+graph to update the bond features in combination with
+the node features.
+
+4. Feature refinement: After the line graph convolution,
+ALIGNN refines the feature vectors for each edge using
+a set of learnable transformations that help capture
+more complex interactions between atoms and bonds.
+
+5. Graph pooling: ALIGNN aggregates the refined bond-
+level feature vectors into a single graph-level feature
+vector using a graph pooling operation that summa-
+rizes the relevant information from the entire crystal
+graph.
+
+6. Output prediction: Finally, the graph-level feature vec-
+tor is fed to an FCNN for making predictions.
+
+5
+Results and Discussion
+
+5.1
+Testing GNN models on Dataset 1
+
+As a first step, we tested the performance of CGCNN,
+MEGNET, and ALIGNN for predicting the q=0 E f for
+Dataset 1 only. For each model, the data is split 60:20:20
+into training, validation, and test sets.
+The CGCNN
+training protocol has several important hyperparameters
+that must either be kept fixed at recommended values or
+rigorously tuned over a set of possible values, such as the
+number of properties used in the atom feature vector, the
+number of convolutional layers, the length of the learned
+atom feature vector, the number of hidden layers, the
+regularization term, the scaling factor of the Gaussian
+initialization of weights, step size of the Adam optimizer56,
+dropout fraction, batch size, number of epochs, and the
+cut-off distance rc for constructing the crystal graph. Here,
+we optimized only the batch size, epochs and rc, keeping
+the rest of the hyperparameters the same as in the original
+CGCNN publication36. A parity plot for the best CGCNN
+predictions on Dataset 1 (for A-rich conditions) is pictured
+in Fig. 4(a), showing RMSE of 0.19 eV, 0.41 eV, and 0.35
+eV respectively on the training, validation, and test sets.
+These errors are already far lower than our previously
+published DFE test prediction errors of ∼ 0.6 eV for defects
+in Cd-based chalcogenides24 and ∼ 1 eV across many
+group IV, II-VI, and III-V semiconductors12, as well as
+being highly competitive with the state of the art for such
+predictions.
+Learning curves showing how the CGCNN
+errors converge as the epochs, batch size, and rc increase
+are presented in Fig. S3.
+
+Next, we trained a MEGNET model as shown in Fig.
+4(b) following the same strategy. Notable hyperparameters
+include the number of interaction blocks, number of hid-
+den layers, hidden layer size, learning rate, regularization
+strength, dropout rate, batch size, activation function, num-
+ber of features assigned to each bond in the input graph,
+and rc. Here, we only optimized the number of epochs,
+batch size, and rc, and the rest of the parameters are di-
+rectly adopted from the MEGNET publication37. We find
+that MEGNET once again performs much better than pre-
+vious composition-based models, but shows slightly larger
+errors than CGCNN with RMSE of 0.36 eV, 0.42 eV, and
+0.40 eV on the training, validation, and test sets, respec-
+tively.
+The test error is close enough to the CGCNN er-
+ror of 0.35 eV to justify the use of MEGNET over CGCNN,
+especially since MEGNET significantly corrects any possi-
+ble overfitting in the CGCNN models by yielding roughly
+similar training, validation, and test errors. MEGNET has
+a more complex model architecture than CGCNN and in-
+
+8 |
+1–
+
+
+Fig. 4 Parity plots for rigorously optimized (a) CGCNN, (b) MEGNET, and (c) ALIGNN models, trained on Dataset 1 for A-rich chemical
+potential conditions and q = 0.
+
+cludes elemental embeddings encoding periodic chemical
+trends which may allow better generalization to unseen
+data.
+Finally, we trained an ALIGNN model on Dataset 1
+and found that it yields better performance than both
+CGCNN and MEGNET, with a slight concern of model
+overfitting alleviated by the remarkably low values of
+validation and test RMSEs. As shown in Fig.
+4(c), the
+test RMSE is 0.15 eV, which represents a 99 % accuracy
+considering the DFE values range from 0 eV to 15 eV. The
+reason for the improvement from CGCNN and MEGNET
+could be attributed to the line graph convolution step that
+captures long-range interactions, which may be important
+for particular point defects whose presence affects atomic
+arrangements beyond just the first nearest neighbor shell,
+causing larger lattice distortions.
+For training ALIGNN
+models, we use rc = 8 Å, 12 nearest neighbors, 4 graph
+convolutional layers, 4 line graph layers, learning rate =
+0.001, batch size = 16, an Adamw optimizer, and 150
+epochs.
+Results of hyperparameter optimization with
+ALIGNN are presented in Fig. S4, which is a more compu-
+tationally expensive step than for the other two methods,
+motivating the use of much of the same hyperparameters
+as in past work38.
+However, the training time is still
+reasonable and the accuracy payoff is immense; thus, we
+use ALIGNN as the GNN scheme of choice going forward,
+and discuss prediction performances for Datasets 2, 3,
+and 4 in the next subsection. Table 2 lists the optimized
+training, validation, and test set RMSE values for CGCNN,
+MEGNET, and ALIGNN models trained on Dataset 1.
+
+5.2
+Extending ALIGNN to Datasets 2, 3, and 4
+To determine whether the GNN models optimized so
+far could directly be applied to impurities, complexes,
+
+and alloys, we first tested the ALIGNN model trained on
+dataset 1 for their predictive power on datasets 2, 3, and
+4, before suitably re-optimizing the models by adding
+more training data points. Fig.
+5 shows the prediction
+performance of the ALIGNN model trained only on dataset
+1 for dataset 2 (a), dataset 3 (b), and dataset 4 (c),
+along with the improvement in the predictions when
+50 % of any new dataset is added to the training set
+and the ALIGNN model is retrained.
+The RMSE for the
+dataset 1-trained ALIGNN model is as high as 2.17 eV for
+dataset 2, 2.68 eV for dataset 3, and 2.98 eV for dataset 4,
+showing very poor performances that become worse going
+from native defects to impurities to alloys to complexes.
+The structure-property relationships learned from native
+defects alone cannot be generalized to extrinsic species
+or non-binary compounds, or indeed, the presence of
+multiple simultaneous defects that will inevitably cause far
+higher distortions and atomic rearrangements compared
+to single defects.
+
+Upon combining 50 % of each dataset (chosen ran-
+domly) with dataset 1 and re-optimizing the model using
+the same approach as before, and performing necessary
+hyperparameter optimization anew,
+RMSE values im-
+prove drastically to 0.36 eV for dataset 2, 0.70 eV for
+dataset 3, and 0.18 eV for dataset 4.
+These errors will
+go further down as more data is added to the training
+set, showing that each type of defect data needs to be
+adequately represented during the training process for
+generalizing the ALIGNN predictive power. This exercise
+provides insights into the challenges associated with
+representing and predicting the energetics of defects in
+different defect categories with a limited training dataset
+and demonstrates the importance of training ML models
+on comprehensive datasets to improve their performance
+
+1– | 9
+
+
+GNN Scheme
+Train RMSE (eV)
+Validation RMSE (eV)
+Test RMSE (eV)
+
+CGCNN
+0.19
+0.41
+0.35
+
+MEGNET
+0.36
+0.42
+0.40
+
+ALIGNN
+0.03
+0.16
+0.15
+
+Table 2 Training, validation, and test set RMSEs for different GNN models trained on Dataset 1 at A rich conditions.
+
+Fig. 5 Parity plots for ALIGNN models trained on (q=0, A-rich) (a) Dataset 1 + Dataset 2, (b) Dataset 1 + Dataset 3, and (c) Dataset 1
++ Dataset 4. (I) refers to models trained purely on Dataset 1 and tested on Dataset 2, 3 or 4, whereas (II) refers to 50 % of the new
+dataset added to the training set with Dataset 1.
+
+across various defect types.
+
+Next, we trained predictive models by combining all
+four datasets, for all charge states and chemical potential
+conditions. For charged defects, the DFE value is taken to
+be Ef (EF=0), because by predicting this value for each
+charge state, the Ef vs EF plot can be extended across the
+band gap region by using straight lines with slope = q.
+Thus, a total of 10 different ALIGNN models are trained
+for the combined dataset, for E f (q=+2, EF=0), Ef (q=+1,
+EF=0), E f (q=0, EF=0), E f (q=-1, EF=0), and E f (q=-2,
+EF=0), at A-rich and B-rich chemical potential conditions.
+As seen in Fig. S5, there are a handful of outliers in the
+parity plots, especially in the case of E f (q=0, EF=0),
+which may result from some structures getting stuck in
+local minima during DFT optimization, and possible inac-
+curacies in the GNN model that may be fixed with more
+data and/or hyperparameter optimization.
+We removed
+a few notable outliers and trained the models again, to
+obtain the best ALIGNN predictive models that may be
+applied for new data points. The q=+1, q=0, and q=-1
+ALIGNN models at A-rich conditions are pictured in Fig.
+6(a), (b), and (c), respectively, and the remaining 7 mod-
+els are presented in Figs. S6 and S7. These models show
+very respectable RMSE values, suggesting that ALIGNN
+is capable of effectively learning the structure-property
+correlations in each dataset and each charge state, and
+generalizing them across all data types.
+Test prediction
+
+errors for q=+2, q=+1, q=0, q=-1, and q=-2 are found
+to be 0.30 eV, 0.23 eV, 0.32 eV, 0.25 eV, and 0.26 eV,
+respectively, representing a 98 % accuracy.
+The slightly
+larger errors for the neutral defects arise from the larger
+structural diversity for q=0 defect structures compared to
+the charged defect structures, also manifesting in much
+larger numbers of q=0 data points (e.g., 13,966 in dataset
+2) than q=+1 (3990 in dataset 2) or q=-1 (3568 in
+dataset 2).
+The training, validation, and test errors for
+the best ALIGNN models for different charge states under
+A-rich conditions are listed in Table 3.
+
+5.3
+ALIGNN-unoptimized vs DFT-optimized energies
+The next objective is to utilize the best ALIGNN models to
+make predictions for new defects and perform screening
+of potentially low-energy defects based on predicted DFEs.
+The caveat here is that for any new defect, one could only
+really generate an “unoptimized” defect structure, and
+thus the only ALIGNN prediction that can be made is the
+unoptimized DFE. As described earlier, a full DFT optimiza-
+tion of any defect structure is obviously a time-consuming
+step, involving structural relaxation until atomic forces
+become close to zero and the energy of the crystal reaches
+a minimum.
+In contrast, ALIGNN prediction of unopti-
+mized DFE can be performed in seconds and thus used
+to estimate the unoptimized energies of hundreds of
+thousands of defect structures, which could then be used
+
+10 |
+1–
+
+
+Charge
+Train RMSE (eV)
+Validation RMSE (eV)
+Test RMSE (eV)
+
+q = +2
+0.10
+0.25
+0.30
+
+q = +1
+0.07
+0.27
+0.23
+
+q = 0
+0.20
+0.30
+0.32
+
+q = -1
+0.11
+0.26
+0.25
+
+q = -2
+0.06
+0.26
+0.26
+
+Table 3 Training, validation, and test set RMSEs for ALIGNN models trained on different charge states at A rich condition.
+
+Fig. 6 Parity plots for ALIGNN models trained on Datasets 1 + 2 + 3 + 4, for (a) Ef (q=+1, EF=0), (b) E f (q=0, EF=0), and (c) E f (q=-1,
+EF=0), under A-rich chemical potential conditions. Parity plots for Ef (q=+2, EF=0) and E f (q=-2, EF=0), as well as all parity plots for
+B-rich DFEs, are presented in the SI.
+
+as a surrogate for screening based on some upper bound
+values57,58. However, ALIGNN predictions could also, in
+theory, be used to replace DFT-based energy estimates
+within a gradient descent-type optimization process59–61,
+or using brute-force structure generation and energy
+evaluation, and thus quickly yield low energy structures at
+near-DFT accuracy for any hypothetical crystalline defects.
+
+To
+test
+the
+correspondence
+between
+ALIGNN-
+unoptimized energies and DFT-optimized energies, we
+plotted the ALIGNN-predicted Ef (q=0) (ALIGNN-unopt)
+on pristine structures of all defects across datasets 1, 2,
+3, and 4, against the DFT-optimized Ef (q=0) (DFT-opt),
+in Fig. 7 (a). We expect the ALIGNN-unopt DFE values
+to always be higher than the DFT-opt values, and this is
+indeed the case of > 95 % of the data points. However,
+we do find the opposite to be true for several defects,
+which is perhaps a consequence of the statistical nature of
+ML predictions, which are very accurate on average but
+may show large errors for certain outliers.
+Importantly,
+notable differences between ALIGNN-unopt and DFT-opt
+values are seen for many defects where large structural
+changes are expected upon full relaxation. Some examples
+include VSi in SiC (8.28 eV difference), VIn in InN (7.63
+eV difference), and Csi,oct in SiC (7.17 eV difference). By
+examining the 300 defects out of this total list of 1747
+
+defects (plotted in Fig.
+7 (a)) which show the largest
+ALIGNN-unopt vs DFT-opt energy differences, we find an
+average difference of ∼ 1 eV; thus, we could apply a rough
+general equivalence of DFT-opt = ALIGNN-unopt – 1 eV,
+and use this information to perform a high-throughput
+screening of likely low energy defects. Similar trends are
+expected to hold for ALIGNN-unopt vs DFT-opt energies of
+charged defects as well.
+
+Looking at only the DFT-opt values, we find that 170
+defects have DFE < 0 eV, with some examples including NS
+in ZnS (-3.76 eV), NAs in GaAs (-3.2 eV), and NTe in CdTe
+(-2.64 eV). Whereas a look at the ALIGNN-unopt values
+yields 351 defects with DFE < 1 eV which includes all 170
+low energy defects from DFT, meaning that the suggested
+upper-bound energy screening procedure should help
+account for all potentially low energy defects in addition
+to a few unstable defects which may be eliminated subse-
+quently. On average, the computational cost for optimizing
+a single-point defect in a 64-atom supercell amounts to
+approximately 2500 core hours for the neutral state and
+1000 core hours each for charged calculations. Running
+only static, single-shot calculations on pristine structures
+requires around 400 core hours in total.
+On the other
+hand, ALIGNN-unopt predictions are made in seconds
+with minimal computing expense, and it is imperative to
+
+1– | 11
+
+
+Fig. 7 (a) ALIGNN-unoptimized vs DFT-optimized E f (q=0, EF=0) under A-rich chemical potential conditions. (b) ALIGNN-unoptimized
+vs DFT-optimized ε(+2/+1) charge transition levels. All data are shown for combined datasets 1 + 2 + 3 + 4.
+
+use these predictions as descriptors for low energy defects.
+Visualizing the ALIGNN-unopt vs DFT-opt values for q
+= +2, +1, -1, and -2, in Fig.
+S8 shows that there are
+more cases where the unoptimized energy is unexpectedly
+higher than the optimized energy. This may be a factor of
+the charged models never encountering pristine structures,
+as those are typically only utilized in neutral calculations
+and training sets.
+The charged models are only trained
+on partially optimized structures close to the ground state,
+or simply the ground state defect structures, making it
+such that q ̸= 0 ALIGNN predictions for pristine structures
+are less reliable than the neutral state predictions, even
+though the best charged models still have very low test
+RMSE values.
+
+Finally, we examine the accuracy of predicting charge
+transition levels (CTLs) from ALIGNN compared to opti-
+mized DFT predictions. For any possible defect, a pristine
+unoptimized structure is created as described earlier and
+their DFE values are predicted at EF = 0 eV for q = 0,
++2, +1, -1, and -2.
+Using these values, E f vs EF plots
+are produced based on the lowest energies and locations
+where the defect transitions from one stable charge
+state to another, referred to as ε(q1/q2), are identified.
+This would effectively yield ALIGNN-unopt values for
+ε(+2/+1), ε(+1/0), ε(0/-1), and ε(-1/-2), which may
+then be compared with corresponding DFT-opt values
+available for datasets 1, 2, and 3. Fig. 7 (b) shows the
+ALIGNN-unopt ε(+2/+1) plotted against the DFT-opt
+ε(+2/+1), revealing substantial scatter and a lack of
+overall correlation. Similar behavior is observed for other
+
+CTLs as well, as shown in Fig. S9. This is not surprising,
+and indicates that the relative stability of different charged
+defects and thus their transitions are sensitive to defect ge-
+ometry and would thus require some level of optimization.
+Thus, we conclude that although ALIGNN-unopt E f (EF=0)
+predictions within a threshold will provide some idea
+about the likelihood of formation of defects in a compound
+and its possible defect tolerance and dopability, exact CTLs
+will be harder to determine without optimization, which
+means ALIGNN-unopt alone cannot reveal the shallow or
+deep level nature of important low energy defects.
+
+5.4
+ALIGNN-based defect structure optimization
+
+We employed our trained ALIGNN model to optimize a
+crystal containing point defects using an iterative distor-
+tion approach.
+This gradient-free optimization method
+entailed subjecting the initial defective crystal structure to
+a series of systematic atomic displacements. Each atom in
+the crystal was displaced based on a normal distribution,
+and the displacements were carefully adjusted to ensure
+no overall translation of the system.
+The magnitude of
+these displacements ranged from zero (representing no
+displacement) to a maximum value specified as a user
+input. The best ALIGNN models are applied to predict the
+Ef of all generated crystals in all 5 q states. This procedure
+is iteratively repeated and the applied distortions are ad-
+justed until the predicted DFE becomes as low as possible.
+This approach allows the efficient exploration of the energy
+landscape of the defective crystal, seeking configurations
+that approach the optimal structure. Another advantage
+
+12 |
+1–
+
+
+Fig. 8 (a) ALIGNN-based defect structure optimization scheme, demonstrated for ReZn (b) and LaZn (c) in ZnO under Zn-rich chemical
+potential conditions.
+
+of this gradient-free approach is that it does not rely on
+explicit training for atomic forces, which significantly
+increases the memory cost of GNNs at both training and
+prediction time.
+
+For a demonstration of this procedure, we pick two
+defects in the neutral state, namely ReZn and LaZn, both
+in ZnO. The ALIGNN-based defective structure optimiza-
+tion scheme is pictured in Fig.
+8(a) and results of the
+optimization procedure for ReZn and LaZn in ZnO are
+presented in Fig. 8(b) and (c), respectively. After applying
+644 consecutive distortions on the ReZn geometry, the
+ALIGNN-predicted DFE comes down from 5.93 eV to 5.31
+eV, which is very close to the DFT-optimized DFE of 5.30 eV.
+For LaZn, applying a total of 2407 distortions helps reduce
+the ALIGNN-predicted DFE from 5.23 eV to 3.35 eV, which
+is more than 1 eV higher than the DFT-optimized DFE of
+2.20 eV. ALIGNN-optimization required approximately 12
+minutes for ReZn and 40 minutes for LaZn using a standard
+laptop to generate defect configurations and make instant
+ALIGNN predictions, which is a vast improvement on the
+∼ 2500 core hours each DFT-optimization would require.
+Thus, this procedure will efficiently yield lower energy
+
+defective structures, though an exact match with DFT may
+not occur for every system. Finally, examining the lowest
+energy ALIGNN and DFT structures shows remarkable
+similarities between the two, as pictured in Fig. S10.
+
+Next, we applied the same optimization scheme to 6
+selected defects across 3 compounds, for different charge
+states, and plotted their ALIGNN-optimized Ef
+vs EF
+in Fig.
+9 alongside the corresponding DFT-optimized
+plots. We find that ALIGNN-optimization produces defect
+formation energy plots for CoZn and SiZn in ZnS (II-VI
+semiconductor), Rhi and Bi in AlP (III-V semiconductor),
+and LiSi and Ci in Si (group IV semiconductor), that match
+almost perfectly with DFT DFEs for all cases.
+The most
+stable charge states, transition levels, and E f magnitudes
+are predicted to be very similar from both ALIGNN and
+DFT. Fig. 10 further shows the CTLs for a few selected
+defects plotted from ALIGNN and DFT, showing both
+ALIGNN-unopt and ALIGNN-opt values. It can be seen that
+ALIGNN-optimization brings down the DFT vs ALIGNN
+RMSE from 0.37 eV to 0.17 eV, which is a very respectable
+CTL prediction error that is far better than previous
+composition-based models and also very commensurate
+
+1– | 13
+
+
+Fig. 9 ALIGNN-optimized and DFT-optimized defect formation energy plots for two selected defects each in (a) ZnS under Zn-rich
+conditions, (b) AlP under Al-rich conditions, and (c) Si under Si-rich conditions.
+
+Fig.
+10
+ALIGNN-optimized and ALIGNN-unoptimized de-
+fect charge transition levels plotted against corresponding DFT-
+optimized values.
+
+with the DFT-experiment RMSE of 0.21 eV established for
+the same chemical space.
+
+Our results demonstrate the effectiveness of GNNs
+in guiding crystal structure optimization and highlight
+their potential for accelerating materials discovery and
+design. It should be noted that the geometry optimization
+process is not very clean, and there is no clear answer on
+how many distortions or atomic displacements must be
+
+applied for a given defect, although the unoptimized vs
+optimized energy visualization provides some insight into
+different types of defects. It is not easy to determine when
+to stop the optimization process, other than when the
+GNN-predicted energy does not reduce anymore, which
+does not negate the risk of local minima trapping. This
+process can also get expensive when applying for hundreds
+of thousands of defects, especially depending on the values
+of hyperparameters such as rc; nevertheless, they are still
+meaningfully faster than complete DFT optimization.
+
+5.5
+High-throughput screening of defects
+
+The best ALIGNN models were finally applied to predict
+the Ef (EF = 0 eV) of all 12,474 possible single defects and
+impurities across the entire chemical space, in all 5 q states,
+at A-rich chemical potential conditions. These predictions
+were then used to generate Ef vs EF plots for all defects
+spanning the experimental band gap of the semiconductor.
+To screen for potentially low energy defects, we look for E f
+
+becoming negative for any portion of the band gap, using a
+stringent threshold of 1 eV for neutral defects and 0 eV for
+charged defects. This yields a total of 1,281 defects that
+are very likely to be stable based on the ALIGNN-unopt
+predictions, though many more such low-energy defects
+may exist once ALIGNN-optimization is performed. Table
+4 contains a few examples of low-energy defects identified
+by ALIGNN. Prediction of DFE by ALIGNN for all possible
+12,474 defects at the A-rich chemical potential conditions
+are added to the SI. This provides a great starting point
+for future studies and the quick identification of n-type or
+
+14 |
+1–
+
+
+p-type dopants in any compound of interest.
+
+Semiconductor
+Group
+Defect
+
+AlN
+III-V
+MnN
+
+AlP
+III-V
+Cri,B
+
+AlAs
+III-V
+Vi,B
+
+AlSb
+III-V
+NSb
+
+BN
+III-V
+AlB
+
+BP
+III-V
+VP
+
+BAs
+III-V
+CrAs
+
+BSb
+III-V
+CrB
+
+CdO
+II-VI
+TiCd
+
+CdS
+II-VI
+Mni,B
+
+CdSe
+II-VI
+CrCd
+
+CdTe
+II-VI
+ScCd
+
+Table 4 Selected defects predicted to be low energy at A-rich
+conditions from ALIGNN models.
+
+6
+Conclusions
+
+In this work, we used state-of-the-art crystal graph-based
+neural networks to develop predictive models for defect
+formation energies in a chemical space of zincblende
+semiconductors,
+by learning from a substantial com-
+putational dataset containing optimized and partially
+optimized geometries. Three established GNN techniques,
+namely CGCNN, MEGNET, and ALIGNN, are tested in
+this work. The ALIGNN scheme shows the best prediction
+performance and is capable of high-accuracy prediction for
+native defects, impurities, complexes, and defects in alloys.
+While ALIGNN predictions made on hypothetical pristine
+defect structures deviate significantly from DFT-optimized
+defect formation energies, we demonstrate an ALIGNN-
+based defective geometry optimization approach which
+helps bridge the gap and bring down errors in predicting
+charge transition levels.
+The ALIGNN-unoptimized pre-
+dictions made for the entire chemical space of > 12,000
+possible defects are released with this manuscript, along
+with necessary code and training data.
+We believe the
+DFT-GNN approach presented in this work will be highly
+consequential for screening across optoelectronically ac-
+tive point defects and functional dopants in technologically
+important semiconductors, even being applicable to all
+kinds of defect complexes. The next steps would involve
+developing a package to perform ALIGNN-based defect op-
+timization, expanding the models to other semiconductor
+classes and higher levels of theories, and testing alternative
+ML and GNN approaches for further improvement.
+
+Conflicts of Interest
+
+There are no conflicts to declare.
+
+Data Availability
+
+All DFT data and GNN predictions are included with the SI
+as .csv files. All code can be found on Github: Link
+
+Acknowledgements
+
+A.M.K. acknowledges support from the School of Materi-
+als Engineering at Purdue University under account num-
+ber F.10023800.05.002, as well as support from Argonne
+National Laboratory under sub-contracts 21090590 and
+22057223.
+A.M.K. also acknowledges insightful discus-
+sions with Dr. Mariana Bertoni at Arizona State University,
+Dr. Prashun Gorai at Colorado School of Mines, and Dr.
+Maria K.Y. Chan at Argonne National Laboratory. This re-
+search used resources from the National Energy Research
+Scientific Computing Center (NERSC), the Laboratory Com-
+puting Resource Center (LCRC) at Argonne National Lab-
+oratory, and the Rosen Center for Advanced Computing
+(RCAC) clusters at Purdue University. P.G. acknowledges
+IIT Madras for providing financial assistance through the
+"International Immersion Experience Travel Award" to visit
+Purdue University. Please note commercial software is iden-
+tified to specify procedures. Such identification does not
+imply a recommendation by the National Institute of Stan-
+dards and Technology (NIST).
+
+Author Contributions
+
+A.M.K. conceived and planned the research project. DFT
+computations and GNN model training were performed by
+M.H.R., P.G., P.M., and A.M.K.; S.K.Y., G.P., B.D., and K.C.
+provided constant guidance and software support for the
+project and for editing the manuscript. M.H.R. and A.M.K.
+took the lead on writing and editing.
+
+References
+
+1 A. M. Ganose, D. O. Scanlon, A. Walsh and R. L. Z. Hoye,
+Nature Communications, 2022, 13, 4715.
+
+2 The White House, August 2022.
+3 A. M. J. Zwerver, T. Krähenmann and et al., Nature Elec-
+tronics, 2022, 5, 184–190.
+
+4 S. Chen, A. Walsh, X.-G. Gong and S.-H. Wei, Advanced
+Materials, 2013, 25, 1522–1539.
+
+5 A. Mannodi-Kanakkithodi, The devil is in the defects -
+Nature Physics, 2023, https://www.nature.com/
+articles/s41567-023-02049-9.
+
+6 A. Mannodi-Kanakkithodi, J.-S. Park, A. B. F. Martinson
+and M. K. Y. Chan, The Journal of Physical Chemistry C,
+2020, 124, 16729–16738.
+
+7 A. Mannodi-Kanakkithodi, J.-S. Park, N. Jeon, D. H.
+
+1– | 15
+
+
+Cao, D. J. Gosztola, A. B. F. Martinson and M. K. Y.
+Chan, Chemistry of Materials, 2019, 31, 3599–3612.
+
+8 D. Broberg, K. Bystrom and et al, npj Computational
+Materials, 2023, 9, 72.
+
+9 J. Buckeridge, Computer Physics Communications, 2019,
+244, 329–342.
+
+10 M. E. Turiansky, A. Alkauskas, M. Engel, G. Kresse,
+D. Wickramaratne, J.-X. Shen, C. E. Dreyer and C. G.
+Van de Walle, Computer Physics Communications, 2021,
+267, 108056.
+
+11 M. Lannoo and J. Bourgoin, in Defect Migration and Dif-
+fusion, Springer Berlin Heidelberg, Berlin, Heidelberg,
+1981, pp. 219–244.
+
+12 A. Mannodi-Kanakkithodi, X. Xiang, L. Jacoby, R. Bie-
+gaj, S. T. Dunham, D. R. Gamelin and M. K. Y. Chan,
+Patterns (N. Y.), 2022, 3, 100450.
+
+13 S. Chen, J.-H. Yang, X. G. Gong, A. Walsh and S.-H. Wei,
+Physical Review B, 2010, 81, 245204.
+
+14 H. J. Queisser and E. E. Haller, Science, 1998, 281,
+945–950.
+
+15 Z. Liu, G. Na, F. Tian, L. Yu, J. Li and L. Zhang, InfoMat,
+2020, 2, 879–904.
+
+16 P. K. Nayak, S. Mahesh, H. J. Snaith and D. Cahen, Na-
+ture Reviews Materials, 2019, 4, 269–285.
+
+17 V. Sivathanu, T. R and T. R. Lenka, International Jour-
+nal of Energy Research, 2021, 45, 10527–10537.
+
+18 N. Kazeev and et al., npj Computational Materials, 2023,
+9, 113.
+
+19 P. Gorai, R. W. McKinney, N. M. Haegel, A. Zaku-
+tayev and V. Stevanovic, Energy Environ. Sci., 2019, 12,
+3338–3347.
+
+20 R. Schirhagl, K. Chang, M. Loretz and C. L. Degen, An-
+nual Review of Physical Chemistry, 2014, 65, 83–105.
+
+21 S. Srivastava and et al., Communications Materials,
+2023, 4, 52.
+
+22 S. Kim, J.-S. Park, S. Hood and A. Walsh, Journal of
+Materials Chemistry A, 2019, 7, 2686–2693.
+
+23 M. H. Rahman, J. Yang, Y. Sun and A. Mannodi-
+Kanakkithodi,
+Surfaces
+and
+Interfaces,
+2023,
+39,
+102960.
+
+24 A. Mannodi-Kanakkithodi, M. Y. Toriyama, F. G. Sen,
+M. J. Davis, R. F. Klie and M. K. Y. Chan, npj Computa-
+tional Materials, 2020, 6, 39.
+
+25 M. D. Witman, A. Goyal, T. Ogitsu, A. H. McDaniel and
+S. Lany, Nature Computational Science, 2023.
+
+26 K. Shimizu, Y. Dou, E. F. Arguelles, T. Moriya, E. Mi-
+namitani and S. Watanabe, Phys. Rev. B, 2022, 106,
+054108.
+
+27 N. C. Frey, D. Akinwande, D. Jariwala and V. B. Shenoy,
+
+ACS Nano, 2020, 14, 13406–13417.
+
+28 C. J. Bartel, A. Trewartha, Q. Wang, A. Dunn, A. Jain
+and G. Ceder, npj Computational Materials, 2020, 6, 97.
+
+29 V. Fung, J. Zhang, E. Juarez and B. G. Sumpter, npj
+Computational Materials, 2021, 7, 84.
+
+30 C. Chen and S. P. Ong, Nature Computational Science,
+2022, 2, 718–728.
+
+31 J. Cheng, C. Zhang and L. Dong, Communications Mate-
+rials, 2021, 2, 92.
+
+32 C. W. Park, M. Kornbluth, J. Vandermause, C. Wolver-
+ton, B. Kozinsky and J. P. Mailoa, npj Computational
+Materials, 2021, 7, 73.
+
+33 A. Bhattacharya, I. Timokhin, R. Chatterjee, Q. Yang
+and A. Mishchenko, npj Computational Materials, 2023,
+9, 101.
+
+34 M. Kilgour,
+J. Rogal and M. Tuckerman,
+Journal
+of
+Chemical
+Theory
+and
+Computation,
+2023,
+19,
+4743–4756.
+
+35 V. Bapst, T. Keck, A. Grabska-Barwi´nska, C. Donner,
+E. D. Cubuk, S. S. Schoenholz, A. Obika, A. W. R. Nel-
+son, T. Back, D. Hassabis and P. Kohli, Nature Physics,
+2020, 16, 448–454.
+
+36 T. Xie and J. C. Grossman, Phys. Rev. Lett., 2018, 120,
+145301.
+
+37 C. Chen, W. Ye, Y. Zuo, C. Zheng and S. P. Ong, Chem-
+istry of Materials, 2019, 31, 3564–3572.
+
+38 K. Choudhary and B. DeCost, npj Computational Mate-
+rials, 2022, 8, 221.
+
+39 H. Rahman, S. Rojsatien, M. Bertoni, M. Chan and
+A. Mannodi-Kanakkithodi, In Preparation, 2023.
+
+40 J. Heyd, G. E. Scuseria and M. Ernzerhof, The Journal
+of Chemical Physics, 2003, 118, 8207–8215.
+
+41 C. Vona, D. Nabok and C. Draxl, Advanced Theory and
+Simulations, 2022, 5, 2100496.
+
+42 C. Vona, D. Nabok and C. Draxl, Advanced Theory and
+Simulations, 2022, 5, 2100496.
+
+43 M. P. Polak, R. Jacobs, A. Mannodi-Kanakkithodi,
+M. K. Y. Chan and D. Morgan, The Journal of Chemical
+Physics, 2022, 156, 114110.
+
+44 M. Y. Toriyama, J. Qu, G. J. Snyder and P. Gorai, J.
+Mater. Chem. A, 2021, 9, 20685–20694.
+
+45 G. Kresse and J. Furthmüller, Phys. Rev. B, 1996, 54,
+11169–11186.
+
+46 C. Li, J. Poplawsky, Y. Yan and S. J. Pennycook, Mater.
+Sci. Semicond. Process., 2017, 65, 64–76.
+
+47 J. D. Poplawsky, W. Guo, N. Paudel, A. Ng, K. More,
+D. Leonard and Y. Yan, Nat. Commun., 2016, 7, year.
+
+48 M. Gloeckler, I. Sankin and Z. Zhao, IEEE Journal of
+Photovoltaics, 2013, 3, 1389–1393.
+
+16 |
+1–
+
+
+49 T. Nideep, M. Ramya and M. Kailasnath, Superlattices
+and Microstructures, 2020, 141, 106477.
+
+50 X. Yang, Y. Long, Y. Zheng, J. Wang, B. Zhou, S. Xie,
+B. Li, J. Zhang, X. Hao, S. Karazhanov, G. Zeng and
+L. Feng, Materials Science in Semiconductor Processing,
+2023, 156, 107267.
+
+51 D. Wickramaratne, C. E. Dreyer, B. Monserrat, J.-X.
+Shen, J. L. Lyons, A. Alkauskas and C. G. Van de Walle,
+Applied Physics Letters, 2018, 113, 192106.
+
+52 J. Lee and R. Asahi, Computational Materials Science,
+2021, 190, 110314.
+
+53 T. N. Kipf and M. Welling, Semi-Supervised Classification
+with Graph Convolutional Networks, 2016, https://
+arxiv.org/abs/1609.02907v4.
+
+54 J. Zhou, G. Cui, S. Hu, Z. Zhang, C. Yang, Z. Liu,
+L. Wang, C. Li and M. Sun, Graph Neural Networks:
+A Review of Methods and Applications, 2018, https:
+//arxiv.org/abs/1812.08434v6.
+
+55 Z. Chen, X. Li and J. Bruna, Supervised Community De-
+tection with Line Graph Neural Networks, 2017, https:
+//arxiv.org/abs/1705.08415v6.
+
+56 D. P. Kingma and J. Ba, arXiv preprint arXiv:1412.6980,
+2014.
+
+57 S. Pandey, J. Qu, V. Stevanovi´c, P. St. John and P. Gorai,
+Patterns, 2021, 2, 100361.
+
+58 J. N. Law, S. Pandey, P. Gorai and P. C. St. John, JACS
+Au, 2023, 3, 113–123.
+
+59 K. Choudhary, B. DeCost, L. Major, K. Butler, J. Thiya-
+galingam and F. Tavazza, Digital Discovery, 2023, 2,
+346–355.
+
+60 K.
+T.
+Schütt,
+H.
+E.
+Sauceda,
+P.-J.
+Kindermans,
+A. Tkatchenko and K.-R. Müller, The Journal of Chem-
+ical Physics, 2018, 148, 241722.
+
+61 C. Chen and S. P. Ong, Nature Computational Science,
+2022, 2, 718–728.
+
+1– | 17
+
+
+Supplemental material to "Accelerating Defect Prediction in Semiconductors Using Graph Neural Networks"
+
+Md. Habibur Rahmana, Prince Gollapallib, Panayotis Manganarisa, Satyesh Kumar Yadavb, c, Ghanshyam Pilaniad, Brian
+DeCoste, Kamal Choudharye, and Arun Mannodi-Kanakkithodia
+
+aSchool of Materials Engineering, Purdue University, West Lafayette, IN 47907, USA; E-mail: amannodi@purdue.edu
+bDepartment of Metallurgical and Materials Engineering, Indian Institute of Technology (IIT) Madras, Chennai 600036,
+India
+c Centre for Atomistic Modelling and Materials Design, Indian Institute of Technology (IIT) Madras, Chennai, 600036,
+India
+dGE Research, Schenectady, NY, 12309, USA
+eMaterials Measurement Laboratory, National Institute of Standards and Technology, Gaithersburg, MD, 20899, USA
+
+*
+
+Fig. S1 Visualization of the semiconductor-defect chemical space in terms of (a) all group IV, III-V, and II-VI semiconductors, (b) all
+possible defect/impurity atoms, and (c) possible defect sites considered in the zincblende structure.
+
+*
+aamannodi@purdue.edu
+
+
+Fig. S2 (a) Crystal graph convolutional neural network (CGCNN) (b) Materials graph network (MEGNET) and (c) Atomsitic line graph
+neural network (ALIGNN) architecture.
+
+Fig. S3 (a) Learning curve for a CGCNN model trained on dataset 1 under A-rich chemical potential conditions, and (b) optimization of
+batch size and cut-off radius in the CGCNN model.
+
+|
+1–
+
+
+Fig. S4 (a) Learning curve for an ALIGNN model trained on dataset 1 under A-rich chemical potential conditions, and (b) optimization
+of batch size and cut-off radius in the ALIGNN model.
+
+Fig. S5 Parity plots for ALIGNN models corresponding to (a) E f (q=+1, EF=0) (b) Ef (q=0, EF=0) (c) Ef (q=-1, EF=0), under A-rich
+chemical potential conditions, prior to outlier removal.
+
+Fig. S6 Parity plots for ALIGNN models corresponding to (a) E f (q=+2, EF=0) (b) E f (q=-2, EF=0), under A-rich chemical potential
+conditions.
+
+1– |
+
+
+Fig. S7 Parity plots for ALIGNN models corresponding to (a) Ef (q=+2, EF=0), (b) E f (q=+1, EF=0), (c) E f (q=0, EF=0), (d) E f (q=-1,
+EF=0), (e) Ef (q=-2, EF=0), under B-rich chemical potential conditions.
+
+|
+1–
+
+
+Fig. S8 ALIGNN-unoptimized vs DFT-optimized (a) E f (q=+2, EF=0), (b) E f (q=+1, EF=0), (c) E f (q=-1, EF=0), and (d) E f (q=-2, EF=0),
+under A-rich chemical potential conditions.
+
+Fig. S9 ALIGNN-unoptimized vs DFT-optimized (a) ε(+1/0), (b) ε(0/-1), and (c) ε(-1/-2) charge transition levels.
+
+1– |
+
+
+Fig. S10 Atomic structure snapshot of ReZn in ZnO, (a) after full DFT optimization, and (b) after ALIGNN optimization. Atomic structure
+snapshot of LaZn in ZnO (c) after full DFT optimization, and (d) after ALIGNN optimization. Grey, red, black, and blue depict Zn, O, Re,
+and La, respectively.
+
+|
+1–
+
+

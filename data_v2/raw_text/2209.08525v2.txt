@@ -1,0 +1,938 @@
+arXiv:2209.08525v2  [math.NA]  18 Dec 2022
+
+Two-field mixed hp-finite elements for time-dependent problems
+in the refined theories of thermodynamics
+
+Bal´azs T´oth
+
+Institute of Applied Mechanics, University of Miskolc, Miskolc-Egyetemv´aros, H-3515, Hungary
+
+Zsombor Moln´ar
+
+Institute of Applied Mechanics, University of Miskolc, Miskolc-Egyetemv´aros, H-3515, Hungary
+
+R´obert Kov´acs
+
+Department of Energy Engineering, Faculty of Mechanical Engineering, Budapest University of Technology and Economics, M˝uegyetem rkp. 3.,
+H-1111, Hungary
+Department of Theoretical Physics, Wigner Research Centre for Physics, Budapest, Hungary
+
+Abstract
+
+Thanks to the modern manufacturing technologies, heterogeneous materials with complex inner structure (e.g., foams)
+can be easily produced. However, their utilization is not straightforward as the classical constitutive laws are not nec-
+essarily valid. According to various experimental observations, the Guyer–Krumhansl equation stands as a promising
+candidate to model such complex structures. However, the practical applications need a reliable and efficient algorithm
+that is capable to handle both complex geometries and advanced heat equations. In the present paper, we present the
+development of a hp-type finite element technique, which can reliably applied. We investigate its convergence proper-
+ties for various situations, being challenging in relation of stability and the treatment of fast propagation speeds. That
+algorithm is also proved to be outstandingly efficient, providing solutions four magnitudes faster than the commercial
+algorithms.
+
+Keywords: Two-field variational formulations, hp-version FEMs, Maxwell–Cattaneo–Vernotte heat equation,
+Guyer–Krumhansl heat equation, Transient analyzes
+
+1. Introduction
+
+The engineering practice utilizes several models to describe the material behaviour, these equations are called
+constitutive equations. The most frequent are the Navier–Stokes, Fourier and Hooke laws for continuum objects. The
+common point among them is that all define an equality:
+
+q = −λ∂xT,
+Π = −ν∂xv,
+σ = Eε,
+(1)
+
+in which q, λ and T are the heat flux, thermal conductivity and temperature field; Π describes the dynamic pressure as
+a consequences of the presence of velocity gradient ∂xv; and the stress tensor σ is proportional with the deformation ε.
+This simple structure usually allows to easily eliminate the current densities and prescribing the boundary conditions
+(BCs) using only one field variable, for instance, the temperature for heat conduction problems. It has also eased the
+development and implementation of various numerical and analytical solution techniques.
+
+∗Corresponding author
+Email addresses: mechtb@uni-miskolc.hu (Bal´azs T´oth), molnar.zsombor@student.uni-miskolc.hu (Zsombor Moln´ar),
+kovacsrobert@energia.bme.hu (R´obert Kov´acs)
+
+
+However, for advanced transport models, the situation becomes more difficult. The constitutive equation is not an
+equality but becomes a partial differential equation. Therefore, the conventional initial and BCs do not work without
+any further conditions [1, 2], and a more careful treatment is necessary. A glaring example is related to the so-called
+Guyer–Krumhansl (GK) equation,
+
+τ ˙q + q + λ T ′ − κ2 q′′ = 0
+in Ω = [x|x ∈ (0, ℓ)]
+(2)
+
+in which the partial time derivative of the heat flux (˙q) appears with a coefficient τ called relaxation time. Moreover,
+Eq. (2) consists of the second-order spatial derivative of q as well, denoted by q′′. Although the GK equation is usually
+known from the kinetic theory describing wave-type heat conduction phenomena in crystals [3], it also can be derived
+on a continuum basis [4]. Thus the coefficient κ2 is not related to the mean free path of phonons as in that continuum
+approach, the resulting model is independent of the micro-scale heat transfer mechanisms [4]. Adding that the GK
+equation is successfully tested in heat conduction experiments on various rocks and foams as challenging problems
+[5, 6, 7], this allows us to consider the GK equation as a promising candidate beyond Fourier and use it for more
+practical engineering applications. Hence it is essential to understand the properties of the GK equation and develop
+efficient and reliable numerical solution techniques.
+On that basis, a finite difference approach has been elaborated recently [8], but it is strongly limited to simple
+(regular) geometries. That numerical methodology is also adapted for rheological and nonlinear models [9], with
+carefully investigating the role of initial and boundary conditions analytically, too [1, 2]. Therefore, we aim to develop
+a hp-version finite element method (FEM), which is able to preserve the advantageous properties of the earlier finite
+difference scheme to handle the initial and boundary conditions reliably, and, also, to be adaptable for complex
+geometries and possess high accuracy and fast convergence properties.
+The simplest classical FE techniques use linear piecewise polynomials to approximate the solution and achieve
+the desired accuracy with mesh refinement. The philosophy of using low-order polynomials over successively finer
+meshes is called h-type approximation technique [10, 11, 12, 13]. In most cases [14, 15, 16, 17], that h-type approach
+is utilised for the Maxwell–Cattaneo–Vernotte- (MCV, with κ2 = 0 in Eq. (2)), or for the dual-phase-lag (DPL)
+equations, which models have much less practical interest.
+However, the conventional h-FEMs can provide slow convergences and low accuracy for specific types of initial
+and BCs, as well as when certain material and/or geometric parameters of the considered model problem is close
+to their limit value. In order to overcome these numerical difficulties, the p-version FE technology will be used as
+alternative, promising strategy, being originally-introduced in [18, 19]. The idea is to keep the coarse mesh fixed, and
+the convergence and the high accuracy are achieved solely by increasing the polynomial degree p of the approximated
+variables. It was proven that the rate of convergence is much higher for p-FEM than that is possible with h-FEM, and
+exponential for smooth solutions and even for non-smooth solutions using properly chosen mesh refinement coupled
+with the increase of the polynomial degree p (hp-strategy) [19]. This is the main motivation behind our research,
+thus the p-type approximation technique is chosen to develop new FEM for the above-mentioned, refined theories of
+thermodynamics.
+
+Problem formulation
+The GK equation (2) is accompanied by the balance of internal energy for heat conduction processes, that is,
+
+ρ cV ˙T + q′ = 0
+in Ω = [x|x ∈ (0, ℓ)],
+(3)
+
+where ρ and cV are the mass density and specific heat; the source terms are neglected. In the following, we present
+the discretization procedure for that system of equations.
+For the sake of generality the system of basic differential Eqs. (2)–(3) is subjected the spatial descriptions
+
+T(t, 0) = ˜T(t) ,
+(4)
+q(t, ℓ) = ˜q(t)
+(5)
+
+as Dirichlet- and Neumann-type BCs at x = 0 and x = ℓ, respectively, as well as the temporal prescriptions
+
+T(0, x) = T0(x)
+and
+q(0, x) = q0(x)
+(6)
+
+as initial conditions at t0 = 0 s.
+
+2
+
+
+2. Two-field mixed hp-version finite element method
+
+In this section, new hp-FEMs will be presented for the numerical solution of the MCV- and the GK model which
+are based on two-field mixed variational formulations, see some similar procedures in [20, 21, 22].
+
+2.1. Variational formulations
+
+2.1.1. Maxwell–Cattaneo–Vernotte model
+In this model problem, after testing Eq. (2), i.e., multiplying this with the test function v and integrating it over the
+domain Ω with setting κ2 = 0, then relaxing Eq. (3), i.e., multiplying this with the test function u and integrating it by
+parts, as well as building-in the BC (5) and the homogeneous form of the BC (4) for u, we arrived at a two-field mixed
+variational formulation which reads as follows. Find the duet T ∈ H1(Ω) and q ∈ L2(Ω) as trial functions satisfying a
+priori the BC (4) and the initial condition (6) such that
+
+−
+�
+
+Ω
+ρ cV ˙T u dΩ +
+�
+
+Ω
+q u′ dΩ = ˜qℓ u(ℓ)
+∀u ∈ H1(Ω) ,
+(7)
+�
+
+Ω
+τ ˙q v dΩ +
+�
+
+Ω
+q v dΩ +
+�
+
+Ω
+λ T ′ v dΩ = 0
+∀v ∈ L2(Ω)
+(8)
+
+satisfying a priori the homogeneous form of the BC (4). Here, H1(Ω) stands for the Sobolev space of order 1 [23]
+and represents the regularity property for T and u while L2(Ω) defines square integrable function space for q and v.
+
+2.1.2. Guyer–Krumhansl model
+In this model problem relaxing again Eq. (3) with the test function u, but now, after having tested Eq. (2)
+with test function v, integrating-by-parts the last term of this variational equation, we obtain again a two-field mixed
+variational formulation but with a bit different regularity property from Eq. (8). Accordingly, we seek the variable
+pair (T, q) ∈ H1(Ω) satisfying a priori the BC (4) and the initial condition (6) in such a way that
+
+−
+�
+
+Ω
+ρ cV ˙T u dΩ +
+�
+
+Ω
+q u′ dΩ = ˜qℓ u(ℓ)
+∀u ∈ H1(Ω) ,
+(9)
+�
+
+Ω
+τ ˙q v dΩ +
+�
+
+Ω
+q v dΩ +
+�
+
+Ω
+λ T ′ vdΩ +
+�
+
+Ω
+κ2 q′ v′ dΩ = q′(ℓ) v(ℓ) − q′(0) v(0)
+∀v ∈ H1(Ω)
+(10)
+
+hold true, ensuring a priori the homogeneous form of the BC (4) once again. Notably, again, for both variables
+(T, q) ∈ H1(Ω), which stands as a crucial difference for other FE approaches for heat equations.
+
+2.2. hp-finite element discretizations
+Let us consider now the hp-FE discretization of the domain Ω. Thenceforward Ω is divided into n physical sub-
+domain. Then the master element Ωmas := { η | η ∈ (−1, 1)} is mapped onto the i-th physical element K := {x |xi ∈
+(xi, xi+1)} ⊂ Ωh with the nodal points xi and xi+1 of the FE mesh Ωh : 0 < x1 < x2 < ... < xi < xi+1 < ... < xn < xn+1 = ℓ
+by the mapping function xi := N1(η)xi + N2(η)xi+1, where N1 = (1 − η)/2 and N2 = (1 + η)/2, i = 1, . . ., n.
+The approximation spaces for the trial- and test function group, (T, q) and (u, v) are hp-FE function spaces con-
+sisting of piece-wise continuous polynomial functions, being spanned over the i-th element by the external shape
+functions N1 and N2 for p = 1, as well as their supplemented set with the bubble modes Nk(η) = [Lk−1(η) −
+Lk−3(η)]/ √2(2k − 3) for p ≥ 2, where Lk(η) are the orthogonal Legendre polynomials, k = 3, 4, . . ., p +1 [18, 24, 25].
+The independent trial- and test functions, T, u and q, v are approximated on the i-th element of Ωh by the polynomial
+degrees p + 1 and p, or p + 1, respectively, for the MCV- and the GK model according to Table 1, keeping in mind the
+regularity assumptions on the trial functions T and q, as well as the test functions u and v in Eqs. (7)–(8) for the MCV
+model and in Eqs. (9)–(10) for the GK model. Here p is the actual polynomial degree set to each element.
+Let us represent now the variational equations (7)–(8) and (9)–(10) in matrix form. For the sake of simplicity let ht
+and hq indicate the column matrices corresponding to the time-dependent unknown coefficients of the temperature and
+
+3
+
+
+Model
+Function
+T, u
+q, v
+
+MCV
+p + 1
+p
+
+GK
+p + 1
+p + 1
+
+Table 1: Polynomial approximation spaces.
+
+the heat flow, respectively. After carrying out the numerical integrations on each element i, on the spatial assembling
+process we have the following time-dependent matrix equation system
+
+C h˙t + QT hq
+= d ,
+T h ˙q + Q ht + K hq
+= 0 ,
+(11)
+
+which can be written in the simplified form
+A h ˙α + B hα = f ,
+(12)
+
+where
+
+hα =
+�
+ht
+hq
+
+�
+,
+A =
+� C
+0
+0
+T
+
+�
+,
+B =
+� 0
+QT
+
+Q
+K
+
+�
+and
+f =
+� d
+0
+
+�
+,
+(13)
+
+in which C, T and K denote the consistent matrices of the specific heat, the relaxation term and the heat conductivity,
+respectively, while Q is the consistent coupling matrix of the system.
+
+3. Numerical experiments
+
+In this section the newly-developed two-field hp-version FEMs will be tested on a representative initial-boundary
+value problem, focusing on the transient analyzes. In order to demonstrate the computational performance of the
+hp-type mixed FEs, first we investigate the point-wise h- and p-convergence of the relative error that are measured,
+respectively, in the maximum norm of the temperature and the heat flow
+
+ehp =
+max
+t∈[t0,t1]
+
+��� ht − tref
+���
+
+max
+t∈[t0,t1] |tref|
+and
+ehp =
+max
+t∈[t0,t1]
+
+��� hq − qref
+���
+
+max
+t∈[t0,t1]
+
+���qref
+���
+.
+(14)
+
+The related thermodynamic system (12) is solved numerically for the relatively small time interval t ∈ [0, 10] s, using
+the implicit time integration scheme [12]. The number of the constant time step is set to nt = 10000, yielding the
+time step size ∆t = 0.001 s. The considered bodies of length ℓ = 0.005 m are made of rock-like materials which
+have cV = 800 (J/kgK), ρ = 2600 kg/m3. Additionally, the new parameters τ and κ2 are determined based on earlier
+experimental data [5] to be realistic, therefore we choose τ = {0.05, 0.15, 0.3} s, with κ2 = 8 · 10−6 m2.
+However, in order to challenge the numerical procedure, we also test for unrealistically high κ2 = 0.8 m2 as
+that coefficient greatly influences the characteristic speed of diffusion and makes the propagation faster with five
+magnitudes with respect to the previous situations.
+Furthermore, these are subjected to the time-dependent Neumann-type BCs
+
+˜q0(t) = 10000 c1 c2
+
+c2 − c1
+
+�
+exp
+�
+−c1
+t
+tp
+
+�
+− exp
+�
+−c2
+t
+tp
+
+��
+and
+˜qℓ(t) = 0
+(15)
+
+as prescribed heat flows and the initial conditions T0(x) = 293 K and q0(x) = 0, where c1 = 1/0.075, c2 = 6,
+tp = 0.008 s, namely, these are initially at rest, i.e, in equilibrium state. The c1 and c2 coefficients are chosen based on
+[6], to keep the excitation to be realistic as much as possible.
+When the computational performance of the p-approximation is analyzed, a 8-, 52- and 20-element uniform mesh
+kept fixed on the domain Ω for the GK model with the parameter settings κ2 = 0.8 m2, κ2 = 0.000008 m2 and the
+MCV model, respectively, while the polynomial degree p is ranging from 2 to 8 for each element. During the h-
+convergence studies, the domain Ω is uniformly-refined in 7 steps from the element number n = 8, 52 and 20 to 20,
+
+4
+
+
+88 and 44, respectively, for the GK model with κ2 = 0.8 m2, κ2 = 0.000008 m2 and the MCV model. In each step
+the polynomial degree p is set to 2 and kept fixed on each element. At each step, the number of degrees of freedom
+(DOF) is calculated as the sum of the total unknown coefficients occurring in α.
+The relative error-convergence curves of the front- and rear side temperature, T(t, 0) and T(t, ℓ), as well as the
+mid-side heat flow q(t, ℓ/2) obtained for the MCV model and the GK model with relatively large and small value of
+κ2 (0.8 m2 and 0.000008 m2) are plotted against the number of DOF on log-log scales in Figs. 1 and 2–3 for the
+relaxation time τ = 0.3 s, τ = 0.15 s and τ = 0.05 s, respectively.
+Following from the characteristics of the relative error-curves, monotonically high rates are experienced both for
+h- and for p-convergence. As expected, the p-convergence is much faster than the h-convergence. Namely, the higher-
+order polynomial approximation helps a lot to increase the convergence rate. Thus, the desired accuracy is achieved
+with the use of much less number of DOF by the p-approximation. In the asymptotic range, the exponential type of
+the p-convergence behavior is observed while the h-convergence shows rather an algebraic type of convergence.
+It can also be experienced that there is no significant influence of the relaxation time τ on the convergence rates.
+However, the convergence curves are shifted down (without changing their slopes) as τ is decreased achieving a lower
+relative error value. Besides, it can be seen that the computational limit is reached at a very small error level (at
+approximately 10−8).
+Giving now as the illustration of the hp-FE solutions for the MCV model and the GK model with the quite small
+value of κ2 (0.000008 m2), the histories of the dimensionless rear- and front side temperatures are depicted, separately
+for three different relaxation times τ = 0.3 s, τ = 0.15 s and τ = 0.05 s. There is no any computational reason behind
+the dimensionless rescaling of temperature, this is used only for better overviewing the plots as the model is linear,
+and solely the characteristics are important. The adiabatic steady-state temperature is set to 1 for these Figures. In
+Figs. 4–6 and, 8–10, respectively, using a 100-element-mesh with the relatively high polynomial degree p = 10 and
+comparing all the results to the hp-FE solution of the classical, Fourier model. Figs. 7 and 11 represent the time series
+of the dimensionless rear- and front side temperature for “over-diffuse” thermodynamic system, i.e., for κ2 = 0.8 m2,
+zooming the hp-FE solutions in the rapidly change and very small time region [0, 0.02] s. These figures exhibit very
+well that the τ-value has no significant effect on the solution for “over-diffuse” system.
+
+102
+102.5
+103
+
+10−3
+
+10−2
+
+number of DOF
+
+relative error in maximum norm
+
+Front side temperature
+
+102
+102.5
+103
+
+10−11
+
+10−9
+
+10−7
+
+10−5
+
+number of DOF
+
+Rear side temperature
+
+102
+102.5
+103
+
+10−5
+
+10−3
+
+10−1
+
+number of DOF
+
+Mid-side heat flow
+
+τ = 0.3 s, h-conv.
+
+τ = 0.15 s, h-conv.
+
+τ = 0.05 s, h-conv.
+
+τ = 0.3 s, p-conv.
+
+τ = 0.15 s, p-conv.
+
+τ = 0.05 s, p-conv.
+
+Figure 1: Convergence histories of the relative errors measured in maximum norm for the front- and rear side temperature, as well as the mid-side
+heat flow – MCV model
+
+5
+
+
+101.5
+102
+10−9
+
+10−8
+
+10−7
+
+10−6
+
+10−5
+
+number of DOF
+
+relative error in maximum norm
+
+Front side temperature
+
+101.5
+102
+
+10−10
+
+10−9
+
+10−8
+
+10−7
+
+10−6
+
+number of DOF
+
+Rear side temperature
+
+101.5
+102
+
+10−8
+
+10−6
+
+10−4
+
+10−2
+
+number of DOF
+
+Mid-side heat flow
+
+τ = 0.3 s, h-conv.
+
+τ = 0.15 s, h-conv.
+
+τ = 0.05 s, h-conv.
+
+τ = 0.3 s, p-conv.
+
+τ = 0.15 s, p-conv.
+
+τ = 0.05 s, p-conv.
+
+Figure 2: Convergence histories of the relative errors measured in maximum norm for the front- and rear side temperature, as well as the mid-side
+heat flow – GK model with κ2 = 0.8 m2
+
+102.5
+103
+10−10
+
+10−8
+
+10−6
+
+10−4
+
+10−2
+
+number of DOF
+
+relative error in maximum norm
+
+Front side temperature
+
+102.5
+103
+
+10−10
+
+10−9
+
+number of DOF
+
+Rear side temperature
+
+102.5
+103
+10−9
+
+10−7
+
+10−5
+
+10−3
+
+number of DOF
+
+Mid-side heat flow
+
+τ = 0.3 s, h-conv.
+
+τ = 0.15 s, h-conv.
+
+τ = 0.05 s, h-conv.
+
+τ = 0.3 s, p-conv.
+
+τ = 0.15 s, p-conv.
+
+τ = 0.05 s, p-conv.
+
+Figure 3: Convergence histories of the relative errors measured in maximum norm for the front- and rear side temperature, as well as the mid-side
+heat flow – GK model with κ2 = 0.000008 m2
+
+6
+
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+
+-0.2
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+1.2
+
+Figure 4: Time series of the dimensionless rear side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.3 s, p = 10 and
+n = 100
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Figure 5: Time series of the dimensionless rear side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.15 s, p = 10 and
+n = 100
+
+7
+
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Figure 6: Time series of the dimensionless rear side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.05 s, p = 10 and
+n = 100
+
+0
+0.002
+0.004
+0.006
+0.008
+0.01
+0.012
+0.014
+0.016
+0.018
+0.02
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+1.2
+
+Figure 7: Influence of τ on the time series of the dimensionless rear side temperature for the GK model with the over-diffuse setting κ2 = 0.8 m2 –
+p = 10 and n = 100
+
+8
+
+
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+0.03
+0.035
+0.04
+0.045
+0.05
+
+0
+
+100
+
+200
+
+300
+
+400
+
+500
+
+600
+
+700
+
+800
+
+900
+
+1000
+
+Figure 8: Time series of the dimensionless front side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.3 s, p = 10 and
+n = 100
+
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+0.03
+0.035
+0.04
+0.045
+0.05
+
+0
+
+100
+
+200
+
+300
+
+400
+
+500
+
+600
+
+700
+
+Figure 9: Time series of the dimensionless front side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.15 s, p = 10 and
+n = 100
+
+9
+
+
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+0.03
+0.035
+0.04
+0.045
+0.05
+
+0
+
+50
+
+100
+
+150
+
+200
+
+250
+
+300
+
+350
+
+400
+
+450
+
+Figure 10: Time series of the dimensionless front side temperature for the MCV- and GK model with κ2 = 0.000008 m2 – τ = 0.05 s, p = 10 and
+n = 100
+
+0
+0.002
+0.004
+0.006
+0.008
+0.01
+0.012
+0.014
+0.016
+0.018
+0.02
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+1.2
+
+Figure 11: Influence of τ on the time series of the dimensionless front side temperature for the GK model with the over-diffuse setting κ2 = 0.8 m2
+
+– p = 10 and n = 100
+
+10
+
+
+4. Discussion
+
+Here we presented a novel numerical approach, specifically developed for the Guyer–Krumhansl equation as
+that model could have significant practical interest in engineering based on the available experimental data. We
+successfully demonstrated that the solutions converge, thus are stable and consistent and reproduce the experimentally
+observed required characteristics, on contrary to COMSOL [8]. That is essential, since the usual approaches do not
+work, it is not possible to use the temperature as a single field variable for heat flux BCs [2].
+Moreover, that technique is incredibly more efficient than the one offered by COMSOL, runs about 4 magni-
+tudes faster thanks to the low number of DOFs and elements. That advantage becomes more significant in two and
+three-dimensional problems, therefore our next aim is to improve and implement the present approach for complex
+geometries in higher spatial dimensions. Additionally, due to the global energy crisis and chip shortage, the effi-
+ciency of algorithms has increasing importance. That huge increase in speed would enable the real-time monitoring
+of heterogeneous materials with complex inner structure without massive computational capacity.
+
+5. Acknowledgements
+
+The research reported in this paper is part of project no. BME-NVA-02, implemented with the support provided
+by the Ministry of Innovation and Technology of Hungary from the National Research, Development and Innovation
+Fund, financed under the TKP2021 funding scheme. This paper was supported by the J´anos Bolyai Research Schol-
+arship of the Hungarian Academy of Sciences. The research reported in this paper and carried out at BME has been
+supported by the grants National Research, Development and Innovation Office-NKFIH FK 134277.
+
+References
+
+[1] R. Kov´acs, Analytic solution of Guyer-Krumhansl equation for laser flash experiments, International Journal of Heat and Mass Transfer 127
+(2018) 631–636.
+[2] R. Kov´acs, Analytical treatment of nonhomogeneous initial states for non-Fourier heat equations, International Communications in Heat and
+Mass Transfer 134 (2022) 106021.
+[3] R. A. Guyer, J. A. Krumhansl, Thermal Conductivity, Second Sound, and Phonon Hydrodynamic Phenomena in Nonmetallic Crystals,
+Physical Review 148 (1966) 778–788.
+[4] P. V´an, T. F¨ul¨op, Universality in heat conduction theory – weakly nonlocal thermodynamics,
+Annalen der Physik (Berlin) 524 (2012)
+470–478.
+[5] S. Both, B. Cz´el, T. F¨ul¨op, G. Gr´of, ´A. Gyenis, R. Kov´acs, P. V´an, J. Verh´as, Deviation from the Fourier law in room-temperature heat pulse
+experiments, Journal of Non-Equilibrium Thermodynamics 41 (2016) 41–48.
+[6] A. Feh´er, R. Kov´acs, On the evaluation of non-Fourier effects in heat pulse experiments, International Journal of Engineering Science 169
+(2021) 103577. ArXiv:2101.01123.
+[7] A.Lunev, A. Lauerer, V. Zborovskii, F. L´eonard, Digital twin of a laser flash experiment helps to assess the thermal performance of metal
+foams, International Journal of Thermal Sciences 181 (2022) 107743.
+[8] A. Rieth, R. Kov´acs, T. F¨ul¨op, Implicit numerical schemes for generalized heat conduction equations, International Journal of Heat and Mass
+Transfer 126 (2018) 1177 – 1182.
+[9] A. Pozsar, M. Sz¨ucs, R. Kov´acs, T. F¨ul¨op, Four spacetime dimensional simulation of rheological waves in solids and the merits of thermody-
+namics, Entropy 22 (2020) 1376.
+[10] K.-J. Bathe, Finite Element Procedures, Prentice Hall, Upper Saddle River, New Jersey, 1996.
+[11] P. G. Ciarlet, The Finite Element Method for Elliptic Problems, North-Holland Publishing Company, Amsterdam, 1978.
+[12] T. J. R. Hughes, The Finite Element Method, Linear Static and Dynamic Finite Element Analysis, Prentice Hall, Englewood Cliffs, New
+Jersey, 1987.
+[13] J. N. Reddy, Energy Principles and Variational Methods in Applied Mechanics, 2nd ed., John Wiley & Sons, New York, 2002.
+[14] B. Deka, J. Dutta, Finite element methods for non-fourier thermal wave model of bio heat transfer with an interface, Journal of Applied
+Mathematics and Computing 62 (2020) 701–724.
+[15] Z.-B. Yang, Z.-K. Wang, S.-H. Tian, X.-F. Chen, Analysis and modelling of non-fourier heat behavior using the wavelet finite element
+method, Materials 12 (2019).
+[16] H. Nazmdeh, M. Vahabi, M. A. Nazari, Finite element modeling of Non-Fourier heat transfer in a cancerous tissue with an injected fat layer
+during hyperthermia treatment, Journal of Thermal Biology 100 (2021) 103073.
+[17] B. Xu, B. Q. Li, Finite element solution of non-Fourier thermal wave problems, Numerical Heat Transfer, Part B: Fundamentals 44 (2003)
+45–60.
+[18] B. Szab´o, I. Babuˇska, Introduction to Finite Element Analysis: Formulation, Verification and Validation, John Wiley & Sons, New York,
+2011.
+[19] B. Szab´o, I. Babuˇska, I. N. Katz, The p-version of the finite element method, SIAM Journal on Numerical Analysis 18 (1981) 515–545.
+
+11
+
+
+[20] B. T´oth, Dual and mixed nonsymmetric stress-based variational formulations for coupled thermoelastodynamics with second sound effect,
+Continuum Mechanics and Thermodynamics 30 (2018) 319–345.
+[21] B. T´oth, Multi-field dual-mixed variational principles using non-symmetric stress field in linear elastodynamics, Journal of Elasticity 122
+(2016) 113–130.
+[22] B. T´oth, Natural frequency analysis of shells of revolution based on hybrid dual-mixed hp-finite element formulation, Applied Mathematical
+Modelling 98 (2021) 722–746.
+[23] S. C. Brenner, L. R. Scott, The Mathematical Theory of Finite Element Methods, 3rd ed., Springer-Verlag, New York, 2008.
+[24] L. Demkowicz, Computing with hp-Adaptive Finite Elements. One- and Two-Dimensional Elliptic and Maxwell Problems, volume I of
+Applied Mathematics and Nonlinear Science, Chapman & Hall/CRC Press, Taylor & Francis Group, 2007.
+[25] A. D¨uster, E. Rank, B. Szab´o, The p-Version of the Finite Element and Finite Cell Methods, Encyclopedia of Computational Mechanics, 2nd
+ed., John Wiley & Sons, Ltd, 2017, pp. 1–35. doi:10.1002/9781119176817.ecm2003g.
+
+12
+
+

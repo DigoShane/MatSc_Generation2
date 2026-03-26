@@ -1,0 +1,2690 @@
+Machine Learning Frontier Orbital
+Energies of Nanodiamonds
+
+Thorren Kirschbaum1,2, Börries von Seggern1,3, Joachim Dzubiella1,4,
+
+Annika Bande1∗, Frank Noé5,2,6,7∗
+
+1Helmholtz-Zentrum Berlin für Materialien und Energie GmbH, Hahn-Meitner-Platz 1,
+14109 Berlin, Germany
+
+2Department of Mathematics and Computer Science, Freie Universität Berlin,
+Arnimallee 12, 14195 Berlin, Germany
+
+3Department of Biology, Chemistry and Pharmacy, Freie Universität Berlin, Arnimallee
+22, 14195 Berlin, Germany
+
+4Institute of Physics, Albert-Ludwigs-Universität Freiburg, Hermann-Herder-Straße 3,
+79104 Freiburg im Breisgau, Germany
+
+5Microsoft Research AI4Science, Karl-Liebknecht Str. 32, 10178 Berlin, Germany
+
+6Department of Physics, Freie Universität Berlin, Arnimallee 12, 14195 Berlin, Germany
+
+7Department of Chemistry, Rice University, 6100 Main St, Houston, TX 77005, United
+States
+
+∗Corresponding Author: annika.bande@helmholtz-berlin.de
+
+∗Corresponding Author: franknoe@microsoft.com
+
+1
+
+arXiv:2210.07930v2  [physics.chem-ph]  15 Nov 2022
+
+
+Abstract
+
+Nanodiamonds have a wide range of applications including catalysis, sensing,
+
+tribology and biomedicine. To leverage nanodiamond design via machine learning,
+
+we introduce the new dataset ND5k, consisting of 5,089 diamondoid and nanodia-
+
+mond structures and their frontier orbital energies. ND5k structures are optimized via
+
+tight-binding density functional theory (DFTB) and their frontier orbital energies are
+
+computed using density functional theory (DFT) with the PBE0 hybrid functional.
+
+We also compare recent machine learning models for predicting frontier orbital en-
+
+ergies for similar structures as they have been trained on (interpolation on ND5k),
+
+and we test their abilities to extrapolate predictions to larger structures. For both the
+
+interpolation and extrapolation task, we find best performance using the equivariant
+
+graph neural network PaiNN. The second best results are achieved with a message
+
+passing neural network using a tailored set of atomic descriptors proposed here.
+
+2
+
+
+1
+Introduction
+
+Research on nanomaterials has experienced a rapid upswing in recent decades.1,2 Among
+the different material classes, nanodiamonds stand out due to their unusually high stabil-
+ity, biocompatibility, and notable electronic properties, leading to applications in catal-
+ysis, sensing, tribology, biomedicine, and many more.3,4 In the field of photocatalysis,
+nanodiamonds are used as a source of electrons, enabling high-energy reduction reactions
+in the liquid phase, including the reductions of N2 to ammonia, of CO2 to CO, and of
+water into its elements.5–8
+
+A large body of scientific literature has been dedicated to the investigation of specific
+nanodiamond properties, both from experimental and theoretical perspectives.9–14 At the
+same time, the design of diamond-based materials remains a hot topic for several appli-
+cations.15–18 The most prominent approaches for “tuning” the nanodiamonds’ properties
+are size modification,19–21 surface functionalization22–25 and the incorporation of dopant
+atoms.26–28 Further design choices include the degree of surface graphitization on the
+nanodiamonds29,30 and the use of composite materials to complement and enhance their
+properties.31–34 The wide range of design possibilities renders a large array of possible
+nanodiamond configurations of which only a few can be tested in dedicated individual
+studies, ultimately resulting in slow design processes.
+High-throughput screening has recently emerged as a pathway for rapidly identifying
+candidate materials for a given application.35 In this approach, a wide range of materials
+is tested for a certain set of properties using an inexpensive theoretical or experimental
+method. Subsequently, the most promising materials can further be researched in more
+elaborate studies. Theory-based algorithms that can perform such inexpensive predictions
+either come from the field of quantum chemistry (e.g., tight-binding density functional
+theory, DFTB),36 or from the field of machine learning (ML).35 In supervised ML, gener-
+ally, a suitable algorithm learns to perform a desired mapping, e.g., that from a chemical
+structure to its HOMO-LUMO gap, given a dataset of examples (training set). The ML
+workflow consists of obtaining this training set, choosing a suitable ML algorithm, train-
+ing the algorithm on the training set and finally testing its performance on unseen data.
+The trained ML algorithm is then able to perform the mapping much faster than the cor-
+responding quantum chemical approaches.
+Machine-learning frontier orbital energies of molecules and materials has been the
+subject of previous investigations. A range of studies focused on learning frontier orbital
+energies and related properties for optimizing solar photovoltaic materials.37–44 Further
+studies explored the use of different molecular descriptors,37,45–50 investigated structure-
+property relationships,43,49 compared different DFT functionals,51 and presented im-
+
+3
+
+
+proved learning strategies.52
+
+For ML in chemistry, mainly two types of learning algorithms have become popular
+over the last years, atomic fingerprinting techniques and graph neural networks (GNNs).53
+
+Both can operate on molecules of arbitrary size and are usually designed to inherently
+obey the invariances and equivariances of physical properties with respect to global rota-
+tion and translation of the molecular system, as well as permutation of indistinguishable
+atoms.
+In atomic fingerprinting techniques, atom-wise symmetry functions are calculated for
+each atom of the system.54–56 These functions describe the local chemical environment
+of an atom in a rotation- and translation-invariant manner. Two of the most popular algo-
+rithms are the atom-centered symmetry functions as introduced by Behler and Parinello,54
+
+and the smooth overlap of atomic positions (SOAP) descriptor.55
+Fingerprinting ap-
+proaches are often used with kernel ridge regression (KRR) for the prediction of atomic
+or molecular properties.57
+
+GNNs for molecules are neural networks which, instead of taking dedicated feature
+functions as inputs, directly process atom positions and types and learn a representation
+of suitable features internally. They represent molecular structures as graphs, with nodes
+representing the atoms and edges representing their interactions (either bonded or nearby
+nonbonded).58–67 Each graph node (and sometimes also each edge) is assigned a feature
+vector that carries information on the atom (or bond) it represents, often starting with a
+one-hot encoding of the atom (bond) type. During training, these features are updated
+by graph convolutions that share parameters in such a way that permutation invariance
+or equivariance is maintained. The convolution kernels typically depend upon distances
+or angular information between atoms, such that translational and rotational invariance
+or equivariance is also maintained. The prediction of the desired molecular property is
+usually made in a final readout step, e.g. by summing or averaging the feature vectors
+after the last convolution layer, by processing them with a densely connected network, or
+applying more elaborate aggregation functions.59
+
+In order to balance bias and variance, simpler models such as KRR typically have
+lower prediction error for little data. On the other hand, more expressive models such as
+deep NNs tend to be superior in the large-data limit, and also exhibit better computational
+cost scaling to large amounts of data and large numbers of chemical species. Accordingly,
+GNNs have recently achieved top-level performances on the large standard chemistry ML
+databases,63–65 however, their application to new problems is often limited by the amount
+of data available for the learning task at hand. A few large chemistry datasets containing
+DFT-computed properties of small molecules are freely available.68–73 However, system-
+
+4
+
+
+atically crafted datasets of nanomaterials containing molecular data obtained from a high
+level of theory usually consist of only a few hundred data points, rendering them insuffi-
+cient for their use in large-scale design approaches.13,74–81 Such databases are highly de-
+sirable for the design of nanodiamonds as, i.e., photocatalysts,5–8 electronic devices82–84
+
+and energy materials.17
+
+In this paper, we introduce the ND5k dataset, which consists of 5,089 diamondoid
+and nanodiamond structures optimized via DFTB. In addition, we report their frontier
+orbital energies, which are key properties for the aforementioned applications, computed
+at DFT PBE0-D3/SVP level of theory. Diamondoids are molecular-scale nanodiamonds,
+the smallest being adamantane (C10H16), while the largest structure of the dataset is about
+1.2 nm in size and contains 189 heavy (non-H) atoms. From the chemistry ML perspec-
+tive, this dataset provides a natural extension to existing databases of organic molecules
+(QM7b,68,70 QM9,69,71 OE62,73 etc.) towards larger and more complex carbon-based
+structures. In the present study, we analyze general trends in the ND5k dataset and ex-
+tract design choices for nanodiamonds in photocatalysis. Furthermore, we test latest ML
+approaches for use with this dataset and discuss their performances as well as their abili-
+ties to extrapolate their predictions towards even larger nanodiamonds. In particular, we
+compare the SOAP KRR approach55,57 with three GNNs, an edge-conditioned GNN with
+set2set pooling (enn-s2s),59 as well as SchNet60,61 and the equivariant PaiNN.63 In this
+context, we propose an extension of GNNs to take advantage of both molecular finger-
+prints and GNN learning architectures, which we apply to the enn-s2s architecture.
+
+5
+
+
+2
+Methods
+
+2.1
+Dataset Computations
+
+Diamondoid and nanodiamond structures were generated in a semi-automated fashion.
+Structure optimization was performed via DFTB using Grimme’s extended tight binding
+(xtb) software,85 version 6.2.3, the GFN2-xTB method86 and default settings for geome-
+try optimization. The validity of the DFTB optimization is discussed in more detail in the
+supporting information. If steric hindrance on the surface of the highly decorated nanodi-
+amonds was too strong, surface groups were removed and replaced with hydrogen (which
+was especially common for amine- and hydroxyl-terminated nanodiamonds). For the case
+of N dopants in the nanodiamond lattice, one neighboring C atom was removed to form a
+nitrogen-vacancy structure, if (and only if) the structure without a vacancy was not stable.
+Sanity checks were performed to ensure that chemically reasonable structures were gener-
+ated. Subsequently, single point calculations were performed within the ORCA 5 software
+package,87 using the PBE0 hybrid functional,88,89 Ahlrich’s def2-SVP basis set90,91 and
+Grimme’s third-order atom-pairwise dispersion correction with Becke-Jones dampening
+(D3BJ).92 The RIJCOSX approximation and an appropriate auxiliary basis set were used
+to speed up integral calculations, as implemented in the ORCA default settings.93,94 We
+used the ORCA DEFGRID1 integration grid option for fast integral calculations, the de-
+viations to the more accurate DEFGRID2 default option are in the order of 0.01 eV for
+the frontier orbital energies.
+
+2.2
+Machine Learning Models
+
+In supervised ML, as a rule of thumb, kernel methods are to be preferred when less than
+103–104 training points are available, and NN-based approaches otherwise.95 Our present
+dataset has an intermediate size, and will therefore compare both types of methods for
+machine learning the frontier orbital energies of the ND5k structures.
+The first ML setup uses the SOAP atomic fingerprinting technique in conjunction
+with KRR. Following Parsaeifard et al.,56 in the SOAP approach, a Gaussian of width
+σ is centered on each atom within the cutoff distance of a central atom k at position rk.
+The resulting density of atoms is multiplied with a cutoff function fcut which smoothly
+approaches zero at a cutoff radius over a characteristic width rδ,
+
+ρk(r) = ∑i exp
+
+�
+
+−(r−rki)2
+
+2σ2
+
+�
+
+× fcut (|r−rki|).
+(1)
+
+6
+
+
+This density is then expanded in terms of orthogonal radial functions gn(r) and spher-
+ical harmonics Ylm(θ,φ) as
+
+ρk(r) = ∑nlm ck
+nlmgn(r)Ylm(θ,φ),
+(2)
+
+where ck
+nlm = ⟨gnYlm|ρk⟩. Finally,
+
+pk
+nn′l =
+
+�
+
+8π2
+
+2l +1∑m ck
+nlm
+�
+ck
+n′lm
+�∗
+
+(3)
+
+are obtained as rotationally invariant scalar descriptors of the central atom k’s environ-
+ment. The SOAP fingerprint vector Fk then contains all pk
+nn′l with n, n′ ≤ nmax and l ≤
+lmax.56
+
+Second, we use the enn-s2s GNN as proposed by Gilmer et al.59 Within this approach,
+the undirected molecular graph G is initiated with atomic feature vectors xv = h0
+v of size d
+at the graph nodes, containing a set of chemical properties of the respective element (e.g.,
+one-hot atom type, atomic number, hybridization state, etc.), and bond features evw at the
+graph edges (containing, e.g., one-hot bond type and bond distance). The hidden states h0
+v
+of the nodes then get updated T times during the message passing phase, which is defined
+in terms of message functions Mt that generate messages mt+1
+v
+, and node update functions
+Ut:
+mt+1
+v
+= ∑w∈N(v) Mt(ht
+v,ht
+w,evw)
+(4)
+
+with ht+1
+v
+= Ut(ht
+v,mt+1
+v
+), where w ∈ N(v) denotes the neighbors w of node v in graph
+G. Here, the message function has the form M(hv,hw,evw) = A(evw)hw, where A(evw) is
+a dense NN that maps the edge vector evw to a d × d matrix, and a gated recurrent unit
+(GRU)96 is used for the update function. After the message passing, the graph information
+is accumulated using a set2set operator,97 whose output is then passed to a dense NN that
+computes the final prediction.59
+
+In the recent GNN developments, one of the main improvements was the increased
+ability of the networks to harness structural information for their predictions. While
+earlier variants such as the enn-s2s proposed by Gilmer et al.59 and SchNet98,99 were
+only able to use atomic distances for their predictions, more recent approaches, such as
+DimeNet,100,101 L1Net64 and PaiNN,63 are able to efficiently make use of angular infor-
+mation as well. Following the same idea, we propose to replace the atom-type-specific
+node embeddings of GNNs with atom-centered descriptors of the atoms’ local environ-
+ments. Furthermore, these descriptors may be condensed by applying dimensionality re-
+duction techniques, such as principle component analysis (PCA).56,102–104 In this study,
+
+7
+
+
+we implement two variants of the enn-s2s: The first one uses SOAP node embeddings
+(SOAP-enn-s2s) for the graph setup, and the second one uses the PCA-reduced SOAP
+vectors (SOAP-PCA-enn-s2s) instead of generic atomic descriptors as initial node em-
+beddings of the graphs. For the latter, the 1548-dimensional SOAP vectors are reduced to
+133-dimensional vectors via PCA, thereby retaining 99.99 % of their variance.
+The other type of GNN which we apply, SchNet, takes an alternative approach.98,99
+
+Here, the node representations are initialized randomly for each element type and subse-
+quently adapted (learned) during training. During the message passing, continuous-filter
+convolutions are used to incorporate the influence of neighboring atoms. After passing
+N such interaction layers, a prediction block is used to obtain the final result. For the
+prediction of molecular properties, a sum-over-nodes operation (sum pooling) is used to
+obtain extensive properties and an average pooling to obtain intensive properties.98,99
+
+Recently, the polarizable atom interaction NN (PaiNN) was proposed as an extension
+of SchNet.63 The PaiNN architecture uses equivariant representations over angular fea-
+tures to enable the incorporation of angular information into the learning process. Thus,
+the network receives additional structural data while retaining the ability to make rotation-
+invariant predictions by design.63
+
+2.3
+Machine Learning Details
+
+Machine learning was performed within Python, using the libraries librascal105 and scikit-
+learn106 for KRR with SOAP, and the pytorch,107 pytorch-geometric108 and schnetpack99
+
+libraries for deep learning with GNNs. The SOAP vectors used as inputs for the SOAP
+node embedding (SOAP) enn-s2s approach were computed using the Dscribe package109
+
+in conjuction with the atomic simulation environment package (ase) as described by
+Larsen el al.110 The dataset was split into 66 % train and 17 % test subsets (KRR), or 66
+% train, 17 % validation and 17 % test subsets (NN training), using a stratified split. The
+six low LUMO energy outliers at E < −6 eV were removed for learning LUMO energies.
+For NN training, early stopping was applied. The enn-s2s architecture is based on the
+continuous kernel-based convolutional operator NNConv59,108 and inspired by the work
+of Ramahan et al. who used a similar architecture for learning frontier orbital energies
+and total energies of large organic molecules.48 For PaiNN, we used the implementa-
+tion provided alongside the original publication.63 Further details on the ML setup are
+available in the supporting information.
+
+8
+
+
+3
+Results
+
+3.1
+The ND5k Dataset
+
+The ND5k dataset is publicly available as described in the data availability section 6.
+Structures in ND5k were generated systematically, as indicated in the flowchart in figure
+1. We selected 17 structures of undoped, H-terminated diamondoids and small nanodi-
+amonds as base structures for the dataset. Diamondoids are nanodiamonds of molecular
+size, of which the smallest, adamantane (C10H16), consists of only one cage of tetrahe-
+drally coordinated carbon atoms. The larger diamondoids can be built from this structure
+by subsequentially adding further diamond cages to this structure. The largest base struc-
+ture in the dataset is a nanodiamond with sum formula C109H80 and a diameter of ca. 1.2
+nm. An overview of all base structures is provided in the supporting information, figure
+S1.
+To create a more diverse set of structures, each base nanodiamond was covered with
+each of the surface moieties H, F, OH or NH2 and added to the dataset, as these are
+common surface decorations in nanodiamond synthesis.23,111–114
+
+In a third step, each of these structures was doped with one or two dopant atoms,
+including B, N, Si and P, and the resulting structures were added to the dataset. While
+B doping of diamond materials can readily be achieved experimentally,12,28,83 n-type
+doping remains a challenge so far.26,115 Moreover, doping with Si116–118 and P119–121 is
+especially difficult, because the small lattice parameters and its high stiffness hinder the
+incorporation of large dopants into the diamond lattice. Still, we include these dopants
+in the dataset to cover a wider range of structures and to acknowledge the fact that in
+principle, doping with these atoms is possible.
+For each combination of base structure, surface covering and (co-)doping, three dif-
+ferent structures with varying positions of the dopant atoms are included in the dataset.
+This combinatorial approach results in a total of 2,908 structures. Finally, to obtain not
+only fully, but also partially functionalized nanodiamond structures, for the F-, OH- and
+NH2-terminated structures, a random number of surface moieties was removed and re-
+placed by hydrogen and the new structure added to the dataset. The final dataset then
+contains 5,089 structures in total. Note that for each singly doped adamantane structure
+only two distinct dopant positions are possible and therefore, only two structures could
+be inserted instead of three.
+All ND5k structures were optimized using DFTB and their single point properties cal-
+culated within standard DFT using the PBE0 hybrid functional (see Methods section). In
+this work, we focus on the energies of the nanodiamonds’ frontier orbitals that were ob-
+
+9
+
+
+tained from the calculations, i.e., the highest occupied molecular orbital (HOMO) and the
+lowest unoccupied molecular orbital (LUMO), as these are most relevant for applications
+such as electronic devices and photocatalysis.
+Figure 2 shows a histogram of the ND5k HOMO and LUMO energies that were ob-
+tained at PBE0 level of theory. The HOMO energies range from −10.6 to +0.3 eV, and
+most structures have a HOMO energy between −7 and −6 eV. One set of structures is
+separated from the main distribution and locates at lower energy values E < − 9 eV,
+representing the highly fluorinated diamondoids and nanodiamonds. Another small set
+of structures has higher energy values E > −2 eV which are mostly H-terminated, P-
+doped larger nanodiamonds. The LUMO energies range from −8.6 to +1.6 eV, and most
+structures have a LUMO energy around +1 eV. This is consistent with the fact that nan-
+odiamonds, especially when H- or NH2-terminated, are known to have a negative electron
+affinity.122 The LUMO distribution has a longer tail towards more negative energies, and
+six outliers can be identified at E < −6 eV. These six structures are larger nanodiamonds
+with full or partial F-termination and two B dopants incorporated into the nanodiamond
+lattice.
+
+10
+
+
+Figure 1: Flowchart illustrating the composition of the ND5k structures. The example
+shows the nanodiamonds with C35H36 base structure, F surface covering, two B dopants,
+and full or partial F-termination. Color: H (grey), B (rose), C (black), N (dark blue), O
+(red), F (light blue), Si (green,) P (orange).
+
+11
+
+
+Figure 2: HOMO (blue) and LUMO (orange) orbital energy distributions of the ND5k
+dataset.
+
+Very specific nanodiamond properties are desired for each individual application, ac-
+cording to the specific use case. For example, in photocatalysis, nanodiamonds with neg-
+ative electron affinity are needed to enable facile emission of electrons from the nanodia-
+mond upon light excitation.5–8,123 The electrons that are generated in this way are potent
+reduction agents which can initiate high-energy reduction reactions, e.g., the reduction of
+N2 to ammonia.5,124 The reaction is usually performed in aqueous environments: Here,
+one electron is excited into the nanodiamonds’ conduction band and then moves into
+the unoccupied states of the water bulk. For our purposes, the nanodiamond’s conduc-
+tion band minimum energy can be approximated as the LUMO energy of the molecular
+nanodiamond. Similarly, the adjacent water can be regarded as an amorphous semicon-
+ductor with a conduction band minimum at around −1 eV into which the electron is
+transferred.32,125 To enable the ejection of an electron, the LUMO (or conduction band
+minimum) of the nanodiamond needs to be energetically above the water’s conduction
+band minimum. Furthermore, it is desirable to drive the reaction using sunlight, meaning
+that the nanodiamond’s HOMO-LUMO gap should be at around 2.6 eV or lower.
+According to these criteria, we filtered a list of 45 candidate structures from our
+dataset, with LUMO energies ≥ −1 eV and gap energies ≤ 2.6 eV, which are presented
+in table 3.1. The proposed structures are mostly larger nanodiamonds with either H or
+NH2 surface decoration and mostly doped with P. Owing to the quantum confinement
+effect, larger structures generally have smaller optical gaps, and are thus better suited
+for this approach. The H and NH2 surface coverings facilitate adequately high LUMO
+
+12
+
+
+energies and concomitant negative electron affinities, as demonstrated in various exper-
+imental studies.5–8,32,124 Finally, the n-type doping introduces new occupied states into
+the nanodiamond gap, from which electrons can facilely be excited into the unoccupied
+states. Here, phosphorous seems to be preferable over nitrogen doping, because the ex-
+cess electrons introduced by the P dopants are located at relatively higher energy levels.
+In the supporting information, we plot the structures and frontier orbital shapes of ten P-
+(co-)doped nanodiamonds taken from table 3.1. For all structures, the HOMO is located
+at the respective P dopant atom. The LUMO is located at the surface of the nanodiamond
+in 8 of 10 structures, and located at the second dopant (boron) in two structures. For one
+representative structure (C48H48 base structure, one single phosphorous dopant, hydrogen
+surface termination, index 3001), the HOMO and LUMO orbitals are depicted in figure
+3. The HOMO is well localized at the P dopant, and the diffuse LUMO is spread out
+over the surface of the whole structure. It is well known that spherical nanodiamonds,126
+
+diamondoids, and clusters of diamondoids14 have uniquely shaped unoccupied orbitals:
+For these structures, the LUMOs resemble atomic s-orbitals, and next highest unoccupied
+orbitals are shaped like atomic p-, d-, and f-orbitals. The same type of unoccupied orbitals
+are present in the nanodiamond shown here, with slight distortions due to the low symme-
+try of the structure. Thus, the phosphorous doping of the nanodiamond introduces a new
+occupied electronic level, while the overall electronic structure is retained. Accordingly,
+hydrogen- or amine-covered, phosphorous-doped nanodiamonds are promising candidate
+materials to perform sunlight-driven electron emission in the aqueous phase. This finding
+can be regarded as a qualitative design suggestion for future research in this field.
+Different nanodiamond applications may rely on other values of the particles’ frontier
+orbital alignments. In the supporting information, we summarize the ND5k structures
+which have the highest and lowest HOMO, LUMO and gap energies, respectively, and
+shortly discuss the general trends.
+
+13
+
+
+Figure 3: a) Structure, b) HOMO contour plot, c) LUMO contour plot of the nanodiamond
+with ND5k index 3001 (P-doped, H-terminated, C48H48 base structure). Color: H (grey),
+C (yellow), P (orange). The well localized HOMO is plotted with isovalue ± 0.05, the
+diffuse LUMO with isovalue ± 0.01.
+
+14
+
+
+Table 1: Overview of the 45 ND5k structures with LUMO energies ≥ −1 eV and
+gap energies ≤ 2.6 eV for application as photocatalysts: ND5k index, base structure
+(ND), surface species, dopants (D1, D2), HOMO, LUMO and gap energies (all in eV).
+The base structures abbreviated as 123tet, 1212pent and 12312hex are the diamondoids
+[123]tetramantane, [1212]pentamantane and [12312]hexamantane, respectively (see also
+the overview of base structures in the SI).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+2416
+12312hex
+H
+P
+P
+−1.649
+0.942
+2.591
+3785
+C68H64
+OH/H
+P
+P
+−2.011
+0.574
+2.585
+3892
+C74H64
+H
+B
+N
+−1.939
+0.628
+2.567
+3641
+C68H64
+NH2
+B
+N
+−3.219
+−0.652
+2.567
+3001
+C48H48
+H
+P
+−1.435
+1.129
+2.564
+2701
+C35H36
+H
+P
+−1.430
+1.073
+2.503
+3614
+C68H64
+H
+N
+P
+−1.324
+1.174
+2.498
+4693
+C104H78
+OH/H
+P
+Si
+−1.688
+0.767
+2.456
+1485
+123tet
+H
+B
+N
+−1.870
+0.584
+2.454
+3992
+C74H64
+NH2
+N
+Si
+−3.160
+−0.752
+2.408
+3923
+C74H64
+H
+P
+Si
+−1.456
+0.909
+2.365
+4874
+C109H80
+NH2/H
+P
+−1.654
+0.708
+2.363
+3998
+C74H64
+NH2
+P
+P
+−1.248
+1.054
+2.301
+4001
+C74H64
+NH2/H
+P
+P
+−1.332
+0.952
+2.284
+2878
+C35H36
+OH
+P
+P
+−2.052
+0.223
+2.274
+1789
+1212pent
+H
+B
+P
+−2.874
+−0.617
+2.257
+4903
+C109H80
+NH2/H
+P
+P
+−1.399
+0.810
+2.209
+3922
+C74H64
+H
+P
+Si
+−1.424
+0.693
+2.117
+4524
+C104H78
+H
+P
+Si
+−0.930
+1.184
+2.114
+4600
+C104H78
+NH2
+P
+P
+−1.069
+1.028
+2.097
+2743
+C35H36
+NH2
+B
+P
+−2.543
+−0.455
+2.088
+3012
+C48H48
+H
+N
+P
+−1.233
+0.849
+2.082
+3634
+C68H64
+NH2
+B
+−2.417
+−0.357
+2.060
+2746
+C35H36
+NH2/H
+B
+P
+−2.424
+−0.391
+2.033
+4598
+C104H78
+NH2
+P
+P
+−0.968
+0.962
+1.930
+4220
+C88H80
+H
+P
+P
+−0.990
+0.906
+1.896
+4505
+C104H78
+H
+N
+−0.660
+1.161
+1.822
+3620
+C68H64
+H
+P
+P
+−0.943
+0.870
+1.813
+3315
+C53H48
+H
+N
+Si
+−1.101
+0.623
+1.725
+4809
+C109H80
+H
+P
+−0.540
+1.104
+1.644
+4601
+C104H78
+NH2/H
+P
+P
+−0.740
+0.884
+1.624
+5074
+C109H80
+F/H
+P
+P
+−2.155
+−0.590
+1.565
+4602
+C104H78
+NH2/H
+P
+P
+−0.540
+1.01
+1.550
+3314
+C53H48
+H
+N
+Si
+−0.957
+0.557
+1.514
+4599
+C104H78
+NH2
+P
+P
+−0.277
+1.160
+1.437
+3397
+C53H48
+NH2/H
+P
+P
+−0.514
+0.909
+1.423
+4825
+C109H80
+H
+P
+Si
+−0.565
+0.750
+1.316
+4521
+C104H78
+H
+P
+P
+−0.383
+0.838
+1.221
+3394
+C53H48
+NH2
+P
+P
+−0.592
+0.621
+1.214
+4823
+C109H80
+H
+P
+P
+−0.381
+0.799
+1.180
+3016
+C48H48
+H
+P
+P
+−0.500
+0.675
+1.174
+3647
+C68H64
+NH2
+B
+P
+−1.580
+−0.518
+1.062
+2711
+C35H36
+H
+N
+P
+−0.380
+0.412
+0.792
+2709
+C35H36
+H
+N
+P
+−0.097
+0.522
+0.619
+3921
+C74H64
+H
+P
+P
+0.033
+0.557
+0.525
+
+15
+
+
+3.2
+Predicting Frontier Orbital Energies with Machine Learning
+
+We use the six ML algorithms introduced before (SOAP KRR, enn-s2s, SOAP-enn-s2s,
+SOAP-PCA-enn-s2s, SchNet, PaiNN) to predict the frontier orbital energies of the struc-
+tures in the ND5k dataset. For learning LUMO energies, we remove the six low-energy-
+LUMO outliers (E(LUMO) < −6 eV) from the dataset. In all cases, hyperparameters
+were optimized by an iterative grid search, and the final values are listed in the supporting
+information. In addition to the ND5k learning task, we compiled a test set of 24 nanodia-
+monds with larger base structures than available in the ND5k dataset and random surface
+covering and doping patterns, in accordance with the ND5k setup. This ND5k large test
+set, referred to as ND5k-lt, was used to evaluate the extrapolation capabilities of the ML
+algorithms towards larger structures. For PaiNN, we use both sum pooling and average
+pooling after the message passing phase, while SchNet use average pooling only and the
+enn-s2s variants use set2set (learnable) pooling only.
+The mean absolute errors (MAE) obtained by different ML methods are summarized
+in table 2, learning curves are plotted in figure 4. Results for all algorithms are averaged
+over 6 random splits. An overview of the models’ hyperparameters and a more detailed
+description of the enn-s2s architecture are given in the supporting information.
+
+Table 2: Mean absolute errors (MAE, in eV) for ND5k HOMO and LUMO energy predic-
+tions, and errors for predicting HOMO and LUMO energies of 24 larger nanodiamonds
+(ND5k-lt) after training on ND5k. Uncertainties are measured in root mean squared error
+(RMSE) (in parentheses). Best MAE results are bold.
+
+ML Method
+ND5k
+HOMO Energy
+ND5k
+LUMO Energy
+ND5k-lt
+HOMO Energy
+ND5k-lt
+LUMO Energy
+
+SOAP KRR
+0.28 (0.41)
+0.35 (0.50)
+1.2 (1.7)
+0.66 (0.82)
+enn-s2s
+0.22 (0.35)
+0.23 (0.41)
+0.48 (0.85)
+0.26 (0.34)
+SOAP-enn-s2s
+0.22 (0.35)
+0.21 (0.39)
+2.2 (2.7)
+1.5 (1.7)
+SOAP-PCA-enn-s2s
+0.18 (0.27)
+0.20 (0.37)
+0.38 (0.63)
+0.25 (0.33)
+SchNet
+0.23 (0.35)
+0.22 (0.39)
+0.45 (0.70)
+0.26 (0.34)
+PaiNN avg pool
+0.16 (0.27)
+0.19 (0.32)
+0.34 (0.52)
+0.23 (0.31)
+PaiNN sum pool
+0.18 (0.29)
+0.20 (0.35)
+2.6 (3.1)
+0.53 (0.71)
+
+16
+
+
+Figure 4: Top: Validation learning curves of the graph neural networks on ND5k (a)
+HOMO and (b) LUMO energy training, averaged over all training runs (cf. table 2). Mean
+absolute validation error (MAE) in eV is plotted against the number of epochs (log scale).
+Bottom: Learning curves with respect to the training set size on ND5k (c) HOMO and (d)
+LUMO energy training. Mean absolute testing error (MAE) in eV is plotted against the
+number of training examples (log scale).
+
+Of all ML methods employed for ND5k learning, the SOAP KRR yields the highest
+errors (MAEs aound 0.3 eV), and the GNNs enn-s2s and SchNet achieve slightly better
+results (MAEs around 0.22 eV). The LUMO energy predictions of the SOAP-enn-s2s
+variant are improved by 0.02 eV MAE compared to the plain enn-s2s, and the SOAP-
+PCA-enn-s2s yields a further small improvement of 0.04 eV and 0.01 eV for HOMO and
+LUMO energies, respectively. The best results are obtained from the PaiNN model that
+uses average pooling, with MAEs of 0.16 eV and 0.19 eV for HOMO and LUMO energy
+
+17
+
+
+predictions, respectively. The second best results for the interpolation task achieved by
+the PaiNN model with sum pooling and the SOAP-PCA-enn-s2s.
+The incorporation of additional structural information into the enn-s2s graph nodes
+via plain SOAP descriptors does not significantly affect the learning performance on the
+interpolation task. For extrapolation to ND5k-lt, the MAEs are even strongly increased to
+> 1 eV. The removal of redundant information from the SOAP vectors via PCA then no-
+tably improves the results by increasing learning efficiency while making the model less
+prone to overfitting: In the SOAP-PCA-enn-s2s dimensionality reduction, 99.99 % of
+the SOAP vectors’ variance was retained after reducing their size by over 90 %, thereby
+also improving the computational efficiency of the network. The SOAP vectors carry
+information on all possible three-body-interactions between all elements present in the
+dataset, many of which are obsolete for most structures, yielding highly sparse descrip-
+tors. Thus, in accordance with earlier studies,56,104 the unedited SOAP vectors contain a
+large amount of redundant information, which probably also limits the effectiveness of the
+SOAP KRR model. However, finally, the PaiNN architecture is best able to efficiently ex-
+ploit the structural information within the ND5k dataset, and expressive enough to model
+the highly non-linear structure-property relationships, yielding the lowest MAEs.
+As can be seen in figure 4a and b, the learning curves of all graph neural networks are
+very similar to each other. For PaiNN, the use of average pooling, which directly encodes
+size-intensivity into the architecture, accelerates the learning over sum pooling. Interest-
+ingly, PaiNN initially scores higher errors than the other networks, but then converges to
+the best final result. The learning curves with respect to the number of training examples
+are depicted in figure 4c and d. Kernel regression tends to be superior when less training
+data is available, however, the actual performance always depends on the specific learning
+task.127,128 Here, the SOAP KRR is constantly outperformed by all GNNs, even for small
+training set sizes. Apparently, the GNN architectures are generally superior to the SOAP
+KRR approach for the learning task at hand. For HOMO energy predictions, PaiNN with
+average pooling constantly yields the best results, however, for LUMO energy predictions
+it gets slightly outperformed by the SOAP-PCA-enn-s2s for intermediate training set sizes
+(1000 and 2000 datapoints). Interestingly, the SOAP-enn-s2s initially gets outperformed
+by the plain enn-s2s, indicating that the large SOAP-enhanced architecture needs more
+data to learn effectively. Generally, the enn-s2s curves clearly substantiate that the in-
+corporation of SOAP features into the architecture and the PCA-reduction of the SOAP
+descriptors both accelerate learning and improve the final result.
+We also compared the performance of the SOAP-PCA-enn-s2s model to the plain
+enn-s2s on two different datasets, QM9 (134k small organic molecules)69,71 and OE62
+
+18
+
+
+(62k diverse medium size organic molecules)73 for learning frontier orbital energies. For
+both datasets, the enn-s2s architecture was again fine-tuned using a small grid-based hy-
+perparameter search as described in the supporting information. On the QM9 dataset, the
+plain enn-s2s scored MAEs of 84 meV and 86 meV for HOMO and LUMO energies,
+respectively. The error was reduced to 60 meV and 79 meV, respectively, when using the
+SOAP-PCA variant. We note here that, while this is a substantial improvement, the errors
+are still higher than state of the are accuracy (< 25 meV MAEs)101,129 and can probably
+be further reduced by a more elaborate tuning of hyperparameters. On the OE62 dataset,
+MAEs of 145 meV and 141 meV were obtained for HOMO and LUMO energies, respec-
+tively, using the plain enn-s2s. When using the SOAP-PCA variant, the MAEs decreased
+to 115 meV for both targets. Similar MAEs for this task were reported by Ramahan et al.
+when using a variant of the enn-s2s architecture (EHOMO: 148 meV, ELUMO: 145 meV).48
+
+In this work, the authors also used different variations of hybrid learning architectures to
+combine the enn-s2s GNN with molecular descriptors, however, the lowest MAEs from
+these architectures (EHOMO: 131 meV, ELUMO: 130 meV) are higher than those obtained
+from the SOAP-PCA-enn-s2s presented here.48
+
+The errors reported here for the ND5k dataset are much higher than those reported for
+other quantum chemistry datasets: Common frontier orbital energy MAEs are < 0.05 eV
+on QM963 and < 0.15 eV on OE62.48 The higher errors arise from the high complexity
+and comparatively low size of the dataset, but are also a result of the conservative split
+(66 % training, 17 % validation, 17 % test) that was applied.
+For the case of extrapolating predictions to larger nanodiamonds to the ND5k-lt set af-
+ter training on the ND5k dataset, the SOAP KRR approach again performs rather poorly.
+Also, the SOAP-enn-s2s network scores high errors, which is probably due to overfit-
+ting after the incorporation of large sparse SOAP vectors into the learning architecture.
+However, also the prediction errors of PaiNN with sum pooling strongly deteriorate, es-
+pecially for the prediction of HOMO energies (MAE of 2.6 eV). On the other hand, the
+less expressive SchNet and enn-s2s architectures as well as PaiNN with average pooling
+are much more robust in their predictions. Here, the average pooling PaiNN achieves the
+best results, with MAEs of 0.34 and 0.23 eV for HOMO and LUMO energy predictions,
+respectively.
+The PaiNN model that uses sum pooling scores the second best results on the interpo-
+lation task, together with SOAP-PCA-enn-s2s. This is surprising, because frontier orbital
+energies are intensive properties, and sum pooling is usually only advantageous for learn-
+ing extensive properties. In this case, however, as a result of the quantum size effect,
+the HOMO energies and the total numbers of atoms natoms of the ND5k structures are
+
+19
+
+
+strongly correlated: The Pearson correlation coefficient rc between E(HOMO) and natoms
+is rc = 0.47, while for E(LUMO) and natoms we find rc = 0.15.19,20,130,131 This energy
+dependence saturates for large natoms, as illustrated in figures S4 and S5 in the SI.
+The saturation of the quantum confinement effect leads to higher prediction errors for
+the structures outside the ND5k training range when the ML models intrinsically assume
+size extensivity by means of sum pooling. This effect is more pronounced for HOMO
+energy predictions, where the size correlation within ND5k is very strong and breaks
+down for the larger structures (see figure S4). The same effect, despite less pronounced,
+can be identified for the correlation of natoms and LUMO energies. Especially the PaiNN
+with sum pooling gets fooled by the correlation within the ND5k dataset and its prediction
+errors increase drastically, correlating with increasing nanodiamond sizes.
+
+20
+
+
+4
+Conclusions
+
+In this study, we introduced the ND5k dataset, containing DFTB-optimized structures and
+DFT/PBE0-computed frontier orbital energies of 5,089 diamondoids and nanodiamonds.
+The dataset is based on 17 H-terminated, undoped base structures, covered by either one
+of five surface species (H, F, OH, NH2, F/H, OH/H, NH2/H) and (co-) doped with up to
+two dopant atoms (B, N, Si, P). From this dataset, we extracted a subset of 45 structures
+with frontier orbital alignments that make them suitable for use as photocatalysts in solar
+light-driven reduction reactions. The structures from this subset suggest that P-doped,
+H- and NH2-covered nanodiamonds are promising candidate materials for this field. For
+further applications, such as electrode materials and sensors, the ND5k dataset provides
+both a source of pre-computed candidate structures and a basis for ML-guided design.
+Furthermore, we tested six ML models for predicting the frontier orbital energies of
+the ND5k structures, and we evaluated their performances on extrapolating their predic-
+tions to larger nanodiamonds. For this, we exchanged the generic atom-wise node embed-
+dings of an enn-s2s by their plain (SOAP-enn-s2s) or PCA-reduced (SOAP-PCA-enn-s2s)
+SOAP atomic descriptors. We found the latter to clearly outperform the other two enn-s2s
+variants, not only on ND5k, but also on the QM9 and OE62 datasets. The PaiNN GNN
+outperformed all other MD models on both the classical prediction task on ND5k, and on
+the extrapolation task on ND5k-lt. The second best overall results were obtained from the
+SOAP-PCA-enn-s2s.
+The general approach used in the SOAP-PCA-enn-s2s architecture allows for the
+straight-forward incorporation of structural features into any GNN. Future investigations
+towards more efficient and robust learning algorithms making use of this approach may
+target different combinations of atomic descriptors, dimensionality reduction techniques,
+and GNNs.
+
+5
+Acknowledgements
+
+We thank Prof. Gabriel Bester for providing pre-optimized structures of nanodiamonds,
+and Prof. Philipp Marquetand, Dr. Félix Musil and Dr. Kristof T. Schütt for helpful
+discussions. TK, JD and FN acknowledge support from the Helmholtz Einstein Inter-
+national Berlin Research School in Data Science (HEIBRiDS). FN acknowledges sup-
+port from European Commission (ERC CoG 772230), The Berlin Mathematics center
+MATH+ (AA2-8) and the Berlin Institute for the Foundations of Learning and Data (BI-
+FOLD). Computing resources were kindly provided by the Freie Universität Berlin hpc
+cluster Curta132 and by the Helmholtz-Zentrum Dresden-Rossendorf.
+
+21
+
+
+6
+Data Availability Statement
+
+The ND5k dataset, the test set of larger nanodiamonds, and the implementation of the
+PCA-SOAP-enn-s2s can be found online at https://github.com/ThorrenKirschbaum/ND5k
+The ND5k dataset will be uploaded to the NOMAD repository and the link inserted here
+in the final stage of publication.
+
+References
+
+[1] Emil Roduner. Size matters: why nanomaterials are different. Chem. Soc. Rev.,
+35(7):583–592, 2006. Publisher: Royal Society of Chemistry.
+
+[2] Nadeem Baig, Irshad Kammakakam, and Wail Falath. Nanomaterials: a review of
+synthesis methods, properties, recent progress, and challenges. Mater. Adv.,
+2(6):1821–1871, 2021. Publisher: Royal Society of Chemistry.
+
+[3] Vadym N. Mochalin, Olga Shenderova, Dean Ho, and Yury Gogotsi. The
+properties and applications of nanodiamonds. Nat. Nanotechnol., 7(1):11–23,
+January 2012.
+
+[4] Nicholas Nunn, Marco Torelli, Gary McGuire, and Olga Shenderova.
+Nanodiamond: A high impact nanomaterial. Curr. Opin. Solid State Mater. Sci.,
+21(1):1–9, February 2017.
+
+[5] Di Zhu, Linghong Zhang, Rose E. Ruther, and Robert J. Hamers.
+Photo-illuminated diamond as a solid-state source of solvated electrons in water
+for nitrogen reduction. Nat. Mater., 12(9):836–841, September 2013. Number: 9
+Publisher: Nature Publishing Group.
+
+[6] Linghong Zhang, Di Zhu, Gilbert M. Nathanson, and Robert J. Hamers. Selective
+Photoelectrochemical Reduction of Aqueous CO2 to CO by Solvated Electrons.
+Angew. Chem. Int. Ed., 53(37):9746–9750, 2014. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/anie.201404328.
+
+[7] R. J. Hamers, J. A. Bandy, D. Zhu, and L. Zhang. Photoemission from diamond
+films and substrates into water: dynamics of solvated electrons and implications
+for diamond photoelectrochemistry. Faraday Discuss., 172(0):397–411,
+November 2014.
+
+22
+
+
+[8] Linghong Zhang and Robert J. Hamers. Photocatalytic reduction of CO2 to CO
+by diamond nanoparticles. Diam. Relat. Mater., 78:24–30, September 2017.
+
+[9] Lin Lai and Amanda S. Barnard. Surface phase diagram and thermodynamic
+stability of functionalisation of nanodiamonds. J. Mater. Chem.,
+22(33):16774–16780, July 2012. Publisher: The Royal Society of Chemistry.
+
+[10] Tristan Petit, Mika Pflüger, Daniel Tolksdorf, Jie Xiao, and Emad F. Aziz.
+Valence holes observed in nanodiamonds dispersed in water. Nanoscale,
+7(7):2987–2991, 2015.
+
+[11] Tristan Petit, Ljiljana Puskar, Tatiana Dolenko, Sneha Choudhury, Eglof Ritter,
+Sergey Burikov, Kirill Laptinskiy, Quentin Brzustowski, Ulrich Schade, Hayato
+Yuzawa, Masanari Nagasaka, Nobuhiro Kosugi, Magdalena Kurzyp, Amélie
+Venerosy, Hugues Girard, Jean-Charles Arnault, Eiji Osawa, Nicholas Nunn, Olga
+Shenderova, and Emad F. Aziz. Unusual Water Hydrogen Bond Network around
+Hydrogenated Nanodiamonds. J. Phys. Chem. C, 121(9):5185–5194, March 2017.
+
+[12] Sneha Choudhury, Benjamin Kiendl, Jian Ren, Fang Gao, Peter Knittel, Christoph
+Nebel, Amélie Venerosy, Hugues Girard, Jean-Charles Arnault, Anke Krueger,
+Karin Larsson, and Tristan Petit. Combining nanostructuration with boron doping
+to alter sub band gap acceptor states in diamond materials. J. Mater. Chem. A,
+6(34):16645–16654, August 2018. Publisher: The Royal Society of Chemistry.
+
+[13] C. A. Feigl, B. Motevalli, A. J. Parker, B. Sun, and A. S. Barnard. Classifying and
+predicting the electron affinity of diamond nanoparticles using machine learning.
+Nanoscale Horiz., 4(4):983–990, June 2019. Publisher: The Royal Society of
+Chemistry.
+
+[14] Thorren Kirschbaum, Tristan Petit, Joachim Dzubiella, and Annika Bande.
+Effects of oxidative adsorbates and cluster formation on the electronic structure of
+nanodiamonds. J. Comput. Chem., 43(13):923–929, 2022. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/jcc.26849.
+
+[15] Jos L. Teunissen, Frank De Proft, and Freija De Vleeschouwer. Tuning the
+HOMO–LUMO Energy Gap of Small Diamondoids Using Inverse Molecular
+Design. J. Chem. Theory Comput., 13(3):1351–1365, March 2017.
+
+[16] Ting Zhang, Gang-Qin Liu, Weng-Hang Leong, Chu-Feng Liu, Man-Hin Kwok,
+To Ngai, Ren-Bao Liu, and Quan Li. Hybrid nanodiamond quantum sensors
+
+23
+
+
+enabled by volume phase transitions of hydrogels. Nat. Commun., 9(1):3188,
+August 2018. Number: 1 Publisher: Nature Publishing Group.
+
+[17] Hongxia Wang and Yi Cui. Nanodiamonds for energy. Carbon energy,
+1(1):13–18, 2019. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/cey2.9.
+
+[18] Yen-Yiu Liu, Be-Ming Chang, and Huan-Cheng Chang. Nanodiamond-enabled
+biomedical imaging. Nanomedicine, 15(16):1599–1616, July 2020. Publisher:
+Future Medicine.
+
+[19] Y. K. Chang, H. H. Hsieh, W. F. Pong, M.-H. Tsai, F. Z. Chien, P. K. Tseng, L. C.
+Chen, T. Y. Wang, K. H. Chen, D. M. Bhusari, J. R. Yang, and S. T. Lin. Quantum
+Confinement Effect in Diamond Nanocrystals Studied by X-Ray-Absorption
+Spectroscopy. Phys. Rev. Lett., 82(26):5377–5380, June 1999.
+
+[20] T. M. Willey, C. Bostedt, T. van Buuren, J. E. Dahl, S. G. Liu, R. M. K. Carlson,
+L. J. Terminello, and T. Möller. Molecular Limits to the Quantum Confinement
+Model in Diamond Clusters. Phys. Rev. Lett., 95(11):113401, September 2005.
+Publisher: American Physical Society.
+
+[21] Stepan Stehlik, Marian Varga, Martin Ledinsky, Vit Jirasek, Anna Artemenko,
+Halyna Kozak, Lukas Ondic, Viera Skakalova, Giacomo Argentero, Timothy
+Pennycook, Jannik C. Meyer, Antonin Fejfar, Alexander Kromka, and Bohuslav
+Rezek. Size and Purity Control of HPHT Nanodiamonds down to 1 nm. J. Phys.
+Chem. C, 119(49):27708–27720, December 2015. Publisher: American Chemical
+Society.
+
+[22] Sergio Ferro and Achille De Battisti. Physicochemical Properties of Fluorinated
+Diamond Electrodes. J. Phys. Chem. B, 107(31):7567–7573, August 2003.
+Publisher: American Chemical Society.
+
+[23] Mei Wang, Nathalie Simon, Claudia Decorse-Pascanut, Muriel Bouttemy, Arnaud
+Etcheberry, Musen Li, Rabah Boukherroub, and Sabine Szunerits. Comparison of
+the chemical composition of boron-doped diamond surfaces upon different
+oxidation processes. Electrochim. Acta, 54(24):5818–5824, October 2009.
+
+[24] Noam Brown and Oded Hod. Controlling the Electronic Properties of
+Nanodiamonds via Surface Chemical Functionalization: A DFT Study. J. Phys.
+Chem. C, 118(10):5530–5537, March 2014. Publisher: American Chemical
+Society.
+
+24
+
+
+[25] K. Larsson and Y. Tian. Effect of surface termination on the reactivity of
+nano-sized diamond particle surfaces for bio applications. Carbon, 134:244–254,
+August 2018.
+
+[26] M. A. Pinault, J. Barjon, T. Kociniewski, F. Jomard, and J. Chevallier. The n-type
+doping of diamond: Present status and pending questions. Physica B: Condens.
+Matter, 401-402:51–56, December 2007.
+
+[27] O. A. Williams, M. Nesladek, M. Daenen, S. Michaelson, A. Hoffman, E. Osawa,
+K. Haenen, and R. B. Jackman. Growth, electronic properties and applications of
+nanodiamond. Diam. Relat. Mater., 17(7):1080–1088, July 2008.
+
+[28] Peter Knittel, Franziska Buchner, Emina Hadzifejzovic, Christian Giese, Patricia
+Quellmalz, Robert Seidel, Tristan Petit, Boyan Iliev, Thomas J. S. Schubert,
+Christoph E. Nebel, and John S. Foord. Nanostructured Boron Doped Diamond
+Electrodes with Increased Reactivity for Solar-Driven CO2 Reduction in Room
+Temperature Ionic Liquids. ChemCatChem, 12(21):5548–5557, 2020. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/cctc.202000938.
+
+[29] V. Pichot, M. Comet, E. Fousson, C. Baras, A. Senger, F. Le Normand, and
+D. Spitzer. An efficient purification method for detonation nanodiamonds. Diam.
+Relat. Mater., 17(1):13–22, January 2008.
+
+[30] Konstantin G. Mikheev, Tatyana N. Mogileva, Arseniy E. Fateev, Nicholas A.
+Nunn, Olga A. Shenderova, and Gennady M. Mikheev. Low-Power Laser
+Graphitization of High Pressure—High Temperature Nanodiamond Films. Appl.
+Sci., 10(9):3329, January 2020. Number: 9 Publisher: Multidisciplinary Digital
+Publishing Institute.
+
+[31] Kristopher D. Behler, Antonella Stravato, Vadym Mochalin, Guzeliya Korneva,
+Gleb Yushin, and Yury Gogotsi. Nanodiamond-Polymer Composite Fibers and
+Coatings. ACS Nano, 3(2):363–369, February 2009. Publisher: American
+Chemical Society.
+
+[32] Jason A. Bandy, Di Zhu, and Robert J. Hamers. Photocatalytic reduction of
+nitrogen to ammonia on diamond thin films grown on metallic substrates. Diam.
+Relat. Mater., 64:34–41, April 2016.
+
+[33] Habib Etemadi, Reza Yegani, and Valiollah Babaeipour. Performance evaluation
+and antifouling analyses of cellulose acetate/nanodiamond nanocomposite
+
+25
+
+
+membranes in water treatment: ARTICLE. J. Appl. Polym. Sci., 134(21), June
+2017.
+
+[34] María Dolores Petit-Domínguez, Carmen Quintana, Luis Vázquez, María del
+Pozo, Isabel Cuadrado, Ana María Parra-Alfambra, and Elena Casero. Synergistic
+effect of MoS2 and diamond nanoparticles in electrochemical sensors:
+determination of the anticonvulsant drug valproic acid. Microchim. Acta,
+185(7):334, June 2018.
+
+[35] Pavlo O. Dral. Quantum Chemistry in the Age of Machine Learning. J. Phys.
+Chem. Lett., 11(6):2336–2347, March 2020. Publisher: American Chemical
+Society.
+
+[36] W Matthew C Foulkes and Roger Haydock. Tight-binding models and
+density-functional theory. Phys. Rev. B, 39(17):12520, 1989.
+
+[37] Zheng Li, Noushin Omidvar, Wei Shan Chin, Esther Robb, Amanda Morris, Luke
+Achenie, and Hongliang Xin. Machine-Learning Energy Gaps of Porphyrins with
+Molecular Graph Representations. J. Phys. Chem. A, 122(18):4571–4578, May
+2018. Publisher: American Chemical Society.
+
+[38] Min-Hsuan Lee. Insights from Machine Learning Techniques for Predicting the
+Efficiency of Fullerene Derivatives-Based Ternary Organic Solar Cells at Ternary
+Blend Design. Adv. Energy Mater., 9(26):1900891, 2019. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/aenm.201900891.
+
+[39] Daniele Padula, Jack D. Simpson, and Alessandro Troisi. Combining electronic
+and structural features in machine learning models to predict organic solar cells
+properties. Mater. Horizons, 6(2):343–349, 2019. Publisher: Royal Society of
+Chemistry.
+
+[40] Min-Hsuan Lee. A Machine Learning–Based Design Rule for Improved
+Open-Circuit Voltage in Ternary Organic Solar Cells. Adv. Intell. Syst.,
+2(1):1900108, 2020. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/aisy.201900108.
+
+[41] Nastaran Meftahi, Mykhailo Klymenko, Andrew J. Christofferson, Udo Bach,
+David A. Winkler, and Salvy P. Russo. Machine learning property prediction for
+organic photovoltaic devices. npj Comput. Mater., 6(1):1–8, November 2020.
+Number: 1 Publisher: Nature Publishing Group.
+
+26
+
+
+[42] Min-Hsuan Lee. Identifying correlation between the open-circuit voltage and the
+frontier orbital energies of non-fullerene organic solar cells based on interpretable
+machine-learning approaches. Sol. Energy, 234:360–367, March 2022.
+
+[43] Qi Zhang, Yu Jie Zheng, Wenbo Sun, Zeping Ou, Omololu Odunmbaku, Meng Li,
+Shanshan Chen, Yongli Zhou, Jing Li, Bo Qin, and Kuan Sun. High-Efficiency
+Non-Fullerene Acceptors Developed by Machine Learning and Quantum
+Chemistry. Adv. Sci., 9(6):2104742, 2022. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/advs.202104742.
+
+[44] Freja E. Storm, Linnea M. Folkmann, Thorsten Hansen, and Kurt V. Mikkelsen.
+Machine learning the frontier orbital energies of SubPc based triads. J. Mol.
+Model., 28(10):313, September 2022.
+
+[45] Florbela Pereira, Kaixia Xiao, Diogo A. R. S. Latino, Chengcheng Wu, Qingyou
+Zhang, and Joao Aires-de Sousa. Machine Learning Methods to Predict Density
+Functional Theory B3LYP Energies of HOMO and LUMO Orbitals. J. Chem. Inf.
+Model., 57(1):11–21, January 2017. Publisher: American Chemical Society.
+
+[46] Alexander M. Chang, Jessica G. Freeze, and Victor S. Batista. Hammett neural
+networks: prediction of frontier orbital energies of tungsten–benzylidyne
+photoredox complexes. Chem. Sci., 10(28):6844–6854, 2019. Publisher: Royal
+Society of Chemistry.
+
+[47] Bart Olsthoorn, R. Matthias Geilhufe, Stanislav S. Borysov, and Alexander V.
+Balatsky. Band Gap Prediction for Large Organic Crystal Structures with
+Machine Learning. Adv. Quantum Technol., 2(7-8):1900023, 2019. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/qute.201900023.
+
+[48] Obaidur Rahaman and Alessio Gagliardi. Deep Learning Total Energies and
+Orbital Energies of Large Organic Molecules Using Hybridization of Molecular
+Fingerprints. J. Chem. Inf. Model., 60(12):5971–5983, December 2020.
+Publisher: American Chemical Society.
+
+[49] Kai Lin Woon, Zhao Xian Chong, Azhar Ariffin, and Chee Seng Chan. Relating
+molecular descriptors to frontier orbital energy levels, singlet and triplet excited
+states of fused tricyclics using machine learning. J. Mol. Graph. Model.,
+105:107891, June 2021.
+
+[50] Zong-Rong Ye, Sheng-Hsuan Hung, Berlin Chen, and Ming-Kang Tsai.
+Assessment of Predicting Frontier Orbital Energies for Small Organic Molecules
+
+27
+
+
+Using Knowledge-Based and Structural Information. ACS Eng. Au, 2(4):360–368,
+August 2022. Publisher: American Chemical Society.
+
+[51] Chenru Duan, Shuxin Chen, Michael G. Taylor, Fang Liu, and Heather J. Kulik.
+Machine learning to tame divergent density functional approximations: a new
+path to consensus materials design principles. Chem. Sci., 12(39):13021–13036,
+2021. Publisher: Royal Society of Chemistry.
+
+[52] Bernard Mazouin, Alexandre Alain Schöpfer, and O. Anatole von Lilienfeld.
+Selected machine learning of HOMO–LUMO gaps with improved data-efficiency.
+Mater. Adv., 2022. Publisher: Royal Society of Chemistry.
+
+[53] Jigyasa Nigam, Guillaume Fraux, and Michele Ceriotti. Unified theory of
+atom-centered representations and graph convolutional machine-learning
+schemes. arXiv:2202.01566 [physics, stat], February 2022. arXiv: 2202.01566.
+
+[54] Jorg Behler and Michele Parrinello. Generalized Neural-Network Representation
+of High-Dimensional Potential-Energy Surfaces. Phys. Rev. Lett., page 4, 2007.
+
+[55] Albert P. Bartók, Risi Kondor, and Gábor Csányi. On representing chemical
+environments. Phys. Rev. B, 87(18):184115, May 2013.
+
+[56] Behnam Parsaeifard, Deb Sankar De, Anders S. Christensen, Felix A. Faber, Emir
+Kocer, Sandip De, Jörg Behler, O. Anatole von Lilienfeld, and Stefan Goedecker.
+An assessment of the structural resolution of various fingerprints commonly used
+in machine learning. Mach. Learn.: Sci. Technol., 2(1):015018, March 2021.
+Publisher: IOP Publishing.
+
+[57] Felix Musil, Andrea Grisafi, Albert P. Bartók, Christoph Ortner, Gábor Csányi,
+and Michele Ceriotti. Physics-Inspired Structural Representations for Molecules
+and Materials. Chem. Rev., 121(16):9759–9815, August 2021. Publisher:
+American Chemical Society.
+
+[58] Thomas N Kipf and Max Welling. Semi-supervised classification with graph
+convolutional networks. arXiv preprint arXiv:1609.02907, 2016.
+
+[59] Justin Gilmer, Samuel S. Schoenholz, Patrick F. Riley, Oriol Vinyals, and
+George E. Dahl. Neural Message Passing for Quantum Chemistry.
+arXiv:1704.01212 [cs], June 2017. arXiv: 1704.01212.
+
+28
+
+
+[60] Kristof Schütt, Pieter-Jan Kindermans, Huziel Enoc Sauceda Felix, Stefan
+Chmiela, Alexandre Tkatchenko, and Klaus-Robert Müller. SchNet: A
+continuous-filter convolutional neural network for modeling quantum interactions.
+In Advances in Neural Information Processing Systems, volume 30. Curran
+Associates, Inc., 2017.
+
+[61] Kristof T. Schütt, Farhad Arbabzadah, Stefan Chmiela, Klaus R. Müller, and
+Alexandre Tkatchenko. Quantum-chemical insights from deep tensor neural
+networks. Nat. Commun., 8(1):13890, January 2017. Number: 1 Publisher:
+Nature Publishing Group.
+
+[62] Nathaniel Thomas, Tess Smidt, Steven Kearnes, Lusann Yang, Li Li, Kai
+Kohlhoff, and Patrick Riley. Tensor field networks: Rotation- and
+translation-equivariant neural networks for 3d point clouds. arXiv preprint
+arXiv:1802.08219, 2018.
+
+[63] Kristof Schütt, Oliver Unke, and Michael Gastegger. Equivariant message passing
+for the prediction of tensorial properties and molecular spectra. In Proceedings of
+the 38th International Conference on Machine Learning, pages 9377–9388.
+PMLR, July 2021. ISSN: 2640-3498.
+
+[64] Benjamin Kurt Miller, Mario Geiger, Tess E. Smidt, and Frank Noé. Relevance of
+Rotationally Equivariant Convolutions for Predicting Molecular Properties.
+Technical Report arXiv:2008.08461, arXiv, November 2020. arXiv:2008.08461
+[physics, stat].
+
+[65] Simon Batzner, Albert Musaelian, Lixin Sun, Mario Geiger, Jonathan P. Mailoa,
+Mordechai Kornbluth, Nicola Molinari, Tess E. Smidt, and Boris Kozinsky.
+E(3)-Equivariant Graph Neural Networks for Data-Efficient and Accurate
+Interatomic Potentials. Nat. Commun., 13(1):2453, December 2022.
+arXiv:2101.03164 [cond-mat, physics:physics].
+
+[66] Ilyes Batatia, Dávid Péter Kovács, Gregor NC Simm, Christoph Ortner, and
+Gábor Csányi. Mace: Higher order equivariant message passing neural networks
+for fast and accurate force fields. arXiv preprint arXiv:2206.07697, 2022.
+
+[67] Mario Geiger and Tess Smidt. e3nn: Euclidean neural networks. arXiv preprint
+arXiv:2207.09453, 2022.
+
+29
+
+
+[68] Lorenz C. Blum and Jean-Louis Reymond. 970 Million Druglike Small Molecules
+for Virtual Screening in the Chemical Universe Database GDB-13. J. Am. Chem.
+Soc., 131(25):8732–8733, July 2009. Publisher: American Chemical Society.
+
+[69] Lars Ruddigkeit, Ruud van Deursen, Lorenz C. Blum, and Jean-Louis Reymond.
+Enumeration of 166 Billion Organic Small Molecules in the Chemical Universe
+Database GDB-17. J. Chem. Inf. Model., 52(11):2864–2875, November 2012.
+Publisher: American Chemical Society.
+
+[70] Grégoire Montavon, Matthias Rupp, Vivekanand Gobre, Alvaro
+Vazquez-Mayagoitia, Katja Hansen, Alexandre Tkatchenko, Klaus-Robert Müller,
+and O. Anatole von Lilienfeld. Machine learning of molecular electronic
+properties in chemical compound space. New J. Phys., 15(9):095003, September
+2013.
+
+[71] Raghunathan Ramakrishnan, Pavlo O. Dral, Matthias Rupp, and O. Anatole von
+Lilienfeld. Quantum chemistry structures and properties of 134 kilo molecules.
+Sci. Data, 1(1):140022, August 2014. Number: 1 Publisher: Nature Publishing
+Group.
+
+[72] Claudia Draxl and Matthias Scheffler. The NOMAD laboratory: from data
+sharing to artificial intelligence. J. Phys. Mater., 2(3):036001, May 2019.
+Publisher: IOP Publishing.
+
+[73] Annika Stuke, Christian Kunkel, Dorothea Golze, Milica Todorovi´c, Johannes T.
+Margraf, Karsten Reuter, Patrick Rinke, and Harald Oberhofer. Atomic structures
+and orbital energies of 61,489 crystal-forming organic molecules. Sci. Data,
+7(1):58, February 2020. Number: 1 Publisher: Nature Publishing Group.
+
+[74] Michael Fernandez, Ante Bili´c, and Amanda S. Barnard. Machine learning and
+genetic algorithm prediction of energy differences between electronic calculations
+of graphene nanoflakes. Nanotechnology, 28(38):38LT03, August 2017.
+Publisher: IOP Publishing.
+
+[75] Baichuan Sun, Michael Fernandez, and Amanda S. Barnard. Machine Learning
+for Silver Nanoparticle Electron Transfer Property Prediction. J. Chem. Inf.
+Model., 57(10):2413–2423, October 2017. Publisher: American Chemical
+Society.
+
+30
+
+
+[76] A. S. Barnard and G. Opletal. Predicting structure/property relationships in
+multi-dimensional nanoparticle data using t-distributed stochastic neighbour
+embedding and machine learning. Nanoscale, 11(48):23165–23172, 2019.
+
+[77] Amanda S. Barnard, George Opletal, and Shery L. Y. Chang. Does Twinning
+Impact Structure/Property Relationships in Diamond Nanoparticles? J. Phys.
+Chem. C, 123(17):11207–11215, May 2019.
+
+[78] Irini Furxhi, Finbarr Murphy, Martin Mullins, and Craig A. Poland. Machine
+learning prediction of nanoparticle in vitro toxicity: A comparative study of
+classifiers and ensemble-classifiers using the Copeland Index. Toxicol. Lett.,
+312:157–166, September 2019.
+
+[79] Amanda J. Parker and Amanda S. Barnard. Machine learning reveals multiple
+classes of diamond nanoparticles. Nanoscale Horiz., 5(10):1394–1399, 2020.
+Publisher: Royal Society of Chemistry.
+
+[80] Fabian Weber, Jian Ren, Tristan Petit, and Annika Bande. Theoretical X-ray
+absorption spectroscopy database analysis for oxidised 2D carbon nanomaterials.
+Phys. Chem. Chem. Phys., 21(13):6999–7008, 2019.
+
+[81] Clyde A. Daly and Rigoberto Hernandez. Learning from the Machine:
+Uncovering Sustainable Nanoparticle Design Rules. J. Phys. Chem. C,
+124(24):13409–13420, June 2020. Publisher: American Chemical Society.
+
+[82] John H. T. Luong, Keith B. Male, and Jeremy D. Glennon. Boron-doped diamond
+electrode: synthesis, characterization, functionalization and analytical
+applications. Analyst, 134(10):1965, 2009.
+
+[83] A. Denisenko, A. Romanyuk, C. Pietzka, J. Scharpf, and E. Kohn. Surface
+structure and surface barrier characteristics of boron-doped diamond in
+electrolytes after CF4 plasma treatment in RF-barrel reactor. Diam. Relat. Mater.,
+19(5):423–427, May 2010.
+
+[84] Victor Acosta and Philip Hemmer. Nitrogen-vacancy centers: Physics and
+applications. MRS Bull., 38(2):127–130, February 2013.
+
+[85] Christoph Bannwarth, Eike Caldeweyher, Sebastian Ehlert, Andreas Hansen,
+Philipp Pracht, Jakob Seibert, Sebastian Spicher, and Stefan Grimme. Extended
+tight-binding quantum chemistry methods. WIREs Comput. Mol. Sci.,
+
+31
+
+
+11(2):e1493, 2021. _eprint:
+https://wires.onlinelibrary.wiley.com/doi/pdf/10.1002/wcms.1493.
+
+[86] Christoph Bannwarth, Sebastian Ehlert, and Stefan Grimme. GFN2-xTB—An
+Accurate and Broadly Parametrized Self-Consistent Tight-Binding Quantum
+Chemical Method with Multipole Electrostatics and Density-Dependent
+Dispersion Contributions. J. Chem. Theory Comput., 15(3):1652–1671, March
+2019. Publisher: American Chemical Society.
+
+[87] Frank Neese, Frank Wennmohs, Ute Becker, and Christoph Riplinger. The ORCA
+quantum chemistry program package. J. Chem. Phys., 152(22):224108, June
+2020. Publisher: American Institute of Physics.
+
+[88] Carlo Adamo and Vincenzo Barone. Toward reliable density functional methods
+without adjustable parameters: The PBE0 model. J. Chem. Phys.,
+110(13):6158–6170, April 1999. Publisher: American Institute of Physics.
+
+[89] John P. Perdew, Matthias Ernzerhof, and Kieron Burke. Rationale for mixing
+exact exchange with density functional approximations. J. Chem. Phys.,
+105(22):9982–9985, December 1996. Publisher: American Institute of Physics.
+
+[90] Ansgar Schäfer, Hans Horn, and Reinhart Ahlrichs. Fully optimized contracted
+Gaussian basis sets for atoms Li to Kr. J. Chem. Phys., 97(4):2571–2577, August
+1992.
+
+[91] Florian Weigend and Reinhart Ahlrichs. Balanced basis sets of split valence, triple
+zeta valence and quadruple zeta valence quality for H to Rn: Design and
+assessment of accuracy. Phys. Chem. Chem. Phys., 7(18):3297–3305, August
+2005.
+
+[92] Stefan Grimme, Stephan Ehrlich, and Lars Goerigk. Effect of the damping
+function in dispersion corrected density functional theory. J. Comput. Chem.,
+32(7):1456–1465, 2011.
+
+[93] Frank Neese, Frank Wennmohs, Andreas Hansen, and Ute Becker. Efficient,
+approximate and parallel Hartree–Fock and hybrid DFT calculations. A
+‘chain-of-spheres’ algorithm for the Hartree–Fock exchange. Chem. Phys.,
+356(1):98–109, February 2009.
+
+[94] Florian Weigend. Accurate Coulomb-fitting basis sets for H to Rn. Phys. Chem.
+Chem. Phys., 8(9):1057–1065, February 2006.
+
+32
+
+
+[95] Oliver T. Unke, Stefan Chmiela, Huziel E. Sauceda, Michael Gastegger, Igor
+Poltavsky, Kristof T. Schütt, Alexandre Tkatchenko, and Klaus-Robert Müller.
+Machine Learning Force Fields. Chem. Rev., 121(16):10142–10186, August
+2021. Publisher: American Chemical Society.
+
+[96] Kyunghyun Cho, Bart Van Merriënboer, Dzmitry Bahdanau, and Yoshua Bengio.
+On the properties of neural machine translation: Encoder-decoder approaches.
+arXiv preprint arXiv:1409.1259, 2014.
+
+[97] Oriol Vinyals, Samy Bengio, and Manjunath Kudlur. Order matters: Sequence to
+sequence for sets. arXiv preprint arXiv:1511.06391, 2015.
+
+[98] K. T. Schütt, H. E. Sauceda, P.-J. Kindermans, A. Tkatchenko, and K.-R. Müller.
+SchNet – A deep learning architecture for molecules and materials. J. Chem.
+Phys., 148(24):241722, March 2018. Publisher: American Institute of Physics.
+
+[99] K. T. Schütt, P. Kessel, M. Gastegger, K. A. Nicoli, A. Tkatchenko, and K.-R.
+Müller. SchNetPack: A Deep Learning Toolbox For Atomistic Systems. J. Chem.
+Theory Comput., 15(1):448–455, January 2019. Publisher: American Chemical
+Society.
+
+[100] Johannes Klicpera, Janek Groß, and Stephan Günnemann. Directional message
+passing for molecular graphs. arXiv preprint arXiv:2003.03123, 2020.
+
+[101] Johannes Klicpera, Shankari Giri, Johannes T Margraf, and Stephan Günnemann.
+Fast and uncertainty-aware directional message passing for non-equilibrium
+molecules. arXiv preprint arXiv:2011.14115, 2020.
+
+[102] Hervé Abdi and Lynne J. Williams. Principal component analysis. Wiley
+Interdiscip. Rev. Comput. Stat., 2(4):433–459, 2010.
+
+[103] Bastien Casier, Stéphane Carniato, Tsveta Miteva, Nathalie Capron, and Nicolas
+Sisourat. Using principal component analysis for neural network
+high-dimensional potential energy surface. J. Chem. Phys., 152(23):234103, 2020.
+
+[104] James P. Darby, James R. Kermode, and Gábor Csányi. Compressing local atomic
+neighbourhood descriptors. npj Comput. Mater., 8(1):1–13, August 2022.
+Number: 1 Publisher: Nature Publishing Group.
+
+[105] Félix Musil, Max Veit, Till Junge, Markus Stricker, Alexander Goscinki,
+Guillaume Fraux, and Michele Ceriotti. Librascal. GitHub, https://github.
+com/cosmo-epfl/librascal, 2018.
+
+33
+
+
+[106] F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel,
+M. Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos,
+D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay. Scikit-learn: Machine
+learning in Python. J. Mach. Learn Res., 12:2825–2830, 2011.
+
+[107] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury,
+Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga,
+Alban Desmaison, Andreas Köpf, Edward Z. Yang, Zach DeVito, Martin Raison,
+Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and
+Soumith Chintala. Pytorch: An imperative style, high-performance deep learning
+library. arXiv, arXiv:1912.01703, 2019.
+
+[108] Matthias Fey and Jan E. Lenssen. Fast graph representation learning with PyTorch
+Geometric. In ICLR Workshop on Representation Learning on Graphs and
+Manifolds, 2019.
+
+[109] Lauri Himanen, Marc O. J. Jäger, Eiaki V. Morooka, Filippo Federici Canova,
+Yashasvi S. Ranawat, David Z. Gao, Patrick Rinke, and Adam S. Foster. DScribe:
+Library of descriptors for machine learning in materials science. Comput. Phys.
+Commun., 247:106949, 2020.
+
+[110] Ask Hjorth Larsen, Jens Jørgen Mortensen, Jakob Blomqvist, Ivano E Castelli,
+Rune Christensen, Marcin Dułak, Jesper Friis, Michael N Groves, Bjørk Hammer,
+Cory Hargus, Eric D Hermes, Paul C Jennings, Peter Bjerre Jensen, James
+Kermode, John R Kitchin, Esben Leonhard Kolsbjerg, Joseph Kubal, Kristen
+Kaasbjerg, Steen Lysgaard, Jón Bergmann Maronsson, Tristan Maxson, Thomas
+Olsen, Lars Pastewka, Andrew Peterson, Carsten Rostgaard, Jakob Schiøtz, Ole
+Schütt, Mikkel Strange, Kristian S Thygesen, Tejs Vegge, Lasse Vilhelmsen,
+Michael Walter, Zhenhua Zeng, and Karsten W Jacobsen. The atomic simulation
+environment—a python library for working with atoms. J. Phys. Condens. Mat.,
+29(27):273002, 2017.
+
+[111] Yu Liu, Zhenning Gu, John L. Margrave, and Valery N. Khabashesku.
+Functionalization of Nanoscale Diamond Powder: Fluoro-, Alkyl-, Amino-, and
+Amino Acid-Nanodiamond Derivatives. Chem. Mater., 16(20):3924–3930,
+October 2004.
+
+[112] Alexander M. Panich, Hans-Martin Vieth, Alexander I. Shames, Natalya Froumin,
+Eiji Ôsawa, and Akifumi Yao. Structure and Bonding in Fluorinated
+Nanodiamond. J. Phys. Chem. C, 114(2):774–782, January 2010.
+
+34
+
+
+[113] O. Shenderova, A. M. Panich, S. Moseenkov, S. C. Hens, V. Kuznetsov, and
+H.-M. Vieth. Hydroxylated Detonation Nanodiamond: FTIR, XPS, and NMR
+Studies. J. Phys. Chem. C, 115(39):19005–19011, October 2011. Publisher:
+American Chemical Society.
+
+[114] Di Zhu, Jason A. Bandy, Shuo Li, and Robert J. Hamers. Amino-terminated
+diamond surfaces: Photoelectron emission and photocatalytic properties. Surf.
+Sci., 650:295–301, August 2016.
+
+[115] S. A. Kajihara, A. Antonelli, J. Bernholc, and R. Car. Nitrogen and potential
+n-type dopants in diamond. Phys. Rev. Lett., 66(15):2010–2013, April 1991.
+Publisher: American Physical Society.
+
+[116] Yu-xiao Cui, Jian-guo Zhang, Fang-hong Sun, and Zhi-ming Zhang. Si-doped
+diamond films prepared by chemical vapour deposition. T. Nonferr. Metal. Soc.,
+23(10):2962–2970, October 2013.
+
+[117] Xinchang Wang, Yu Qiao, Baocai Zhang, and Fanghong Sun. Influences of Si
+dopant on geometry and energetic stability of terminated diamond (111)-1 × 1
+surfaces. Diam. Relat. Mater., 109:108014, November 2020.
+
+[118] Xubing Wei, Lin Chen, Minglan Zhang, Zhibin Lu, and Guangan Zhang. Effect of
+dopants (F, Si) material on the structure and properties of hydrogenated DLC film
+by plane cathode PECVD. Diam. Relat. Mater., 110:108102, December 2020.
+
+[119] T. A. Grotjohn, D. T. Tran, M. K. Yaran, S. N. Demlow, and T. Schuelke. Heavy
+phosphorus doping by epitaxial growth on the (111) diamond surface. Diam.
+Relat. Mater., 44:129–133, April 2014.
+
+[120] Hiromitsu Kato, Daisuke Takeuchi, Masahiko Ogura, Takatoshi Yamada,
+Mitsuhiro Kataoka, Yuji Kimura, Susumu Sobue, Christoph E. Nebel, and Satoshi
+Yamasaki. Heavily phosphorus-doped nano-crystalline diamond electrode for
+thermionic emission application. Diam. Relat. Mater., 63:165–168, March 2016.
+
+[121] Giovanni Alfieri, Lukas Kranz, and Andrei Mihaila. Phosphorus-Related
+Complexes and Shallow Doping in Diamond. Phys. Status Solidi Rapid Res. Lett.,
+12(4):1700409, 2018. _eprint:
+https://onlinelibrary.wiley.com/doi/pdf/10.1002/pssr.201700409.
+
+[122] Jürgen Ristein. Surface science of diamond: Familiar and amazing. Surf. Sci.,
+600(18):3677–3689, September 2006.
+
+35
+
+
+[123] Franziska Buchner, Thorren Kirschbaum, Amélie Venerosy, Hugues Girard,
+Jean-Charles Arnault, Benjamin Kiendl, Anke Krueger, Karin Larsson, Annika
+Bande, Tristan Petit, and Christoph Merschjann. Early dynamics of the emission
+of solvated electrons from nanodiamonds in water. chemarXiv preprint
+chemarXiv:10.26434, December 2021.
+
+[124] Jeffrey R. Christianson, Di Zhu, Robert J. Hamers, and J. R. Schmidt. Mechanism
+of N2 Reduction to NH3 by Aqueous Solvated Electrons. J. Phys. Chem. B,
+118(1):195–203, January 2014. Publisher: American Chemical Society.
+
+[125] Francesco Ambrosio, Zhendong Guo, and Alfredo Pasquarello. Absolute Energy
+Levels of Liquid Water. J. Phys. Chem. Lett., 9(12):3212–3216, June 2018.
+Publisher: American Chemical Society.
+
+[126] Peng Han, Denis Antonov, Jörg Wrachtrup, and Gabriel Bester. Surface-bound
+states in nanodiamonds. Phys. Rev. B, 95(19):195428, May 2017.
+
+[127] Felix A. Faber, Luke Hutchison, Bing Huang, Justin Gilmer, Samuel S.
+Schoenholz, George E. Dahl, Oriol Vinyals, Steven Kearnes, Patrick F. Riley, and
+O. Anatole von Lilienfeld. Prediction Errors of Molecular Machine Learning
+Models Lower than Hybrid DFT Error. J. Chem. Theory Comput.,
+13(11):5255–5264, November 2017. Publisher: American Chemical Society.
+
+[128] Mostafa Yaghoobi and Mojtaba Alaei. Machine learning for compositional
+disorder: A comparison between different descriptors and machine learning
+frameworks. Comp. Mater. Sci., 207:111284, May 2022.
+
+[129] Ziteng Liu, Liqiang Lin, Qingqing Jia, Zheng Cheng, Yanyan Jiang, Yanwen Guo,
+and Jing Ma. Transferable Multilevel Attention Neural Network for Accurate
+Prediction of Quantum Chemistry Properties via Multitask Learning. J. Chem. Inf.
+Model., 61(3):1066–1082, March 2021. Publisher: American Chemical Society.
+
+[130] Asaf Bolker, Cecile Saguy, Moshe Tordjman, and Rafi Kalish. Quantum
+confinement and Coulomb blockade in isolated nanodiamond crystallites. Phys.
+Rev. B, 88(3):035442, July 2013. Publisher: American Physical Society.
+
+[131] Karl Pearson and Alice Lee. On the laws of inheritance in man: I. inheritance of
+physical characters. Biometrika, 2(4):357–462, 1903.
+
+36
+
+
+[132] Loris Bennett, Bernd Melchers, and Boris Proppe. Curta: A General-purpose
+High-Performance Computer at ZEDAT, Freie Universität Berlin. 2020.
+Accepted: 2020-03-19T11:06:50Z.
+
+37
+
+
+Supporting Information for Machine
+Learning Frontier Orbital Energies of
+Nanodiamonds
+
+Thorren Kirschbaum1,2, Börries von Seggern1,3, Joachim Dzubiella1,4,
+
+Annika Bande1∗, Frank Noé5,2,6,7∗
+
+1Helmholtz-Zentrum Berlin für Materialien und Energie GmbH, Hahn-Meitner-Platz 1,
+14109 Berlin, Germany
+
+2Department of Mathematics and Computer Science, Freie Universität Berlin,
+Arnimallee 12, 14195 Berlin, Germany
+
+3Department of Biology, Chemistry and Pharmacy, Freie Universität Berlin, Arnimallee
+22, 14195 Berlin, Germany
+
+4Institute of Physics, Albert-Ludwigs-Universität Freiburg, Hermann-Herder-Straße 3,
+79104 Freiburg im Breisgau, Germany
+
+5Microsoft Research AI4Science, Karl-Liebknecht Str. 32, 10178 Berlin, Germany
+
+6Department of Physics, Freie Universität Berlin, Arnimallee 12, 14195 Berlin, Germany
+
+7Department of Chemistry, Rice University, 6100 Main St, Houston, TX 77005, United
+States
+
+∗Corresponding Author: annika.bande@helmholtz-berlin.de
+
+∗Corresponding Author: franknoe@microsoft.com
+
+1
+
+arXiv:2210.07930v2  [physics.chem-ph]  15 Nov 2022
+
+
+1
+ND5k Base Structures
+
+Figure S1 displays the 17 undoped, H-terminated base structures used to compile the
+ND5k dataset. In the dataset file and in the section below, the diamondoid structures
+will be abbreviated as follows: Adamantane (ad), Diamantane (di), Triamantane (tri),
+[123]Tetramantane (123tet), [121]Tetramantane (121tet), [1(2)3]Tetramantane (1-2-3tet),
+[1212]Pentamantane (1212pent), [1(23)4]Pentamantane (1234pent), [12312]Hexaman-
+tane (12312hex).
+
+Figure S1: Base structures of the ND5k dataset.
+
+2
+
+
+2
+DFTB Geometry Optimization of Nanodiamond Struc-
+
+tures
+
+The DFTB geometry optimization algorithm1 was tested against standard DFT optimiza-
+tion at PBE-D3/SVP level of theory.2–6 For 11 randomly chosen NDs, structures were
+optimized with each method, and subsequent single point calculations were performed on
+PBE0-D3/SVP level of theory.4–8 For the PBE0 HOMO and LUMO values, we found
+the following deviations (DFTB structures benchmarked against PBE structures, MAD is
+mean absolute deviation):
+HOMO: MAD: 0.230 eV, max. abs. dev.: 0.504 eV, min. abs. dev.: 0.027 eV
+LUMO: MAD: 0.195 eV, max. abs. dev.: 0.491 eV, min. abs. dev.: 0.008 eV
+The deviations of DFTB-optimized structures benchmarked against PBE-optimized
+structures are around 0.2 eV MAD. When looking at the benchmark data in more de-
+tail, it is obvious that the deviations obtained for H- and F-terminated NDs (MADs of
+ca. 0.13 eV) are much smaller than for OH- and NH2-terminated NDs (MADs of ca.
+0.36 eV). The latter NDs have many rotational degrees of freedom in their surface moi-
+eties and large H-bond networks on their surfaces, thus, we cannot expect the geometry
+optimization algorithms to find the global minimum energy conformation of the respec-
+tive structures. Apparently, DFTB and PBE optimization yield different, but probably
+both still reliable (local) minimum energy structures. Therefore, their PBE0-computed
+frontier orbital energies differ more than in the case of single-atom (H or F) terminated
+NDs. The different structures obtained from DFTB and PBE optimization for two NDs
+are depicted in figures S2 and S3, corresponding to the structures with the largest fron-
+tier energy orbital differences in the benchmark set. The large deviations obtained from
+DFTB-optimized structures involving OH- and NH2-termination benchmarked against
+PBE-optimized structures likely do not result from shortcomings of the DFTB optimiza-
+tion, but from the fact that both optimization algorithms end up in different local energy
+minimum structures.
+PBE0-computed optical gaps of diamondoids benchmarked against experiments have
+an MAD of around 1 eV,2 which is much higher than the error obtained by using DFTB in-
+stead of PBE geometry optimization. The massive computational speedup and the accept-
+ably low error clearly justifies the use of the DFTB method for geometry optimization. We
+also tested the semiempirical PM7 method9 as implemented in Gaussian (PM7MOPAC)10
+
+for fast structure optimizations, but found the DFTB algorithm to perform better overall,
+especially being faster and more stable than PM7.
+
+3
+
+
+Figure S2: Structure of a B-B doped, OH-terminated ND (base structure C53H48), opti-
+mized by DFTB (left) and PBE (right) shown from the same perspective. The H-bond
+network formed by the hydroxyl groups is different after both structure optimizations.
+Color: H (grey), B (rose), C (black), O (red).
+
+Figure S3: Structure of a Si-P doped, OH-terminated ND (base structure [1(2,3)4]penta-
+mantane), optimized by DFTB (left) and PBE (right) shown from the same perspective.
+The H-bond network formed by the hydroxyl groups is different after both structure opti-
+mizations. Color: H (grey), C (black), O (red), Si (green), P (orange).
+
+3
+Frontier Orbitals of P-doped Nanoadiamonds for Pho-
+
+tocatalysis
+
+Here, we display the structures and frontier orbitals of ten of the nanodiamonds that were
+filtered from the ND5k dataset as candidate structures for use in photocatalysis (see table
+1 in the main document). Figures S4 and S5 contain plots of the the structure, HOMO
+and LUMO shapes for ten P-(co-)doped nanodiamonds.
+
+4
+
+
+Figure S4: From left to right: ND5k index (cf table 1 in main), structure, HOMO and
+LUMO contour plot. Color: H (grey), B (rose), C (yellow), N (violet), Si (light brown),
+P (orange). Isovalues of the contour plots are ±0.05, except fot the diffuse LUMOs of
+nanodiamonds 2711, 3001, 3394, 3614, where the isovalue is ± 0.01.
+
+5
+
+
+Figure S5: From left to right: ND5k index (cf table 1 in main), structure, HOMO and
+LUMO contour plot. Color: H (grey), B (rose), C (yellow), N (violet), Si (light brown),
+P (orange). Isovalues of the contour plots are ±0.05, except fot the diffuse LUMOs of
+nanodiamonds 3998 and 4524, where the isovalue is ± 0.01.
+
+6
+
+
+4
+Trends in the ND5k Dataset
+
+In the following tables S1 to S6 we summarize the ND configurations of the ND5k struc-
+tures with the highest and lowest HOMO, LUMO and gap energies, respectively. For the
+cases of undoped and singly doped structures, the "dopant" atom C represents no doping.
+
+Table S1: Configurations of the ten ND5k structures with the lowest HOMO energies:
+ND5k index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO
+and gap energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+223
+ad
+F
+C
+C
+−10.5967
+−1.3038
+9.293
+518
+di
+F
+C
+C
+−10.5947
+−1.4285
+9.166
+1136
+1-2-3tet
+F
+C
+Si
+−10.4318
+−2.1995
+8.232
+819
+tri
+F
+C
+C
+−10.3975
+−1.3823
+9.015
+2324
+1234pent
+F
+C
+C
+−10.3749
+−0.9683
+9.407
+1120
+1-2-3tet
+F
+C
+C
+−10.3486
+−1.3033
+9.045
+2302
+1234pent
+F
+B
+C
+−10.3181
+−4.3767
+5.941
+2926
+C35H36
+F
+C
+C
+−10.2891
+−2.1723
+8.117
+797
+tri
+F
+B
+C
+−10.2849
+−2.8059
+7.479
+1115
+1-2-3tet
+F
+B
+Si
+−10.2796
+−2.9255
+7.354
+
+Table S2: Configurations of the ten ND5k structures with the highest HOMO energies:
+ND5k index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO and
+gap energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+3921
+C74H64
+H
+P
+P
+0.0327
+0.5572
+0.525
+2709
+C35H36
+H
+N
+P
+−0.0974
+0.522
+0.619
+4599
+C104H78
+NH2
+P
+P
+−0.2768
+1.1598
+1.437
+2711
+C35H36
+H
+N
+P
+−0.3804
+0.4121
+0.792
+4823
+C109H80
+H
+P
+P
+−0.3808
+0.7989
+1.18
+4521
+C104H78
+H
+P
+P
+−0.383
+0.8382
+1.221
+3016
+C35H36
+H
+P
+P
+−0.4998
+0.6747
+1.174
+3397
+C53H48
+NH2/H
+P
+P
+−0.5141
+0.9086
+1.423
+4809
+C109H80
+H
+C
+P
+−0.54
+1.1041
+1.644
+4602
+C104H78
+NH2/H
+P
+P
+−0.5402
+1.01
+1.55
+
+7
+
+
+Table S3: Configurations of the ten ND5k structures with the lowest LUMO energies:
+ND5k index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO
+and gap energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+5004
+C109H80
+F
+B
+B
+−9.4822
+−8.6369
+0.845
+4402
+C88H80
+F
+B
+B
+−9.0967
+−8.5691
+0.528
+4703
+C104H78
+F
+B
+B
+−9.6228
+−8.2213
+1.402
+4102
+C74H64
+F
+B
+B
+−9.8487
+−7.8715
+1.977
+5007
+C109H80
+F/H
+B
+B
+−7.7438
+−6.3962
+1.348
+4405
+C88H80
+F/H
+B
+B
+−7.9938
+−6.3828
+1.611
+195
+ad
+F
+B
+B
+−9.447
+−5.5824
+3.865
+4706
+C104H78
+F/H
+B
+B
+−7.8016
+−5.5813
+2.22
+3855
+C68H64
+F
+N
+P
+−9.0876
+−5.4142
+3.673
+4618
+C104H78
+OH
+B
+B
+−5.9422
+−5.3277
+0.614
+
+Table S4: Configurations of the ten ND5k structures with the highest LUMO energies:
+ND5k index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO
+and gap energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+674
+tri
+NH2
+N
+P
+−5.0044
+1.5662
+6.571
+368
+di
+NH2
+N
+N
+−5.6194
+1.5118
+7.131
+2152
+1234pent
+NH2
+C
+C
+−4.9126
+1.5059
+6.418
+2160
+1234pent
+NH2
+C
+P
+−5.0175
+1.4982
+6.516
+660
+tri
+NH2/H
+C
+P
+−5.5096
+1.4875
+6.997
+68
+ad
+NH2/H
+C
+C
+−5.7443
+1.4779
+7.222
+3057
+C35H36
+NH2
+C
+N
+−4.1135
+1.4734
+5.587
+22
+ad
+H
+N
+N
+−5.5275
+1.4721
+7.0
+1573
+123tet
+NH2/H
+N
+N
+−5.3013
+1.4698
+6.771
+86
+ad
+NH2/H
+N
+N
+−5.5512
+1.4659
+7.017
+
+8
+
+
+Table S5: Configurations of the ten ND5k structures with the lowest gap energies: ND5k
+index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO and gap
+energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+3929
+C74H64
+NH2
+B
+B
+−3.0854
+−2.6493
+0.436
+4230
+C88H80
+NH2
+B
+B
+−3.1821
+−2.6925
+0.49
+3628
+C68H64
+NH2
+B
+B
+−3.04
+−2.5285
+0.511
+3921
+C74H64
+H
+P
+P
+0.0327
+0.5572
+0.525
+4402
+C88H80
+F
+B
+B
+−9.0967
+−8.5691
+0.528
+4618
+C104H78
+OH
+B
+B
+−5.9422
+−5.3277
+0.614
+2709
+C35H36
+H
+N
+P
+−0.0974
+0.522
+0.619
+2711
+C35H36
+H
+N
+P
+−0.3804
+0.4121
+0.792
+4616
+C104H78
+OH
+B
+B
+−5.8127
+−4.9751
+0.838
+5004
+C109H80
+F
+B
+B
+−9.4822
+−8.6369
+0.845
+
+Table S6: Configurations of the ten ND5k structures with the highest gap energies: ND5k
+index, base structure (ND), surface species, dopants (D1, D2), HOMO, LUMO and gap
+energies (all in eV).
+
+Index
+ND
+Surface
+D1
+D2
+E(HOMO)
+E(LUMO)
+E(gap)
+
+224
+ad
+F
+C
+C
+−9.3729
+0.6944
+10.067
+519
+di
+F
+C
+C
+−9.1334
+0.7428
+9.876
+820
+tri
+F
+C
+C
+−8.9487
+0.6994
+9.648
+2325
+1234pent
+F
+C
+C
+−9.2981
+0.2987
+9.597
+1100
+1-2-3tet
+F
+B
+C
+−8.6555
+0.8666
+9.522
+1422
+121tet
+F
+C
+C
+−8.6758
+0.7715
+9.447
+1121
+1-2-3tet
+F
+C
+C
+−8.3746
+1.0361
+9.411
+2324
+1234pent
+F
+C
+C
+−10.3749
+−0.9683
+9.407
+2024
+1212pent
+F
+C
+C
+−9.1963
+0.2032
+9.4
+228
+ad
+F
+C
+N
+−8.5554
+0.8367
+9.392
+
+9
+
+
+From tables S1 to S6 one can deduce trends of structural patterns and their effect on
+the nanodiamonds’ energetic properties. Low HOMO energies are obtained from small
+diamondoids with full F coverage and no or little B/Si doping (table S1). In contrast,
+high HOMO energys are obtained from larger NDs with H- or NH2 doping and heavy
+n-type doping, especially with P (table S2). The NDs with the lowest LUMO energies are
+large structures with F-termination and heavy B-doping, however, there are two outliers
+present (table S3): In the small B-B doped fluorinated adamantane, two CF groups are re-
+placed by B, resulting in a structure with many CF2 groups, some CF groups and double
+B doping. The relatively large number of CF2 groups is likely the reason for the unusu-
+ally low LUMO energy of this adamantane. For the F-terminated, N-P doped C68H64,
+the special LUMO may originate from the structure’s nitrogen vacancy (NV) center. The
+highest LUMO energies are obtained mainly from small, NH2-terminated and doubly
+n-type doped diamondoids (table S4). The structures with the smallest gaps are rather
+diverse, ranging from medium to large sizes, being either doubly p-type doped or doubly
+n-type doped and having all sorts of surface terminations in various combintaions with
+their doping patterns (table S5). Most likely, the introduction of either low lying unoccu-
+pied or high lying occupied states by heavy doping is the main ingredient towards a small
+gap. Finally, undoped F-terminated diamondoids make up most of the structures with the
+largest gaps, as a result of concurrent F-termination and the quantum confinement effect
+(table S6). All of these findings are generally in agreement with previous studies11,12 and
+can be regarded as design suggestions for any suitable application.
+
+10
+
+
+5
+Details of the Machine Learning Setups
+
+We obtained the following hyperparameters for the SOAP KRR: 6 Å interaction cutoff,
+nmax (radial) = 6, lmax (angular) = 9, gaussian sigma const. = 0.4, kernel zeta = 3.13
+
+For ML with the enn-s2s, molecular graphs were created as radius graphs from the
+DFTB-optimized structures, i.e., each atom node was connected to all of its neighbors
+within a given cutoff radius. We selected the following inputs for the node feature vectors:
+one-hot element type, atomic number, valency, atomic radius, Pauling electronegativity,
+electron affinity and 1st ionization energy, all normalized to values ≤ 1. The edge features
+were chosen to be bond length and (cutoff radius − bond length). Leaky ReLU was used
+as the nonlinear function in the dense NNs and the ADAM optimizer was employed for
+minimizing the mean squared error of the network predictions.
+In the enn-s2s architecture, first, the node features are transformed via a dense NN.
+Subsequently, the NNConv graph convolutional layer14 is applied n times, including two
+dense NN layers and batch normalization. A set2set operation is performed on the trans-
+formed graphs to obtain fixed-size vectors, and a dropout layer is applied for regulariza-
+tion. Finally, these vectors are passed to a 3-layer dense neural network with decreasing
+layer size which finally outputs the target values. A similar architecture was recently used
+for predicting frontier orbital energies of diverse medium-sized organic molecules (OE62
+dataset).15,16
+
+We obtained the following enn-s2s hyperparameters (identical for HOMO and LUMO
+energy predictions): 3.5 Å cutoff radius, 0.001 learning rate, npre = 3, p1 = 64, p2 =
+64, pdropout = 0.3, nlayers = 4. The parameter npre defnies the number of layers in the
+dense NN that acts on the initial node embeddings, the parameters p1 and p2 control the
+size of the network layers, pdropout defines the dropout probability, and nlayers defines the
+number of NNConv operations before the set2set evaluation. The batch size was fixed to
+8 for all training runs due to memory restrictions. We found that small changes of the
+hyperparameters did not have large effects on the enn-s2s performance. The enn-s2s and
+its variants used a batchsize of 8 for training.
+For the SOAP-enn-s2s and SOAP-PCA-enn-s2s approach, we used the following
+SOAP hyperparameters: 3.5 Å interaction cutoff, nmax (radial) = 3, lmax (angular) =
+3, gaussian sigma const. = 0.5 and a soft (polynomial) cutoff of the form proposed by
+Caro.17 After another short hyperparameter optimization run of the SOAP-(PCA)-enn-
+s2s, only the number of layers in the initial dense NN was increased to npre = 5.
+The SchNet hyperparameters that we found to be optimal for training with ND5k
+(both HOMO and LUMO energies) are close to its default hyperparameters, with only
+the cutoff radius and num_gaussians being modified: 3.5 Å cutoff, hidden channels = 64,
+
+11
+
+
+num_filters = 128, num_interactions = 6, num_gaussians = 70, batchsize = 10.14
+
+The PaiNN GNN was trained using the following hyperparameters: 7.0 Å cutoff,
+n_atom_basis = 150, n_interactions = 3, n_rbf = 25, max_z = 100, batchsize = 5.18
+
+The enn-s2s and SOAP-PCA-enn-s2s architectures were further fine-tuned for learn-
+ing frontier orbital energies on QM9 and OE62 using a small grid search. Final hyperpa-
+rameters are obtained as follows. QM9: 5.0 Å cutoff radius, 0.001 learning rate, npre =
+5, p1 = 96, p2 = 96, pdropout = 0.3, nlayers = 4. SOAP parameters for the SOAP-PCA
+variant were 3.5 Å cutoff radius, nmax (radial) = 2, lmax (angular) = 2 and a soft (polyno-
+mial) cutoff of the form proposed by Caro.17 OE62: 3.0 Å cutoff radius, 0.001 learning
+rate, npre = 3, p1 = 96, p2 = 96, pdropout = 0.3, nlayers = 4. SOAP parameters for the
+SOAP-PCA variant were 3.0 Å cutoff radius, nmax (radial) = 3, lmax (angular) = 3 and
+a hard cutoff. For training, both datasets were randomly split into train, validation and
+test subsets containing 70 %, 15 % and 15 % of the original samples, respectively. Train-
+ing was performed as described before, however, due to the larger sizes of the datasets,
+training was limited to 150 epochs and the learning rate scheduler was set to reduce the
+learning rate by a factor of 0.7 every 15 epochs if learning stagnates. Additionally, the
+plain SOAP method was not employed as the larger memory requirements of this method
+were computationally unfeasible, and the SOAP PCA method has already been shown to
+yield better results for the ND5k dataset. Furthermore, as a full PCA was not feasible due
+to memory constraints, so the memory-efficient incremental PCA algorithm proposed by
+Ross et al. was used instead.19 In contrast to ND5k, where the retained PCA dimension-
+ality could be chosen to retain a certain fraction of variance, this method demands to fix
+the retained PCA dimension up front. To account for the fact that the OE62 dataset con-
+tains more elements than ND5k, the retained dimensionality was fixed to 200 for OE62,
+and a dimensionality of 100 was chosen for QM9, which contains only five atom types.
+Training results for these datasets were averaged over three independent runs.
+
+12
+
+
+6
+Correlations between nanodiamond size and HOMO/LUMO
+
+energy
+
+Figures S6 and S7 show scatter plots of the HOMO and LUMO energies vs. the number
+of atoms for all structures in the ND5k dataset (blue) and in the ND5k-lt set (orange)
+that contains 24 larger nanodiamonds. The red lines indicate the linear fits within the
+ND5k dataset. As can be seen, especially for the HOMO energies, the correlation that is
+indicated by the linear fit breaks down for the ND5k-lt structures. These structures mostly
+have lower frontier orbital energies than anticipated by the fit.
+
+Figure S6: Scatter plot of HOMO energy and number of atoms of the ND5k structures
+(blue) and the large nanodiamonds (orange). The red line indicates the linear fit on the
+ND5k structures.
+
+Figure S7: Scatter plot of LUMO energy and number of atoms of the ND5k structures
+(blue) and the large nanodiamonds (orange). The red line indicates the linear fit on the
+ND5k structures.
+
+13
+
+
+References
+
+[1] Christoph Bannwarth, Eike Caldeweyher, Sebastian Ehlert, Andreas Hansen,
+Philipp Pracht, Jakob Seibert, Sebastian Spicher, and Stefan Grimme. Extended
+tight-binding quantum chemistry methods. WIREs Comput. Mol. Sci., 11(2):e1493,
+2021. _eprint: https://wires.onlinelibrary.wiley.com/doi/pdf/10.1002/wcms.1493.
+
+[2] Diego López-Carballeira and Tomáš Polcar. Ab initio description of nanodiamonds:
+A DFT and TDDFT benchmark. Diam. Relat. Mater., 108:107959, October 2020.
+
+[3] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized Gradient
+Approximation Made Simple. Phys. Rev. Lett., 77(18):3865–3868, October 1996.
+Publisher: American Physical Society.
+
+[4] Stefan Grimme, Stephan Ehrlich, and Lars Goerigk. Effect of the damping function
+in dispersion corrected density functional theory. J. Comput. Chem.,
+32(7):1456–1465, 2011.
+
+[5] Ansgar Schäfer, Hans Horn, and Reinhart Ahlrichs. Fully optimized contracted
+Gaussian basis sets for atoms Li to Kr. J. Chem. Phys., 97(4):2571–2577, August
+1992.
+
+[6] Florian Weigend and Reinhart Ahlrichs. Balanced basis sets of split valence, triple
+zeta valence and quadruple zeta valence quality for H to Rn: Design and
+assessment of accuracy. Phys. Chem. Chem. Phys., 7(18):3297–3305, August 2005.
+
+[7] Carlo Adamo and Vincenzo Barone. Toward reliable density functional methods
+without adjustable parameters: The PBE0 model. J. Chem. Phys.,
+110(13):6158–6170, April 1999. Publisher: American Institute of Physics.
+
+[8] John P. Perdew, Matthias Ernzerhof, and Kieron Burke. Rationale for mixing exact
+exchange with density functional approximations. J. Chem. Phys.,
+105(22):9982–9985, December 1996. Publisher: American Institute of Physics.
+
+[9] James J. P. Stewart. Optimization of parameters for semiempirical methods VI:
+more modifications to the NDDO approximations and re-optimization of
+parameters. J Mol Model, 19(1):1–32, January 2013. Company: Springer
+Distributor: Springer Institution: Springer Label: Springer Number: 1 Publisher:
+Springer-Verlag.
+
+14
+
+
+[10] MJ Frisch, GW Trucks, HB Schlegel, GE Scuseria, MA Robb, JR Cheeseman,
+G Scalmani, V Barone, GA Petersson, H Nakatsuji, et al. Gaussian 16 revision a.
+03. 2016; gaussian inc. Wallingford CT, 2(3):4.
+
+[11] T. M. Willey, C. Bostedt, T. van Buuren, J. E. Dahl, S. G. Liu, R. M. K. Carlson,
+L. J. Terminello, and T. Möller. Molecular Limits to the Quantum Confinement
+Model in Diamond Clusters. Phys. Rev. Lett., 95(11):113401, September 2005.
+Publisher: American Physical Society.
+
+[12] Jos L. Teunissen, Frank De Proft, and Freija De Vleeschouwer. Tuning the
+HOMO–LUMO Energy Gap of Small Diamondoids Using Inverse Molecular
+Design. J. Chem. Theory Comput., 13(3):1351–1365, March 2017.
+
+[13] Félix Musil, Max Veit, Till Junge, Markus Stricker, Alexander Goscinki, Guillaume
+Fraux, and Michele Ceriotti. Librascal. GitHub, https://github.
+com/cosmo-epfl/librascal, 2018.
+
+[14] Matthias Fey and Jan E. Lenssen. Fast graph representation learning with PyTorch
+Geometric. In ICLR Workshop on Representation Learning on Graphs and
+Manifolds, 2019.
+
+[15] Annika Stuke, Christian Kunkel, Dorothea Golze, Milica Todorovi´c, Johannes T.
+Margraf, Karsten Reuter, Patrick Rinke, and Harald Oberhofer. Atomic structures
+and orbital energies of 61,489 crystal-forming organic molecules. Sci. Data,
+7(1):58, February 2020. Number: 1 Publisher: Nature Publishing Group.
+
+[16] Obaidur Rahaman and Alessio Gagliardi. Deep Learning Total Energies and
+Orbital Energies of Large Organic Molecules Using Hybridization of Molecular
+Fingerprints. J. Chem. Inf. Model., 60(12):5971–5983, December 2020. Publisher:
+American Chemical Society.
+
+[17] Miguel A. Caro. Optimizing many-body atomic descriptors for enhanced
+computational performance of machine learning based interatomic potentials.
+Phys. Rev. B, 100(2):024112, July 2019. Publisher: American Physical Society.
+
+[18] Kristof Schütt, Oliver Unke, and Michael Gastegger. Equivariant message passing
+for the prediction of tensorial properties and molecular spectra. In Proceedings of
+the 38th International Conference on Machine Learning, pages 9377–9388.
+PMLR, July 2021. ISSN: 2640-3498.
+
+15
+
+
+[19] David A. Ross, Jongwoo Lim, Ruei-Sung Lin, and Ming-Hsuan Yang. Incremental
+Learning for Robust Visual Tracking. Int J Comput Vis, 77(1):125–141, May 2008.
+
+16
+
+

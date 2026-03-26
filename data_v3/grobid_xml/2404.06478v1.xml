@@ -1,0 +1,2289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Laue Indexing with Optimal Transport</title>
+				<funder ref="#_ET9xmXY">
+					<orgName type="full">Swiss Data Science Center</orgName>
+				</funder>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2024-04-09">9 Apr 2024</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author role="corresp">
+							<persName><forename type="first">Tomasz</forename><surname>Kacprzak</surname></persName>
+							<email>tomasz.kacprzak@psi.ch</email>
+						</author>
+						<author>
+							<persName><forename type="first">Stavros</forename><surname>Samothrakitis</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Camilla</forename><forename type="middle">Buhl</forename><surname>Larsen</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Jaromír</forename><surname>Kopeček</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Markus</forename><surname>Strobl</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Efthymios</forename><surname>Polatidis</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Guillaume</forename><surname>Obozinski</surname></persName>
+						</author>
+						<author>
+							<affiliation key="aff0">
+								<orgName type="department">TK is with Swiss Data Science Center</orgName>
+								<orgName type="institution">Paul Scherrer Institute</orgName>
+							</affiliation>
+						</author>
+						<author>
+							<affiliation key="aff1">
+								<orgName type="department" key="dep1">Institute of Physics</orgName>
+								<orgName type="department" key="dep2">Swiss Data Science Center</orgName>
+								<orgName type="institution" key="instit1">Czech Academy of Sciences • GO</orgName>
+								<orgName type="institution" key="instit2">École Polytechnique Fédérale de Lausanne</orgName>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Laue Indexing with Optimal Transport</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2024-04-09">9 Apr 2024</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">493DE9451B9CFD33F1BE6A886DDA8F92</idno>
+					<idno type="arXiv">arXiv:2404.06478v1[cond-mat.mtrl-sci]</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-04T03:28+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<textClass>
+				<keywords>
+					<term>Optimal Transport</term>
+					<term>Laue Crystallography</term>
+					<term>Expectation-Maximization ✦</term>
+				</keywords>
+			</textClass>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Laue tomography experiments retrieve the positions and orientations of crystal grains in a polycrystalline samples from diffraction patterns recorded at multiple viewing angles. The use of a broad wavelength spectrum beam can greatly reduce the experimental time, but poses a difficult challenge for the indexing of diffraction peaks in polycrystalline samples; the information about the wavelength of these Bragg peaks is absent and the diffraction patterns from multiple grains are superimposed. To date, no algorithms exist capable of indexing samples with more than about 500 grains efficiently. To address this need we present a novel method: Laue indexing with Optimal Transport (LAUEOT). We create a probabilistic description of the multi-grain indexing problem and propose a solution based on Sinkhorn Expectation-Maximization method, which allows to efficiently find the maximum of the likelihood thanks to the assignments being calculated using Optimal Transport. This is a non-convex optimization problem, where the orientations and positions of grains are optimized simultaneously with grain-to-spot assignments, while robustly handling the outliers. The selection of initial prototype grains to consider in the optimization problem are also calculated within the Optimal Transport framework. LAUEOT can rapidly and effectively index up to 1000 grains on a single large memory GPU within less than 30 minutes. We demonstrate the performance of LAUEOT on simulations with variable numbers of grains, spot position measurement noise levels, and outlier fractions. The algorithm recovers the correct number of grains even for high noise levels and up to 70% outliers in our experiments. We compare the results of indexing with LAUEOT to existing algorithms both on synthetic and real neutron diffraction data from well-characterized samples. The code and test data are available on https://github.com/LaueOT/laueotx.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">INTRODUCTION</head><p>L AUE and Bragg diffraction are the foundation of modern experiments in crystallography and solid state physics <ref type="bibr" target="#b0">[1]</ref>, <ref type="bibr" target="#b1">[2]</ref>. In neutron and X-ray diffraction, the incoming waves are elastically scattered by the atoms in the crystal lattice of the studied sample. Due to the regular arrangement of the atoms in the crystal lattice, constructive interference occurs and produces strong reflections, also known as Bragg peaks, which can be detected with diffraction detectors covering the relevant angular range. Bragg's law describes the relation between the incidence angles, the lattice spacing, and the wavelength of the incoming and reflected waves, which defines the diffraction condition. This enables modern X-ray and neutron based experimental methods to infer the internal structure of crystalline samples, with numerous applications in material science, chemistry, medicine, biology, electronics, and others.</p><p>The process of inferring the orientation of crystal lattices from the recorded Bragg peak positions is a challenging task: multiple methods have been proposed to solve variants of this problem specific to different types of experimental setups (see <ref type="bibr" target="#b2">[3]</ref> for review). One of the most difficult problems in Laue diffraction is indexing of polycrystalline samples, which contain multiple crystal grains with different orientations <ref type="bibr" target="#b3">[4]</ref>, where many overlapping spot patterns are recorded simultaneously. The three-dimensional macroscopic structures of samples can be inferred using tomo-graphic techniques, where projections from multiple sample rotations are obtained during the experiment. The majority of the crystallographic studies use a monochromatic beam or the time-of-flight approach to resolve the wavelength relative to a diffraction peak measured. This enables immediate identification of the Miller indices corresponding to the recorded diffraction spot, as the Bragg condition is satisfied only for a single incidence angle between the crystal lattice plane and the incoming beam for a specific wavelength. While this simplifies the indexing process, this type of experiment can be time consuming, as monochromatic sources tend have lower overall intensity. The use of white beams enables faster experiments, but leads to a more complicated inference problem, as an observed spot can stem from almost any crystal lattice plane at any orientation. This creates a mixed combinatorial and continuous problem, where the peaks-to-grain assignments have to be found jointly with the corresponding grain orientations and positions. Moreover, the number of grains in the sample is not known a priori and must also be inferred. Thus, the indexing of white beam polycrystalline patterns is one of the most challenging inference problems among crystallographic experiments.</p><p>From an experimental perspective, the last two decades have seen progress in three-dimensional (3D) electron- <ref type="bibr" target="#b4">[5]</ref>- <ref type="bibr" target="#b10">[11]</ref> and X-ray-based <ref type="bibr" target="#b11">[12]</ref>- <ref type="bibr" target="#b20">[21]</ref> grain indexing and reconstruction methods, significantly improving experimental capabilities. These methods provide valuable insights into the internal structure of samples and have yielded promising results in grain orientation mapping. Despite their impressive spatial resolution, ranging from a few hundred nanometers to micrometers, these techniques are not without limitations. For example, 3D electron backscatter diffraction (3D EBSD) is a destructive method that necessitates serial sectioning of samples. Moreover, the penetration of both electrons and X-rays into metallic specimens is constrained, limiting the volume of the sample that can be probed. On the other hand, neutron-based methods <ref type="bibr" target="#b21">[22]</ref>- <ref type="bibr" target="#b29">[30]</ref> have emerged as a potential solution owing to their superior penetration ability in various materials. These non-destructive techniques enable investigations into large volumes within the bulk of samples. Among the recently developed neutron diffractionbased tomography techniques for 3D grain mapping, Laue three-dimensional neutron diffraction tomography (Laue 3DNDT) <ref type="bibr" target="#b21">[22]</ref> stands out as a particularly promising approach. It employs a polychromatic neutron beam, for multigrain indexing <ref type="bibr" target="#b22">[23]</ref> and morphology reconstruction <ref type="bibr" target="#b29">[30]</ref>, effectively reducing the experimental time while maximizing the information obtained from the sample.</p><p>With multiple solutions proposed for solving this types of problems <ref type="bibr" target="#b21">[22]</ref>, <ref type="bibr" target="#b30">[31]</ref>- <ref type="bibr" target="#b36">[37]</ref>, only few are directly applicable to wide-beam polycrystalline indexing problem. Recently, <ref type="bibr" target="#b21">[22]</ref> proposed a forward-fitting algorithm that achieved good results for samples with up to around 500 grains <ref type="bibr" target="#b22">[23]</ref>. However, the method is greedy, incurs in a long runtime, and it is not amenable for parallelization. With upcoming improvements in experimental techniques and instrumentation in white beam diffraction imaging with neutrons <ref type="bibr" target="#b37">[38]</ref>, there is a clear need for designing novel algorithms for this problem, which allow both for rapid indexing and analyzing samples with orders of magnitude more grains.</p><p>The problem of finding orientations and positions of the grains can be approached from the computer vision perspective; the task is in similar to the structure-from-motion <ref type="bibr" target="#b38">[39]</ref>, camera localization in multi-view geometry (see <ref type="bibr" target="#b39">[40]</ref> for overview), as well as registration of point clouds <ref type="bibr" target="#b40">[41]</ref>. The task of spot-to-grain assignment and selection of prototype grains can both be tackled using recent developments in optimal transport (OT), an area of active development <ref type="bibr" target="#b41">[42]</ref>. In particular, the recently proposed Sinkhorn Expectation Maximization method <ref type="bibr" target="#b42">[43]</ref> demonstrated the deep relationship between the OT and the Expectation-Maximization framework, which is commonly used for solving probabilistic models with latent variables. Regarding methods for finding best-fit parameters, extensive literature exists for convex optimization methods in similar computer vision problems, with coordinate descent enjoying advantage in convergence times in many cases <ref type="bibr" target="#b43">[44]</ref>.</p><p>Utilizing these ideas, we propose a novel technique for indexing of polycrystalline samples from white beam experiments, which we call LAUEOT (Laue indexing with Optimal Transport). We propose a joint inverse problem formulation for the assignment of spots to grains, and the determination of each grain's position and orientation. Given an assignment of spots to grains, our formulation benefits from closed-form updates for finding the orientation and grain position, and relies on optimal transport for finding the assignments of spots to grains given candidate grain orientations and positions. A critical initial step of selecting prototype grains is also handled using the OT framework <ref type="bibr" target="#b44">[45]</ref>. This inverse problem formulation enables very fast optimization using GPU-batch solver with convergence guarantees. The optimal transport methods enable solving for grain parameters and spot assignments jointly, which increases the precision of the estimated parameters, the recall of grains found, and the number of correctly assigned spots.</p><p>The algorithm has two pre-processing steps: (i) creating a set of plausible grain candidates by performing a coarse single-gain fitting in the orientation and position space, and (ii) selecting the prototype grains using the optimal transport framework, following <ref type="bibr" target="#b44">[45]</ref>. The main solver performs multi-grain fitting, where it jointly optimizes for parameters of the grains and spot-to-grain assignments using the optimal transport framework. The key aspect of the problem is the treatment of outlier spots in the data and unmatched spots in the model. In LAUEOT, we propose a novel probabilistic outlier modeling tailored to the Laue problem. We compare it to other methods in literature for treatment of outliers: unbalanced and partial OT <ref type="bibr" target="#b45">[46]</ref>, <ref type="bibr" target="#b46">[47]</ref>.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">PREVIOUS WORK</head><p>Multiple Bragg indexing algorithms have been proposed <ref type="bibr" target="#b2">[3]</ref>. The Hough transform approaches <ref type="bibr" target="#b30">[31]</ref>, <ref type="bibr" target="#b47">[48]</ref> are one of the most commonly used in practice. These algorithms use 3D histograms in the orientation space, and each spot "votes" for the plausible voxels. The set of resulting grains corresponds to the voxels with the most votes. This procedure is then typically followed by a minimizer-based refinement to find the spatial positions of the grains inside the sample. This method is particularly effective for monochromatic beams, as each spot votes for relatively small number of rotations. Recently, an extension of this method for pink beams was proposed by <ref type="bibr" target="#b31">[32]</ref>, where 10-20% divergence in the beam spectrum is handled well by the algorithm. The Hough transform-based methods can be limited by the resolution of voxels in the orientation space, especially that for wider beams the number of votes given by each spot is large, which limits the use of sparse representations of the 3D histogram. Moreover, most of such methods do not include grain position estimation and use post-processing steps to find it.</p><p>To address these problems and enable wide-beam analysis, a forward-fitting method LAUE3DNDT was recently proposed <ref type="bibr" target="#b21">[22]</ref>. This method first performs an exhaustive search in the space of orientations, keeping the grain positions fixed at the center of the sample. For each candidate, it predicts the model spots and assigns them to the measurements using a nearest neighbor method. Then, the loss is calculated as the median distance between spot pairs. If the loss is smaller than some threshold, the gradient-based optimization is performed to find the position and orientation. If certain criteria are met, the candidate is accepted and the assigned spots are removed from further analysis. The algorithm ends when the number of remaining spots is sufficiently low. The drawback of this method is its long runtime, which is dominated by slow downhill optimizer. The greedy nature of the algorithm excludes efficient parallelization.</p><p>Recently, machine learning approaches have been proposed to tackle the problem of indexing. In <ref type="bibr" target="#b36">[37]</ref>, a fast neural network was created to output grain orientations from X-ray experiments. This method calculates features for each spot and then passes them through a neural network. The feature used is a histogram of angular distances to neighboring spots within a certain radius. The method is trained before or during the experiments on the simulations of the corresponding crystal lattice in question. It reports good performance and practically instant results. While not tested on polycrystalline data, it could suffer difficulties with interpreting multiple overlapping spot patterns for samples with very large (&gt;1000) number of grains.</p><p>There exists rich literature in computer vision (CV) and optimal transport (OT) that is relevant to this problem. The structure-from-motion (SfM) algorithms tackle the problem of reconstructing 3D scene from a series of 2D images, each taken at a different camera position. The inverse-problem formulation with Expectation-Maximization has been successful <ref type="bibr" target="#b48">[49]</ref>, <ref type="bibr" target="#b49">[50]</ref>. In Laue tomography, two-dimensional images are taken after rotating the sample in 3D. While those problems are different, they share many similarities, which suggests that the EM approach to be promising for the Laue reconstruction.</p><p>Registration of point clouds is also a classic problem in CV tackled by multiple classic approaches <ref type="bibr" target="#b50">[51]</ref>. A major difficulty in this problem is estimation of a rotation matrix without correspondence, which has multiple minima. The Go-ICP algorithm finds a global minimum using a branchand-bound method. Robust point matching <ref type="bibr" target="#b51">[52]</ref> proposes to use a soft assignment scheme, which can be viewed as an optimal transport problem solved by the Sinkhorn algorithm <ref type="bibr" target="#b52">[53]</ref>. It uses a deterministic annealing schedule to avoid getting stuck in local minima. As detected and modeled spots can be viewed as point clouds registration problem, this method may also have relevance for Laue diffraction.</p><p>As the number of grains is not known a-priori, Laue reconstruction has also similarities to sparse feature selection problems in the context of optimal transport. Recently, sparse optimal transport methods have been proposed <ref type="bibr" target="#b53">[54]</ref>- <ref type="bibr" target="#b55">[56]</ref>. However, the sparse OT problem is not convex and most of the methods use gradient-based optimization, which can limit the scalability of this approach. Other methods that exploit submodular properties of some OT problems <ref type="bibr" target="#b44">[45]</ref>, <ref type="bibr" target="#b56">[57]</ref>, which enable fast approximate optimization with convergence guarantees.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">LAUE ANALYSIS</head><p>In this section we provide a pedagogical introduction to crystallogaphic lattices, Laue diffraction, and tomography experiments.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1">Crystallographic planes</head><p>In a single crystal, the atoms are arranged in a specific pattern, described by the crystallographic point group. The lattice of the crystal creates a set of Miller indices, determined by integer triples [h, k, l]. They denote a family of parallel lattice planes, sharing the distance between atoms a and normal vector u. Given three lattice vectors a 1 , a 2 , a 3 that define a unit cell, [h, k, l] denotes planes that intercept the three points [ha 1 , ka 2 , la 3 ] or their multiples (for zero indices, the intercept is at infinity and the planes do not intersect the axis). For cubic crystals with lattice constant a, the spacing d between adjacent [h, k, l] lattice planes is  </p><formula xml:id="formula_0">d = a/ √ h 2 + k 2 + l 2 .</formula><p>In this work we will use the definition of Miller indices as the inverse intercepts along the lattice vectors. It is also common to use Miller indices defined as points in the reciprocal lattice, which we do not use here. See <ref type="bibr" target="#b57">[58]</ref> for a comprehensive introduction to crystallography.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2">Laue diffraction</head><p>Laue-Bragg interference describes the scattering of waves from a crystal lattice. The constructive interference of diffracted waves occurs for specific combinations of the incidence angle θ between the plane and the incoming beam, the wavelength λ, and the distance d between atoms. Bragg's law states that constructive interference occurs when</p><formula xml:id="formula_1">nλ = 2d sin θ,<label>(1)</label></formula><p>where the integer n is the diffraction order. For an incoming beam with unit direction e, the wave diffracted by plane with normal unit vector u will have the unit direction r, which can be calculated using the Householder equation, and the wavelength λ at which the scattering occurs</p><formula xml:id="formula_2">r = ±(I -2uu ⊤ )e,<label>(2)</label></formula><formula xml:id="formula_3">λ = 2du ⊤ e,<label>(3)</label></formula><p>with "-" for transmission (forward-scattering) and "+" for reflection (back-scattering). The intensity of the ray r scales with wavelength λ 4 , the incoming beam intensity at λ and the volume of the crystal. See Figure <ref type="figure" target="#fig_1">1</ref> for an illustration of Bragg diffraction for a single plane with [h, k, l]=[1, 2, 0]. Let's consider a laboratory coordinate system with the crystal at its origin. While each crystallogaphic plane in 3D has some small offset with respect to the center of the lattice, we will will use a common position x ∈ R 3 in the laboratory coordinate system for all planes belonging to the crystal, which will correspond to its center. We use the incoming beam with direction e=(1, 0, 0), and an example detector centered at γ, with surface normal vector ν. For a particular [h, k, l] Miller planes defining the diffracted direction r, the ray will create a Bragg peak (also called a spot) on the detector, at the position</p><formula xml:id="formula_4">s = x + ν ⊤ (γ -x) ν ⊤ r r,<label>(4)</label></formula><p>where (ν ⊤ (γx))/(ν ⊤ r) is the distance from the center of the grain to the (3D) position of the spot in the detector.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3">Tomography experiments</head><p>Laue tomography experiments aim to study the internal structure of polycrystalline samples. A polycrystalline sample is composed of multiple single crystals, or grains. Each grain is described by its position x inside the sample and orientation matrix R∈SO(3) with respect to the reference R ref =I. We consider a sample to consist of a set of grains {G n } n∈N , each characterized by its position and orientation matrix G n =(R n , x n ). Each grain will contribute a set of Miller planes, which we will consider to be located at the grain's center x, as described above. For a given experiment, we can limit the number of considered Miller planes, as higher order planes will not satisfy Bragg's condition because the associated wavelength is too short or too long. We will use a set {M m } m∈M of plausible Miller planes, each with a corresponding unit direction w and atom spacing d, creating a couple M m =(w m , d m ). This plausible set is provided as an input to the analysis. The positions and orientations of the crystal are found by recording locations of spots created by diffracted rays on the detector screen after illuminating the sample by a wide-spectrum beam. We will consider the beam to have the wavelength λ in range λ∈[λ min , λ max ]. During a tomographic experiment, the sample is illuminated multiple times after being rotated. Let T ={Γ t } t∈T be a set of rotation steps, where Γ t ∈SO(3) is the rotation matrix for step t. The formulations that we will develop are applicable to any rotation, but the experimental setup that we consider allows in practice only rotations along the (0,0,1) axis. Figure <ref type="figure">2</ref> shows the scene in question, with two detectors, recording back-scatter or forward-scatter rays. The thick grey arrow shows the incoming beam, the thin dashed line corresponds to the axis of rotation for tomographic projections. A single plane shown in dark grey, while the light gray shows the studied sample in which the plane is located. In general, more detectors can be included in the experiment. In the interest of clarity, we will from now on consider only the backscatter detector and rays. An equivalent analysis can be easily performed for the forward-scattering mode.</p><p>At a given sample rotation Γ t and for grain orientation R n , the vector u mnt normal to the rotated Miller plane w m will be</p><formula xml:id="formula_5">u mnt = Γ t R n w m ,<label>(5)</label></formula><p>the model ray is emitted in the direction</p><formula xml:id="formula_6">r mnt = (I -2Γ t R n w m w ⊤ m R ⊤ n Γ ⊤ t ) e ,<label>(6)</label></formula><p>creates a spot on the detector plane at position s mnt as follows </p><formula xml:id="formula_7">s mnt = Γ t x n + ν ⊤ (γ -Γ t x n ) ν ⊤ r mnt r mnt ,<label>(7)</label></formula><formula xml:id="formula_8">γ + ν + γ - ν - e r + r - s + s - u Γ t</formula><p>x Fig. <ref type="figure">2</ref>. A scene of a tomographic diffraction experiment with two detectors configured for recording backscatter and transmission spots. The thick gray arrow corresponds to the incoming beam. The beam direction is set by vector e. The light gray cube is the studied sample. The dark gray plane is an example Miller planes in a grain. The plane is oriented inside the grain with normal vector u. The constructive interference will occur at directions r -(transmission) and r + (backscatter) and create spots s -and s + , respectively, on the detector screens. For clarity, the detector size used here is smaller than in a typical experiment.</p><p>and at wavelength λ mnt with</p><formula xml:id="formula_9">λ mnt = 2d m (Γ t R n w m ) ⊤ e.<label>(8)</label></formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3.1">Detected spots</head><p>We assume that the center γ of a square backscatter detector lies on the x-axis of the laboratory coordinate system, with size l mm per side. We will assume that γ and l are known, as they can be characterized accurately with a proper calibration process <ref type="bibr" target="#b37">[38]</ref>. The detection of spots and the measurement of their positions is performed by an external algorithm and is considered as input to this analysis. Next to real Bragg peaks, the set of detected spots will also contain spurious detections, which we discuss in Section 7.2. An experiment will yield a collection of detected spots {p i } i∈I , in all experimental images obtained for different rotations of the sample. We will denote by t i the rotation step which produced the ith spot.</p><p>We assume a ray noise model, where a noisy unit ray direction follows the von Mises-Fisher distribution in 3 dimensions <ref type="bibr" target="#b58">[59]</ref>, with mean r and concentration κ</p><formula xml:id="formula_10">vMF 3 (y | r, κ) = κ 4π sinh κ exp κ • r ⊤ y .</formula><p>Note that samples from this distribution can be obtained by drawing from a 3D isotropic multivariate normal distribution with covariance C=σ 2 I, where σ 2 =1/κ, and then conditioning ∥x∥ = 1. Therefore the noisy ray ri is</p><formula xml:id="formula_11">ri ∼ vMF(r i , σ -2 ),<label>(9)</label></formula><p>and the detected spots will be offset from their true positions s i following the noisy ray ri</p><formula xml:id="formula_12">s i = Γ ti x ni + ν ⊤ (γ -Γ ti x ni ) ν ⊤ ri ri . (<label>10</label></formula><formula xml:id="formula_13">)</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3.2">Model spots</head><p>In our method, we aim to fit a dataset of detected spots with a set of model spots stemming from some candidate model sample in our experimental setup. Not all of the model spots s mnt can be considered in the problem, for three reasons. Firstly, the model spot can lie outside the detector area. Secondly, the brightness of the Bragg peak will be proportional to the intensity of the beam at the corresponding wavelength λ; if the intensity is close to zero, then the spot will not be detected. Finally, the intensity of the spot will be proportional to the volume of the grain; small grains will yield low-intensity spots that will not be detectable.</p><p>We therefore use a sequence of model spots S=(s j ) j∈J , that contains only those spots that simultaneously lie inside the beam wavelength range and the detector screen area</p><formula xml:id="formula_14">S = {s mnt : (m, n, t) ∈ M × N × T ∧ λ mnt ∈ [λ min , λ max ] ∧ ∥s mnt -γ∥ ∞ &lt; l/2}.<label>(11)</label></formula><p>We will use a sequence (r j ) j∈J to denote rays corresponding to spots in S. For clarity, we will use a sequence (t j ) j∈J of indices t j ∈T to label the step at which spot j was generated, itself labeled by index set J t . Equivalently, let sequence (n j ) j∈J of indices n j ∈N denote the index of the grain at which spot j was created, itself labeled by index set J n . Thus, |J n | and |J t |, respectively, will be the number of model spots generated by grain n or step t, meeting the criteria in Equation <ref type="formula" target="#formula_14">11</ref>. Finally, let m j denote the index of the Miller plane which refracted the ray producing spot j and J m the collection of spot indices associated with a particular Miller plane m.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">THE LIKELIHOOD</head><p>In this section, we propose a probabilistic model for the collection of observed spots detected given a collection of model spots produced by a set of grains N producing each a refraction for a collection of Miller planes M , with latent variables encoding which detected spot matches which model spot. We assume the experimental setup defined above with detector described by (γ, ν, l), with sample rotation step in T yielding detected spots indexed by I. First, we introduce the problem without outlier spots, followed by introduction of the outliers. Let's consider a guess grain with position x n that generates the ray j. For a detected spot s i is matched with model ray j, we define a ray estimate rij as</p><formula xml:id="formula_15">rij = s i -Γ tj x nj ∥s i -Γ tj x nj ∥ . (<label>12</label></formula><formula xml:id="formula_16">)</formula><p>This quantity will be useful in further calculations.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.1">Spot-to-spot assignment</head><p>We assume that there are no outliers among detected spots and no missing model spots (corresponding to unmodeled Miller planes), so that there is a one-to-one correspondence between model and observed spots. To match the detected spots with model rays, we introduce the assignment variables Z ij ∈{0, 1} : i∈I, j∈J, with Z ij =1 if the detected spot s i is associated to model ray r j , and Z ij =0 otherwise. Only matches between spots occurring at the same sample rotation t are allowed, otherwise Z ij =0. Each i is matched exactly to one j, so the joint log-likelihood ℓ := n i=1 log p(s i | Z i• , s) for all observed spots s i given Z i• := (Z ij ) j∈J and r j as</p><formula xml:id="formula_17">ℓ = 1 σ 2 i∈I j∈J Z ij • r⊤ ij r j -c. (<label>13</label></formula><formula xml:id="formula_18">)</formula><p>where c is the log normalizing constant. At step t, the number of models spots and detected peaks is |J t | and |I t |, respectively. Note that if we assume a uniform prior probability for the assignment of i to all js such that t i = t j , and with Z := (Z ij ) i∈I,j∈J , we have</p><formula xml:id="formula_19">p(Z) = t (i,j):ti=tj =t |J t | -Zij = |J t | -|It| ,<label>(14)</label></formula><p>the joint log-likelihood only differs from ℓ by t |I t | log |J t |, which just changes the normalizing constant c. For clarity, we denote the spot assignment likelihood matrix as L ∈ R |I|×|J| . It contains the cost of assigning observed spot i to model spot j</p><formula xml:id="formula_20">L ij = 1 σ 2 r⊤ ij r j i ∈ I, j ∈ J.<label>(15)</label></formula><p>Since the assignment of peaks to models spots is apriori unknown, treating the variables Z ij as latent variables and maximizing the marginal log-likelihood</p><formula xml:id="formula_21">i log p(s i | (R n , x n ) n∈N</formula><p>) can be done with a classical EMalgorithm, which maximizes the evidence lower bound (ELBO)</p><formula xml:id="formula_22">L(Q; (R n , x n ) n ) = i∈I j∈J Q ij L ij -const.,<label>(16)</label></formula><p>where</p><formula xml:id="formula_23">Q ∈ R |I|×|J| +</formula><p>is the responsibility matrix with elements</p><formula xml:id="formula_24">Q ij =E[Z ij ].</formula><p>Instead of the classical EM approach, we propose to use the Sinkhorn-EM (sEM) formulation <ref type="bibr" target="#b42">[43]</ref>, which was recently introduced for solving mixture model problems. While the classical EM method calculates the cluster memberships independently, sEM computes them using optimal transport, where the responsibilities respect the known proportions. It it shown that sEM displays better global convergence guarantees, while optimizing the lower bound on the log-likelihood and thus maintaining the probabilistic interpretation of the analysis. In sEM, the likelihood is replaced with an entropic-OT likelihood</p><formula xml:id="formula_25">L OT (Q; (R n , x n ) n ) = sup Q∈Π(a,b)   i∈I j∈J Q ij L ij + H(Q)   ,<label>(17)</label></formula><p>where Π(a, b) is a set of all transport plans that have joint distributions with marginals a and b, respectively, and</p><formula xml:id="formula_26">H(Q) = -i,j Q ij log Q ij is the entropy of Q 1 .</formula><p>In a discrete setting applicable here, the marginal mass distributions a and b have entries uniformly equal to 1: for each detected and model spot: a i =b j =1. This formulation requires solving an optimal transport problem. This likelihood is consistent 1. Here Q refers to the transport plan, not the entropy of the distribution over permutation with mean Q.</p><p>in the population limit with the classical likelihood approach while having a better geometrical properties and is proven to be less prone to getting stuck in local optima than classical EM. Using this formulation enables practical solving of the large-scale Laue problem.</p><p>Note that Z ij and Q ij can only be non-zero if t i =t j ; in the rest of the paper, we will consider the set Q of matrices Q such that Q ij =0 for all (i, j) with t i ̸ = t j .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.2">Assignments with outlier and missing spots</head><p>In this section we consider outlier spots, both in detected and modeled sets. There are two reasons for outliers among spots detected in image data. Firstly, the outliers can be just spurious detections: noise spikes or points corresponding to detection algorithm failures. Blended overlapping spots can also have dramatically wrong position measurement, which lies outside the range allowed by the noise level. Secondly, the sample can contain very small grains that will give rise to only few detectable spots, which can be insufficient to form a diffraction pattern that can be reliably measured by the solver. The number of outliers in the data can be large and it is typically not known by the user.</p><p>We also consider unmatched model rays. The area of the screen and wavelength range are limited, which leads to spots moving out and into the image as the grain is rotated. We start with a set of initial (or prototype) grains, giving rise to a set of model spots S, with spots outside the detector screen or outside the beam's wavelength range being excluded (Equation <ref type="formula" target="#formula_14">11</ref>). However, as the orientation and position of the grains are optimized, some spots may exit the detector/wavelength range and should be also excluded during the matching process. Conversely, there will be spots that were initially excluded, but would appear for the updated grain parameters. Precise modeling of this property in the likelihood would be complicated. Therefore, we propose a simpler approach, were we treat these cases as unmatched model spots instead. During the optimization we will use the same set of model spots as predicted using for the initial values of the prototypes grains with (R 0 n , x 0 n ) n∈N . The closer the prototype model parameters are to the their true value, the fewer unmatched spots will be encountered. According to our empirical tests for the number of prototypes considered here, the fraction of different between the candidate models and their true counterparts is no more than 10%.</p><p>We model the outliers using a full probabilistic description of the problem. We add an extra row to Z, with index 0, reserved for the assignment of spurious detection to the outliers status, i.e. Z i0 = 1 for outlier spots. Symmetrically, we add an extra column, again with index 0, to assign unmatched model spots, i.e. Z 0j = 1 if a model spot does not match any detected peak. Note that multiple entries of the 0 th row (resp. column) can be non-zero. At the intersection of these rows the entry Z 00 is ignored. To take into account explicitly the possibility of outliers into the probabilistic model, we modify the likelihood as follows. We assume there is first a fixed probability π 0 for a detected spot to be an outlier, so that p(Z i0 =1)=π 0 and p(Z ij =1)=(1π 0 )/|J|. Given that it is an outlier, we assume that it appears uniformly over the detector so that p(s i |Z i0 = 1) = 1  S where S is the surface of the detector, if it is not an outlier, we use the same model as before. The joint likelihood of a detected spot position s i and it assignment variable Z i• can then be written as</p><formula xml:id="formula_27">p(s i , Z i• ) = π0 S Zi0 J j=1 1 c exp L ij Zij 1-π0 J Zij . (<label>18</label></formula><formula xml:id="formula_28">)</formula><p>Each term of the log-likelihood can be written as</p><formula xml:id="formula_29">ℓ(s i , Z ij ) = Z i0 log π0 S + (1 -Z i0 ) log 1-π0 Jc + L ij Z ij .</formula><p>Given that our likelihood is constructed per detected spot, and that we do not model their number, the probability that a model spot is unmatched is modeled implicitly, given the total number of model spots. We do not explicitly model the probability of unmatched model spots in our formulation of the problem, and set it to likelihood value of the von Mises-Fisher distribution with concentration κ=σ -2 that corresponds to the null angle difference. Note that, up to additive constants, the term for a pair (i, j) with i, j ̸ = 0 in the log-likelihood remains as before. We define the extended likelihood matrix</p><formula xml:id="formula_30">L 0j = σ -2 -log(4πσ 2 sinh(σ -2 )) L i0 = log π 0 1 -π 0 • |J|c S =: L out L ij = 1 σ 2 r⊤ ij r j ∀i∈I, j∈J.<label>(19)</label></formula><p>As in practice it is difficult to estimate π 0 , in our implementation we use a fixed outlier likelihood L out , as defined in Equation <ref type="formula" target="#formula_30">19</ref>. We set L 00 =L out ; the corresponding assignment Q 00 will serve as a sink for unused outlier capacity. The complete log-likelihood of the data and associated assignments take the form ⟨L, Z⟩const. + log 1-π0</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Jc</head><p>, where now both L and Z have an extra row and column. With constants dropped, the Sinkhorn EM objective is</p><formula xml:id="formula_31">L OT (Q; (R n , x n ) n∈N ) = ⟨L, Q⟩ + ϵH(Q)<label>(20)</label></formula><p>where Q ∈ Π(a, b) is the entropic transport plan, a and b are marginal constraints (see Section 4.3), and ϵ is the entropic regularization parameter, which is set to ϵ=1 in standard sEM (also see Section 5.1). In literature, there are other optimal transport problem variants that allow for outlier treatment, such as unbalanced OT <ref type="bibr" target="#b45">[46]</ref> and partial OT <ref type="bibr" target="#b59">[60]</ref>.</p><p>We compare the performance of our proposed outlier model with these other variants. See Appendix C for details.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.3">E-step with Sinkhorn updates</head><p>The E-step for finding the assignment Q now requires to solve</p><formula xml:id="formula_32">max Q ⟨L, Q⟩ + ϵH(Q) s.t. Q ≥ 0, Q ∈ Q, Q1 = a, Q ⊤ 1 = b,<label>(21)</label></formula><p>which follows from Equation <ref type="formula" target="#formula_31">20</ref>, and ϵ is the entropic regularization parameter (also see Section 5.1). The maximum number of allowed outliers can be encoded in vectors a and b, with T a and T b corresponding to the maximum number of spurious detections and unmatched model spots, respectively. We set a i =b j =1, i, j&gt;1 for matched spots, so the weight of the outliers is a 0 =T a and b 0 =T b . In order for the double-stochastic constraint in Equation 20 to be satisfied, we use T b as the user-controlled variable and set the</p><formula xml:id="formula_33">T a = T b -b ⊤ 1 + a ⊤ 1.</formula><p>The transport plan matrix is updated</p><formula xml:id="formula_34">using the Sinkhorn subroutine Q ← BalancedOT[L, ϵ, ζ tol ]</formula><p>shown in Algorithm 4, described in Appendix 4. The convergence of this algorithm is controlled by user-specified parameter ζ tol .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.4">The M-step updates</head><p>The M-step finds the maximum likelihood orientations and positions for all grains (R n , x n ) n∈N by solving a separate problem for each grain</p><formula xml:id="formula_35">∀n ∈ N : max xn,Rn:R ⊤ n Rn=I ⟨L, Q⟩<label>(22)</label></formula><p>We solve this problem by coordinate descent in x and R. We propose to find grain position x using Newton iterations. We calculate the update at step k as</p><formula xml:id="formula_36">∆x k+1 = H(x k ) + ιI -1 g(x k ),<label>(23)</label></formula><p>where H(x k ) and g(x k ) are gradient and Hessian matrices evaluated at the current position x k , and ι is a very small constant added for numerical stability. We show the calculation of these matrices in Appendix B. The update at iteration k is</p><formula xml:id="formula_37">x k+1 ← x k -∆x k .<label>(24)</label></formula><p>The iterations are repeated until convergence threshold ζ x is met:</p><formula xml:id="formula_38">∥x k+1 -x k ∥ &lt; ζ x . Subroutine LauePosNewton (Algorithm 1, described in Appendix B),</formula><p>shows the details of this process.</p><p>Finding the M-step update for the orientation matrix is more complicated. In Appendix B we derive a Majorization-Minimization algorithm for finding the orientation matrix R maximizing the loss L OT . This sequence starts from an initial rotation guess R 0 . We show that the maximization of the objective is equivalent to the maximization of a concave quadratic, for which a local maximum can be obtained by solving a sequence of linear optimization problems over rotation matrices that each take the form of a Wahba's problem (an alternative formulation of the Orthogonal Procrustes problem, see Appendix A for details). First, we calculate the matrix M 0 m using the current values of grain positions x n and assignments Q. We then shift it so that it becomes PSD by adding a constant diagonal ιI</p><formula xml:id="formula_39">M 0 m := - j∈Jn∩Jm Γ ⊤ tj i∈I Q ij (r ij e ⊤ + er ⊤ ij ) Γ tj ,<label>(25)</label></formula><formula xml:id="formula_40">M m := M 0 m + ιI (<label>26</label></formula><formula xml:id="formula_41">)</formula><p>where w m is the direction of ray m and M m , and ι is the absolute value of the most negative eigenvalue of M 0 m or 0 if M 0 m does not have negative eigenvalues. The update at iteration k is</p><formula xml:id="formula_42">R k+1 ← arg min R:R ⊤ R=I m ∥R w m -M m R k w m ∥ 2 . (<label>27</label></formula><formula xml:id="formula_43">)</formula><p>The iterations terminate when the convergence threshold ζ R is met:</p><formula xml:id="formula_44">∥R k+1 -R k ∥ F &lt; ζ R .</formula><p>Subroutine LaueRotMM (Algorithm 3, described in Appendix B) presents this method in detail.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5">THE LAUEOT SOLVER</head><p>To efficiently solve the stated problem at scale, we propose the LAUEOT formulation (Laue indexing with Optimal Transport). We introduce key elements of this method below.</p><p>The LAUEOT method uses iterative updates for all variables. This enables very efficient implementation of coordinate ascent steps on GPUs, as all of these operations require only simple tensorized algebra.</p><p>As the number of local maxima in this problem can be large, techniques for global optimization can be employed. In this work we use a deterministic annealing scheme to control the "temperature" of the problem <ref type="bibr" target="#b51">[52]</ref>  <ref type="bibr" target="#b60">[61]</ref>. It enables more efficient search for local maxima. During the final steps of the algorithm the temperature control is switched off, which corresponds to finding the local maximum likelihood in Equation <ref type="formula" target="#formula_31">20</ref>. This process is described in Section 5.1.</p><p>In a typical Laue analysis, the number of spots in the problem can be large, up to several millions. Additionally, only matches of spots at the same sample rotation t are allowed. To enable good performance of the method at scale, we work with a sparse representation of the assignment matrix (see Section 5.2).</p><p>The multi-grain fitting step is initialized using a set of prototype grains, which together constitute the final sample. Therefore, finding a good set of prototype grains is a critical step. We create the set of prototype grains using two pre-processing steps: (i) single-grain fitting, where we find local minima for samples consisting only of a single grain, starting from multiple initialization points in rotation and position space, and (ii) prototype selection, where we select a small number of prototypes out of all candidates, that form the final sample. We describe the pre-processing steps in Section 6.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.1">Deterministic annealing</head><p>The problem in Equation 20 is non-convex and has multiple local minima. This is a common problem for EM algorithms. Deterministic annealing variant of EM has been proposed to address this <ref type="bibr" target="#b61">[62]</ref>. In this variant, the likelihood function of data x and latent y given parameters Θ is replaced by another function p(x, y | Θ) → p(x, y | Θ) β , where ϵ=1/β is the "temperature". The temperature starts at a value ϵ≫1 and is gradually lowered during the EM iterations. At ϵ=β=1, the original EM formulation is recovered. Gradual temperature decrease helps with avoiding local minima. Similar scheme that additionally includes outlier variables was used in <ref type="bibr" target="#b62">[63]</ref>. In the Laue problem, using temperature ϵ&gt;1 is analogous to increasing entropic regularization in optimal transport. Starting with large ϵ allows for many rays to explain a given detected spot. Decreasing ϵ allows to to lift gradually the assignment ambiguities. The initial temperature ϵ init is typically chosen to be ϵ init &gt;100.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.2">Working with sparse assignment matrices</head><p>Considering only ρ nearest neighbors in the assignment scheme, which is equivalent to setting null assignment weight in the full Q matrix, has the strong advantage to decrease the complexity of Sinkhorn updates from J 2 to ρJ. In the Sinkhorn algorithm, this will be a good approximation Fig. <ref type="figure">3</ref>. Illustration of three selected steps of the LAUEOT solver on a toy problem with a simulated ruby-like sample with two grains and noisefree detected spots, for a single projection in the backscatter detector. The left panels shows the initialization of two grains with red and blue model spots, and strength of the initial assignment weights in grey lines. The darker the color of the line, the stronger the assignment weight. The algorithm starts with a high temperature, which enables assignments between model and detected spots that can be far. As the optimization progresses, the temperature is lowered, as shown in the middle panel. Finally, the algorithm assigns the model and detected spots to the grains. Note that some of the detected spots were not matched; those will be considered as outliers. Conversely, some model spots are unmatched.</p><p>as long as exp(L/ϵ) is close to zero for all points outside the neighbor set. We find this approximation to be stable enough for our implementation, although other approaches could be employed here <ref type="bibr" target="#b54">[55]</ref>, <ref type="bibr" target="#b63">[64]</ref>.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.3">The algorithm</head><p>The LAUEOT method is described in Algorithm 9 (Appendix G). Next to the detected spots and algorithm control parameters, the routine takes as input a set of prototype grains (R n , x n ) n∈N , which is calculated in the preprocessing steps. A simple visual demonstration of the algorithm is shown in Figure <ref type="figure">3</ref>. It shows two candidate grains (blue and red spots) being fit to a set of detected spots (black), at the initial optimization step (left panel), step 50 (middle panel), and the final assignment (right panel). The gray lines show the strength of the assignment Q. Note the outliers (black circles) and unmatched model spots (colored circles) in the final assignment.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6">PRE-PROCESSING</head><p>We perform two preprocessing steps:</p><p>(i) single-grain fitting, where we fit multiple candidate single grains from different starting points in rotation and position space, (ii) selection of prototypes from the list of optimized candidate grains using the Selection of Prototypes with Optimal Transport (SPOT) framework <ref type="bibr" target="#b44">[45]</ref>.</p><p>The goal of the first step is to find single grains that fit the data well and can be included in the final grain set. The second step selects the final set of prototype grains that will be included in the sample and considered for multi-grain optimization.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6.1">Single-grain fitting</head><p>The first pre-processing step is a single grain search over the space of its orientations and positions. The necessity for this step stems from the fact that, even for a single grain, the problem in Equation <ref type="formula" target="#formula_31">20</ref>has multiple local minima in the x and R variables.</p><p>Generally, the problem of finding orientation matrices to match point sets is multi-modal for data without correspondences <ref type="bibr" target="#b50">[51]</ref>, <ref type="bibr" target="#b60">[61]</ref> and is typically solved by running convex solvers multiple times from different starting points in SO(3). We note that, for many other computer vision problems, a good set of starting points can be pre-computed using simple alignment of principal components axes in source and target sets. Diffraction patterns, however, do not have a specific "shape", which prohibits this approach. As a pre-processing step to find a large number of candidate grains, we use single-grain fitting runs, initiated a different starting points in the six-dimensional (R, x) space (see Section 6.1). We discretize the search space using a Sobol sequence grid, where the grain orientation is represented using the modified Rodrigues parameters <ref type="bibr" target="#b64">[65]</ref>. The search over R is restricted according to the crystalographic symmetries of the lattice <ref type="bibr" target="#b65">[66]</ref>, while the search over x is limited to points within the bounds of sample size. These limits are set by the user depending of the type of lattice corresponding to the composition of the sample, as well as its physical size.</p><p>From each initialization point, we run a single grain fitting using a single-grain variant of the problem, described in Appendix D. This formulation will treat most of the detected spots as outliers. The number of runs is variable, depending on the expected number of grains in the sample. For 10 and 1000 grains, we run 5k and 500k initizalizations, respectively. Once the optimization is finished, we store the converged grain orientations and positions. Subroutine SingleLaueOT (Algorithm 8, described in Appendix D) is used for this task.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6.2">Selection of Prototypes with Optimal Transport</head><p>The goal of this step is to select the grain candidates that will compose the final sample. As no further grains will be added to the sample later, this is a critical part of the algorithm. Selecting too many or too few grain candidates can lead to errors in the multi-grain fitting solutions. We start with removing badly-fitted models by selecting grains that have the fraction of unmatched model rays grater than f out . A model ray is considered unmatched if its largest weight in Q is assigned to the outlier column. Then to create the final sample, we perform prototype selection in the framework Selection of Prototypes using Optimal Transport (SPOT) <ref type="bibr" target="#b44">[45]</ref>.</p><p>The SPOT framework casts the problem of selection prototypes as a problem of learning a sparse source probability distribution supported on k elements that has the minimum OT distance from the target distribution. It poses the prototype selection problem as a maximization version of the OT problem, where the source distribution weights are learned with a cardinality constraint. The proposed loss has a key property of submodularity, which enables the use of efficient greedy method with deterministic approximation guarantees. We use the SPOTGREEDY method from <ref type="bibr" target="#b44">[45]</ref>, where we pose the problem as grain-to-spot OT problem of model grains to detected spots. Algorithm 7, described in Appendix E, shows the subroutine LaueSpotGreedy which is an adaptation of this method for our problem. In this algorithm, we also determine the final number of prototypes N : we find N after which the improvement in the total cost of transport significantly decreases (see Appendix E for details).</p><p>We note that this algorithm allows for assignment of a larger number of detected spots to the grain than its number of model spots. Enforcing that constraint leads to a more complicated optimization problem of support selection, recently proposed by <ref type="bibr" target="#b66">[67]</ref>. The problem formulation presented there does not include the possibility of target sample outliers, as well as poses a difficult challenge for optimization. As we find that the SPOT method works well in practice, we leave more further investigation in this area to future work.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7">SIMULATIONS AND EXPERIMENTS</head><p>We evaluate our proposed LAUEOT algorithm according to the following performance criteria 1) accuracy of the solution as a function of number of grains in the sample and the noise level, 2) sensitivity of the solutions to the fraction of outliers for different optimal transport formulations, and its dependence on OT outlier control parameters, 3) number of successfully indexed grains as a function of the number of initial single-grain optimizations for two types of lattice, 4) improvement of the multi-grain solver solution over the single-grain fitting solutions, 5) comparison of time-to-solution between LAUEOT and the LAUE3DNDT method from <ref type="bibr" target="#b21">[22]</ref>, 6) comparison of the indexing results on spots obtained from experimental images.</p><p>For simulated data, we use two types of lattices, FeNiMn and CoNiGa, which are metal alloys (see <ref type="bibr" target="#b67">[68]</ref> for introduction to metal alloys). We test the accuracy of the LAUEOT solutions using simulated data in the following way. We consider a neutron scattering experiment scenario with the wavelength of the beam λ ∈ [0.6, 6] Å and two detectors placed at γ + = (-160, 0, 0) and γ -= (160, 0, 0) mm. The fiducial experiment configuration for both samples is 12 projections (ω = 0 • -360 • , ∆ω = 30 • ). The noise level for the fiducial configuration corresponds to the scatter of σ=0.4 mm on the center of the detector screen, which is equivalent to angular spread of σ = 0.143 deg for rays. The chosen noise level is already conservative, as the size of the point spread function on the scintillator detectors, such as the ones used in neutron scattering studies, is ∼0.2 mm, and its pixel size is 0.103 mm. We add outliers to the simulated detected spot set. The position of the outliers is drawn from an uniform distribution on the image plane. The number of outliers in the fiducial configuration is set to 10% of the Laue spot count. In the fiducial configuration, the simulated samples contain up to 1000 grains of orientations chosen on a Sobol sequence with additional random scatter.</p><p>For synthetic data, we simulated two datasets using a F m 3m space group and a P m 3m space group with lattice parameters a=b=c=3.592 Å and a=b=c=2.872 Å, respectively. Hereafter, the simulated samples will be referred to as SynthSampleA and SynthSampleB, respectively. The choice of the above space groups and corresponding lattice parameters was made because they match recent experimental studies <ref type="bibr" target="#b22">[23]</ref>, <ref type="bibr" target="#b68">[69]</ref>. For the experimental data, we used a ruby single crystal, typically used in crystallography for calibration measurements, a CoNiGa oligocrystalline sample, and a FeGa polycrystalline sample. Sample properties, including space groups and lattice parameters, are listed in Appendix F.1.</p><p>Use 32 nearest neighbors in the sparse formulation. The initial temperature ϵ init is related to the number of nearest neighbors considered in the sparse formulation: it is chosen so that the farthest neighbor has a non-negligible probability at start. The temperature is lowered by ϵ cool =0.97 at every iteration. For the likelihood of outliers, we use the log likelihood L out set to the likelihood corresponding to a angular difference of 3σ. To discard badly fitting grains, we require the number of rays matched to the outlier to be less than f out • |S n |, with typical value f out =0.1. For the multigrain fitting, we set the maximum number of unmatched model rays T b = ⌈0.4 • |S n |⌉ of total number of rays.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7.1">Quality metrics</head><p>To assess the quality of the LAUEOT solutions, we compare: (i) the fraction of correctly assigned spots across all grains, (ii) the median difference between true and estimated grain orientation, (iii) the median difference between true and estimated grain position. The results of these comparisons are shown in Figure <ref type="figure">4</ref>, as a function of number of grains and spot position noise level.</p><p>For samples with up to 500 grains, the number of recovered grains was exactly correct. After that, there was at most 1 grain missing. Starting with samples with 700 grains and for higher noise levels, the method begins to Grain position error Fig. <ref type="figure">4</ref>. Quality metrics for indexing with LAUEOT using simulated data with variable number of grains and noise levels, for the constant fiducial outlier fraction of 10%. The left panel shows the fraction of correctly assigned spots in the entire problem. The middle and right panel show the scaled median absolute deviation of the error on the grain orientation and position, respectively. The number of grains was correctly identified for up to 500 grains, and after that there was up to 1 grain missing. The method fails for large noise levels and high grain counts.  </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Median ∆x [mm]</head><p>×10 -1 500 grains 500 grains Grain position error Fig. <ref type="figure">5</ref>. Quality as in Figure <ref type="figure">4</ref>, for the multi-grain fitting solution of the full LAUEOT solver, compared to the single-grain fitting initializations. The comparison is done for a fixed number of 500 input grains and the fiducial outlier fraction. The LAUEOT solver finds all grains successfully, while the single-grain fitting results in ∼940 correctly indexed grains, with slight dependence on the noise level.</p><p>fail. This gives an idea for the limitations of LAUEOT. The left panel shows the fraction of wrongly assigned spots as a function of the number of grains and the noise level. LAUEOT mismatches only up to 15% of spots even for the challenging scenario of 500 grains and high noise level σ=0.251 • (0.7 mm on the image plane). For the low noise level of σ=0.036 deg, LAUEOT assigns almost all spots correctly. As expected, this fraction decreases with increased noise level. Middle and left panels show the median error of the recovered grain orientation and position, respectively. Predictably, these errors increase with the noise level. They stay almost constant with increased number of grains, which is expected in case of good quality of assignments.</p><p>Figure <ref type="figure">5</ref> shows the benefit of obtaining solutions by solving the full inverse problem in Equation <ref type="formula" target="#formula_31">20</ref>with OT, compared to using the prototypes from single-grain fitting only. It shows the quality metrics, as in Figure <ref type="figure">4</ref>, for the SynthSampleA with 500 grains, at varying noise levels and fixed outlier fraction of 10%. To assess the performance for the single-grain fitting, a model spot is hard-assigned to the nearest detected spot. Rays were marked as unmatched when the probability of the match was lower than the vMF likelihood L out corresponding to the angle of 3σ. The OT formulation decreases the fraction of wrongly assigned spots by a factor of 2. The grain orientation and position errors also improve with the multi-grain fitting, with errors decreasing by up to 25% for high noise levels.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7.2">Robustness to outliers</head><p>We test the sensitivity of the LAUEOT method to outliers in the detected spots. We compare the performance of our proposed LAUEOT formulation using probabilistic outlier model (see Section 4.2), as well as two other OT formulations: partial OT and unbalanced OT (see Appendix C). In this ablation study we explore how this choice affects the indexing results. In particular, we test the sensitivity of the results to the choices of outlier control parameters: likelihood associated with outliers, maximum number of unmatched rays for OT with outlier modelling, κ and λ entropic regularization parameters for the unbalanced OT, and fraction of transported mass m OT for the partial OT. Grain position error Fig. <ref type="figure">6</ref>. Performance of the LAUEOT solver for number of outliers in the data, for three outlier treatment methods used. The hyperparameters for each method were found by performing a grid search over multiple combinations and choosing the one that minimizes the average assignment error over outlier fractions.</p><p>We choose simulated diffraction images of the SynthSampleA with noise level σ=0.143 • as the reference. We vary the fraction of outliers up to 70%. For LAUEOT, we use combinations of outlier cost L out and maximum number of unmatched rays T b . The outlier likelihood corresponds to vMF probability for angular difference of 2-5σ, while the fraction of unmatched rays between 1-40%. For UNBALANCEDOT, we set κ, λ∈[0.001, 1]. For PARTIALOT, the fraction of transported mass is varied between m OT ∈ [0.4, 0.95]. For each OT method, we choose the parameter configuration that yields the smallest average assignment error over all outlier fractions.</p><p>Figure <ref type="figure">6</ref> shows the assignment error (left panel), grain orientation error (middle panel), and position error (right panel), for the three OT outlier treatment methods. The results indicate that the methods are not affected by outliers. The best overall results are obtained with the custom outlier modelling in LAUEOT. The unbalanced and partial OT give slightly worse, but comparable results. Given that the multigrain fitting is very fast, the user can perform a coarse grid search to find reasonable values for the hyper-parameters.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7.3">Number of initializations and runtime</head><p>Figure <ref type="figure" target="#fig_6">7</ref> shows the number of correctly indexed grains as a function of the number of single-grain fitting solutions considered in the prototype selection. Different number of true grains in the sample is considered, using fiducial noise level σ=0.143 deg. In this test we considered both SynthSampleA and SynthSampleB. As expected, more initializations are needed for high number of grains.</p><p>We compare the performance between LAUEOT and the LAUE3DNDT method from <ref type="bibr" target="#b21">[22]</ref>, which is currently used for wide-beam Laue tomography problems. Table <ref type="table">7</ref>.4 shows the comparison between the methods limited to results that can be obtained within 24 hours. This comparison is performed for SynthSampleA using the fiducial noise and outliers, with 32 rotation angles. In this test, LAUEOT finds the exact number of grains within 1h on a single large memory GPU, while LAUE3DNDT outputs 356/500 grains within 24 hours. Further acceleration for LAUEOT can be achieved by running on multiple GPUs, as the single-grain fitting is trivially parallelizable.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7.4">Application to experimental data</head><p>We demonstrate the performance of the LAUEOT solver on spot data taken during neutron diffraction experiments. We show results on three samples: (1) a ruby single-grain calibration sample, (2) a CoNiGa alloy oligocrystal, and (3) a FeGa alloy polycrystal. The details of the experiments are described in Appendix F. Table <ref type="table">7</ref>.4 describes the samples in terms of the number of projection angles used in the experiment, the number of spots detected from the images, and the wavelength range used in the LAUEOT algorithm.</p><p>The number of grains found by LAUEOT is 1, 13, and 251 for the ruby, CoNiGa, and FeGa, respectively. The runtime for this analysis was few minutes for the ruby, 5 min for CoNiGa and 30 min for FeGa, on a single A100 GPU. The number of matched spots is 70-80%. The orientation and position of the ruby crystal found by LAUEOT agrees well with analysis by LAUE3DNDT. The ruby crystal measurements was used to calibrate the experimental setup in terms For FeGa, we only show the matches for the first 20 grains. The black spots are detected from experimental images, while the colored spots show the spots for the fitted model grains. Only matched spots are shown; outliers are omitted for clarity. The statistics of the matched spots are described in Table <ref type="table">7</ref>.4. of distances between the detectors and the sample, as well as tilts of the detector plane <ref type="bibr" target="#b37">[38]</ref>.</p><p>Figure <ref type="figure" target="#fig_7">8</ref> shows the results of indexing of the ruby, CoNiGa, and FeGa samples in the left, middle, and right panels, respectively. The panels show stacked spots for all projection angles in the forward-scatter detector. As in Figure <ref type="figure">3</ref>, the black points show the spots detected in the experiment, and the colored points show the model fitted by LAUEOT, with different colors corresponding to model grains. For clarity, only the matched spots are shown, the outliers are omitted. For the FeGa sample, we only show spots for the first 20 grains. The empty area in the middle is due to the fact that rays close to direction of the beam can not satisfy the Bragg condition (Equation <ref type="formula" target="#formula_1">1</ref>). The agreement is very good for the ruby, and good for the CoNiGa and FeGa samples, up to the precision level of calibrations.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="8">CONCLUSIONS</head><p>We presented a novel approach to indexing grains in multi-crystal samples from wide-beam diffraction experiments. Our method, called LAUEOT, poses a principled optimization problem formulation for the grain indexing. The problem is solved using a computationally efficient coordinate descent method, with assignment of grains-tospots performed in the framework of optimal transport. A crucial part of this model is the treatment of outliers in the experimental data and of redundant model spots. To treat the outliers we propose a model dedicated to the Laue indexing problem, based on a full probabilistic description of outliers. Our new probabilistic model clearly outperforms the two existing formulations in the literature, partial and unbalanced OT.</p><p>We show the performance of LAUEOT using simulations for variable number of grains in the sample, as well as different noise levels and outlier fractions. For samples with &lt; 500, the method recovers all the input grains. For larger samples, the method occasionally misses a single grain. We found the limit of the stable performance of the algorithm is reached for samples with large number of grains at high noise levels. The accuracy of the fitted grain positions and orientations is generally very good, but decreases slightly with increased noise level.</p><p>The LAUEOT methods opens the possibility of analyzing samples with large number of grains with short time-tosolution. For samples with ∼500 grains, the time-to-solution LAUEOT on a Nvidia DGX node (8× A100 GPUs) is of order few minutes, compared to &gt;24 hours taken by the original indexing method of LAUE3DNDT. This enables almost real-time sample analysis during the experiment, as well as simulation-based setup optimization before starting the measurements.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX A WAHBA'S PROBLEM</head><p>For two sets of points and their correspondences, the rotation matrix can be found by solving the Orthogonal Procrustes problem. This problem is solved through the singular vector decomposition. Wahba's problem <ref type="bibr" target="#b69">[70]</ref> generalizes that to the analysis of points with weights and addresses the sign ambiguity of the SVD output. The rotation matrix R for a fixed set of K pair of points a k and b k and the assignment weight w k using the subroutine Wahba (Algorithm 2). Similarly to the Orthogonal Procrustes problem, it uses the singular value decomposition, but additionally uses a scaling by the product of determinants to remove the sign ambiguity in the SVD.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX B M-STEPS FOR GRAIN POSITION AND ROTATION</head><p>In this section we derive the M-step updates for grain position x and rotation R, as introduced in Section 4.4. For both parameters, we find the updates corresponding to the maximum of the likelihood in Equation <ref type="formula" target="#formula_31">20</ref>. The M-step requires solving the optimization problem for position x n and R n of every grain n ∈ N separately ∀n ∈ N : min</p><formula xml:id="formula_45">xn,Rn L(R n , x n ) = 1 σ 2 ij Q ij r⊤ ij r j .<label>(28)</label></formula><p>We perform coordinate descent alternating between updates for R and x.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.1 Grain position</head><p>We solve this problem for x using the Newton's method. The gradient ∇L(x) and Hessian ∇ 2 L(x) are</p><formula xml:id="formula_46">∇L(x) = 1 σ 2 ij Qij τij r ⊤ j I -rij r⊤ ij ,<label>(29)</label></formula><formula xml:id="formula_47">∇ 2 L(x) = 1 σ 2 ij Qij τ 2 ij 3 • r ⊤ j rij • rij r⊤ ij -rj r⊤ ij -rij r ⊤ j -r ⊤ j rij • I ,<label>(30)</label></formula><p>where τ ij :=∥s i -Γ tj x nj ∥ is the length of the ray rij from the grain center to the spot position s i on the screen. The Netwon's method finds the step ∆x by solving ∆x ← [∇ 2 L(x)] -1 ∇L(x). Subroutine LauePosNewton in Algorithm 1 describes the details of this process. The iterations stop when a convergence threshold ζ tol on position is reached.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.2 Grain rotation</head><p>As described in Section 4.4, finding R requires solving a quadratic programming problem with orthogonality constraints. In this section we derive the LaueRotMM algorithm, which finds the maximum likelihood solution. The optimization problem in Equation 20 is equivalent to</p><formula xml:id="formula_48">min R - j∈Jn i∈I Q ij rij , Γ tj Rw mj w ⊤ mj R ⊤ Γ ⊤ tj e ,<label>(31)</label></formula><p>such that R ⊤ R = I and where we dropped the index of the grain from the rotation matrix R. By introducing the matrix</p><formula xml:id="formula_49">M 0 m := - j∈Jn∩Jm Γ ⊤ tj i∈I Q ij (r ij e ⊤ + er ⊤ ij ) Γ tj ,<label>(32)</label></formula><p>this problem can be expressed as min</p><formula xml:id="formula_50">R:R ⊤ R=I - m∈M w ⊤ m R ⊤ M 0 m R w m .<label>(33)</label></formula><p>The matrices M 0 m are generally not positive semi-definite, which makes the problem not concave. By using a positive semi-definite matrix</p><formula xml:id="formula_51">M m := M 0 m + |ι m |I,<label>(34)</label></formula><p>where |ι m | is the smallest eigenvalue or 0 in case M 0 m has no negative eigenvalue, we can write an equivalent optimization problem min</p><formula xml:id="formula_52">R:R ⊤ R=I - m w ⊤ m R ⊤ M m R w m . (<label>35</label></formula><formula xml:id="formula_53">)</formula><p>This problem is the Quadratic Program with Orthogonality Constraints (QP-OC). There exist multiple solvers for this problem in literature <ref type="bibr" target="#b70">[71]</ref>, <ref type="bibr" target="#b71">[72]</ref>. Here we design a dedicated Majorization Minimization method using an upper bound on the function in Equation <ref type="formula" target="#formula_50">33</ref>.</p><p>The associated quadratic is an upper bound of its first order Taylor expansion around a rotation matrix R k and so</p><formula xml:id="formula_54">- m w ⊤ m R ⊤ M m R w m ≤ m w ⊤ m R k⊤ M m R k w m - m 2 w ⊤ m R k⊤ M m R w m . (<label>36</label></formula><formula xml:id="formula_55">)</formula><p>The minimization of the upper bound is a Wahba's problem (see Appendix A) with unity weights:</p><formula xml:id="formula_56">min R:R ⊤ R=I - m w ⊤ m R k⊤ M m R w m<label>(37)</label></formula><p>⇔ min</p><formula xml:id="formula_57">R:R ⊤ R=I m ∥R w m -M m R k w m ∥ 2 . (<label>38</label></formula><formula xml:id="formula_58">)</formula><p>The Minimization-Majorization scheme starts with an initial guess R 0 and performs a number of iterative steps according to Equation <ref type="formula" target="#formula_57">38</ref>. The routine LaueRotMM is shown in Algorithm 3. The iterative steps are performed until a given convergence thresholds on rotation ζ tol is reached.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX C OPTIMAL TRANSPORT VARIANTS</head><p>As described in Section 4.2, our main proposed method for finding the transport plan between the model and detected spots is using a custom probabilistic model for outlier treatment. We compare the performance of this model to other OT variants that allow for outlier treatment: unbalanced and partial optimal transport. For all our Sinkhorn methods, the convergence is controlled by a maximum difference to previous iteration ζ tol .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>C.1 Partial optimal transport</head><p>Partial optimal transport <ref type="bibr" target="#b59">[60]</ref> aims to move only a predefined fraction m OT of the mass -here the number of spots-that has to be transported in the OT formulation.</p><p>The optimization problem has a single control parameter, which is specified by the user. The objective function for finding the transportation plan Q is max</p><formula xml:id="formula_59">Q ⟨L, Q⟩ + ϵH(Q) s.t. Q ≥ 0, Q ∈ Q Q1 ≤ a, Q ⊤ 1 ≤ b, 1 ⊤ Q ⊤ 1 = m OT , (A)</formula><p>where a and b are vectors corresponding to spot weights (typically equal and set to one), and m OT ≤ min{∥a∥ 1 , ∥b∥ 1 }, and ϵ is the temperature parameter (see Section 5.1), which should be set to ϵ=1 to match Equation <ref type="formula" target="#formula_17">13</ref>. In partial OT, the spots to be matched are selected automatically based on their cost. A motivation to consider Partial OT in the presence of outliers and missing spots is that one can hope that only inliers will be matched with their corresponding models spots.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>C.2 Unbalanced optimal transport</head><p>In this formulation, the constraint that the mass distribution in Q should have marginals that are equal to a and b is relaxed, and they are only encouraged to be close to them by the means of regularization, typically a generalized KLdivergence regularizer due to availability of closed-form solution <ref type="bibr" target="#b45">[46]</ref>. The optimization problem for transportation plan Q in Problem (B) is</p><formula xml:id="formula_60">max Q ⟨L, Q⟩ + ϵH(Q) -κD(Q1, a) -λD(Q ⊤ 1, b) s.t. Q ≥ 0, Q ∈ Q (B)</formula><p>where the proximity term D(x, y) is the generalized Kullback-Leibler divergence between x and y, D(x, y) = x ⊤ log (x ⊘ y) + (y -x) ⊤ 1 , where ⊘ is the element-wise division, and ϵ is the entropic regularization parameter. The strength of these marginal constraint regularization terms controlled by κ and λ.</p><p>In practice, due to the entropic term, a consequence of relaxing the equality to the marginal, is that, as in partial OT, the mass transported is smaller than the total mass, which motivates the possible use of this method in the presence of outliers and missing spots. Here, κ and λ influence the outliers in source and target distributions, which will be ignored if the cost of transporting them is too high. In the limiting case of of κ → ∞, λ → ∞, the solution converges to the balanced optimal transport where no outliers are allowed.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX D SINGLE-GRAIN FITTING</head><p>The single-grain fitting is performed using the simplified version of LAUEOT. The key difference is that we remove the double-stochastic constraint, which does not make sense for a single grain. The reason for this is that the model spots from a single grain are sufficiently far from each other, that it is extremely unlikely that they would be matched to a common detected spot. Furthermore, removing this constraint enables us to perform assignment updates in a single step, without having to solving Sinkhorn. This speeds up the process significantly. We employ the deterministic annealing scheme here too to obtain better local minima. We maximize the function max</p><formula xml:id="formula_61">Q,R,x ⟨L, Q⟩ + ϵH(Q) s.t. Q ≥ 0, Q ∈ Q, Q1 = a, R ⊤ R = I, (<label>39</label></formula><formula xml:id="formula_62">)</formula><p>where L is the likelihood matrix in Equation <ref type="formula" target="#formula_30">19</ref>. With the double-stochastic constraint removed, the assignment matrix is computed in a single update. Algorithm 8 for single-grain fitting is described in detail in Appendix D. We perform the optimization for model spots generated from a single grain model. The annealing schedule is following the same rules as the multi-grain fitting. Here we set the number of iterations to a fixed number k max , which allows us to use perform multiple single-grain fitting runs in a batch mode. This leads to a significant computational performance boost.</p><p>For grain position and rotation updates, we perform 4 steps in the Newton and MM iterations. This is done to speed up the computation, as the single-grain fitting prioritizes speed over precision.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX E SELECTION OF PROTOTYPES WITH OT</head><p>Let's consider a set of candidate grains {G c n } n∈N c , indexed by N c , which are solutions obtained by single-grain fitting, that have the number of outliers &lt; f out |S n |. Each candidate will create model spots indexed by J c n . The goal is to find a subset of initial grains N p ⊆ N c , called the prototypes, that will constitute the final sample. We start with calculating the grain-to-spot assignment log-likelihood matrix L ∈ R |I|×|N c | . The cost of assignment of spot s i to grain G c n is calculated using the marginal probability of assignment for all model spots in the grain</p><formula xml:id="formula_63">Lin ← log j∈J c n p(s i , Z ij = 1). (<label>40</label></formula><formula xml:id="formula_64">)</formula><p>We then shift the cost matrix to positive values</p><formula xml:id="formula_65">Lin ← ∥ L∥ ∞ + Lin .<label>(41)</label></formula><p>The prototype selection depends on finding a weight vector w ∈ ∆ N c corresponding to candidate grains, where simplex</p><formula xml:id="formula_66">∆ N c := {z ∈ R N + | z ⊤ 1 = 1}. We define a set function f (N p ) := max w: supp(w)⊆N p max P ⟨ L, P ⟩ s.t. P ≥ 0, P 1 = a, P ⊤ 1 = w,<label>(42)</label></formula><p>where P is a OT assignment matrix and f (∅) = 0. The objective function finds N * that maximizes f subject to cardinality constraint on |N * | &lt; k, enforcing that the size of the set is smaller than k. The SPOT loss is</p><formula xml:id="formula_67">N * = argmax N p ⊆N c ,|N p |≤k f (N p ).<label>(43)</label></formula><p>Finding the optimum subset N * is NP complete, but can be solved approximately using greedy incremental methods, which leverage its submodular property. The algorithm proposed in <ref type="bibr" target="#b44">[45]</ref> has proven approximation guarantees <ref type="bibr" target="#b72">[73]</ref>.</p><p>We employ the SPOTGREEDY algorithm <ref type="bibr" target="#b44">[45]</ref> to find the approximate solution for Equation <ref type="formula" target="#formula_67">43</ref>. This algorithm selects prototypes in a greedy fashion, starting with the one that contributes the most to the objective function. The relative contributions of consecutive prototypes to the objective reflect the degree of uniqueness of the prototype. When the increment in the cost functions for a new candidate prototype is small, that indicates that it is similar to a prototype that already has been accepted. Due the greedy nature of the algorithm, for cardinality k + 1 it will output the same elements in the same order as for k, extended by one new element.</p><p>Practically, the SPOTGREEDY algorithm starts with constant outputs a sequence of indices and their corresponding objective function values (n k , f k ) k∈N * , indexed by N * . A subsequence with elements up to k corresponds to the prototypes N p ⊆ N c , for cardinality constraint |N p | ≤ k. To choose the final set of prototypes N p with size k * , we employ a criterion based on 2nd discrete difference of</p><formula xml:id="formula_68">f k k * ← argmax k f k+1 + f k-1 -2f k<label>(44)</label></formula><p>for k &gt; 1. We use a fractional criterion instead of the commonly used cut-off on the objective increment ϵ (see Algorithm 1 in <ref type="bibr" target="#b44">[45]</ref>), as it requires no knowledge of the numerical values of the objective from the user. We call this method LaueSpotGreedy (Algorithm 7) and describe it in Appendix E. The prototype grain set is passed on to the next step of the algorithm, which solves problem in Equation <ref type="formula" target="#formula_31">20</ref>. This procedure typically finds the correct number of grains, except when the number of candidates obtained from singlegrain fitting is not sufficiently large. The number of singlegrain fitting candidates required is described in Section 7.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX F EXPERIMENTAL DETAILS</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>F.1 Samples</head><p>Ruby: As a first sample, a Ø 6 mm spherical single-crystal ruby, typically used for detector calibrations, was measured.</p><p>For the indexing of the ruby crystal, a R 3c space group with lattice parameters of a=b=4.7606 Å, c=12.994 Å was used.</p><p>CoNiGa: A cylindrical Ø 4 mm × 4 mm oligocrystalline CoNiGa sample was selected as an intermediate test case.</p><p>The sample was prepared via hot-extrusion followed by post-extrusion heat treatment, resulting in millimeter-sized grains. The full details of the sample preparation are given in <ref type="bibr" target="#b68">[69]</ref>. For the indexing of the CoNiGa sample a cubic P m 3m space group with lattice parameters of a=b=c=2.8657 Å was used.</p><p>FeGa: As a final test case, a 3 × 3 × 3 mm cube Fe 0.9 Ga 0.1 polycrystalline sample was measured. The sample was prepared via arc-melting of 99.95% purity Fe and Ga buttons in an argon atmosphere. To obtain a homogenous distribution of elements, the sample was re-melted 4 times. After arcmelting, the sample was annealed in argon at a temperature of 1000 • C with a heating rate of about 20 • C/min and a holding time of 12 h with subsequent quenching to room temperature. The final sample shape was achieved via spark cutting and subsequent polishing with sandpaper, diamond suspension, and colloidal silica. For the indexing of the FeGa data set, a Im 3m space group with lattice parameters of a=b=c=2.917 Å were used.</p><p>The noise level was set to σ=1.07 • and σ=0.27 • for CoNiGa and FeGa samples, respectively. The CoNiGa sample required higher noise level, as the uncertainty also included systematic errors in the detector setup calibration. For both CoNiGa and FeGa samples, the number of spots detected in each rotation varied by up to 40%. This is not expected, as the number of spots per projection should remain constant. This large variation can be caused by drops in beam flux for that exposure, as well as failures of the spot detection algorithm. Some rotation angles were removed from the analysis, as they had abnormally small number of detected spots compared to other angles. To address this, we set the single-grain selection threshold f out &lt; 0.4 for CoNiGa and f out &lt; 0.35 for FeGa.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>F.2 Neutron Laue diffraction tomography</head><p>All neutron Laue diffraction tomographies were collected at the Pulse Overlap Diffractometer (POLDI) <ref type="bibr" target="#b73">[74]</ref> at the SINQ neutron source of the Paul Scherrer Institute (PSI), Switzerland, using a white beam and the FALCON doubledetector system <ref type="bibr" target="#b37">[38]</ref>. The FALCON forward-and backscattering detectors were placed upstream and downstream from the sample, respectively. Measurement parameters such as the sample-to-detector distances and exposure times were chosen for each sample to optimize signal quality and overall spot coverage on the detector.</p><p>The ruby tomography was carried out with sample-todetector distances of 16.5 cm and 16.8 cm for the back-and forward-scattering detector, respectively. The sample was rotated a full 360 • in steps of 8 • , resulting in 46 projections in total. Each projection was measured with an exposure time of 90 s.</p><p>The CoNiGa tomography was carried out with sampleto-detector distances of 16.5 cm and 12.5 cm for the backand forward-scattering detector, respectively. The tomography was performed by rotating the sample a full 360 • in steps of 4 • , resulting in a total of 91 projections. Each projection was measured with an exposure time of 90 s.</p><p>The FeGa tomography was carried out with sample-todetector distances of 16.5 cm and 12.5 cm for the back-and forward-scattering detector, respectively. The tomography was performed over a full 360 • rotation in steps of 4 • , resulting in a total of 91 projections. Each projection was measured with an exposure time of 100 s.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>APPENDIX G ALGORITHMS</head><p>The symbol ⊘ stands for element-wise division. Elementwise minimum of elements between two vectors x and y is denoted as min(x, y). The diag(x) function creates a diagonal matrix from an input vector x. Vectors a and b correspond to data point weights, which in LAUEOT are set to a ← 1, b ← 1. LAUEOT employs balanced optimal transport with explicit outlier modeling, the iterative updates are shown in Algorithm 4. For UNBALANCEDOT, the iterative updates are shown in Algorithm 5. For PARTIALOT, the iterative updates are shown in Algorithm 6. These algorithms are described in Appendix C. Algorithm 1 LauePosNewton: Newton's method for finding grain positions.  x k+1 ← a ⊘ (Ky k ) 6:</p><p>y k+1 ← b ⊘ (K ⊤ x k+1 ) 7:</p><p>ζ ← max(∥x k+1 -x k ∥, ∥y k+1 -y k ∥) 8:</p><p>k ← k + 1 9: end while 10: Q ← diag(x k ) • K • diag(y k ) 11: output: Q Algorithm 5 UnbalancedOT: Sinkhorn algorithm for unbalanced optimal transport with entropic regularization. </p><formula xml:id="formula_69">K 1 ← diag[min(a ⊘ K k 1, x)][K k • Q 1 ] 6: Q 1 ← Q 1 • K k ⊘ K 1 7: K 2 ← [K 1 • Q 2 ] diag[min(b ⊘ K ⊤ 1 1, y)] 8: Q 2 ← Q 2 • K 1 ⊘ K 2 9: K k+1 ← K 2 • Q 3 • m OT /(1 ⊤ K 2 1) 10: Q 3 ← Q 3 • K 2 ⊘ K k 11:</formula><p>ζ ← ∥K -K prev ∥ F 12:</p><p>k ← k + 1 13: end while 14: Q ← K 15: output: Q Algorithm 7 LaueSpotGreedy: Selection of grain prototypes using optimal transport in the Laue indexing problem.  </p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Fig. 1 .</head><label>1</label><figDesc>Fig. 1. Bragg back-scatter diffraction from a crystal lattice with cubic symmetry (pure iron). Showing a cross-section through the z-dimension. Example Miller planes with normal vector u and indices [h, k, l]=[1, 2, 0] are shown with the red lines. The incoming beam with wavelength λ is shown with the colored line, with color corresponding to the value of the light sine wave. The diffracted ray r displays constructive interference with aligned phases, shown with the gray line.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>Fig. 7 .</head><label>7</label><figDesc>Fig.7. Fraction of correctly indexed grains as the number of singlegrain fitting initializations considered in the prototype selection, for samples SynthSample1 (darker-colored lines) and SynthSample2 (lightercolored lines). The results are shown for varying number of true grains in the simulation, with spot noise level kept constant.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_7"><head>Fig. 8 .</head><label>8</label><figDesc>Fig.8. Results of LAUEOT indexing for three samples: a ruby single crystal (left panel), an oligocrystalline CoNiGa alloy (middle panel), and a polycrystalline FeGa alloy (right panel). The panels show spots detected at all projection angles stacked together, for the forward-scatter detector. For FeGa, we only show the matches for the first 20 grains. The black spots are detected from experimental images, while the colored spots show the spots for the fitted model grains. Only matched spots are shown; outliers are omitted for clarity. The statistics of the matched spots are described in Table7.4.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Algorithm 2 ⊤ 3 :</head><label>23</label><figDesc>Wahba: solution to the Wahba's problem 1: input: a, b, w 2: B ← K k=1 w k a k b k U SV ⊤ ← svd(B) 4: M ← diag[1, 1, det(U ) • det(V )] 5: R ← U M V T 6: output: R Algorithm 3 LaueRotMM: Majorization-Minimization algorithm for finding rotations with reflected points.1: input: (s i , wm j , Γt j ) j∈Jn , e, R 0 n , xn, (Q ij ) j∈Jn,i∈I , ζ tol , k max 2: set: k ← 0, ζ ← inf 3: set: Mm ← M 0 m + |ιm|I (Equation 34) 4: while ζ &gt; ζ tol and k &lt; k max do 5: Sinkhorn algorithm for balanced optimal transport with entropic regularization. 1: input: L, ϵ, ζ tol 2: set: K ← exp(L/ϵ) , x 0 ← 1, y 0 ← 1 3: set: ζ ← inf, k ← 0 4: while ζ &gt; ζ tol do 5:</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head>1 :</head><label>1</label><figDesc>input: L, ϵ, κ, λ, ζ tol 2: set: K ← exp(L/ϵ), x 0 ← 1, y 0 ← 1 3: while ζ &gt; ζ tol do 4:x k+1 ← (a ⊘ (Ky k ))λ λ+ϵ 5:y k+1 ← (b ⊘ (K ⊤ x k+1 )) κ κ+ϵ 6: ζ ← max(∥x k+1 -x k ∥, ∥y k+1 -y k ∥) 7: k ← k + 1 8: end while 9: Q ← diag(x k ) • K • diag(y k) 10: output: Q Algorithm 6 PartialOT: Sinkhorn algorithm for partial optimal transport with entropic regularization. 1: input: L, ϵ, m OT , ζ tol 2: set: K ← exp(L/ϵ), Q 1 , Q 2 , Q 3 ← J IJ 3: set: x ← 1, y ← 1, K 0 ← K 4: while ζ &gt; ζ tol do 5:</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>1 : 7 :</head><label>17</label><figDesc>input data: N c , Lin 2: initialize:N 0 = ∅ 3: for 1 ≤ k ≤ |N c | do 4: Define vector fn ← f (N k-1 ∪ N c n ) -f (N k-1 ) 5:Find largest increment n k ← maxn fn 6:Create a grain set for k:N k ← N k-1 ∪ N cn k Store the increment function f k ← fn k 8: end for 9: Get final number of grain prototypes k * (Equation 44) 10: Get the final prototype grain set N * ← N k * 11: output: N * Algorithm 8 SingleLaueOT: Single-grain fitting for Laue indexing.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_2"><head>TABLE 1</head><label>1</label><figDesc>Crystal grain indexing results for three samples. The numbers in brackets correspond to spot counts in the (backscatter, forward-scatter) detectors.</figDesc><table><row><cell>Sample</cell><cell>Number of projections</cell><cell>Wavelength λ [ Å]</cell><cell>Number of spots</cell><cell>Number of grains</cell><cell>Number of matched spots</cell></row><row><cell>Ruby</cell><cell>46</cell><cell>[1.0-5.0]</cell><cell>3512 (3093, 419)</cell><cell>1</cell><cell>2852 (2468, 384)</cell></row><row><cell>CoNiGa</cell><cell>87</cell><cell>[1.0-5.0]</cell><cell>16822 (11246, 5576)</cell><cell>13</cell><cell>11883 (9039, 2844)</cell></row><row><cell>FeGa</cell><cell>86</cell><cell>[1.1-5.0]</cell><cell>269181 (197047, 72134)</cell><cell>251</cell><cell>214471 (169240, 45231)</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_3"><head>TABLE 2</head><label>2</label><figDesc>Time to solution for the LAUEOT algorithm compared to the solution from LAUE3DNDT<ref type="bibr" target="#b21">[22]</ref>.</figDesc><table><row><cell></cell><cell>sample</cell><cell>number of grains found</cell><cell>time-to-solution</cell></row><row><cell>LAUE3DNDT</cell><cell>N grains = 200</cell><cell>196</cell><cell>24h</cell></row><row><cell>LAUEOT</cell><cell>N grains = 200</cell><cell>200</cell><cell>8 min on a single A100</cell></row><row><cell>LAUE3DNDT</cell><cell>N grains = 500</cell><cell>356</cell><cell>24h</cell></row><row><cell>LAUEOT</cell><cell>N grains = 500</cell><cell>500</cell><cell>30 min on a single A100, 5m on 8×A100</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_4"><head></head><label></label><figDesc>1: input: (s i , wm j , Γt j ) j∈Jn , e 2: input:x 0 n , Rn, (Q ij ) j∈Jn,i∈I , 3: input: ζ tol , k max 4: set: k ← 0, ζ ← inf 5: while ζ &gt; ζ tol and k &lt; k max do 6: g ← ∇L(x k ) (Equation29) 7:H ← ∇ 2 L(x k ) (Equation30) 8:</figDesc><table><row><cell>9: 10:</cell><cell>∆x k n ← H -1 g x k+1 n ← x k n -∆x k n ζ ← ∥x k+1 n -x k n ∥ 2</cell></row><row><cell>11:</cell><cell>k ← k + 1</cell></row><row><cell cols="2">12: end while 13: output: x k n</cell></row><row><cell>14: a</cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_5"><head>1 :</head><label>1</label><figDesc>input data: (s i ) i∈I , σ 2: input number of starting grains: N s 3: input outlier parameters: L out 4: input control parameters: ϵ init , ϵ cool , ζ tol , k max 5: set: Calculate Sobol grid of starting grains (Rn, xn) N s n=1 6: set:L •0 ← L out 7: set: L 0• ←= σ -2 -log(4πσ 2 sinh(σ -2 )) 8: for 0 &lt; n &lt; N s do j ← (I -2Γt j R k n j wm j w ⊤ m j R k⊤ n j Γ ⊤ t j )e 14:Calculate detected ray estimates, ∀ i ∈ I, j ∈ J:</figDesc><table><row><cell>9: 10:</cell><cell cols="4">▷ Use a sample with a single grain ϵ ← ϵ init</cell></row><row><cell>11:</cell><cell cols="4">for 0 &lt; k &lt; k max do</cell></row><row><cell>12:</cell><cell cols="4">Calculate model rays, ∀ j ∈ J:</cell></row><row><cell>13:</cell><cell></cell><cell></cell><cell></cell></row><row><cell>15:</cell><cell cols="2">rij ←</cell><cell>s i -Γ t j x k n j ∥s i -Γ t j x k n j</cell><cell>∥</cell></row><row><cell>16: 17:</cell><cell cols="4">Log likelihood matrix, ∀ i ∈ I, j ∈ J : L ij ← 1 σ 2 r⊤ ij r j</cell></row><row><cell>18:</cell><cell cols="3">▷ E-step</cell></row><row><cell>19:</cell><cell cols="4">Update assignments:</cell></row><row><cell>20: 21:</cell><cell cols="4">K ← exp(L/ϵ) Q k n ← K • diag(a ⊘ K1)</cell></row><row><cell>22:</cell><cell cols="3">▷ M-step</cell></row><row><cell>23:</cell><cell cols="4">Update positions and orientations, ∀ n ∈ N :</cell></row><row><cell>24: 25:</cell><cell>x k+1 n R k+1 n</cell><cell cols="3">← LauePosNewton[x k , Q k n , ...] ← LaueRotMM[R k n , Q k n , ...]</cell></row><row><cell>26:</cell><cell cols="4">Decrease the temperature:</cell></row></table><note><p>r ϵ ← ϵ • ϵ cool 27: k ← k + 1 28: end for 29: end for 30: output: (Rn, xn) N s n=1</p></note></figure>
+		</body>
+		<back>
+
+			<div type="acknowledgement">
+<div><head>ACKNOWLEDGMENTS</head><p>The authors thank <rs type="person">Marc Caubet Serrabou</rs> and administrators of the <rs type="institution">Merlin cluster at PSI</rs> for excellent technical support. We thank <rs type="person">Andreas Adelmann</rs> for the access to the Gwendolen node. TK thanks <rs type="person">Luis Barba</rs> for helpful discussions and <rs type="person">Ilnura Usmanova</rs> for valuable comments on the manuscript. The authors thank <rs type="person">Benjamin Bejar</rs> for his initial work conceptual works and contributions to proposals that led to this project. The project was supported by grant <rs type="grantNumber">C20-14</rs> from <rs type="funder">Swiss Data Science Center</rs>.</p></div>
+			</div>
+			<listOrg type="funding">
+				<org type="funding" xml:id="_ET9xmXY">
+					<idno type="grant-number">C20-14</idno>
+				</org>
+			</listOrg>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Algorithm 9 LaueOT: Laue indexing with optimal transport, multi-grain fitting 1: input data: (s i ) i∈I , σ 2: input prototype grain parameters: (R 0 n , x 0 n ) n∈N 3: input OT parameters: L out , Ta 4: input control parameters:</p><p>Calculate model rays, ∀ j ∈ J: 10:</p><p>Calculate detected ray estimates, ∀ i ∈ I, j ∈ J:</p><p>Calculate log-likelihood matrix, ∀ i ∈ I, j ∈ J : 14:</p><p>Update assignments by solving OT: 17:</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>18:</head><p>▷ M-step 19:</p><p>Update orientations and positions, ∀ n ∈ N : 20: </p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Multiple scattering of waves</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Lax</surname></persName>
+		</author>
+		<idno type="DOI">10.1103/RevModPhys.23.287</idno>
+		<ptr target="https://link.aps.org/doi/10.1103/RevModPhys.23.287" />
+	</analytic>
+	<monogr>
+		<title level="j">Rev. Mod. Phys</title>
+		<imprint>
+			<biblScope unit="volume">23</biblScope>
+			<biblScope unit="page" from="287" to="310" />
+			<date type="published" when="1951-10">Oct 1951</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">One hundred years of diffuse scattering</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Welberry</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Weber</surname></persName>
+		</author>
+		<idno type="DOI">10.1080/0889311X.2015.1046853</idno>
+		<ptr target="https://doi.org/10.1080/0889311X.2015.1046853" />
+	</analytic>
+	<monogr>
+		<title level="j">Crystallography Reviews</title>
+		<imprint>
+			<biblScope unit="volume">22</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="2" to="78" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<monogr>
+		<title level="m" type="main">Indexing of Crystal Diffraction Patterns</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Morawiec</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title/>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">O</forename><surname>Sørensen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">P</forename><surname>Wright</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">B M</forename><surname>Vaughan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Techert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">F</forename><surname>Garman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Oddershede</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Davaasambuu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">S</forename><surname>Paithankar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Gundlach</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+		<idno type="DOI">10.1524/zkri.2012.1438</idno>
+		<ptr target="https://doi.org/10.1524/zkri.2012.1438" />
+	</analytic>
+	<monogr>
+		<title level="j">Multigrain crystallography</title>
+		<imprint>
+			<biblScope unit="volume">227</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="63" to="78" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">3D reconstruction and characterization of polycrystalline microstructures using a FIB-SEM system</title>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">A</forename><surname>Groeber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Haley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">D</forename><surname>Uchic</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">M</forename><surname>Dimiduk</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ghosh</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Characterization</title>
+		<imprint>
+			<biblScope unit="volume">57</biblScope>
+			<biblScope unit="issue">4-5</biblScope>
+			<biblScope unit="page" from="259" to="273" />
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Three-dimensional orientation microscopy in a focused ion beam-scanning electron microscope: A new dimension of microstructure characterization</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Zaefferer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Wright</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Raabe</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Metallurgical and Materials Transactions A</title>
+		<imprint>
+			<biblScope unit="volume">39</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="374" to="389" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Three-dimensional orientation mapping in the transmission electron microscope</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Godfrey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Sharon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Huang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">332</biblScope>
+			<biblScope unit="issue">6031</biblScope>
+			<biblScope unit="page" from="833" to="834" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">Assessment of geometrically necessary dislocation levels derived by 3D EBSD</title>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">J</forename><surname>Konijnenberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Zaefferer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Raabe</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">99</biblScope>
+			<biblScope unit="page" from="402" to="414" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">3-Dimensional microstructural characterization of CdTe absorber layers from CdTe/CdS thin film solar cells</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Stechmann</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Zaefferer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Konijnenberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Raabe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Gretener</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Kranz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Perrenoud</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Buecheler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">N</forename><surname>Tiwari</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Solar Energy Materials and Solar Cells</title>
+		<imprint>
+			<biblScope unit="volume">151</biblScope>
+			<biblScope unit="page" from="66" to="80" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Serial electron crystallography for structure determination and phase analysis of nanocrystalline materials</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Smeets</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Zou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Wan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">51</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="1262" to="1273" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Five-parameter grain boundary character distribution of gold nanoparticles based on three dimensional orientation mapping in the tem</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Zhu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Godfrey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Q</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Feng</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Huang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Huang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scripta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">214</biblScope>
+			<biblScope unit="page">114677</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Threedimensional maps of grain boundaries and the stress state of individual grains in polycrystals and powders</title>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">F</forename><surname>Nielsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">M</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Suter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">U</forename><surname>Lienert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Margulies</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Lorentzen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">Juul</forename><surname>Jensen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">34</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="751" to="756" />
+			<date type="published" when="2001">2001</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Threedimensional X-ray structural microscopy with submicrometre resolution</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Larson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Ice</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Budai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Tischler</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<imprint>
+			<biblScope unit="volume">415</biblScope>
+			<biblScope unit="issue">6874</biblScope>
+			<biblScope unit="page" from="887" to="890" />
+			<date type="published" when="2002">2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">X-ray microscopy in four dimensions</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">J</forename><surname>Jensen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Margulies</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Poulsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Sørensen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Vaughan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Today</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">1-2</biblScope>
+			<biblScope unit="page" from="18" to="25" />
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Xray diffraction contrast tomography: a novel technique for threedimensional grain mapping of polycrystals. I. direct beam case</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ludwig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">M</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">41</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="302" to="309" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">X-ray diffraction contrast tomography: a novel technique for three-dimensional grain mapping of polycrystals. II. the combined case</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Johnson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>King</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">G</forename><surname>Honnicke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Marrow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ludwig</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">41</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="310" to="318" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Three-dimensional grain mapping by x-ray diffraction contrast tomography and the use of Friedel pairs in diffraction data analysis</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ludwig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Reischig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>King</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Herbig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Johnson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Marrow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-Y</forename><surname>Buffiere</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Review of Scientific Instruments</title>
+		<imprint>
+			<biblScope unit="volume">80</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page">33905</biblScope>
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">New opportunities for 3d materials science of polycrystalline materials at the micrometre lengthscale by combined use of X-ray diffraction and X-ray imaging</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ludwig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>King</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Reischig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Herbig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">M</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Proudhon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Forest</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Cloetens</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">R</forename><surname>Du Roscoat</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Science and Engineering: A</title>
+		<imprint>
+			<biblScope unit="volume">524</biblScope>
+			<biblScope unit="issue">1-2</biblScope>
+			<biblScope unit="page" from="69" to="76" />
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">High-energy diffraction microscopy at the advanced photon source</title>
+		<author>
+			<persName><forename type="first">U</forename><surname>Lienert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Hefferan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lind</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Suter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Bernier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Barton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Brandes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Mills</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Miller</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">JOM</title>
+		<imprint>
+			<biblScope unit="volume">63</biblScope>
+			<biblScope unit="issue">7</biblScope>
+			<biblScope unit="page" from="70" to="77" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">The three dimensional X-ray diffraction technique</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">J</forename><surname>Jensen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Characterization</title>
+		<imprint>
+			<biblScope unit="volume">72</biblScope>
+			<biblScope unit="page" from="1" to="7" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Non-destructive mapping of grain orientations in 3D by laboratory X-ray microscopy</title>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">A</forename><surname>Mcdonald</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Reischig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Holzner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">M</forename><surname>Lauridsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">J</forename><surname>Withers</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">P</forename><surname>Merkle</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Feser</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">5</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1" to="11" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Laue three dimensional neutron diffraction</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Ravent Ós</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Tovar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Medarde</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Shang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Samothrakitis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Pomjakushina</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Gr</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<idno type="DOI">10.1038/s41598-019-41071-x</idno>
+		<ptr target="https://doi.org/10.1038/s41598-019-41071-x" />
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page">4798</biblScope>
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Microstructural characterization through grain orientation mapping with laue threedimensional neutron diffraction tomography</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Samothrakitis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">B</forename><surname>Larsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Čapek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Polatidis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Raventos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Tovar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Today Advances</title>
+		<imprint>
+			<biblScope unit="volume">15</biblScope>
+			<biblScope unit="page">100258</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Simultaneous neutron transmission and diffraction contrast tomography as a non-destructive 3D method for bulk single crystal quality investigations</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Peetermans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">H</forename><surname>Lehmann</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Physics</title>
+		<imprint>
+			<biblScope unit="volume">114</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page">124905</biblScope>
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">3D mapping of crystallographic phase distribution using energy-selective neutron tomography</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Woracek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Penumadu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Kardjilov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Hilger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Boin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Banhart</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>Manke</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Advanced Materials</title>
+		<imprint>
+			<biblScope unit="volume">26</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page" from="4069" to="4073" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Cold neutron diffraction contrast tomography of polycrystalline material</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Peetermans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>King</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ludwig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Reischig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Lehmann</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Analyst</title>
+		<imprint>
+			<biblScope unit="volume">139</biblScope>
+			<biblScope unit="issue">22</biblScope>
+			<biblScope unit="page" from="5765" to="5771" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Inverse pole figure mapping of bulk crystalline grains in a polycrystalline steel plate by pulsed neutron Bragg-dip transmission imaging</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Sato</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Shiota</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Morooka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Todaka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Adachi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Sadamatsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Oikawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Harada</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Su</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">50</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="1601" to="1610" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Time-of-flight three dimensional neutron diffraction in transmission mode for mapping crystal grain structures</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Cereser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">A</forename><surname>Hall</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Steuwer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Kiyanagi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">S</forename><surname>Tremsin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">B</forename><surname>Knudsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Shinohara</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">K</forename><surname>Willendrup</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">B</forename><surname>Da</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Silva</forename><surname>Fanta</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">7</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1" to="11" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">Diffraction in neutron imaging-A review</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Woracek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Santisteban</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Fedrigo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nuclear Instruments and Methods in Physics Research Section A: Accelerators, Spectrometers, Detectors and Associated Equipment</title>
+		<imprint>
+			<biblScope unit="volume">878</biblScope>
+			<biblScope unit="page" from="141" to="158" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Grain morphology reconstruction of crystalline materials from Laue three-dimensional neutron diffraction tomography</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Samothrakitis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Ravent Ós</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Čapek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">B</forename><surname>Larsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Gr Ünzweig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Tovar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Garcia-Gonzalez</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kopeček</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">10</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1" to="7" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<analytic>
+		<title level="a" type="main">GrainSpotter: a fast and robust polycrystalline indexing algorithm</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S1600576713030185</idno>
+		<ptr target="https://doi.org/10.1107/S1600576713030185" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">47</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="276" to="284" />
+			<date type="published" when="2014-02">Feb 2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">pinkIndexer -a universal indexer for pink-beam X-ray and electron diffraction snapshots</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Gevorkov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Barty</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Brehm</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">A</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tolstikova</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">O</forename><surname>Wiedorn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Meents</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R.-R</forename><surname>Grigat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">N</forename><surname>Chapman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Yefanov</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S2053273319015559</idno>
+		<ptr target="https://doi.org/10.1107/S2053273319015559" />
+	</analytic>
+	<monogr>
+		<title level="j">Acta Crystallographica Section A</title>
+		<imprint>
+			<biblScope unit="volume">76</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="121" to="131" />
+			<date type="published" when="2020-03">Mar 2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">XGANDALF -extended gradient descent algorithm for lattice finding</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Gevorkov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Yefanov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Barty</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">A</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Mariani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Brehm</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tolstikova</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R.-R</forename><surname>Grigat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">N</forename><surname>Chapman</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S2053273319010593</idno>
+		<ptr target="https://doi.org/10.1107/S2053273319010593" />
+	</analytic>
+	<monogr>
+		<title level="j">Acta Crystallographica Section A</title>
+		<imprint>
+			<biblScope unit="volume">75</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="694" to="704" />
+			<date type="published" when="2019-09">Sep 2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">The LaueUtil toolkit for Laue photocrystallography. I. Rapid orientation matrix determination for intermediate-size-unit-cell Laue data</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">A</forename><surname>Kalinowski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Makal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Coppens</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S0021889811038143</idno>
+		<ptr target="https://doi.org/10.1107/S0021889811038143" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">44</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="1182" to="1189" />
+			<date type="published" when="2011-12">Dec 2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Application of clustering techniques to electrondiffraction data: determination of unit-cell parameters</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schlitt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Gorelik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Stewart</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Sch Ömer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Raasch</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">U</forename><surname>Kolb</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S0108767312026438</idno>
+		<ptr target="https://doi.org/10.1107/S0108767312026438" />
+	</analytic>
+	<monogr>
+		<title level="j">Acta Crystallographica Section A</title>
+		<imprint>
+			<biblScope unit="volume">68</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="536" to="546" />
+			<date type="published" when="2012-09">Sep 2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">Multigrain indexing of unknown multiphase materials</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Wejdemann</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">F</forename><surname>Poulsen</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S1600576716003691</idno>
+		<ptr target="https://doi.org/10.1107/S1600576716003691" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">49</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="616" to="621" />
+			<date type="published" when="2016-04">Apr 2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<analytic>
+		<title level="a" type="main">LaueNN: neural-network-based hkl recognition of Laue spots and its application to polycrystalline materials</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">R P</forename><surname>Purushottam Raj</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Purohit</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Tardif</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Castelnau</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Eymery</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Guinebretière</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Robach</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-S</forename><surname>Ors</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Micha</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S1600576722004198</idno>
+		<ptr target="https://doi.org/10.1107/S1600576722004198" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">55</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="737" to="750" />
+			<date type="published" when="2022-08">Aug 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<analytic>
+		<title level="a" type="main">The FALCON double-detector Laue diffractometer add-on for grain mapping at POLDI</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Samothrakitis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">B</forename><surname>Larsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Kaestner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Polatidis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Čapek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Hovind</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Fazan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Allibon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Busi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Schmidt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kopeček</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strobl</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S1600576723009640</idno>
+		<ptr target="https://doi.org/10.1107/S1600576723009640" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">56</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="1792" to="1801" />
+			<date type="published" when="2023-12">Dec 2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<analytic>
+		<title level="a" type="main">Structure-from-motion revisited</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">L</forename><surname>Schonberger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-M</forename><surname>Frahm</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</title>
+		<meeting>the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</meeting>
+		<imprint>
+			<date type="published" when="2016-06">June 2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<monogr>
+		<author>
+			<persName><forename type="first">R</forename><surname>Hartley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Zisserman</surname></persName>
+		</author>
+		<title level="m">Multiple View Geometry in Computer Vision</title>
+		<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date type="published" when="2004">2004</date>
+		</imprint>
+	</monogr>
+	<note>2nd ed</note>
+</biblStruct>
+
+<biblStruct xml:id="b40">
+	<monogr>
+		<title level="m" type="main">A comprehensive survey on point cloud registration</title>
+		<author>
+			<persName><forename type="first">X</forename><surname>Huang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Mei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Abbas</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:2103.02690</idno>
+		<imprint>
+			<date type="published" when="2021">2021</date>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b41">
+	<analytic>
+		<title level="a" type="main">Computational optimal transport: With applications to data science</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Peyré</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Cuturi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Foundations and Trends® in Machine Learning</title>
+		<imprint>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="issue">5-6</biblScope>
+			<biblScope unit="page" from="355" to="607" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b42">
+	<monogr>
+		<title level="m" type="main">Sinkhorn em: an expectation-maximization algorithm based on entropic optimal transport</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Mena</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Nejatbakhsh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Varol</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Niles-Weed</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:2006.16548</idno>
+		<imprint>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b43">
+	<analytic>
+		<title level="a" type="main">Coordinate descent algorithms</title>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">J</forename><surname>Wright</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical programming</title>
+		<imprint>
+			<biblScope unit="volume">151</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="3" to="34" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b44">
+	<analytic>
+		<title level="a" type="main">Spot: A framework for selection of prototypes using optimal transport</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">S</forename><surname>Gurumoorthy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Jawanpuria</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Mishra</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Machine Learning and Knowledge Discovery in Databases. Applied Data Science Track: European Conference, ECML PKDD 2021</title>
+		<meeting><address><addrLine>Bilbao, Spain</addrLine></address></meeting>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2021">September 13-17, 2021. 2021</date>
+			<biblScope unit="volume">21</biblScope>
+			<biblScope unit="page" from="535" to="551" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b45">
+	<analytic>
+		<title level="a" type="main">Scaling algorithms for unbalanced optimal transport problems</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Chizat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Peyré</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Schmitzer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F.-X</forename><surname>Vialard</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Computation</title>
+		<imprint>
+			<biblScope unit="volume">87</biblScope>
+			<biblScope unit="issue">314</biblScope>
+			<biblScope unit="page" from="2563" to="2609" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b46">
+	<analytic>
+		<title level="a" type="main">Iterative bregman projections for regularized transportation problems</title>
+		<author>
+			<persName><forename type="first">J.-D</forename><surname>Benamou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Carlier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Cuturi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Nenna</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Peyré</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">37</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="1111" to="A1138" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b47">
+	<analytic>
+		<title level="a" type="main">A fast methodology to determine the characteristics of thousands of grains using three-dimensional x-ray diffraction. ii. volume, centre-of-mass position, crystallographic orientation and strain state of grains</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Sharma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">M</forename><surname>Huizenga</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">E</forename><surname>Offerman</surname></persName>
+		</author>
+		<idno type="DOI">10.1107/S0021889812025599</idno>
+		<ptr target="https://onlinelibrary.wiley.com/doi/abs/10.1107/S0021889812025599" />
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">45</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="705" to="718" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b48">
+	<analytic>
+		<title level="a" type="main">Structure from motion without correspondence</title>
+		<author>
+			<persName><forename type="first">F</forename><surname>Dellaert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Seitz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Thorpe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Thrun</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings IEEE Conference on Computer Vision and Pattern Recognition</title>
+		<meeting>IEEE Conference on Computer Vision and Pattern Recognition</meeting>
+		<imprint>
+			<date type="published" when="2000">2000</date>
+			<biblScope unit="volume">2</biblScope>
+			<biblScope unit="page" from="557" to="564" />
+		</imprint>
+	</monogr>
+	<note>CVPR 2000. Cat. No.PR00662</note>
+</biblStruct>
+
+<biblStruct xml:id="b49">
+	<analytic>
+		<title level="a" type="main">Structure-from-motion revisited</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">L</forename><surname>Schonberger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-M</forename><surname>Frahm</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</title>
+		<meeting>the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)</meeting>
+		<imprint>
+			<date type="published" when="2016-06">June 2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b50">
+	<analytic>
+		<title level="a" type="main">A method for registration of 3-d shapes</title>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">J</forename><surname>Besl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><forename type="middle">D</forename><surname>Mckay</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE Trans. Pattern Anal. Mach. Intell</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="page" from="239" to="256" />
+			<date type="published" when="1992">1992</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b51">
+	<analytic>
+		<title level="a" type="main">New algorithms for 2d and 3d point matching: pose estimation and correspondence</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Gold</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rangarajan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C.-P</forename><surname>Lu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Pappu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Mjolsness</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Pattern Recognition</title>
+		<imprint>
+			<biblScope unit="volume">31</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="1019" to="1031" />
+			<date type="published" when="1998">1998</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b52">
+	<analytic>
+		<title level="a" type="main">A relationship between arbitrary positive matrices and doubly stochastic matrices</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Sinkhorn</surname></persName>
+		</author>
+		<ptr target="http://www.jstor.org/stable/2238545" />
+	</analytic>
+	<monogr>
+		<title level="j">The Annals of Mathematical Statistics</title>
+		<imprint>
+			<biblScope unit="volume">35</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="876" to="879" />
+			<date type="published" when="1964">1964</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b53">
+	<analytic>
+		<title level="a" type="main">Smooth and sparse optimal transport</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Blondel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Seguy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rolet</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International conference on artificial intelligence and statistics</title>
+		<imprint>
+			<publisher>PMLR</publisher>
+			<date type="published" when="2018">2018</date>
+			<biblScope unit="page" from="880" to="889" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b54">
+	<analytic>
+		<title level="a" type="main">Stabilized sparse scaling algorithms for entropy regularized transport problems</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Schmitzer</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">41</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1443" to="A1481" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b55">
+	<monogr>
+		<title level="m" type="main">Sparsity-constrained optimal transport</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Puigcerver</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Blondel</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b56">
+	<analytic>
+		<title level="a" type="main">Structured optimal transport</title>
+		<author>
+			<persName><forename type="first">D</forename><surname>Alvarez-Melis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Jaakkola</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Jegelka</surname></persName>
+		</author>
+		<ptr target="https://proceedings.mlr.press/v84/alvarez-melis18a.html" />
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Twenty-First International Conference on Artificial Intelligence and Statistics, ser. Proceedings of Machine Learning Research</title>
+		<editor>
+			<persName><forename type="first">A</forename><surname>Storkey</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">F</forename><surname>Perez-Cruz</surname></persName>
+		</editor>
+		<meeting>the Twenty-First International Conference on Artificial Intelligence and Statistics, ser. Machine Learning Research</meeting>
+		<imprint>
+			<publisher>PMLR</publisher>
+			<date type="published" when="2018-04-11">09-11 Apr 2018</date>
+			<biblScope unit="volume">84</biblScope>
+			<biblScope unit="page" from="1771" to="1780" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b57">
+	<analytic>
+		<title level="a" type="main">The basics of crystallography and diffraction</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Hammond</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">International Union of Crystallography texts on crystallography</title>
+		<imprint>
+			<biblScope unit="volume">21</biblScope>
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b58">
+	<analytic>
+		<title level="a" type="main">Dispersion on a Sphere</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Fisher</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the Royal Society of London Series A</title>
+		<imprint>
+			<biblScope unit="volume">217</biblScope>
+			<biblScope unit="issue">1130</biblScope>
+			<biblScope unit="page" from="295" to="305" />
+			<date type="published" when="1953-05">May 1953</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b59">
+	<analytic>
+		<title level="a" type="main">The optimal partial transport problem</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Figalli</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Archive for Rational Mechanics and Analysis</title>
+		<imprint>
+			<biblScope unit="volume">195</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="533" to="560" />
+			<date type="published" when="2010">2010</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b60">
+	<analytic>
+		<title level="a" type="main">The softassign procrustes matching algorithm</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rangarajan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Chui</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><forename type="middle">L</forename><surname>Bookstein</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Information Processing in Medical Imaging</title>
+		<editor>
+			<persName><forename type="first">J</forename><surname>Duncan</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">G</forename><surname>Gindi</surname></persName>
+		</editor>
+		<meeting><address><addrLine>Berlin, Heidelberg; Berlin Heidelberg</addrLine></address></meeting>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="1997">1997</date>
+			<biblScope unit="page" from="29" to="42" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b61">
+	<analytic>
+		<title level="a" type="main">Deterministic annealing variant of the em algorithm</title>
+		<author>
+			<persName><forename type="first">N</forename><surname>Ueda</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Nakano</surname></persName>
+		</author>
+		<ptr target="https://proceedings.neurips.cc/paperfiles/paper/1994/file/92262bf907af914b95a0fc33c3f33bf6-Paper.pdf" />
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+		<editor>
+			<persName><forename type="first">G</forename><surname>Tesauro</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">D</forename><surname>Touretzky</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">T</forename><surname>Leen</surname></persName>
+		</editor>
+		<imprint>
+			<publisher>MIT Press</publisher>
+			<date type="published" when="1994">1994</date>
+			<biblScope unit="volume">7</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b62">
+	<analytic>
+		<title level="a" type="main">Redescending mestimators and deterministic annealing, with applications to robust regression and tail index estimation</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Fr</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Waltenberger</surname></persName>
+		</author>
+		<ptr target="https://www.ajs.or.at/index.php/ajs/article/view/vol37%2C%20no3%264%20-%207" />
+	</analytic>
+	<monogr>
+		<title level="j">Austrian Journal of Statistics</title>
+		<imprint>
+			<biblScope unit="volume">37</biblScope>
+			<biblScope unit="issue">34</biblScope>
+			<biblScope unit="page" from="301" to="317" />
+			<date type="published" when="2016-04">Apr. 2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b63">
+	<analytic>
+		<title level="a" type="main">A sparse multiscale algorithm for dense optimal transport</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Schmitzer</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Mathematical Imaging and Vision</title>
+		<imprint>
+			<biblScope unit="volume">56</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="238" to="259" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b64">
+	<analytic>
+		<title level="a" type="main">Modified rodrigues parameters: An efficient representation of orientation in 3d vision and graphics</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Terzakis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Lourakis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Ait-Boudaoud</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Mathematical Imaging and Vision</title>
+		<imprint>
+			<biblScope unit="volume">60</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="422" to="442" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b65">
+	<analytic>
+		<title level="a" type="main">Representation of orientation relationships in Rodrigues-Frank space for any two classes of lattice</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">J</forename><surname>Jonas</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Applied Crystallography</title>
+		<imprint>
+			<biblScope unit="volume">40</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="559" to="569" />
+			<date type="published" when="2007-06">Jun 2007</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b66">
+	<analytic>
+		<title level="a" type="main">Partial optimal transport for support subset selection</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Riaz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Karahan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">J</forename><surname>Brockmeier</surname></persName>
+		</author>
+		<ptr target="https://openreview.net/forum?id=75CcopPxIr" />
+	</analytic>
+	<monogr>
+		<title level="j">Transactions on Machine Learning Research</title>
+		<imprint>
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b67">
+	<monogr>
+		<title level="m" type="main">Metals handbook</title>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">E</forename><surname>Boyer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">L</forename><surname>Gall</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="1985">1985</date>
+		</imprint>
+	</monogr>
+	<note>desk edition</note>
+</biblStruct>
+
+<biblStruct xml:id="b68">
+	<analytic>
+		<title level="a" type="main">A multiscale study of hot-extruded coniga ferromagnetic shapememory alloys</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Samothrakitis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">B</forename><surname>Larsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Woracek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Heller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kopeček</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Gerstein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">J</forename><surname>Maier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Rameš</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Tovar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Šittner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials &amp; Design</title>
+		<imprint>
+			<biblScope unit="volume">196</biblScope>
+			<biblScope unit="page">109118</biblScope>
+			<date type="published" when="2020-11">November 2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b69">
+	<analytic>
+		<title level="a" type="main">A least squares estimate of satellite attitude</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Wahba</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/1007077</idno>
+		<ptr target="https://doi.org/10.1137/1007077" />
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Review</title>
+		<imprint>
+			<biblScope unit="volume">7</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="409" to="409" />
+			<date type="published" when="1965">1965</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b70">
+	<monogr>
+		<title level="m" type="main">Improved Approximation Bound for Quadratic Optimization Problems with Orthogonality Constraints</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">M</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-C</forename><surname>So</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/1.9781611973068.130</idno>
+		<ptr target="https://epubs.siam.org/doi/abs/10.1137/1.9781611973068.130" />
+		<imprint>
+			<biblScope unit="page" from="1201" to="1209" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b71">
+	<analytic>
+		<title level="a" type="main">Quadratic optimization with orthogonality constraints: Explicit lojasiewicz exponent and linear convergence of line-search methods</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">M</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-C</forename><surname>So</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">International Conference on Machine Learning</title>
+		<imprint>
+			<publisher>PMLR</publisher>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page" from="1158" to="1167" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b72">
+	<analytic>
+		<title level="a" type="main">An analysis of approximations for maximizing submodular set functions-i</title>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">L</forename><surname>Nemhauser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">A</forename><surname>Wolsey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">L</forename><surname>Fisher</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical Programming</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="265" to="294" />
+			<date type="published" when="1978">1978</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b73">
+	<analytic>
+		<title level="a" type="main">The tof-strain scanner poldi with multiple frame overlap-concept and performance</title>
+		<author>
+			<persName><forename type="first">U</forename><surname>Stuhr</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Grosse</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials Science and Engineering: A</title>
+		<imprint>
+			<biblScope unit="volume">437</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="134" to="138" />
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

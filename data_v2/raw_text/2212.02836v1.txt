@@ -1,0 +1,1097 @@
+DECEMBER 7, 2022
+1
+
+Robust Simulation of Poisson’s Equation in a
+P-N Diode Down to 1 µK
+
+Arnout Beckers
+
+Abstract— Semiconductor devices are notoriously diffi-
+cult to simulate at deep-cryogenic temperatures. The low-
+est temperature that can be simulated today in commer-
+cial TCAD is around 4.2 K, possibly 100 mK, while most
+experimental quantum science is performed at 10 mK or
+lower. Besides the challenges in transport solvers, one of
+the main bottlenecks is the non-convergence in the electro-
+statics due to the extreme sensitivity to small variations in
+the potential. This article proposes to reformulate Poisson’s
+equation to take out this extreme sensitivity and improve
+convergence. We solve the reformulated Poisson equation
+for a p-n diode using an iterative Newton-Raphson scheme,
+demonstrating convergence for the first time down to a
+record low temperature of one microkelvin using the stan-
+dard IEEE-754 arithmetic with double precision. We plot the
+potential diagrams and resolve the rapid variation of the
+carrier densities near the edges of the depletion layer. The
+main Python functions are presented in the Appendix.
+
+Index Terms— Cryogenic Electronics, Device Simulation,
+Diode, Sub-Kelvin, TCAD, Millikelvin, Microkelvin
+
+I. INTRODUCTION
+
+C
+RYOGENIC temperatures have been posing challenges
+to device simulators since the 1980s [1]–[4]. The lowest
+simulate-able temperatures have improved today, but the prob-
+lem remains essentially the same. The tail of the Fermi-Dirac
+(FD) distribution becomes almost abrupt at these temperatures,
+leading to (i) underflow, (ii) bad convergence, and (iii) sharp
+density variations requiring ever finer meshing.
+Variable precision arithmetic is sometimes used to combat
+these issues, but it is not preferred given the runtime penalties
+and lack of support for exotic number formats [5]–[7]. More
+than octuple precision (256-bit) is required to simulate devices
+at 10 mK, e.g., for quantum applications. Furthermore, the
+abrupt 0-K approximation of the FD function has been applied
+[8], [9], but it cannot be used if electrothermal differences
+between, say, 4.2 K and 10 mK are to be resolved.
+Recently, commercial TCAD vendors have started dedicated
+efforts to simulating semiconductor devices at deep-cryogenic
+temperatures [7], [10], [11]. In one TCAD tool, specialized in
+quantum dots for qubits, it is possible to converge at 100 mK
+using a unique adaptive meshing strategy [10]. In another tool,
+transport at 4 K is possible using a new Quasi-Fermi Transport
+solver that prevents numerical cancellation of small drift and
+diffusion currents [7]. These are important leaps forward, but,
+to reach lower temperatures, more efforts are needed.
+
+A. Beckers is with imec, Kapeldreef 75, 3001 Leuven, Belgium.
+(arnout.beckers@imec.be)
+
+Here, we take a different approach, focusing on the one-
+dimensional p–n diode as a toy problem for the electrostatics.
+We present a minimal working example at 1 µK written in
+Python code, to illustrate and sort out the numerical issues.
+The impact of various cryo-phenomena is omitted (e.g., dopant
+freeze-out, band tails, Boltzmann vs. FD statistics, etc.), which
+can be added later in a robust numerical solver. Section II
+describes the details of the p–n diode. Section III discusses
+the numerical challenges in Poisson’s equation. Section IV re-
+formulates Poisson’s equation to improve convergence. Section
+V compares the performance of two different Poisson solvers:
+
+• solve_poisson_standard solves the regular Pois-
+son equation in double precision arithmetic;
+=⇒ fails to converge below 10 K (reference case)
+
+• solve_poisson_reform implements the reformu-
+lated Poisson equation in double precision;
+=⇒ converges down to 1 µK, possibly at lower tempera-
+tures, but this is currently sufficient for the typical quan-
+tum applications of today (≈ 10 mK), and also prepares
+for the upcoming microkelvin science [12], [13].
+
+II. SPECIFIC BACKGROUND & DETAILS OF THE
+SIMULATED STRUCTURE
+
+The low-temperature p–n junction is a fundamental part
+of cryo-CMOS devices and on-wafer test structures for the
+fabrication of silicon qubits [14]. It is also an important device
+in its own right, e.g., p–n diodes were recently experimentally
+studied for their functioning as temperature sensors in quantum
+control ICs [15]. On the other hand, the internal diode vari-
+ables like charges and potentials, remain largely unexplored at
+these temperatures due to the lagging simulation support.
+The state-of-the-art simulate-able temperature of the elec-
+trostatics in a diode using the standard double precision arith-
+metic is currently at 30 K (see Fig.2 in [2]). In this work, we
+will reduce this temperature with seven orders of magnitude
+while staying within double precision. To be precise, the diode
+simulated in [2] is actually a p–i–n diode, but both diodes
+have sharp internal diffusion layers which are numerically
+problematic and thus both can serve as good examples.
+Fig. 1 shows the details of the p–n diode to be simulated.
+The basic device is assumed to be made from silicon; non-
+degenerately doped, fully ionized, and in thermal equilibrium.
+The acceptor doping concentration on the left side of the
+junction is NA = 1016 cm−3. The donor doping concentration
+on the right side is ND = 1016 cm−3. The length of the diode
+
+arXiv:2212.02836v1  [cond-mat.mes-hall]  6 Dec 2022
+
+
+2
+DECEMBER 7, 2022
+
+Fig. 1. Details of the silicon p–n diode (in 1-D) and discretization.
+
+is set to L = 1.2 µm. The grid size is then θ = L/m, where
+m is the number of discretization points inside the device.
+Charge neutrality is imposed at the boundaries on both sides of
+the junction (i.e., Neumann boundary conditions dψ/dx = 0),
+therefore ψp = ψ0 = ψ1 and ψm = ψm+1 = ψn), where ψp
+and ψn are the known boundary potentials.
+
+III. CHALLENGES IN POISSON’S EQUATION
+
+Poisson’s equation for the diode in Fig. 1 reads
+
+∂2ψ
+∂x2 = −ρ(ψ)
+
+εsi
+,
+(1)
+
+where
+ρ(ψ) = q · (−n + p − NA + ND) ,
+(2)
+
+is the charge density, q the electric charge, n the electron
+density, p the hole density, and εsi the permittivity of Si. The
+electrostatic potential is defined as ψ ≜ −(Ei −EF )/q, where
+Ei is the intrinsic energy, and EF is the Fermi level.
+Focusing purely on the numerical challenges, the Boltzmann
+approximation for n and p provides a good test case for our
+present purposes, because Boltzmann’s exponential tail can
+both underflow above EF and overflow below EF . This makes
+it numerically more challenging than the FD distribution,
+which can only underflow above EF . The Boltzmann relation
+for the electron density is given by
+
+n = ni · exp
+�q · ψ
+
+kBT
+
+�
+,
+(3)
+
+which brings a three-fold numerical challenge to Poisson’s
+equation at deep-cryogenic temperatures:
+
+• (i) the intrinsic carrier concentration, ni, can easily un-
+derflow at these temperatures, which is often mentioned
+in the literature [2], [6]. The table in Fig. 2 shows the
+extremely low values that ni takes below 10 K, which
+were computed using variable precision arithmetic. These
+numbers are of limited practical value.
+
+• (ii) Since ψ can range up to a few volts during operation,
+and kBT/q can go below ∼mV, the used floating-point
+format cannot accommodate such large exponents in (3),
+causing arithmetic underflow and overflow when numbers
+fall outside the range of a given precision format (≈
+10−a < x < 10a), where a = 308 for standard IEEE-
+754 double precision arithmetic. The exponential factor
+
+Fig. 2.
+Intrinsic carrier concentration (ni) versus temperature (T ) for
+different materials, see (4). Extensions to quadruple or octuple precision
+formats do not suffice for reaching the lowest temperatures.
+
+can both underflow and overflow depending on the sign
+of ψ during device operation.
+
+• (iii) n is extremely sensitive to small fluctuations in ψ,
+due to the small kBT in the exponent of (3).
+The same remarks also apply to p.
+
+IV. TRANSFORMATIONS IN POISSON’S EQUATION TO
+IMPROVE NUMERICS AND CONVERGENCE
+
+Step-by-step transformations are applied to (1)-(3) to im-
+prove numerical robustness and convergence at low T.
+
+1) Avoid Using the Intrinsic Carrier Concentration: While the
+values of ni given in the table in Fig. 2 are numerically correct,
+they are far from being physically meaningful in realistically
+sized semiconductor devices. Using ni = 10−656 cm−3 is an
+attempt to model one thermally generated electron in a piece
+of intrinsic Si with a volume of 10650 m3 at 4.2 K. Thus, it
+is recommended to avoid using ni and expand it in (3), i.e.,
+
+ni =
+�
+
+NcNv · exp
+� −Eg
+
+2kBT
+
+�
+,
+(4)
+
+which gives the safer expression,
+
+n = Nc · exp
+�q · ψ − 0.5 · Eg
+
+kBT
+
+�
+,
+(5)
+
+because the numerical challenges are now concentrated in one
+exponent, and Nc ≈ Nv are the regular effective density-of-
+states which scale as ∝ T 3/2 and therefore are not challenging
+numerically. Eq. (5) solves (i), but (ii) and (iii) are still active.
+
+2) Avoid Entering into the Numerically Forbidden Range: To
+solve (ii), we must have that
+
+− a · ln(10) ⩽ q · ψ − 0.5 · Eg
+
+kBT
+⩽ a · ln(10)
+(6)
+
+where a < 308 to stay in double precision arithmetic. This is
+the same as preventing EF,n from straying too far from the
+conduction band edge (for n) and entering into the numerically
+forbidden range in the bandgap. This can be seen by using the
+definition of ψ from Sec. III in (6), which shows that
+
+EF,n ⩾ Ec − a · kBT ln(10),
+(7)
+
+is required to avoid underflow. Similarly, for holes we would
+find that EF,p ⩽ Ev + a · kBT ln(10). This creates the nu-
+merically forbidden ranges in the bandgap as shown in Fig. 3.
+
+
+A. BECKERS : ROBUST SIMULATION OF POISSON’S EQUATION IN A P-N DIODE DOWN TO 1 µK
+3
+
+Fig. 3.
+Numerically forbidden ranges in the bandgap for EF,n (elec-
+trons) and EF,p (holes). At 300 K, the bandgap of most semiconductors
+is entirely numerically safe (308 · kBT · ln 10 ≈ 18 eV), but, at 4.2 K,
+almost the entire bandgap will be numerically forbidden, except for small
+energy ranges close to each band edge (308·kBT ·ln 10 ≈ 0.25 eV).
+At 1 µK, this range becomes exceptionally small (≈ 60 neV).
+
+These forbidden energy windows for EF,n and EF,p are better
+avoided, because they can translate into forbidden simulation
+domains within the diode (or any other device). Such division
+between “allowed” and “forbidden” simulation domains will
+be especially cumbersome because the boundary between them
+might change with material composition, temperature, device
+architecture, etc. Therefore it is important to avoid the under-
+flow and overflow immediately in the distribution functions
+before they have a chance to ripple to other semiconductor
+quantities. To this end, we can enclose the Boltzmann exponent
+of (5) within a numerically safe sigmoid function S(η, a), i.e.,
+
+n
+=
+Nc · exp
+�
+S
+�q · ψ − 0.5 · Eg
+
+kBT
+, a
+��
+
+(8)
+
+where
+S(η, a) = a · ln(10) · tanh
+�
+η
+
+a · ln 10
+
+�
+(9)
+
+is the hyperbolic tangent function that goes from −a · ln(10)
+to a · ln(10), limiting the exponential in (8) to 10−a and
+10a, respectively. A different sigmoid function could also
+be used, as long as it does not re-introduce troublesome
+exponentials, and preferably it should be an invertible function.
+Note that inserting S is physically insignificant if the precision
+parameter “a” is chosen high enough (e.g., a = 200), yet low
+enough to avoid numerical issues (a < 308). For more details
+about S, and a semi-rigorous derivation, see [16].
+Fig. 4 plots the exponentials from (8) in logarithmic scale, at
+T = 10 mK, with and without S. As can be seen in this figure,
+for physical levels of the carrier concentration, we have the
+regular Boltzmann exponential that is active, while underflow
+and overflow are avoided in the unphysical ranges. However,
+we must note that there is still a steep slope in the physical
+range, which is directly related to temperature, and therefore
+difficult to avoid, producing a large sensitivity to changes in
+ψ, i.e., the final problem (iii) must still be overcome.
+
+3) Avoid the Extreme Sensitivity by Normalizing: To over-
+come (iii), the temperature dependences in n and p must
+be taken out of their exponents by solving (1) for a newly
+declared variable that is normalized to temperature, e.g., solve
+
+Fig. 4. Exponentials from (8) in logarithmic scale with no underflow nor
+overflow if S is included, but still a high sensitivity to variations in ψ. This
+sensitivity is intrinsic to T , and must be tackled with a normalization to
+temperature of the solution variable in Poisson’s equation.
+
+for the dimensionless η ≜ (q · ψ − 0.5 · Eg) /kBT instead of
+ψ, which gives the following transformed Poisson’s equation,
+
+∂2η
+∂x2 = −ρ(η)
+
+εsi
+,
+(10)
+
+where ρ(η) =
+q2
+
+kBT ×
+�
+−Nc · eS(η,a) + Nv · e
+−S
+�
+η+
+q·Eg
+kBT ,a
+�
+− NA + ND
+
+�
+. (11)
+
+Note that this normalization strategy of the electrostatic po-
+tential to temperature is only effective in combination with S.
+Also note that the remaining temperature dependence in the
+second exponent of (11) is not sensitive because there is no
+potential in the numerator anymore, only a fixed Eg.
+In a Newton-Raphson scheme, one also needs the derivative
+of the charge density, which is given by
+
+∂ρ(η)
+
+∂η
+= −q2
+
+kBT ·
+�
+Nc · eS(η,a) + Nv · e
+−S
+�
+η+
+q·Eg
+kBT ,a
+��
+, (12)
+
+where S was ignored in the chain rule.
+
+4) Modify the Neumann Boundary Conditions: The standard
+boundary potentials, ψp = (kBT/q) · ln(ni/NA) and ψn =
+(kBT/q)·ln(ND/ni) in Fig.1, need to be modified accordingly
+to suit the newly formulated Poisson’s equation in terms of η
+and including S. Using (11), charge neutrality on both sides
+of the junction imposes the following η’s at the edges :
+
+ηn
+=
+a · ln(10) · atanh
+�ln(ND/Nc)
+
+a · ln 10
+
+�
+
+(13)
+
+ηp
+=
+−q · Eg
+
+kBT
++ a ln(10) · atanh
+�ln(Nv/NA)
+
+a · ln 10
+
+�
+
+(14)
+
+
+4
+DECEMBER 7, 2022
+
+Fig. 5.
+(a) Electrostatic potential from 300 K down to 1 K using solve_poisson_reform (double precision + reformulated Poisson), (b)
+Electrostatic potential from 100 mK down to 1 µK using solve_poisson_reform, (c) Electron and hole density from 300 K down to 1 K using
+solve_poisson_reform, (d) The x-axis zooms in on the electron density on the n-side to better resolve the rapid density variation around 1 µK,
+(e) Number of Newton iterations required to reach convergence, and (f) Number of iterations increases rapidly below 1 K.
+
+which made use of the fact that S is an invertible function.
+Besides these changes to Poisson’s equation, a progressively
+finer mesh and weaker convergence criterion are also required
+to reach low-temperature convergence. Most of the proposed
+transformations cannot be implemented through user-defined
+functions in commercial TCAD; therefore a small demonstra-
+tor will be set up in Python in the next section.
+
+V. MICROKELVIN CONVERGENCE DEMONSTRATION
+
+In this section, we compare the convergence of two Poisson
+solvers at low temperatures. The two Python functions im-
+plementing these Poisson solvers are presented in Appendix
+I. The first solver, solve_poisson_standard, is the
+reference Poisson solver using double precision arithmetic
+without any changes to Poisson’s equation (see e.g., [17]).
+The second one, solve_poisson_reform, implements
+all transformations that were discussed in Sec. IV, and also
+retains the double precision arithmetic. In both functions,
+Poisson’s equation is discretized on a uniform grid (as shown
+in Fig.1), cast into a system of non-linear difference algebraic
+equations, and then solved iteratively using Newton-Raphson.
+The minimum grid size is set by the Debye length LD =
+�
+
+εsikBT/(q2NA) [18], which reduces at lower temperatures,
+
+thus a sufficiently dense grid was used in all simulations
+(m = 75 000 grid points down to 1 K, and m = 600 000
+down to 1 µK). Furthermore, we have used Eg = 1.12 eV
+and a = 100. The Newton iteration is set to terminate when
+the error is less than 5.5 × 10−7. While the convergence
+criterion can easily reach machine precision at 300 K, it seems
+difficult to converge with a criterion smaller than 5.5×10−7 at
+microkelvin temperatures. Even when including the bounded
+distribution function and variable transformation, sub-Kelvin
+simulation is still an ill-conditioned problem.
+Fig. 5 presents the simulation results obtained in Python.
+Figs.5(a) and 5(b) show the electrostatic potential diagram in
+the diode down to 1 K, and 1 µK, respectively, obtained using
+solve_poisson_reform. The built-in potential increases
+at lower temperatures, but the variation becomes minimal
+below 1 K. In Figs.5(c)-(d), we are able to resolve the rapid
+rise of the carrier densities at the edges of the depletion layer
+for the first time. Figs.5(e)-(f) show the number of Newton
+iterations required to reach convergence at each T.
+As expected from Fig. 2, solve_poisson_standard
+indeed fails to converge below 10 K in double preci-
+sion arithmetic [shown in red in Fig.5(e)]. On the other
+hand, thanks to the reformulation of Poisson’s equation,
+
+
+A. BECKERS : ROBUST SIMULATION OF POISSON’S EQUATION IN A P-N DIODE DOWN TO 1 µK
+5
+
+solve_poisson_reform succeeds in simulating down to
+1 µK (possibly lower), which is an improvement over several
+orders of magnitude as compared to the latest electrostatic
+diode simulation at 30 K [Fig.2, [2]]. Yet, despite these trans-
+formations, the number of required Newton iterations increases
+exponentially below 50 K, although the required number is
+still very reasonable around ≈ 10 mK (178 iterations), and
+≈ 4.2 K (about 20 iterations), which are currently the most
+relevant temperatures for experimental quantum science and
+the development of deep-cryogenic electronic circuits.
+
+VI. CONCLUSIONS & OUTLOOK
+
+• Microkelvin temperature convergence was demonstrated
+for the electrostatics in a one-dimensional p–n diode
+using the IEEE-754 double precision format.
+
+• Poisson’s equation was solved iteratively down to 1 µK,
+returning the potential and carrier densities without run-
+ning into underflow, overflow, or convergence issues.
+Nevertheless, we observed a significant increase in the
+required number of Newton iterations.
+
+• To achieve this, step-by-step transformations were first
+presented for Poisson’s equation to improve its numerical
+robustness and convergence. We discussed the forbidden
+energy ranges in the bandgap for the electron and hole
+Fermi levels. We suggested the use of a sigmoid function
+in the exponent to avoid entering these ranges.
+
+• Steepness of Boltzmann’s exponential tail is a numeri-
+cally dangerous yet indispensable feature of temperature
+causing an extreme sensitivity to small variations in the
+potential. It is therefore recommended to solve Poisson’s
+equation for a dimensionless variable that normalizes the
+potential to the thermal voltage. However, normalization
+is only effective in combination with the numerically safe
+sigmoid function in the exponent.
+
+• The proposed 1 µK example written in Python can serve
+as a blueprint for further reducing the lowest achievable
+temperature in commercial TCAD and other device simu-
+lators, closing the gap with recent experimental progress.
+
+APPENDIX I
+STANDARD AND REFORMULATED POISSON SOLVERS IN
+PYTHON CODE FOR p – n DIODE
+
+The Python functions given below use the symbol V for the
+electrostatic potential (instead of ψ used in the main text) and
+E for η (normalized potential introduced in Section IV-.3).
+
+1
+import numpy as np
+
+2 from
+scipy . constants
+import e , k , m e , h
+
+3 from
+scipy
+import
+sparse
+
+4 from
+scipy . sparse
+import
+l i n a l g
+
+1
+def
+solve poisson standard (T , NAp, NDn, Eg, L , m,
+↘
+
+number eps ) :
+# stops
+converging below 10 K
+
+2
+eps si = 1.05e−12
+#
+s i l i c o n
+p e r m i t t i v i t y
+
+3
+UT = k * T / e
+# thermal
+voltage
+
+4
+theta = L / m
+# d i s c r e t i z a t i o n
+step
+
+5
+
+6
+ni = n i (T , Eg)
+* 1e−6
+#
+i n t r i n s i c
+c a r r i e r
+density
+
+7
+
+8
+V = np . zeros (m + 2)
+#
+i n i t i a l
+guess
+
+9
+VN = UT * np . log (NDn /
+ni )
+
+10
+VP = −UT * np . log (NAp /
+ni )
+
+11
+V[ 0 : i n t (m/ 2 ) +1] = VP
+
+12
+V[ i n t (m/ 2 ) +1:m+2] = VN
+
+13
+
+14
+NA = np . zeros (m+2)
+# abrupt doping
+p r o f i l e
+
+15
+NA[ 0 : i n t (m/ 2 ) +1] = NAp
+
+16
+ND = np . zeros (m+2)
+
+17
+ND[ i n t (m/ 2 ) +1:m+2] = NDn
+
+18
+
+19
+eps = 2.2204e−16
+# machine precision
+
+20
+Error = 1000000000000 * eps
+
+21
+counter = 0
+
+22
+while
+Error > number eps * eps : # convergence
+c r i t e r i o n
+
+23
+d2V by dx2 = (V[ 0 :m] − 2 * V[ 1 :m+1]
+↘
+
++ V[ 2 :m+2])
+/
+theta **2
+
+24
+rho = e *
+(ND[ 1 :m+1] − NA[ 1 :m+1]− ni *np . exp (V[ 1 :m↘
+
++1]
+/ UT) + ni
+* np . exp(−V[ 1 :m+1]
+/ UT) )
+
+25
+R = d2V by dx2 + rho
+/
+eps si
+
+26
+Mj = 2/ theta **2 + ( e *
+ni
+/
+( eps si
+* UT) )
+↘
+
+* ( np . exp (V[ 1 :m+1]/UT) + np . exp(−V[ 1 :m+1]/UT) )
+
+27
+l e f t d i a g = (−1
+/
+theta **2)
+* np . ones (m−1)
+
+28
+r i g h t d i a g = (−1
+/
+theta **2)
+* np . ones (m−1)
+
+29
+diags = np . array ( [ l e f t d i a g , Mj ,
+r i g h t d i a g ] )
+
+30
+CM = sparse . diags ( diags , np . array ([ −1 ,
+0 ,
+1 ] ) ,
+↘
+
+shape=(m, m) )
+
+31
+DV = l i n a l g . spsolve (CM, R)
+
+32
+V[ 1 :m+1] = V[ 1 :m+1] + DV
+# update
+p o t e n t i a l
+
+33
+Error = np . l i n a l g . norm (DV,
+2)
+/ np . sqrt (m)
+
+34
+counter = counter + 1
+
+35
+return V[ 1 :m + 1] ,
+counter ,
+Error
+
+1
+def
+solve poisson reform (T , NAp, NDn, Eg, L , m,
+number eps↘
+
+, a ) :
+# converges down to 1 uK ( possibly
+lower )
+
+2
+eps si = 1.05e−12
+
+3
+UT = k * T / e
+
+4
+theta = L / m
+
+5
+
+6
+E = np . zeros (m+2) # modified Neumann conditions
+
+7
+EN = a * np . log (10)
+* np . arctanh ( np . log (NDn * 1e6 /
+↘
+
+return Nc (T) )
+/
+( a * np . log (10) ) )
+# Eqs .
+(13) & (14)
+
+8
+EP = −Eg / UT + a * np . log (10)
+* np . arctanh ( np . log ( ↘
+
+return Nv (T)
+/
+(NAp * 1e6 ) )
+/
+( a * np . log (10) ) )
+
+9
+E[ 0 : i n t (m/ 2 ) +1] = EP
+
+10
+E[ i n t (m/ 2 ) +1:m+2] = EN
+
+11
+
+12
+NA = np . zeros (m+2)
+
+13
+NA[ 0 : i n t (m/ 2 ) +1] = NAp
+
+14
+ND = np . zeros (m+2)
+
+15
+ND[ i n t (m/ 2 ) +1:m+2] = NDn
+
+16
+
+17
+Nc = return Nc (T)
+* 1e−6
+# use Nc & Nv instead
+of
+ni
+
+18
+Nv = return Nv (T)
+* 1e−6
+
+19
+
+20
+eps = 2.2204e−16
+
+21
+Error = 1000000000000 * eps
+
+22
+counter = 0
+
+23
+while
+Error > number eps * eps :
+
+24
+d2E by dx2 = (E[ 0 :m] − 2 * E[ 1 :m+1]
+↘
+
++ E[ 2 :m+2])
+/
+theta **2
+
+25
+# reformulated
+Poisson equation
+including S
+
+26
+rho = ( e / UT)
+*
+(ND[ 1 :m+1] − NA[ 1 :m+1]
+↘
+
+− Nc * np . exp (S(E[ 1 :m+1] , a ) )
+↘
+
++ Nv * np . exp(−S(E[ 1 :m+1] + Eg /UT, a ) ) )
+
+27
+R = d2E by dx2 + rho
+/
+eps si
+
+28
+Mj = 2/ theta **2 + ( e /
+( eps si
+* UT) )
+*
+↘
+
+(Nc * np . exp (S(E[ 1 :m+1] , a ) )
+↘
+
++ Nv * np . exp(−S(E[ 1 :m+1] + Eg /UT, a ) ) )
+
+29
+l e f t d i a g = (−1
+/
+theta **2)
+* np . ones (m−1)
+
+30
+r i g h t d i a g = (−1
+/
+theta **2)
+* np . ones (m−1)
+
+31
+diags = np . array ( [ l e f t d i a g , Mj ,
+r i g h t d i a g ] )
+
+32
+CM = sparse . diags ( diags , np . array ([ −1 ,
+0 ,
+1 ] ) ,
+↘
+
+shape=(m, m) )
+
+33
+# solve
+f o r
+normalized
+p o t e n t i a l
+
+34
+DE = l i n a l g . spsolve (CM, R)
+
+35
+E[ 1 :m+1] = E[ 1 :m+1] + DE
+
+36
+Error = np . l i n a l g . norm (DE,
+2)
+/ np . sqrt (m)
+
+37
+counter = counter + 1
+
+38
+return E[ 1 :m+1] ,
+counter ,
+Error
+
+Auxiliary functions:
+
+1
+def
+return Nc ( t ) : # e f f e c t i v e
+conduction band DOS [ # / (mˆ3) ]
+
+2
+return
+2*((2
+* np . pi
+* 1.182 * m e * k *
+t )
+/
+( h **2) ) ↘
+
+* * ( 3 / 2 )
+
+3
+
+4
+def
+return Nv ( t ) : # e f f e c t i v e
+valence band DOS [ # / (mˆ3) ]
+
+5
+return
+2*((2
+* np . pi
+* 0.81 * m e * k *
+t )
+/
+( h **2) ) ↘
+
+* * ( 3 / 2 )
+
+
+6
+DECEMBER 7, 2022
+
+6
+
+7
+def S( eta , a ) :
+# numerically
+safe sigmoid
+function
+
+8
+return a*np . log (10)
+* np . tanh ( eta
+/
+( a * np . log (10) ) )
+
+9
+
+10
+def
+n i ( t , Eg) :
+#
+i n t r i n s i c
+c a r r i e r
+density
+[ # / (mˆ3) ]
+
+11
+return np . sqrt ( return Nc ( t )
+*
+return Nv ( t ) )
+* np . exp(−↘
+
+Eg * e /
+(2* k * t ) )
+
+REFERENCES
+
+[1] S. Selberherr, “MOS device modeling at 77 K,” IEEE Transactions
+on Electron Devices, vol. 36, no. 8, pp. 1464–1474, Aug. 1989,
+doi:10.1109/16.30960.
+
+[2] M. Kantner and T. Koprucki, “Numerical simulation of carrier trans-
+port in semiconductor devices at cryogenic temperatures,” Optical and
+Quantum Electronics, vol. 48, no. 12, Dec. 2016, doi:10.1007/s11082-
+016-0817-2.
+
+[3] X. Gao, E. Nielsen, R. P. Muller, R. W. Young, A. G. Salinger, N. C.
+Bishop, M. P. Lilly, and M. S. Carroll, “Quantum computer aided
+design simulation and optimization of semiconductor quantum dots,”
+Journal of Applied Physics, vol. 114, no. 16, p. 164302, Oct. 2013, doi:
+10.1063/1.4825209.
+
+[4] F. A. Mohiyaddin, B. Chan, T. Ivanov, A. Spessot, P. Matagne, J. Lee,
+B. Govoreanu, I. P. Radu, G. Simion, N. I. D. Stuyck, R. Li, F. Ciubotaru,
+G. Eneman, F. M. Bufler, S. Kubicek, and J. Jussot, “Multiphysics
+Simulation & Design of Silicon Quantum Dot Qubit Devices.”
+IEEE,
+Dec. 2019, pp. 39.5.1–39.5.4, 10.1109/IEDM19573.2019.8993541.
+
+[5] D. M. Richey, J. D. Cressler, and R. C. Jaeger, “Numerical simulation
+of SiGe HBT’s at cryogenic temperatures,” Le Journal de Physique
+IV, vol. 04, pp. C6–127–C6–132, Jun. 1994. [Online]. Available:
+http://www.edpsciences.org/10.1051/jp4:1994620
+
+[6] A. Beckers, F. Jazaeri, and C. Enz, “Cryogenic MOS Transistor Model,”
+IEEE Transactions on Electron Devices, vol. 65, no. 9, pp. 3617–3625,
+Sep. 2018, doi:10.1109/TED.2018.2854701.
+
+[7] Z. Stanojevic, J. M. Gonzalez Medina, F. Schanovsky, and M. Karner,
+“Quasi-Fermi-Based Charge Transport Scheme for Device Simulation in
+Cryogenic, Wide-Band-Gap, and High-Voltage Applications,” Preprint
+Submitted to Transactions on Electron Devices. [Online]. Available:
+https://doi.org/10.36227/techrxiv.21132637.v1
+
+[8] E. Catapano, M. Cass´e, F. Gaillard, S. de Franceschi, T. Meunier,
+M. Vinet, and G. Ghibaudo, “TCAD Simulations of FDSOI devices
+down to Deep Cryogenic Temperature,” Solid-State Electronics, p.
+108319, 2022, doi: 10.1016/j.sse.2022.108319.
+
+[9] M. Aouad, T. Poiroux, S. Martinie, F. Triozon, M. Vinet, and
+G. Ghibaudo, “Poisson-Schr¨odinger simulation and analytical modeling
+of inversion charge in FDSOI MOSFET down to 0 K – Towards compact
+modeling for cryo CMOS application,” Solid-State Electronics, vol. 186,
+p. 108126, Dec. 2021, doi:10.1016/j.sse.2021.108126.
+
+[10] F. Beaudoin, P. Philippopoulos, C. Zhou, I. Kriekouki, M. Pioro-
+Ladri`ere, H. Guo, and P. Galy, “Robust technology computer-aided
+design of gated quantum dots at cryogenic temperature,” Applied
+Physics Letters, vol. 120, no. 26, p. 264001, Jun. 2022. [Online].
+Available: https://aip.scitation.org/doi/10.1063/5.0097202
+
+[11] V. Moroz, J. Kawa, X.-W. Lin, A. R. Brown, P. Asenov, J. Lee,
+M. Bajaj, T. Michalak, C. Riddet, A. Svizhenko, R. Hentschke,
+and S. Smidstrup, “Challenges in Design and Modeling of Cold
+CMOS HPC Technology,” in 2021 International Conference on
+Simulation of Semiconductor Processes and Devices (SISPAD).
+Dallas,
+TX, USA: IEEE, Sep. 2021, pp. 107–110. [Online]. Available:
+https://ieeexplore.ieee.org/document/9592537/
+
+[12] G. Pickett and C. Enss, “The European Microkelvin Platform,” Nature
+Reviews Materials, vol. 3, no. 3, Mar. 2018. [Online]. Available:
+http://www.nature.com/articles/natrevmats201812
+
+[13] M. Samani, C. P. Scheller, O. S. Sedeh, D. M. Zumb¨uhl, N. Yurttag¨ul,
+K. Grigoras, D. Gunnarsson, M. Prunnila, A. T. Jones, J. R.
+Prance, and R. P. Haley, “Microkelvin electronics on a pulse-tube
+cryostat with a gate Coulomb-blockade thermometer,” Physical Review
+Research, vol. 4, no. 3, p. 033225, Sep. 2022. [Online]. Available:
+https://link.aps.org/doi/10.1103/PhysRevResearch.4.033225
+
+[14] K.-H. Kao, C. Godfrin, A. Elsayed, R. Li, E. Simoen, A. Grill,
+S. Kubicek, I. P. Radu, and B. Govoreanu, “Linking Room- and
+Low-Temperature Electrical Performance of MOS Gate Stacks for
+Cryogenic Applications,” IEEE Electron Device Letters, vol. 43, no. 5,
+pp. 674–677, May 2022. [Online]. Available: https://ieeexplore.ieee.
+org/document/9743910/
+
+[15] P. A.
+’t Hart,
+T. Huizinga, M.
+Babaie, A.
+Vladimirescu,
+and
+F.
+Sebastiano,
+“Integrated
+Cryo-CMOS
+Temperature
+Sensors
+for
+Quantum Control ICs,” in 2022 IEEE 15th Workshop on Low
+Temperature Electronics (WOLTE). Matera, Italy: IEEE, Jun. 2022, pp.
+1–4. [Online]. Available: https://ieeexplore.ieee.org/document/9882600/
+
+[16] A. Beckers, “Bounded Distribution Functions for Applied Physics, Es-
+pecially Electron Device Simulation at Deep-Cryogenic Temperatures,”
+Dec. 2022. [Online]. Available: https://arxiv.org/abs/2212.01786
+
+[17] R. A. Jabr, M. Hamad, and Y. M. Mohanna, “Newton-Raphson Solution
+of Poisson’s Equation in a Pn Diode,” The International Journal
+of Electrical Engineering & Education, vol. 44, no. 1, pp. 23–33,
+Jan. 2007. [Online]. Available: http://journals.sagepub.com/doi/10.7227/
+IJEEE.44.1.3
+
+[18] D. Vasileska, S. M. Goodnick, and G. Klimeck, Computational
+Electronics:
+Semiclassical
+and
+Quantum
+Device
+Modeling
+and
+Simulation, 1st ed.
+CRC Press, Dec. 2017. [Online]. Available:
+
+https://www.taylorfrancis.com/books/9781420064841
+
+

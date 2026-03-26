@@ -1,0 +1,1855 @@
+Simulation of continuous dynamic recrystallization using a
+level-set method
+
+A Preprint
+
+Victor Grand
+
+Framatome - Components Research Center
+Mines Paris, PSL University
+Centre for material forming (CEMEF)
+UMR CNRS, 06904 Sophia Antipolis, France
+victor.grand@framatome.com, victor.grand@minesparis.psl.eu
+
+Baptiste Flipon
+
+Mines Paris, PSL University
+Centre for material forming (CEMEF)
+UMR CNRS, 06904 Sophia Antipolis, France
+baptiste.flipon@minesparis.psl.eu
+
+Alexis Gaillac
+Framatome - Components Research Center
+France
+alexis.gaillac@framatome.com
+
+Marc Bernacki
+
+Mines Paris, PSL University
+Centre for material forming (CEMEF)
+UMR CNRS, 06904 Sophia Antipolis, France
+marc.bernacki@minesparis.psl.eu
+
+October 31, 2022
+
+Abstract
+
+Dynamic recrystallization is one of the main phenomena responsible for microstructure evo-
+lutions during hot forming. Consequently, getting a better understanding of DRX mecha-
+nisms and being able to predict them is crucial. This paper proposes a full-field numerical
+framework to predict the evolution of subgrain structures upon grain growth, continuous
+dynamic and post-dynamic recrystallization. The microstructure representation into the
+numerical environment is presented. The developments made to improve substructure de-
+scription are detailed extensively. Using these simulation tools, simulation of grain growth
+of a fully substructured microstructure are run. The influence of microstructure topology,
+of subgrain parameters and of some remaining stored energy due to plastic deformation is
+discussed. An analysis of the criterion for discrimination of recrystallized grains is proposed.
+Finally, the ability of the framework to model continuous dynamic and post-dynamic recrys-
+tallization is assessed upon a case study. The influence of grain boundary properties and of
+nucleation rules are studied. The representativity of the results in regards of experimental
+data will be discussed in an upcoming article.
+
+Keywords Level-set, Grain growth, Continuous dynamic recrystallization, Numerical simulation, Hot
+forming
+
+arXiv:2210.15666v1  [cs.CE]  24 Oct 2022
+
+
+arXiv Template
+A Preprint
+
+1
+Introduction
+
+Dynamic recrystallization (DRX) is one of the main phenomena responsible for microstructure evolution
+during hot forming operations of metallic materials. Improving our ability to model those mechanisms is of
+first interest since it would allow to assess the influence of material and processing parameters and to reduce
+the number of experiments required to optimize industrial manufacturing paths [1]. DRX is defined as the
+formation of new grains with low dislocation density that progressively consume the deformed microstructure
+under hot deformation conditions [1, 2]. However, this mechanism of microstructure evolution can exhibit
+various typical features. Therefore, based on those characteristics, DRX is commonly classified under three
+categories [3]:
+
+• discontinuous (DDRX) if recrystallized grains nucleate at some specific locations, generally close to
+grain boundaries (GB), and then grow and consume the deformed grains surrounding them. DDRX
+is therefore characterized by spatial and temporal discontinuity at the polycrystal scale.
+
+• continuous (CDRX) when recrystallized grains form slowly and continuously during deformation. In
+that case, grain formation is induced by the progressive reorganization of dislocations into cells or
+subgrains and the gradual increase of misorientation angle between those subgrains.
+
+• geometric (GDRX) at large strains when grains become serrated and some GB start to meet and
+enclose new grains.
+
+It should be pointed out that this terminology is sometimes used inappropriately and could lead to confusion.
+CDRX and DDRX are based on the same physical phenomena that simply take place at different spatial and
+temporal scale which leads to those highly different observed features. The predominance of one or the other
+mechanism is influenced by both material characteristics and thermomechanical conditions. DDRX is known
+to happen in low to medium stacking fault energy (SFE) materials whereas CDRX is mostly found in high
+SFE metals [4]. This is explained by the fact that low SFE materials exhibit much less dynamic recovery
+(DRV) and so are less prompt to formation of low angle grain boundaries (GB that have a disorientation
+lower than a given threshold, often fixed to 15◦) or substructures. Regarding processing parameters, it has
+been found that low strain rates tend to favor CDRX [1].
+
+Until now, most of the research efforts at the mesoscopic scale have been applied to observe, characterize and
+model DDRX. This appears natural because common study materials such as stainless steels and nickel-based
+superalloys undergo those mechanisms under usual range of thermomechanical parameters [5, 6]. Adding
+this to the fact that modeling DDRX at mesoscale is more evident since nucleation of recrystallized grains
+can be implemented naturally within common simulation frameworks whereas modeling CDRX requires to
+be able to describe substructure formation and evolution. Therefore, one can easily understand why the
+majority of numerical studies focus on DDRX [7, 8, 9].
+
+Recently, several articles focusing on the physical mechanisms underlying CDRX have been published [10,
+11, 12]. They provide an in depth characterization of CDRX for different alloys and bring some new insight
+upon substructure formation and evolution.
+Regarding simulation of CDRX, Gourdet et al.
+[13] have
+published one of the first article on this topic. They proposed a mean-field model, i.e. where the prediction
+of main characteristics of the microstructure are averaged and which thus does not directly describe the
+microstructure topology. They applied this model to simulate CDRX of aluminum alloys. Their model relies
+on a schematic representation of the microstructure as an aggregate of grains and subgrains. Low angle
+grain boundaries (LAGB) are grouped into classes of same orientation that undergo a progressive increase in
+disorientation. If sufficient deformation is applied, these LAGB could possibly transform into high angle grain
+boundaries (HAGB, i.e. GB that have a disorientation higher than 15◦) and contribute to form recrystallized
+grains. This work still inspires many researchers and some recent works illustrate attempts of expanding it
+by considering additional phenomena [14, 15, 16] or overcoming some known limitations [17]. Those studies
+have shown the capability of mean-field models of CDRX. Nevertheless, they suffer from the intrinsic limits
+of mean-field approximations which make impossible the consideration of microstructure heterogeneities.
+
+The present article presents a full-field model of CDRX that offers the possibility to assess the influence of fine
+microstructural features upon CDRX. The approach employed extends the framework that has been used for
+several years to model DDRX to the simulation of CDRX [9, 18]. It relies on a level-set (LS) formulation to
+simulate microstructure evolution during heat treatment and hot deformation. It takes advantage of recent
+developments regarding simulation of anisotropic grain growth [19, 20] to describe precisely substructure
+kinetic. It is applied to 2D simulations since an extensive comparison to 2D experimental results will be
+
+2
+
+
+arXiv Template
+A Preprint
+
+provided in an upcoming study. Two strategies are employed to introduce substructures. In grain growth
+(GG) simulations, initial fully substructured microstructures are generated and their evolution is modeled
+only due to their migration. In dynamic and post dynamic simulations, formation and evolution of subgrains
+under deformation is tackled by implementing mean-field equations into the LS framework. With those
+modifications, this paper presents the first numerical framework that is able to model DDRX and CDRX
+with a high degree of consistency between the physical phenomena considered, the numerical strategies and
+the material parameters.
+
+The article introduces first the numerical framework, including the basic theory underlying the LS method.
+Then, generation of digital microstructures and physical phenomena considered are detailed.
+Following
+sections are devoted to the presentation of the results of simulation of both GG, CDRX and post-dynamic
+recrystallization (PDRX). Influence of specific microstructure characteristics are pointed out and discussed
+in regards of available results in the state of the art.
+
+2
+Numerical framework
+
+2.1
+Grain boundary description
+
+The model used in this paper describes GB using a LS formulation. The iso-zero values of level-set functions
+φ are used to track microstructure interfaces in space and time. LS functions are initialized according to
+equation 1:
+
+�
+φ(x, t) = ± d (x, Γ(t)) , x ∈ Ω,
+Γ(t) = {x ∈ Ω, φ(x, t) = 0},
+(1)
+
+where d is the signed euclidean distance function and Ω the simulation domain. φ(x, t) is taken positive
+inside the grain and negative outside. Initially, one LS function was defined per grain. To reduce the number
+of functions, a graph coloring strategy is applied [21]. We can note Φ = {φi, i = 1, ..., N} the set of
+all distance functions used to describe all the grains. N is the number of distance functions and is greatly
+smaller than the number of grains (Ng).
+
+The movement of interfaces is described by solving, for each considered distance function, the transport
+equation:
+
+∂φ
+∂t + −→v · −→
+∇φ = 0,
+(2)
+
+with −→v being the velocity of interfaces. At mesoscopic scale, −→v is generally expressed as the sum of a
+capillarity term (−→v c) and of a second one induced by stored energy due to plastic deformation (−→v e). These
+two terms are defined such as [1, 18]:
+
+−→v c = −Mγκ−→
+n ,
+(3)
+
+−→v e = M�E�−→
+n ,
+(4)
+
+with M, γ and κ respectively the mobility, energy and trace of the curvature tensor of GB. �E� is the stored
+energy gap between adjacent grains. At grain boundary vicinity, it can be expressed such as: �E (x, t)� =
+f (φi(x, t), l) × (Ej(t) − Ei(t)), where f is a decreasing function being equal to 1 for φi = 0 to 0 for φi = l
+and Ei(t) and Ej(t) are the stored energy respectively for grains i and j. Finally, −→
+n is the outward unitary
+normal of GB. The detailed procedure of the computation of −→v e is presented in ref. [22]. Stored energy is
+computed using a dislocation density field:
+
+E = τρ
+(5)
+
+3
+
+
+arXiv Template
+A Preprint
+
+τ is the unit dislocation line energy and is defined as a material parameter. Its value is computed thank to
+
+following equation: τ = µb2
+
+2
+with µ the shear modulus and b the Burgers vector [23]. This field is averaged
+
+per grain/subgrain. During simulation, the dislocation density of the surface swept by each interface is
+reset to a low value (ρ0) and the energy is averaged again.
+Therefore, the stored energy decreases in
+grains/subgrains that grow whereas it stays constant for the ones shrinking.
+
+κ and −→
+n can be defined naturally by taking advantages of the possibilities offered by the LS framework.
+Indeed, considering that LS functions remain distance functions all along the simulation (i.e. that ∥−→
+∇φ∥ = 1),
+they can be defined as:
+
+−→
+n = −−→
+∇φ,
+(6)
+
+κ = −∆φ.
+(7)
+
+M and γ are material parameters that should be identified carefully. Setting of those parameters as well as
+other initial microstructure descriptors (such as initial stored energy) is described in details in section 2.3.
+
+Since CDRX involves significant presence of LAGB, being able to predict their evolution is capital. To do
+so, evolution of properties with misorientation must be described properly. In the simulations presented in
+this work, γ is always considered as heterogeneous (i.e. γ being a function of disorientation, γ = γ(θ)) and
+M is either considered homogeneous or heterogeneous, depending on cases. This induces the introduction of
+an additional term inside velocity equation (eq. 3) [19, 20, 24], such that:
+
+−→v c = −M
+�−→
+∇γ · −→
+n − γκ
+� −→
+n ,
+(8)
+
+which, using equations 6 and 7 becomes:
+
+−→v c = −M
+��−→
+∇γ · −→
+∇φ
+� −→
+∇φ − γ∆φ−→
+∇φ
+�
+.
+(9)
+
+Finally, transport equation becomes:
+
+∂φ
+∂t + −→v e · −→
+∇φ + M
+�−→
+∇γ · −→
+∇φ − γ∆φ
+�
+= 0.
+(10)
+
+The weak formulation of previous equation, with ϕ ∈ H1
+0(Ω) is defined as:
+
+�
+
+Ω
+∂φ
+∂t ϕdΩ +
+�
+
+Ω Mγ−→
+∇ϕ · −→
+∇φdΩ −
+�
+
+Ω
+−→v e · −→
+∇φϕdΩ
+
++2
+�
+
+Ω M−→
+∇γ · −→
+∇φϕdΩ +
+�
+
+Ω γ−−→
+∇M · −→
+∇φϕdΩ
+
+−
+�
+
+∂Ω Mγϕ−→
+∇φ · −→
+n∂Ωd (∂Ω) = 0.
+
+(11)
+
+M and γ are by definition highly discontinuous since they present positive values in elements crossed by GB
+and are null in all other elements. To avoid numerical issues during computation of −→
+∇γ and −−→
+∇M, a Laplace
+equation is solved to obtain first order differentiable fields with the correct values at GB [19].
+
+This formulation is not the most complete available at that time since some others are able to consider
+anisotropic grain properties, i.e. that depend also on the GB normal [25]. However, according to the conclu-
+sions of the study made by Murgas et al. [20], this heterogeneous formulation remains a good compromise
+between computation costs and prediction of GB kinetic and morphology.
+
+4
+
+
+arXiv Template
+A Preprint
+
+30 µm
+
+Figure 1: Initial microstructure example with color code corresponding to GB misorientation angle.
+
+2.2
+Generation and evolution of microstructures
+
+2.2.1
+Generation of a two-levels microstructure
+
+A first method to obtain a microstructure exhibiting substructures is to employ a two-levels generation
+method. The generation strategy relies on a Laguerre-Voronoï algorithm [26] using an optimized sphere
+packing strategy [27].
+This generation algorithm is called twice.
+First, it is used to generate the grain
+structure in a standard way. Then, it is called again to generate the subgrain structure. The nuclei of the
+Voronoï cells located too close to initial GB are removed. Then, LS functions are defined based on those
+cells.
+
+The generation algorithm is in charge of respecting the prescribed grain and subgrain size distributions. Grain
+orientations are affected in order to respect a given distribution taken from experimental data obtained on
+a zircaloy-4 sample. Subgrain orientation is computed by applying a specific misorientation to the parent
+grain orientation, similarly to what has been achieved in ref. [28]. This misorientation distribution is also
+taken from experimental data. Finally, an image of an initial microstructure is shown in figure 1. The zone
+at the center that is enlarged is kept the same for figure 5 to improve the readability.
+
+It is worth noting that this method allows to generate various initial configurations and to study in details
+the influence of topology. As illustrated in section 3.1, this enables to enrich the rare existing discussions
+about the full-field modeling of the evolution of subgrain structures during grain growth [28, 29, 30].
+
+5
+
+
+arXiv Template
+A Preprint
+
+2.2.2
+Progressive formation of subgrains
+
+As described in introduction (section 1), under deformation, LAGB network does not evolve only by capil-
+larity growth. Dislocations could rearrange themselves to form new LAGB or accumulate into preexisting
+LAGB. This last phenomenon is responsible for a progressive increase of LAGB misorientation [1, 3]. To be
+able to consider these mechanisms, laws introduced by the Gourdet-Montheillet model are implemented [13].
+
+Each grain has an average dislocation density ρ which evolves according to the Yoshie-Laasraoui-Jonas
+equation [31]:
+
+dρ = (K1 − K2ρ) dε,
+(12)
+
+where K1 and K2 are two material constants respectively describing the strain hardening and the recovery.
+To be able to reproduce to some extent heterogeneous grain deformation, K1 varies from grain to grain
+according to a distribution defined using experimental data (see section 2.3). This strategy is preferred
+over the coupling with a crystal plasticity model since it would increase unreasonably computational costs.
+Several mechanisms of dislocation density evolution are taken into account into the current model:
+
+• rearrangement into LAGB that bound new subgrains.
+Subgrain formation is described through
+following equation [13]:
+
+dS+ = αbK2ρdε
+
+ηθ0
+,
+(13)
+
+where dS+ is the surface of LAGB created. α = 1 − exp
+� D
+
+D0
+
+�m
+is a coefficient describing the
+
+fraction of dislocations recovered to form new subgrains. D is the grain diameter, D0 is a grain
+reference diameter and m is a fixed coefficient. η is the number of sets of dislocations and θ0 the
+disorientation of newly formed subgrains.
+
+• Stacking into preexisting LAGB which is modeled according to the following equation [13]:
+
+dθ = b
+
+2η (1 − α) DK2ρdε.
+(14)
+
+• Absorption during HAGB migration. This is naturally captured by affecting to the areas swept by
+moving boundaries a low dislocation density as described earlier.
+
+At each time step, dislocation density of each grain is updated using equation 12 which impacts the com-
+putation of the velocity term related to stored energy differences. Then, the length of subgrain interfaces
+formed into each grain is computed using equation 13. Depending on the simulation case (see section 3.2),
+subgrains are added grain by grain based on the value of this grain property or globally, after having summed
+the length of subgrain interfaces for all grains. Subgrain orientation is initialized by applying a small misori-
+entation to the parent grain orientation (similarly to what is described in section 2.2.1). The misorientation
+angle is selected to respect a distribution measured experimentally whereas the misorientation axis satisfies
+a uniform distribution. The misorientation axis attributed to a subgrain at its formation is kept constant.
+Then, during next increments, the misorientation increase described by equation 14 is realized by rotating of
+dθ around this axis. In addition, to evaluate the influence of subgrain formation localization, a distance from
+pre-existing boundaries criterion is tested. Therefore, for the cases where this option is enabled, subgrain
+centers cannot be set closer to pre-existing interfaces than d f
+sg. This will be discussed in more details in
+section 3.2.
+
+Finally, at each time step, isotropic remeshing is performed to keep a fine mesh around GB and precise
+description of interfaces [32, 33]. All those operations are presented in an algorithmic diagram in figure 16.
+
+2.3
+Material parameters
+
+GB energy is defined according to Read-Schockley equation [34]:
+
+6
+
+
+arXiv Template
+A Preprint
+
+30 µm
+
+(a) Standard grain/subgrain topology.
+
+30 µm
+
+(b) No grain/subgrain topology.
+
+Figure 2: Initial GB network with color code corresponding to GB disorientation.
+
+γ(θ) =
+
+
+
+
+
+γmax
+
+�
+θ
+
+θmax
+
+� �
+1 − ln
+θ
+
+θmax
+
+�
+, θ < θmax,
+
+γmax, θ ≥ θmax,
+
+(15)
+
+where θmax is the limit between LAGB and HAGB, taken equal to 15◦.
+
+If not explicitly written, GB mobility, M, is considered isotropic and does not vary with disorientation (i.e.
+M = Mmax). HAGB mobility (Mmax) is identified using experimental data. Its dependence to temperature
+is supposed to follow an Arrhenius law. In some given simulation cases and to be able to discuss and compare
+the results to the ones described by Suwa et al. [30], mobility is described by the following relation [35]:
+
+M(θ) =
+
+
+
+
+
+
+
+
+Mmax
+
+�
+
+1 − exp
+
+�
+
+−5
+�
+θ
+
+θmax
+
+�4��
+
+,
+
+Mmax, θ ≥ θmax.
+
+(16)
+
+3
+Results and discussion
+
+3.1
+Modeling of GG of a fully substructured microstructure
+
+3.1.1
+Influence of microstructure topology
+
+To evaluate the influence of microstructure topology, two different initial microstructures are considered:
+
+• with subgrains located inside grains using the generation method described in section 2.2.1 (figure
+
+2a),
+
+• with LAGB and HAGB evenly distributed throughout the whole representative volume element
+(RVE) (see figure 2b).
+
+The first microstructure topology is named in the following discussions as Standard grain/subgrain topology.
+The second is named No grain/subgrain topology.
+The two initial microstructures are presented in the
+following figure 2
+
+For all simulation cases presented in this section, GB energy is taken heterogeneous and GB mobility is
+considered isotropic, stored energy is considered negligible (i.e. ve = 0). The RVE area is equal to 0.01 mm2.
+
+Figures 3 and 4 point out how spatial correlation of HAGB and LAGB impacts microstructure evolutions.
+First, it is interesting to note that the absence of spatial correlation decreases grain growth kinetic. This can
+
+7
+
+
+arXiv Template
+A Preprint
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+ECD ( m)
+
+Standard grain/subgrain topology
+No grain/subgrain topology
+
+Figure 3: Evolution of subgrain ECD as a function of time.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+3.5
+
+4.0
+
+HAGB length (mm)
+
+Standard grain/subgrain topology
+No grain/subgrain topology
+
+(a) Total HAGB length.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+4
+
+6
+
+8
+
+10
+
+12
+
+14
+
+16
+
+18
+
+LAGB length (mm)
+
+Standard grain/subgrain topology
+No grain/subgrain topology
+
+(b) Total LAGB length.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+3.5
+
+Total GB energy (J m
+1)
+
+Standard grain/subgrain topology
+No grain/subgrain topology
+
+(c) Total GB energy.
+
+Figure 4: Evolution of GB length and energy with time.
+
+be explained partly by the fact that grains (i.e. bounded by HAGB) disappear faster when no correlation is
+assumed (as illustrated in figure 4a). Therefore, this leads to lower the global grain growth kinetic since the
+global system energy is initially lowered much faster. It is interesting to note that this behavior is different
+from the one expected by Desprès et al. [28]. Two reasons can lead to these differences. First, Desprès et
+al. [28] consider subgrains partly bounded by HAGB. Second, initial subgrain distribution is different from
+our study case, which could also impact the microstructure evolution.
+
+8
+
+
+arXiv Template
+A Preprint
+
+Finally, when considering the influence of spatial distribution of orientations and misorientations, one lim-
+itation of this work should be pointed out. Indeed, using the generation method presented earlier, it is
+not possible to generate subgrains inside a grain presenting gradient of misorientations, a feature which is
+commonly observed in experiments and which could also impacts the microstructure evolutions. This could
+for instance lead to speed up the formation of HAGB by the migration of LAGB that could end up in the
+contact between two subgrains with a disorientation greater than 15◦. Nevertheless, this limitation could be
+overcome by directly immersing experimental data.
+
+3.1.2
+Influence of subgrain parameters
+
+To assess the influence of subgrain parameters, two different initial microstructures are considered:
+
+• with grain and subgrain size distributions taken from experimental data,
+
+• with grain distribution taken from experimental data and a unique subgrain size.
+
+For each of these initial microstructures, two cases are considered in which some material parameters differ:
+
+• GB energy is taken heterogeneous and GB mobility is considered constant,
+
+• GB energy and mobility are both considered heterogeneous.
+
+In these cases, the standard grain/subgrain topology is assumed and stored energy is neglected (i.e. ve = 0).
+
+Figure 5 presents for each simulation case the GB network in a part of the RVE. Evolution of the whole RVE
+are available in appendix A. This illustrates how microstructure evolves in a noticeable manner in case (d).
+
+Figure 6 describes how the mean equivalent circle diameter (ECD) evolves with time during simulation. First,
+it is interesting to note that considering heterogeneous mobility (according to eq. 16) affects significantly
+subgrain growth and that its impact depends on initial subgrain size distribution. To assess this in more
+details, the evolution of total HAGB and LAGB length and of HAGB length fraction are plotted in figure 7.
+HAGB length ratio (fig. 7a) exhibits how heterogeneous mobility favors the migration of HAGB and their
+formation by putting in contact subgrains originally located in different grains. At the end of the simulation,
+this leads to a higher HAGB length fraction. Moreover, as heterogeneous mobility favors HAGB migration,
+subgrains partially bounded by HAGB have greater chance to grow. This is particularly true in the case d)
+of figure 5, in which all subgrains initially have the same size. Consequently, the advantage given by the high
+mobility of those boundaries is increased and their growth dominates the whole microstructure evolution.
+Figures 7b and 7c confirm those remarks by showing a temporary increase of HAGB total length if mobility
+is heterogeneous. Finally, it is interesting to note that if subgrains initially have the same diameter, an
+incubation time is needed for the subgrains partially closed by HAGB to take a significant advantage and
+start to consume the whole microstructure. Finally, figure 8 confirms these observations. It is interesting
+to note that both study cases assuming homogeneous mobility tends to keep a significant higher fraction
+of LAGB. This illustrates that a higher heterogeneity of GB induces a change in the behavior adopted to
+lower the total energy of the system. It changes from global reduction of both LAGB and HAGB length to
+temporary increase of HAGB length in order to speed up the decrease of total GB length.
+
+These detailed observations confirm that the faster growth of a small fraction of subgrains is only observable if
+mobility is considered heterogeneous, as described by Holm et al. [29]. They also broaden the remarks made
+by Suwa et al. [30] about the conditions allowing preferential subgrain growth. Indeed, this phenomenon is
+much less significant if initial subgrain size is not homogeneous and representative of experimental data.
+
+3.1.3
+Influence of stored energy
+
+In previous papers describing similar full-field simulations, driving pressure due to dislocation density het-
+erogeneity is generally neglected [28, 29, 30]. This rests upon the simplification that deformation energy
+is fully consumed thanks to recovery, by annihilation and/or organization into GB network. The available
+framework allows us to assess the influence of the assumptions by considering that each subgrain has its own
+dislocation density. Two simulation cases are defined:
+
+• stored energy is initialized per subgrain by considering a dislocation density distribution taken from
+estimation of geometrically necessary dislocations (GND) by EBSD measurements.
+
+9
+
+
+arXiv Template
+A Preprint
+
+15 µm
+
+(a) Experimental subgrain size distribution - γh.
+
+15 µm
+
+(b) Experimental subgrain size distribution - γh, Mh.
+
+15 µm
+
+(c) Uniform subgrain size distribution - γh.
+
+15 µm
+
+(d) Uniform subgrain size distribution - γh, Mh.
+
+Figure 5: Evolution of the GB network with time for the four test cases, in a zone at the center of the RVE.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+ECD ( m)
+
+Exp. subgrain size distribution - 
+h
+
+Exp. subgrain size distribution - 
+h, Mh
+
+Homogeneous subgrain size - 
+h
+
+Homogeneous subgrain size - 
+h, Mh
+
+Figure 6: Evolution of subgrain average ECD as a function of time.
+
+10
+
+
+arXiv Template
+A Preprint
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+Length fraction
+
+Exp. subgrain size distribution - 
+h
+
+Exp. subgrain size distribution - 
+h, Mh
+
+Homogeneous subgrain size - 
+h
+
+Homogeneous subgrain size - 
+h, Mh
+
+(a) HAGB length ratio.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+2.5
+
+5.0
+
+7.5
+
+10.0
+
+12.5
+
+15.0
+
+17.5
+
+20.0
+
+LAGB length (mm)
+
+Exp. subgrain size distribution - 
+h
+
+Exp. subgrain size distribution - 
+h, Mh
+
+Homogeneous subgrain size - 
+h
+
+Homogeneous subgrain size - 
+h, Mh
+
+(b) Total LAGB length.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+2.75
+
+3.00
+
+3.25
+
+3.50
+
+3.75
+
+4.00
+
+4.25
+
+4.50
+
+HAGB length (mm)
+
+Exp. subgrain size distribution - 
+h
+
+Exp. subgrain size distribution - 
+h, Mh
+
+Homogeneous subgrain size - 
+h
+
+Homogeneous subgrain size - 
+h, Mh
+
+(c) Total HAGB length.
+
+Figure 7: Evolution of GB length with time.
+
+(a) Initial state.
+(b) After 1000 s.
+
+(c) Final state.
+
+Figure 8: Disorientation histograms at three instants of the simulation.
+
+11
+
+
+arXiv Template
+A Preprint
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+3.5
+
+4.0
+
+4.5
+
+ECD ( m)
+
+No stored energy
+Initial stored energy distributed by subgrains
+Initial stored energy distributed by grains and subgrains
+
+(a) Evolution of ECD as a function of time.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+2.25
+
+2.50
+
+2.75
+
+3.00
+
+3.25
+
+3.50
+
+3.75
+
+4.00
+
+HAGB length (mm)
+
+No stored energy
+Initial stored energy distributed by subgrains
+Initial stored energy distributed by grains and subgrains
+
+(b) HAGB total length as a function of time.
+
+Figure 9: Main microstructural feature evolutions impacted by initial stored energy.
+
+• Stored energy is initialized per grain using the same distribution. Then, subgrain energy is initialized
+weighing the parent grain using coefficients (named wi) respecting normal distribution. Parameters
+of this normal distribution are defined as follow: w ∈ [0.1; 2.0] ; w = 1.0 ; σ2 = 0.2. Distribution
+parameters have been set as thereby to ensure subgrains inside grains do not have the exact same
+energy and that it is still a driving pressure.
+
+Figure 9 presents the main microstructure features that are influenced by the presence of stored energy. As
+expected, considering stored energy variations between grains lead to an increase of the driving pressures
+and consequently to a faster growth of subgrains presenting an initial stored energy advantage. Since the
+total stored energy in the two last simulations is the same, differences in terms of kinetic are rather small.
+However, it is interesting to note that in the second case considering stored energy, subgrains and the
+complete microstructure evolve slightly slower whereas total HAGB length decreases faster.
+The faster
+disappearance of HAGB should be related to the stored energy distribution. Indeed, stored energy gaps
+between subgrains located at grain interfaces is higher than between subgrains belonging to the same parent
+grain. This contributes to speed up the movement of HAGB and to reduce the growth of subgrains located
+in inner grain regions.
+
+3.1.4
+Discussion of numerical criterion for identification of recrystallized grains
+
+In all of the papers presenting full-field simulations of microstructure evolution including substructures,
+recrystallized grains are identified based on their size. Subgrains are generally considered as recrystallized
+grains as soon as they are 6 to 8 times bigger than the initial mean subgrain size [28, 29, 30]. This relies on the
+hypothesis that all subgrains are free of energy and could become recrystallized grains. However, in recent
+experimental studies, recrystallized grains are generally identified based on some parameter quantifying
+internal disorientation or directly upon GND density [1, 36]. To correctly evaluate recrystallized fraction and
+being able to compare experimental to numerical data, several criteria are defined and compared. Subgrains
+are considered as recrystallized if:
+
+• they are 8 times bigger than the initial mean subgrain size,
+
+• their internal dislocation density is lower than a given threshold,
+
+• their internal dislocation density is lower than a given threshold and at least half of the boundaries
+surrounding it are HAGB.
+
+Obviously, the last two criteria are only tested against the simulations that consider stored energy (see
+section 3.1.3).
+
+Figure 10 illustrates how recrystallized surface fraction evolves during simulation, for the first simulation
+case described in section 3.1.3. As one could have expected, the recrystallized fraction behaves differently
+depending on its definition. Consequently, ensuring that the criteria used to discriminate recrystallized grains
+from experimental and simulation data are consistent is critical.
+
+12
+
+
+arXiv Template
+A Preprint
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+
+Time (sec)
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+Recrystallized fraction
+
+ECD >  8 × ECDi
+
+<
+t
+
+<
+t and fHAGB > 0.5
+
+Figure 10: Evolution of recrystallized fractions with time.
+
+3.2
+Modeling of CDRX and PDRX
+
+Let’s have a look now at simulations of CDRX and PDRX. To present the abilities of the model and evaluate
+the influence of subgrain formation rules, the results obtained with four different test cases are described
+below. All of them consider initial microstructures respecting the same grain size and hardening coefficient
+distributions.
+They include approximately 300 grains.
+The initial number of grains is taken low since
+it will increase substantially during deformation. Material parameters have been estimated based on the
+experimental results obtained conducting a thermomechanical testing campaign associated with extensive
+EBSD characterization.
+A detailed article will be dedicated to the presentation of these results and to
+the comparison with some simulation results acquired using this numerical framework. Thermomechanical
+conditions corresponding to these simulations are the following: T = 650◦C; ˙ε = 1.0 s−1; ε f = 1.35. The
+four test cases differ by the GB properties and the restrictions set for formation of subgrains. In all of the
+cases, except the last ones, subgrains cannot be placed too close to grain boundaries to avoid topological
+events that are not seen experimentally such as bulging boundaries. They are defined as followed:
+
+(a) The number of subgrains that are formed at each deformation increment is computed individually per
+grain/subgrain. GB energy is described by RS equation and GB mobility is isotropic.
+
+(b) The number of subgrains that are formed at each deformation increment is computed for the whole
+domain. Then, new subgrains are positioned randomly within the RVE. GB energy is described by
+RS equation (Eq. 15) and GB mobility is isotropic.
+
+(c) The number of subgrains that are formed at each deformation increment is computed individually per
+grain/subgrain. GB energy is described by RS equation (Eq. 15) and GB mobility is heterogeneous
+and computed using equation 16.
+
+(d) This last case respects the same rules than the first one, except that new subgrains can be placed on
+pre-existing grain boundaries.
+
+Based on the discussion presented previously (see section 3.1.4) and to be as close as possible to the criterion
+used commonly when working with experimental data, it has been decided to define as recrystallized the
+grains that fulfill the two following criteria:
+
+• ρ ≤ ρth = 1.0 × 1014 m−2,
+• only grains, i.e.
+entities bounded by at least 50% of HAGB, are included into the measure of
+recrystallized grains.
+
+3.2.1
+Evolution of main microstructure descriptors during CDRX and PDRX
+
+Figure 11 presents evolution of digital microstructures for the four test cases, after a deformation of 1.35
+and a subsequent holding at temperature (hundreds of seconds at 650◦C). Figure 12 presents the evolution
+
+13
+
+
+arXiv Template
+A Preprint
+
+of the main microstructural descriptors with time. First, one could see that the recrystallized fraction is
+null during the deformation process and starts to increase significantly only after tens of seconds of holding
+at temperature. This can be explained easily by analyzing the criteria defined previously for discrimination
+of recrystallized grains in regards of the mechanisms introduced into the numerical framework. First, only
+subgrains are formed during deformation due to recovery of a certain fraction of dislocations. These objects
+do not fulfill the second criterion. Then, under subsequent deformation, their misorientation increase as
+prescribed by equation 14. However, at the same time, their internal dislocation density increases. Therefore,
+with the material parameters considered here, new subgrains see their dislocation density exceed the threshold
+value before they have time to transform into grains.
+Then, under holding at temperature, grains and
+subgrains that have an energetic advantage over the surrounding grains start to grow. Their dislocation
+density is progressively lowered. They are also likely to encounter new grains which generally lead to an
+increase of the bounding HAGB fraction. Consequently, more and more candidates are meeting both of the
+criteria and are flagged as recrystallized. Finally, evolution of average recrystallized grain size presents a
+sigmoidal shape, except for the first instants where there are abrupt and erratic variations. This is due to the
+small number of grains considered as recrystallized at those times. Finally, it is interesting to discuss how
+HAGB length ratio evolves during the whole process (figure 12d). First, it decreases quickly with strain due
+to the fact that some new subgrains form. Then, once deformation is stopped, it increases by approximately
+10% instantaneously. One reason for that observation is that the hardening parameter, K1, attributed to
+each subgrain is taken from a distribution. Therefore, some subgrains have a higher hardening parameters
+than the parent grains and disappear as soon as their dislocation density is higher than the one of the parent
+grain. This is not visible during deformation since the formation of new subgrains is much more significant.
+Secondly, it is noteworthy to mention the rapid stagnation of HAGB length ratio. This would mean that
+grains and subgrains that have a lower dislocation density grow with similar rates. It makes sense since
+the driving pressure induced by interface energy is negligible in regards of the one linked to differences in
+deformation stored energy.
+
+Considering now the differences between the results obtained with the four test cases, it appears that con-
+sidering a heterogeneous GB mobility does not impact significantly the statistical descriptors described here.
+One could also notice that introducing subgrains over the whole domain globally affect recrystallized fraction
+at intermediate times and induces an increase of the average recrystallized grain size by approximately 15%.
+This difference in recrystallized fraction can be explained by the fact that the main driving pressure for the
+growth of recrystallized grains is the difference in stored energy between those grains and the surrounding
+ones. Therefore, if the quantity of interfaces created during deformation is individualized per grain, one can
+deduce from equation 13 that more subgrains will be placed in zones with high dislocation density. Thus, the
+kinetic of recrystallization will be higher for intermediate holding times. One factor in favor of the difference
+in average recrystallized grain size is that, in the case with global nucleation, viable subgrains that effec-
+tively form recrystallized grains can grow much significantly before encountering other recrystallized grains.
+Finally, regarding the last test case, allowing new subgrains to form at GB leads to 10% higher recrystallized
+fraction. The reason behind that difference is that subgrains that form over pre-existing GB have already a
+fraction of their boundary as HAGB.
+
+3.2.2
+Evolution of the subgrain network during deformation
+
+The evolution of the HAGB length ratio and of the mean LAGB disorientation with strain are presented in
+figure 13. Focusing on HAGB length ratio first, it is interesting to note that it reaches a steady state after
+a strain of 0.6. This is consistent with some experimental observations reported by Chauvy et al. [37]. As
+discussed in previous section, some subgrains disappear during deformation since they harden too much to
+stay viable. The average LAGB disorientation increases by approximately 1◦ during deformation. It is a
+rather low increase, however it is important to note that new subgrains continue to form whereas some other
+shrink. Therefore, this evolution isn’t fully representative of the disorientation increase due to equation 14.
+
+Finally, the last worth mentioning point is that the only case that exhibits different results regarding those
+two features is the last one, in which subgrains can form onto GB. To investigate the reason behind this
+difference in HAGB length ratio, the evolution of LAGB and HAGB length with strain is plotted in figure
+14. It is interesting to note that both cases exhibit comparable HAGB length evolution. However, it appears
+that the reference case in which subgrains form at a given distance from GB, the increase of LAGB length is
+much higher. This is totally consistent since the formation of subgrains over GB gives rise to less low angle
+interfaces and at the same time the disappearing of HAGB.
+
+14
+
+
+arXiv Template
+A Preprint
+
+20 µm
+
+(a) Local nucleation - γh.
+
+20 µm
+
+(b) Global nucleation - γh.
+
+20 µm
+
+(c) Local nucleation - γh, Mh.
+
+20 µm
+
+(d) Local nucleation - γh, dGB
+NewLAGB = 0.
+
+Figure 11: Evolution of digital microstructures with time for the four different test cases.
+
+4
+Conclusion
+
+The present study has detailed the current abilities of the proposed numerical framework to predict the
+evolution of subgrain structures by GG, CDRX and PDRX phenomena. The results concerning GG of a
+fully substructured microstructure has shone a light on:
+
+• the influence of the microstructure topology,
+
+• how significant is the definition of LAGB and subgrain properties. Indeed, it appeared that the
+strategy adopted by the microstructure to reduce the total system energy is different depending on
+those parameters. The observations have led to deduce that heterogeneous mobility encourages a
+temporary increase of HAGB length to speed up the general energy decrease. They also illustrated
+that preferential subgrain growth is much more significant if subgrain all have initially the same size.
+
+• The fact that internal dislocation density has a non negligible impact.
+
+The results regarding simulation of CDRX and PDRX have illustrated that this simulation environment
+coupled to the Gourdet-Montheillet model provides realistic and consistent results. They also show that the
+model is flexible enough to assess the impact of several hypotheses and assumptions.
+
+The results of the present CDRX model now need to be confronted to experimental results to assess to which
+extent they are able to predict them. This will be presented in an upcoming article regarding microstructure
+evolution of zircaloy-4 in hot forming conditions. Moreover, the present CDRX and PDRX model could still
+be extended by being applied to other materials which exhibit different microstructure features due to the
+same CDRX mechanisms.
+
+15
+
+
+arXiv Template
+A Preprint
+
+0
+50
+100
+150
+200
+250
+
+Time (sec)
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+Recrystallized fraction
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(a) Recrystallized surface fraction.
+
+0
+50
+100
+150
+200
+250
+
+Time (sec)
+
+1013
+
+1014
+
+1015
+
+Dislocation density (m
+2)
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(b) GND density.
+
+0
+50
+100
+150
+200
+250
+
+Time (sec)
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+
+3.0
+
+3.5
+
+ECDRX ( m)
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(c) Mean recrystallized grain size.
+
+0
+50
+100
+150
+200
+250
+
+Time (sec)
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1.0
+
+HAGB length ratio
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(d) HAGB length ratio.
+
+Figure 12: Main microstructural feature evolution with time.
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+
+Strain
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1.0
+
+HAGB length ratio
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(a) HAGB length ratio.
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+
+Strain
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+Mean LAGB disorientation (°)
+
+Local nucleation ; 
+h
+
+Global nucleation ; 
+h
+
+Local nucleation ; 
+h ; Mh
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+(b) Mean LAGB disorientation.
+
+Figure 13: Main microstructural feature evolution with strain, during deformation.
+
+Author contributions
+
+Conceptualization, V.G., B.F., M.B.; software, V.G., M.B.; validation, V.G.; formal analysis, V.G.; inves-
+tigation, V.G.; resources, M.B., A.G.; project administration, M.B., A.G.; funding acquisition, M.B., A.G.;
+writing—original draft preparation, V.G.; writing—review and editing, V.G., B.F., A.G., M.B.; supervision,
+A.G., M.B.. All authors have read and agreed to the published version of the manuscript.
+
+Data availability
+
+The data necessary to reproduce these findings are available from the corresponding author on request.
+
+16
+
+
+arXiv Template
+A Preprint
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+
+Strain
+
+0
+
+2
+
+4
+
+6
+
+8
+
+GB length (mm)
+
+HAGB
+LAGB
+Local nucleation ; 
+h
+
+Local nucleation ; 
+h ; dGB
+NewLAGB = 0
+
+Figure 14: Evolution of LAGB and HAGB length with strain during deformation.
+
+Conflicts of interest
+
+The authors declare no conflict of interest.
+The funders had no role in the design of the study; in the
+collection, analyses, or interpretation of data; in the writing of the manuscript; or in the decision to publish
+the results.
+
+17
+
+
+arXiv Template
+A Preprint
+
+A
+Evolution of the GB network in the whole simulated RVE
+
+30 µm
+
+(a) Experimental subgrain size distribution - γh.
+
+30 µm
+
+(b) Experimental subgrain size distribution - γh, Mh.
+
+30 µm
+
+(c) Uniform subgrain size distribution - γh.
+
+30 µm
+
+(d) Uniform subgrain size distribution - γh, Mh.
+
+Figure 15: Evolution of GB network with time for the four test cases.
+
+18
+
+
+arXiv Template
+A Preprint
+
+B
+Description of the algorithm underlying the numerical framework
+
+Figure 16: Algorithm describing the numerical steps to simulate microstructure evolutions during hot defor-
+mation and holding at temperature.
+
+19
+
+
+arXiv Template
+A Preprint
+
+References
+
+[1] A. Rollett, G. S. Rohrer, J. Humphreys, Recrystallization and related annealing phenomena, Elsevier,
+Amsterdam, 2017.
+URL
+https://www.ebook.de/de/product/28166348/anthony_rollett_gregory_s_rohrer_john_
+humphreys_recrystallization_and_related_annealing_phenomena.html
+
+[2] R. Doherty, D. Hughes, F. Humphreys, J. Jonas, D. Jensen, M. Kassner, W. King, T. McNelley,
+H. McQueen, A. Rollett, Current issues in recrystallization: a review, Materials Science and Engineering:
+A 238 (2) (1997) 219–274. doi:https://doi.org/10.1016/S0921-5093(97)00424-3.
+URL https://www.sciencedirect.com/science/article/pii/S0921509397004243
+
+[3] K. Huang, R. Logé, A review of dynamic recrystallization phenomena in metallic materials, Materials
+& Design 111 (2016) 548–574. doi:https://doi.org/10.1016/j.matdes.2016.09.012.
+URL https://www.sciencedirect.com/science/article/pii/S0264127516311753
+
+[4] T. Sakai, A. Belyakov, R. Kaibyshev, H. Miura, J. J. Jonas, Dynamic and post-dynamic recrystallization
+under hot, cold and severe plastic deformation conditions, Progress in Materials Science 60 (2014) 130–
+207. doi:https://doi.org/10.1016/j.pmatsci.2013.09.002.
+URL https://www.sciencedirect.com/science/article/pii/S0079642513000698
+
+[5] S.-I. Kim, B.-C. Ko, C.-M. Lee, S.-K. Hwang, Y.-C. Yoo, Evolution of dynamic recrystallisation in
+aisi 304 stainless steel, Materials Science and Technology 19 (12) (2003) 1648–1652. arXiv:https:
+//doi.org/10.1179/026708303225008284, doi:10.1179/026708303225008284.
+URL https://doi.org/10.1179/026708303225008284
+
+[6] M. Wang, C. Sun, M. Fu, Z. Liu, C. Wang, Experimental investigations and constitutive modeling of
+the dynamic recrystallization behavior of inconel 740 superalloy, Materials Science and Engineering: A
+793 (2020) 139939. doi:https://doi.org/10.1016/j.msea.2020.139939.
+URL https://www.sciencedirect.com/science/article/pii/S092150932031011X
+
+[7] H. Hallberg, M. Wallin, M. Ristinmaa, Simulation of discontinuous dynamic recrystallization in pure
+cu using a probabilistic cellular automaton, Computational Materials Science 49 (1) (2010) 25 – 34.
+doi:https://doi.org/10.1016/j.commatsci.2010.04.012.
+URL http://www.sciencedirect.com/science/article/pii/S0927025610002259
+
+[8] O. Beltran, K. Huang, R. Logé, A mean field model of dynamic and post-dynamic recrystallization
+predicting kinetics, grain size and flow stress, Computational Materials Science 102 (2015) 293 – 303.
+doi:https://doi.org/10.1016/j.commatsci.2015.02.043.
+URL http://www.sciencedirect.com/science/article/pii/S0927025615001445
+
+[9] L. Maire, B. Scholtes, C. Moussa, N. Bozzolo, D. P. Muñoz, A. Settefrati, M. Bernacki, Modeling of
+dynamic and post-dynamic recrystallization by coupling a full field approach to phenomenological laws,
+Materials & Design 133 (2017) 498–519. doi:https://doi.org/10.1016/j.matdes.2017.08.015.
+URL https://www.sciencedirect.com/science/article/pii/S026412751730761X
+
+[10] P. M. Souza, P. D. Hodgson, B. Rolfe, R. P. Singh, H. Beladi, Effect of initial microstructure and beta
+phase evolution on dynamic recrystallization behaviour of ti6al4v alloy - an ebsd based investigation,
+Journal of Alloys and Compounds 793 (2019) 467 – 479. doi:https://doi.org/10.1016/j.jallcom.
+2019.04.183.
+URL http://www.sciencedirect.com/science/article/pii/S0925838819314707
+
+[11] S. Liu, D. Kent, H. Zhan, N. Doan, C. Wang, S. Yu, M. Dargusch, G. Wang, Influence of strain
+rate and crystallographic orientation on dynamic recrystallization of pure zn during room-temperature
+compression, Journal of Materials Science & Technology 86 (2021) 237–250. doi:https://doi.org/
+10.1016/j.jmst.2020.12.077.
+URL https://www.sciencedirect.com/science/article/pii/S1005030221001778
+
+[12] F. Qiang, E. Bouzy, H. Kou, Y. Zhang, L. Wang, J. Li, Grain fragmentation associated continuous
+dynamic recrystallization (cdrx) of hexagonal structure during uniaxial isothermal compression: High-
+temperature α phase in tial alloys, Intermetallics 129 (2021) 107028. doi:https://doi.org/10.1016/
+j.intermet.2020.107028.
+URL https://www.sciencedirect.com/science/article/pii/S0966979520309328
+
+20
+
+
+arXiv Template
+A Preprint
+
+[13] S. Gourdet, F. Montheillet, A model of continuous dynamic recrystallization, Acta Materialia 51 (9)
+(2003) 2685–2699. doi:https://doi.org/10.1016/S1359-6454(03)00078-8.
+URL https://www.sciencedirect.com/science/article/pii/S1359645403000788
+
+[14] G. Maizza, R. Pero, M. Richetta, R. Montanari, Continuous dynamic recrystallization (cdrx)
+model for aluminum alloys, Journal of Materials Science 53 (6) (2018) 4563–4573.
+doi:10.1007/
+s10853-017-1845-4.
+URL https://doi.org/10.1007/s10853-017-1845-4
+
+[15] Y. Li, B. Gu, S. Jiang, Y. Liu, Z. Shi, J. Lin, A cdrx-based material model for hot deformation of
+aluminium alloys, International Journal of Plasticity 134 (2020) 102844. doi:https://doi.org/10.
+1016/j.ijplas.2020.102844.
+URL http://www.sciencedirect.com/science/article/pii/S0749641920301364
+
+[16] R. Buzolin, D. Canelo-Yubero, F. Warchomicka, M. Lasnik, A. Krumphals, M. Poletti, Refinement of
+the ti-17 microstructure after hot deformation: Coupled mesoscale model, Materials Science and Engi-
+neering A 800 (2021). doi:10.1016/j.msea.2020.140268.
+URL https://www.scopus.com/inward/record.uri?eid=2-s2.0-85091656965&doi=10.1016%2fj.
+msea.2020.140268&partnerID=40&md5=dcf66403b91e6b183ca0f0b805874a08
+
+[17] H. McQueen, M. Kassner, Comments on ‘a model of continuous dynamic recrystallization’ proposed for
+aluminum, Scripta Materialia 51 (5) (2004) 461–465. doi:https://doi.org/10.1016/j.scriptamat.
+2004.05.027.
+URL https://www.sciencedirect.com/science/article/pii/S1359646204003070
+
+[18] M. Bernacki, R. Logé, T. Coupez, Level set framework for the finite-element modelling of recrystal-
+lization and grain growth in polycrystalline materials, Scripta Materialia 64 (6) (2011) 525 – 528.
+doi:https://doi.org/10.1016/j.scriptamat.2010.11.032.
+URL http://www.sciencedirect.com/science/article/pii/S1359646210007906
+
+[19] J. Fausty, N. Bozzolo, D. Pino Muñoz, M. Bernacki, A novel level-set finite element formulation for
+grain growth with heterogeneous grain boundary energies, Materials and Design 160 (2018) 578–590.
+doi:10.1016/j.matdes.2018.09.050.
+URL https://www.scopus.com/inward/record.uri?eid=2-s2.0-85054343043&doi=10.1016%2fj.
+matdes.2018.09.050&partnerID=40&md5=c56009b2991ed8430b24a05dcb54f410
+
+[20] B. Murgas, S. Florez, N. Bozzolo, J. Fausty, M. Bernacki, Comparative study and limits of different
+level-set formulations for the modeling of anisotropic grain growth, Materials 14 (14) (2021). doi:
+10.3390/ma14143883.
+URL https://www.mdpi.com/1996-1944/14/14/3883
+
+[21] B. Scholtes, M. Shakoor, A. Settefrati, P.-O. Bouchard, N. Bozzolo, M. Bernacki, New finite element
+developments for the full field modeling of microstructural evolutions using the level-set method, Com-
+putational Materials Science 109 (2015) 388–398. doi:https://doi.org/10.1016/j.commatsci.2015.
+07.042.
+URL https://www.sciencedirect.com/science/article/pii/S0927025615004528
+
+[22] M. Bernacki, Y. Chastel, T. Coupez, R. Logé, Level set framework for the numerical modelling of
+primary recrystallization in polycrystalline materials, Scripta Materialia 58 (12) (2008) 1129 – 1132.
+doi:https://doi.org/10.1016/j.scriptamat.2008.02.016.
+URL http://www.sciencedirect.com/science/article/pii/S1359646208001425
+
+[23] G. E. Dieter, D. J. Bacon, Mechanical metallurgy, Vol. 3, McGraw-hill New York, 1976.
+
+[24] J. Fausty, N. Bozzolo, M. Bernacki, A 2d level set finite element grain coarsening study with hetero-
+geneous grain boundary energies, Applied Mathematical Modelling 78 (2020) 505 – 518. doi:https:
+//doi.org/10.1016/j.apm.2019.10.008.
+URL http://www.sciencedirect.com/science/article/pii/S0307904X19305967
+
+[25] S. Florez, K. Alvarado, B. Murgas, N. Bozzolo, D. Chatain, C. E. Krill, M. Wang, G. S. Rohrer,
+M. Bernacki, Statistical behaviour of interfaces subjected to curvature flow and torque effects applied
+to microstructural evolutions, Acta Materialia 222 (2022) 117459. doi:https://doi.org/10.1016/j.
+actamat.2021.117459.
+URL https://www.sciencedirect.com/science/article/pii/S1359645421008387
+
+21
+
+
+arXiv Template
+A Preprint
+
+[26] K. Hitti, P. Laure, T. Coupez, L. Silva, M. Bernacki, Precise generation of complex statistical represen-
+tative volume elements (rves) in a finite element context, Computational Materials Science 61 (2012)
+224–238. doi:https://doi.org/10.1016/j.commatsci.2012.04.011.
+
+[27] K. Hitti, M. Bernacki, Optimized dropping and rolling (odr) method for packing of poly-disperse spheres,
+Applied Mathematical Modelling 37 (8) (2013) 5715–5722. doi:https://doi.org/10.1016/j.apm.
+2012.11.018.
+URL https://www.sciencedirect.com/science/article/pii/S0307904X12007342
+
+[28] A. Després, M. Greenwood, C. Sinclair, A mean-field model of static recrystallization considering
+orientation spreads and their time-evolution, Acta Materialia 199 (2020) 116 – 128.
+doi:https:
+//doi.org/10.1016/j.actamat.2020.08.013.
+URL http://www.sciencedirect.com/science/article/pii/S1359645420306108
+
+[29] E. Holm, M. Miodownik, A. Rollett, On abnormal subgrain growth and the origin of recrystallization
+nuclei, Acta Materialia 51 (9) (2003) 2701–2716.
+doi:https://doi.org/10.1016/S1359-6454(03)
+00079-X.
+URL https://www.sciencedirect.com/science/article/pii/S135964540300079X
+
+[30] Y. Suwa, Y. Saito, H. Onodera, Phase-field simulation of recrystallization based on the unified subgrain
+growth theory, Computational Materials Science 44 (2) (2008) 286–295. doi:10.1016/j.commatsci.
+2008.03.025.
+URL https://www.scopus.com/inward/record.uri?eid=2-s2.0-55649088027&doi=10.1016%2fj.
+commatsci.2008.03.025&partnerID=40&md5=2f510444cc68ab00611759f2344e7d96
+
+[31] A. Laasraoui, J. Jonas, Prediction of steel flow stresses at high temperatures and strain rates, Metal-
+lurgical Transactions A 22 (7) (1991) 1545–1558. doi:10.1007/BF02667368.
+
+[32] M. Bernacki, H. Resk, T. Coupez, R. Logé, Finite element model of primary recrystallization in poly-
+crystalline aggregates using a level set framework, Modelling and Simulation in Materials Science and
+Engineering 17 (6) (aug 2009).
+
+[33] E. Roux, M. Bernacki, P. Bouchard, A level-set and anisotropic adaptive remeshing strategy for the
+modeling of void growth under large plastic strain, Computational Materials Science 68 (2013) 32–46.
+doi:https://doi.org/10.1016/j.commatsci.2012.10.004.
+URL https://www.sciencedirect.com/science/article/pii/S0927025612005885
+
+[34] W. T. Read, W. Shockley, Dislocation models of crystal grain boundaries, Phys. Rev. 78 (1950) 275–289.
+
+doi:10.1103/PhysRev.78.275.
+URL https://link.aps.org/doi/10.1103/PhysRev.78.275
+
+[35] Y. Huang, F. Humphreys, Subgrain growth and low angle boundary mobility in aluminium crystals of
+orientation 110 <001>, Acta Materialia 48 (8) (2000) 2017–2030. doi:https://doi.org/10.1016/
+S1359-6454(99)00418-8.
+URL https://www.sciencedirect.com/science/article/pii/S1359645499004188
+
+[36] I. Carneiro, S. Simões, Recent advances in ebsd characterization of metals, Metals 10 (8) (2020). doi:
+10.3390/met10081097.
+URL https://www.mdpi.com/2075-4701/10/8/1097
+
+[37] C. Chauvy, P. Barberis, F. Montheillet, Microstructure transformation during warm working of β-
+treated lamellar zircaloy-4 within the upper α-range, Materials Science and Engineering: A 431 (1)
+(2006) 59–67. doi:https://doi.org/10.1016/j.msea.2006.05.031.
+URL https://www.sciencedirect.com/science/article/pii/S0921509306007647
+
+22
+
+

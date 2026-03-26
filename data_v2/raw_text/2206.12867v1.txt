@@ -1,0 +1,573 @@
+EDGE DIRECTION-INVARIANT GRAPH NEURAL NETWORKS FOR
+MOLECULAR DIPOLE MOMENTS PREDICTION
+
+Yang Jeong Park∗
+Department of Electrical and Computer Engineering
+Seoul National University
+08826 Seoul, Republic of Korea
+yj3506@snu.ac.kr
+
+June 28, 2022
+
+ABSTRACT
+
+The dipole moment is a physical quantity indicating the polarity of a molecule and is determined
+by reflecting the electrical properties of constituent atoms and the geometric properties of the
+molecule. Most embeddings used to represent graph representations in traditional graph neural
+network methodologies treat molecules as topological graphs, creating a significant barrier to the goal
+of recognizing geometric information. Unlike existing embeddings dealing with equivariance, which
+have been proposed to handle the 3D structure of molecules properly, our proposed embeddings
+directly express the physical implications of the local contribution of dipole moments. We show that
+the developed model works reasonably even for molecules with extended geometries and captures
+more interatomic interaction information, significantly improving the prediction results with accuracy
+comparable to ab-initio calculations.
+
+Keywords Dipole moment · Vectorial properties · Graph Neural Networks · Embedding equivariance
+
+1
+Introduction
+
+The dipole moment has been considered a valuable property that can explain the chemical and physical behavior
+of molecules in various environments[1]. It is of wide interest in applications such as the development of unknown
+materials[2, 3, 4, 5, 6, 7, 8]. It is closely related to the spectroscopic properties of a molecule[4]; for example, infrared
+spectra of molecules can be obtained from dipole moment[3, 9]. In particular, it is an important indicator that many
+compounds show a direct correlation between biological activity and dipole moment[5, 6, 7]. Therefore, accurate and
+fast calculation of the dipole moment of arbitrary compounds sampled in a vast chemical space can accelerate recently
+attracting high-throughput screening (HTS) and have a powerful impact on material development and drug discovery. In
+HTS, quantum mechanics-based first-principle calculations that require a huge amount of computation, such as coupled
+cluster theory[10, 11] and density functional theory[12, 13], have been widely used.
+
+Data-based machine learning approaches for quantum-mechanics properties computation have dramatically decreased
+the computational overhead required to predict various properties of molecules or crystals such as potential energy,
+dipole moments, and Gibbs free energy[2, 3, 14, 15, 16]. However, modeling complex quantum mechanical effects
+between atoms using traditional machine learning techniques remains a major challenge. Recently, the MPNN
+framework[17], which exchanges information between nodes through edges by expressing materials such as molecules
+and crystals as undirected graph structure data, has become the most widely used and successful model in this
+field[17, 18, 19, 20, 21, 22, 23]. In most of these kinds of operations, an atom is represented as a node of the molecular
+graph, connecting all atoms within a cutoff radius from the atom’s position with an edge. The quantum mechanical
+interactions between atoms are appropriately modeled by message composed of atom features, which derived from the
+
+∗Use footnote for providing further information about author (webpage, alternative address)—not for acknowledging funding
+agencies.
+
+arXiv:2206.12867v1  [cs.LG]  26 Jun 2022
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+Figure 1: Comparison of dipole moment prediction results according to the number of benzene rings.
+
+position coordinates and the atomic number of the atoms, and edge features developed from the interatomic distances or
+triplet angles. By exchanging generated messages across multiple layers to update node features and reading final node
+features, MPNN models have shown competitive performance in predicting various properties[18, 19, 20]. These works
+of literature even provide efficient circumvention for calculating high-level properties such as solubility and protein
+docking[24, 25, 26].
+
+Despite these successes, it has been reported that MPNN-based models still have difficulties in predicting tensorial or
+vectorial properties[23]. For example, the dipole moment is expressed as the sum of the partial charge and the vector
+component dependent on the position vector, so it greatly depends on the geometrical properties of the molecule. As
+a representative example, as shown in figure 1, the polarization of molecules composed of benzene rings is canceled
+out by geometric symmetry, so the dipole moment should be predicted to be 0. However, even some modern models
+that employ methods of constructing messages from rotationally invariant interatomic distances fail to capture this
+geometric symmetry correctly. In the case of the model in which summation is selected as the readout function, the
+dipole moment increases as the number of benzene rings increases, and in the case of the model in which average
+is selected, the value deviating from 0 is continuously predicted. As an alternative to overcome these shortcomings,
+E(3) equivariant GNN using a rotational equivariant node representation has been recently proposed[27], but it did not
+achieve dramatic improvement compared to the existing state-of-the-art model.
+
+Our core idea to address these issues is to make the embeddings that model interatomic interactions invariant to edge
+direction. In a molecule represented as an undirected graph, pairs of atoms have edges in both directions. The existing
+rotational equivariant model does not guarantee that the representations of two edges are the same, which is unnatural to
+model the concept of dipole moment determined by partial charge and distance. Instead, our approach models the dipole
+moment by ensuring that one pair of atoms has one representation, and by predicting the dipole moment of the entire
+molecule as the sum of them, reflects the molecular geometry with high accuracy. Ablation studies have demonstrated
+the effectiveness of this direction-invariant representation. Our model approaches quantum-mechanical accuracy by
+significantly outperforming most modern MPNN models in predicting the published dipole moment dataset QM9.
+
+2
+Related Works
+
+2.1
+Message passing neural networks for molecular graphs
+
+Graph neural networks (GNNs) have recently been popular in the field of materials science and engineering due to
+their advantages in accuracy. In most applications, GNNs learn meaningful representations from a molecular graph
+G = (V, E) consisting of nodes V representing atoms and edges E representing atom-atom pairs. In most previous work,
+
+2
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+an edge is considered to exist between two atoms if they have an interatomic distance within a fixed cutoff radius, even
+if there is no explicit bond between the atoms. Each node has a hidden state vector hl+1
+i
+∈ Rd representing the state of
+atom i at layer l, and each edge has a vector representation eij commonly referred to as an edge feature. Edge features
+are often embedded as a function of the interatomic distance dij. Message passing neural networks(MPNNs) are one of
+the most widely used frameworks for learning on graph. A general MPNN for embedded 3d molecular graphs can be
+written as
+ml+1
+i
+=
+�
+
+j∈N (i)
+M l(hl
+i, hl
+j, eij)
+(1)
+
+hl+1
+i
+= U l(hl
+i, ml+1
+i
+)
+(2)
+
+where M l and U l are an arbitrary message function and update function [17]. Information from atoms inside the
+receptive field, which means near than cutoff, is aggregated on a central node state hL
+i at the final layer L of the network.
+The readout step computes the target from the node features of the whole graph using the readout function R, which is
+invariant to permutations.
+ˆy = R(
+�
+hL
+i |i ∈ G
+�
+)
+(3)
+
+It becomes clear that the representation of the central node is primarily local, but can be extended to the receptive field
+of the surrounding atoms through multiple layers to obtain an improvement in the expressive power. This allows for
+the possibility of MPNNs capturing long-range interactions, which can explain multi-body correlations of complex
+molecules. It was recently discovered that the expressive power of MPNNs is limited to the 1-Weisfeiler-Lehman
+isomorphism test [28], a classical method that attempts to determine whether two graphs are isomorphic via iterative
+color enhancement.
+
+2.2
+Equivariant GNNs
+
+Most molecular properties such as potential energy or bandgap must satisfy invariance in transformations for the
+Euclidean group E(3). Most existing MPNNs guarantee the invariance of their predictied properties by acting only on
+invariant inputs. However, in the case of vector properties such as dipole moments, equivariance should be satisfied
+instead of invariance. More recently, a class of models known as equivariant GNNs [27, 29] have been developed
+that construct equivariant node and edge features by directly inputting equivariant geometric information, such as
+displacement vectors. A function between φ : X → Y is equivariant to a group G if
+
+φ(Tg(x)) = Sg(φ(x))
+∀g ∈ G, ∀x ∈ X
+(4)
+
+where Tg is the transformation on input space X for the abstract group g and Sg is the transformation on output space
+Y [27]. When Sg is an identity operator on Y , the function φ is invariant and the output is unchanged by the operator
+Tg. The rotational invariance of the hidden representation can be guaranteed by choosing the input of the message
+function and the update function as an interatomic distance defined as a scalar. In contrast, hidden representations
+for predicting vector quantities, such as atomic forces or dipole moments, must be transformed accordingly when the
+atomic geometry is transformed. The proposed method fixes the output of the message function as a transform-invariant
+scalar. Transform equivariance can be achieved by multiplying the scalar output by the coordinate embedding. During
+the entire update process, node and edge functions are separated to remain transform-invariant.
+
+3
+Method
+
+3.1
+Theory of molecular dipole moments
+
+The molecular dipole moment is defined by integrating the total electron charge density distribution,
+
+µ = −
+�
+rρe(r)d3r +
+
+N
+�
+
+i
+riZi
+(5)
+
+where ρe(r) is the electronic charge density, ri is the position of the i-th nucleus, and Zi is number of protons of it. We
+can simplify this expression by making the approximation that partial charge qi induced by the difference between the
+electron charge distribution of each atom i and the nuclear charge Zi has the position of that atom. The approximated
+dipole moment can be written as [1, 2]
+
+µ =
+
+N
+�
+
+i
+qiri.
+(6)
+
+3
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+Figure 2: The overall structure of EDiGNN. Each atom, bond, and angle feature corresponds to x, y, and z. In
+the bond-angle graph, bond features are first updated through graph convolution, and in the atom-bond graph, atom
+features are updated using graph convolution. The atom features and displacement vectors rij are passed through the
+direction-invariant module to satisfy the direction invariance of the latent vector representation vij. The dipole moment
+prediction ˆµ is calculated as the sum of the final latent vector representations.
+
+And it can be also expanded as
+
+µ =
+
+N
+�
+
+i
+qi(hi)ri =
+1
+
+2(N − 1)
+
+N
+�
+
+i,j,i̸=j
+(qi(hi)ri + qj(hj)rj) =
+1
+
+2(N − 1)
+
+N
+�
+
+i,j,i̸=j
+µij(eij)
+(7)
+
+where N is the total number of atoms, µij is the local dipole moment element of an atom pair. This representation
+makes more sense because the position of the partial charge does not necessarily coincide with the position of the
+nucleus of the atom.
+The problem then becomes the determination of the µij that best reproduces whole dipole
+moment.
+
+3.2
+Overall model architecture
+
+Line graph framework
+Line graph framework [30] have been a widely used framework for molecular properties
+predictions[22, 31, 32, 33] to incorporate embeddings of bond angles into edge feature for richer representation. The
+line graph is a graph derived so that the edge of the original graph corresponds to a node. If two edges of the original
+graph share the same node, the line graph has an edge. While the nodes of an atom-bond graph correspond to atoms and
+its edges correspond to bonds, the nodes of a bond-angle graph as a line graph of the atom-bond graph correspond to
+bonds and its edges correspond to angles of bond pairs as shown in figure 2 A. Edges in the original graph and nodes in
+the line graph share latent representations. We use the initial atom representations from the CGCNN paper[34]. RBF
+expansion is used to prepare the initial edge features in atom-bond graph and bond-angle graph. The bond angle of the
+triplet atoms are initially calculated by using inner product of unit vectors of bond pairs. We write atom, bond and angle
+representations as x, y and z.
+
+Graph convolution
+We use graph isomorphism network (GIN) [28] convolution for updating both node and edge
+features. The mathematical similarity between GNNs and the Weisfeiler-Lehman(WL) test has been noted, and it has
+been proven that the expressive power of a GNN cannot exceed that of 1-WL kernel. GIN is one of maximally powerful
+GNNs while it is simple. Since the original GIN does not incorporate edge features, we suggest GIN update as
+
+hl+1
+i
+= MLP l
+
+
+
+(1 + ϵl)hl
+i +
+�
+
+j∈N (i)
+P l(eij + hl
+j)
+
+
+
+
+(8)
+
+4
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+Table 1: Mean Absolute Errors for prediction of dipole moments(D) of the molecules in QM9 data set. EDiGNN
+outperforms several models reported in the Literature by a large margin.
+
+Models
+
+Name
+SchNet
+Cormorant
+DimeNet++
+EGNN
+TFN
+ALIGNN
+PAINN
+EDiGNN
+
+QM9
+0.033
+0.038
+0.0296
+0.029
+0.064
+0.018
+0.012
+0.010
+
+where MLP is multi-layer perceptron. P l is 1-layer perceptron and ϵ is learnable parameter. GIN can achieve the
+maximum expressive power of the WL test level under the assumption that MLP is learned as an injective function.
+
+Edge embedding
+In most GNN applications of materials field, the molecule is considered as undirected graph. In
+fact, a node pair has one pair of edges, from source to target and from target to source. This structure does not guarantee
+the symmetry of embeddings of the edge pair. If the invariance of the edge direction of the embedding is not respected,
+there is a risk of learning a potentially useless representation. On the other hand, if symmetry with respect to the
+direction of the edges of the embedding is enforced, the model representation may be restricted. To solve this, we
+propose a latent vector embedding that is invariant in the edge direction. We use weights with different signs for source
+node embeddings hi and target node embeddings hj to ensure symmetry of edge direction:
+
+φij = Whhi − Whhj + Wrrij
+(9)
+
+vij = φijrij
+(10)
+where Wh is weight matrix for node embeddings and Wr is weight matrix for atomic dislocation vector. vij is edge
+direction invariant since φij and rij change their sign simultaneously when edge direction is switched.
+
+Readout
+To calculate dipole moments, we assumed that the predicted dipole moment as a sum of the function of
+latent vector embeddings as shown in equation 7. We applied sum-pooling to get the final predictions. This is consistent
+with the physical intuition that the total dipole moment is calculated as the sum of the local dipole moments.
+
+ˆµ =
+�
+
+i,j
+vij
+(11)
+
+We trained our model with the root mean square error loss function as
+
+L(µlabel, ˆµ) =
+
+�
+�
+�
+� 1
+
+N
+
+N
+�
+
+i
+(µlabel − |ˆµ|)2
+(12)
+
+4
+Results
+
+4.1
+QM9
+
+We test EDiGNN’s performances for predicting dipole moments using the common QM9 benchmark [35]. It contains
+134 kilo stable organic molecules consisted of C, H, O, N and F with quantum chemical properties which were
+calculated at the B3LYP/6-31G(2df,p) level. We use 110000 molecules for training set, 10000 molecules for validation
+set, and 10829 for the test set. We compare it with other state-of-the-art models such as SchNet[19], Cormorant[36],
+DimeNet++[21], EGNN[27], Tensor field network (TFN)[37], ALIGNN[22] and PAINN[23]. Although the dipole
+moment included in the data is a scalar, the loss can be obtained by finding the norm in the final prediction as shown
+in Equation 12. As shown in Table 1, our methodology shows very competitive results while remaining relatively
+simple. We predicted the dipole moment of compounds with multiple benzene rings with a model trained in QM9 to
+evaluate whether the model has adequately learned the geometrical semantics of the molecule. Since the benzene ring is
+geometrically symmetric, all dipole moments should cancel out and be predicted to be zero. However, even the latest
+models fail to predict this correctly. In the case of dimenet++, since summation is used as the readout function, it is
+expected that the dipole moment continues to increase as the benzene ring increases. On the other hand, since ALIGNN
+uses mean as a readout function, it converges to a specific value when the number of carbon and hydrogen atoms is
+appropriately increased. The prediction results of the aforementioned two models violate the laws of physics, and it can
+be seen that they did not learn by reflecting the geometrical information of molecules. On the other hand, our model
+accurately grasps the symmetry of the benzene ring, confirming that the total dipole moment is correctly predicted to be
+zero.
+
+5
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+Figure 3: Activation functions used in comparative experiments (A). Training (B) and validation (C) curves with respect
+to activation function selection.
+
+4.2
+Ablation studies
+
+Activation function
+We further investigate the performance of our model with different activation functions. SiLU,
+mish and shifted softplus are widely used as the activation functions of MLP in the quantum chemical property
+prediction task, which is a general application in the field of materials. This is to ensure the differentiability and
+continuity of the derivative function. Unfortunately, SiLU and mish are not injective functions. The shifted softplus
+activation function is one variant of softplus designed to aid convergence by allowing negative outputs. Softplus and its
+variants are easily squashed and numerically limited although they are injective functions. These activation functions
+make it difficult to satisfy injective MLP, which is the condition for securing the maximum expressive power of GIN.
+Bent identities, on the other hand, are injective and unbounded.
+
+y =
+
+√
+
+x2 + 1 − 1
+
+2
++ x
+(13)
+
+As can be seen in Figure 3 B, models using SiLU, mish, and shifted softplus as activation functions can converge the
+training loss, but have difficulty in generalization. The model with bent identity activation is slow to converge to the
+training loss, but it succeeds in generalization.
+
+Direction-invariant Edge embedding
+To test whether direction-invariant edge embeddings are the actual reason
+for improved performances, we compared them with rotational-equivariant edge embeddings and node embeddings.
+Figure 4 shows that our contributions significantly improve performance of the model. Using rotational-equivariant and
+direction-invariant edge embeddings decreases the error by 70%, which shows that this embedding provides helpful
+inductive bias.
+
+5
+Conclusion
+
+The efficient representation of molecular geometric information is important for predicting molecular properties.
+Existing work applied to molecular graphs fails to utilize molecular geometry to predict dipole moments described
+by vector sums, especially as is prominent in the example of aromatic compounds. To this end, we introduce a
+geometry-based latent vector representation to capture 3D molecular structures. This representation is designed to be
+invariant in the direction of the edges in a molecular graph, which is considered an undirected graph. We conducted an
+experiment to verify the effect of direction-invariant edge embedding and verified its superiority by comparing it with
+several competitive baseline models. The proposed embedding method can be useful for the related work of predicting
+vector properties of molecules, and we will try to apply the proposed embeddings to more molecular vector property
+prediction tasks in our future works.
+
+6
+Implementation and training
+
+The model is implemented in Pytorch[38] and deep graph library (DGL)[39]. We train all models for 500 epochs using
+AdamW optimizer with normalized weight decay of 10−5. The learning rate is reduced as half on plateau which means
+when a validation loss has stopped improving. The starting learning rate was 10−3. The final vector representations are
+
+6
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+Figure 4: The dipole moment prediction expressed as the sum of the rotation invariant node representations shows a
+more precise result than the dipole moment expressed as the sum of the rotation invariant edge representations. Giving
+direction invariance to rotation invariant edge representations outperforms rotation invariant node representations.
+
+reduced by edge-wise sum pooling and regressed to target. Each model is trained on a single NVIDIA RTX3090 24 GB
+Graphics processing unit (GPU).
+
+References
+
+[1] Veit, M., Wilkins, D. M., Yang, Y., DiStasio Jr, R. A. & Ceriotti, M. Predicting molecular dipole moments by
+combining atomic partial charges and atomic dipoles. The Journal of Chemical Physics 153, 024113 (2020).
+
+[2] Pereira, F. & Aires-de Sousa, J. Machine learning for the prediction of molecular dipole moments obtained by
+density functional theory. Journal of cheminformatics 10, 1–11 (2018).
+
+[3] Gastegger, M., Behler, J. & Marquetand, P. Machine learning molecular dynamics for the simulation of infrared
+spectra. Chemical science 8, 6924–6935 (2017).
+
+[4] Liu, X., Meijer, G. & Pérez-Ríos, J. A data-driven approach to determine dipole moments of diatomic molecules.
+Physical Chemistry Chemical Physics 22, 24191–24200 (2020).
+
+[5] Das, A. & Banik, B. K. Dipole moment in medicinal research: green and sustainable approach. In Green
+Approaches in Medicinal Chemistry for Sustainable Drug Design, 921–964 (Elsevier, 2020).
+
+[6] Matuszek, A. M. & Reynisson, J. Defining known drug space using dft. Molecular informatics 35, 46–53 (2016).
+
+[7] Ioakimidis, L., Thoukydidis, L., Mirza, A., Naeem, S. & Reynisson, J. Benchmarking the reliability of qikprop.
+correlation between experimental and predicted values. QSAR & Combinatorial Science 27, 445–456 (2008).
+
+[8] Vo, M. N., Call, M., Kowall, C. & Johnson, J. K. Method for predicting dipole moments of complex molecules
+for use in thermophysical property estimation. Industrial & Engineering Chemistry Research 58, 19263–19270
+(2019).
+
+[9] Nebgen, B. et al. Transferable dynamic molecular charge assignment using deep neural networks. Journal of
+chemical theory and computation 14, 4687–4698 (2018).
+
+[10] Abe, M., Prasannaa, V. & Das, B. Application of the finite-field coupled-cluster method to calculate molecular
+properties relevant to electron electric-dipole-moment searches. Physical Review A 97, 032515 (2018).
+
+[11] Kongsted, J., Osted, A., Mikkelsen, K. V. & Christiansen, O. Dipole and quadrupole moments of liquid water
+calculated within the coupled cluster/molecular mechanics method. Chemical physics letters 364, 379–386 (2002).
+
+[12] Leenaerts, O., Partoens, B. & Peeters, F. Water on graphene: Hydrophobicity and dipole moment using density
+functional theory. Physical Review B 79, 235440 (2009).
+
+[13] Hait, D. & Head-Gordon, M. How accurate is density functional theory at predicting dipole moments? an
+assessment using a new database of 200 benchmark values. Journal of chemical theory and computation 14,
+1969–1981 (2018).
+
+7
+
+
+Edge Direction-invariant Graph Neural Networks for Molecular Dipole Moments Prediction
+
+[14] Faber, F. A. et al. Prediction errors of molecular machine learning models lower than hybrid dft error. Journal of
+chemical theory and computation 13, 5255–5264 (2017).
+[15] Faber, F. A., Christensen, A. S., Huang, B. & Von Lilienfeld, O. A. Alchemical and structural distribution based
+representation for universal quantum machine learning. The Journal of chemical physics 148, 241717 (2018).
+[16] Pinheiro, G. A. et al. Machine learning prediction of nine molecular properties based on the smiles representation
+of the qm9 quantum-chemistry dataset. The Journal of Physical Chemistry A 124, 9854–9866 (2020).
+[17] Gilmer, J., Schoenholz, S. S., Riley, P. F., Vinyals, O. & Dahl, G. E. Neural message passing for quantum
+chemistry. In International conference on machine learning, 1263–1272 (PMLR, 2017).
+[18] Unke, O. T. & Meuwly, M. Physnet: A neural network for predicting energies, forces, dipole moments, and partial
+charges. Journal of chemical theory and computation 15, 3678–3693 (2019).
+[19] Schütt, K. T., Sauceda, H. E., Kindermans, P.-J., Tkatchenko, A. & Müller, K.-R. Schnet–a deep learning
+architecture for molecules and materials. The Journal of Chemical Physics 148, 241722 (2018).
+[20] Klicpera, J., Groß, J. & Günnemann, S. Directional message passing for molecular graphs. arXiv preprint
+arXiv:2003.03123 (2020).
+[21] Klicpera, J., Giri, S., Margraf, J. T. & Günnemann, S. Fast and uncertainty-aware directional message passing for
+non-equilibrium molecules. arXiv preprint arXiv:2011.14115 (2020).
+[22] Choudhary, K. & DeCost, B. Atomistic line graph neural network for improved materials property predictions.
+npj Computational Materials 7, 1–8 (2021).
+[23] Schütt, K., Unke, O. & Gastegger, M. Equivariant message passing for the prediction of tensorial properties and
+molecular spectra. In International Conference on Machine Learning, 9377–9388 (PMLR, 2021).
+[24] Lim, J. et al. Predicting drug–target interaction using a novel graph neural network with 3d structure-embedded
+graph representation. Journal of chemical information and modeling 59, 3981–3988 (2019).
+[25] Fout, A., Byrd, J., Shariat, B. & Ben-Hur, A. Protein interface prediction using graph convolutional networks.
+Advances in neural information processing systems 30 (2017).
+[26] Tang, B. et al. A self-attention based message passing neural network for predicting molecular lipophilicity and
+aqueous solubility. Journal of cheminformatics 12, 1–9 (2020).
+[27] Satorras, V. G., Hoogeboom, E. & Welling, M. E (n) equivariant graph neural networks. In International
+Conference on Machine Learning, 9323–9332 (PMLR, 2021).
+[28] Xu, K., Hu, W., Leskovec, J. & Jegelka, S.
+How powerful are graph neural networks?
+arXiv preprint
+arXiv:1810.00826 (2018).
+[29] Batzner, S. et al. E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials.
+Nature communications 13, 1–11 (2022).
+[30] Chen, Z., Li, X. & Bruna, J. Supervised community detection with line graph neural networks. arXiv preprint
+arXiv:1705.08415 (2017).
+[31] Hsu, T. et al. Efficient, interpretable atomistic graph neural network representation for angle-dependent properties
+and its application to optical spectroscopy prediction. arXiv preprint arXiv:2109.11576 (2021).
+[32] Kaundinya, P. R., Choudhary, K. & Kalidindi, S. R. Prediction of the electron density of states for crystalline
+compounds with atomistic line graph neural networks (alignn). arXiv preprint arXiv:2201.08348 (2022).
+[33] Fang, X. et al. Geometry-enhanced molecular representation learning for property prediction. Nature Machine
+Intelligence 4, 127–134 (2022).
+[34] Xie, T. & Grossman, J. C. Crystal graph convolutional neural networks for an accurate and interpretable prediction
+of material properties. Physical review letters 120, 145301 (2018).
+[35] Ramakrishnan, R., Dral, P. O., Rupp, M. & Von Lilienfeld, O. A. Quantum chemistry structures and properties of
+134 kilo molecules. Scientific data 1, 1–7 (2014).
+[36] Anderson, B., Hy, T. S. & Kondor, R. Cormorant: Covariant molecular neural networks. Advances in neural
+information processing systems 32 (2019).
+[37] Thomas, N. et al. Tensor field networks: Rotation-and translation-equivariant neural networks for 3d point clouds.
+arXiv preprint arXiv:1802.08219 (2018).
+[38] Paszke, A. et al. Pytorch: An imperative style, high-performance deep learning library. Advances in neural
+information processing systems 32 (2019).
+[39] Wang, M. Y. Deep graph library: Towards efficient and scalable deep learning on graphs. In ICLR workshop on
+representation learning on graphs and manifolds (2019).
+
+8
+
+

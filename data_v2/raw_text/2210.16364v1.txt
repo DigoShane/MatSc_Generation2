@@ -1,0 +1,2037 @@
+Uncertainty Driven Active Learning of Coarse Grained Free
+
+Energy Models
+
+Blake R. Duschatko,1, ∗ Jonathan Vandermause,1, 2
+
+Nicola Molinari,1, 3 and Boris Kozinsky1, 3, †
+
+1John A. Paulson School of Engineering and Applied Sciences,
+
+Harvard University, Cambridge, MA 02138, USA
+
+2Department of Physics, Harvard University, Cambridge, MA 02138, USA
+
+3Robert Bosch LLC, Watertown, MA 02472, USA
+
+(Dated: November 1, 2022)
+
+Abstract
+
+Coarse graining techniques play an essential role in accelerating molecular simulations of systems
+
+with large length and time scales. Theoretically grounded bottom-up models are appealing due to
+
+their thermodynamic consistency with the underlying all-atom models. In this direction, machine
+
+learning approaches hold great promise to fitting complex many-body data. However, training
+
+models may require collection of large amounts of expensive data. Moreover, quantifying trained
+
+model accuracy is challenging, especially in cases of non-trivial free energy configurations, where
+
+training data may be sparse. We demonstrate a path towards uncertainty-aware models of coarse
+
+grained free energy surfaces.
+Specifically, we show that principled Bayesian model uncertainty
+
+allows for efficient data collection through an on-the-fly active learning framework and open the
+
+possibility of adaptive transfer of models across different chemical systems.
+Uncertainties also
+
+characterize models’ accuracy of free energy predictions, even when training is performed only
+
+on forces. This work helps pave the way towards efficient autonomous training of reliable and
+
+uncertainty aware many-body machine learned coarse grain models.
+
+∗ bduschatko@g.harvard.edu
+
+† bkoz@seas.harvard.edu
+
+1
+
+arXiv:2210.16364v1  [physics.comp-ph]  28 Oct 2022
+
+
+I.
+INTRODUCTION
+
+Molecular dynamics (MD) has long been used to efficiently study the statistical and ki-
+
+netic properties of a wide variety of systems by integrating Newton’s equations of motion
+
+[1, 2]. There are, however, substantial limitations on the applicability of molecular dynamics
+
+to situations where the behavior at long length and time scales is relevant, such as many
+
+biological processes. Fast degrees of freedom in the system prohibit the use of larger in-
+
+tegration time steps while creating a more rugged energy landscape that typically slows
+
+important structural changes [3, 4]. Exploring a rough energy landscape with small time
+
+steps becomes unfavorable when coarser resolution is of interest. In addition, computing
+
+forces and updating the configuration state of every degree of freedom (DOF) at each time
+
+step in an all-atom (AA) system can be a computational burden. For a variety of prob-
+
+lems, fast motions such as those of hydrogen vibrations do not play a significant role in long
+
+length- and time-scale properties, making it unnecessary to track each DOF.
+
+In the context of biological systems, understanding protein folding pathways and the
+
+bulk properties of lipid bilayer membranes often require simulations of physical timescales
+
+on the order of microseconds or longer, while also typically modeling tens or hundreds of
+
+thousands of atoms [5, 6]. In the most cutting-edge applications of MD, on the other hand, it
+
+is not typically feasible to exceed these two limits simultaneously. Similarly, at the all-atom
+
+scale protein-protein interactions, or more generally polymer-polymer interactions, may not
+
+depend on all degrees of freedom. Accounting for the effects of solvents adds additional
+
+computational complexity. In such scenarios as described above, a variety of coarse grained
+
+(CG) techniques are often used to probe the system at longer time scales and lower spatial
+
+resolution [3, 4, 7–26].
+
+Of central importance to modeling the thermodynamics of systems with CG approaches
+
+is identifying the reduced degrees of freedom, or CG beads, and determining the interac-
+
+tions between them. To this end, two primary approaches are taken. Top-down methods are
+
+parametric models tuned to reproduce experimental observations, while bottom-up methods
+
+are built upon an underlying all-atom description of the system. Top-down coarse grained
+
+force fields are well established with widespread use across different applications [3, 4, 12–
+
+18, 20, 21], while the development of bottom-up coarse grained models has seen substantial
+
+activity within the past decade or so [23, 27–40]. Bottom-up approaches can rigorously
+
+2
+
+
+reproduce the statistical behavior of the system of interest by targeting the many-body co-
+
+ordinate dependent free energy, often called the potential of mean force (PMF), represented
+
+by a reduced set of coordinates [27, 31].
+
+Due to the complexity of the PMF, machine learned (ML) forces fields have recently
+
+gained traction over empirically parameterized classical potentials. In particular, the success
+
+of all-atom machine learned force fields as surrogate models for ab initio molecular dynamics
+
+[41–56] has resulted in increased interest in applying similar techniques to modeling the PMF
+
+[23, 33–40]. These approaches typically make use of regression over long all-atom trajectories
+
+via a multiscale coarse graining / force matching technique that reproduces the all-atom
+
+PMF in the limit of sufficient sampling of the canonical ensemble [27]. In addition, machine
+
+learning has targeted related problems of choosing an optimal low-resolution representation
+
+of atomic systems [37] and more broadly the problem of reconstructing atomic details from
+
+CG models [57–59].
+So far, most ML approaches to CG models were based on neural
+
+networks (NN), which possess a number of benefits.
+For example, they serve as highly
+
+flexible representations of complex functions that can be trained on large training sets.
+
+Kernel-based methods have also been proposed [38–40]. However, all ML-based CG models
+
+of the PMF to date lack a measure of principled uncertainty.
+
+The wide array of problems that are faced in CG modeling motivate a new perspective.
+
+For instance, in exploratory applications, such as the discovery of structure of large proteins
+
+or rapid screening of soft materials, training CG models with a set of relevant configurations
+
+may become infeasible. Some configurations may never be sampled due to their rarity or the
+
+time it takes for a system to evolve into these states. For this reason, current approaches
+
+that do not use uncertainty metrics rely heavily on substantial a priori knowledge of the
+
+target behavior of the all-atom system, posing a limitation on their potential for wide spread
+
+applicability.
+
+Moreover, it becomes increasingly difficult to assess the quality of models by estimating
+
+the true error on the test set, since this requires long constrained dynamics trajectories to
+
+obtain well-converged PMF data. In addition, traditional aggregate metrics such as mean
+
+absolute errors of forces may not capture subtle deficiencies in a model. Also, bottom-up
+
+CG models are highly dependent on the configuration and chemical make up of the all-
+
+atom system used for training, making the transferability of these CG models difficult to
+
+anticipate.
+
+3
+
+
+Compared to NNs, kernel-based Bayesian regression methods, such as Gaussian process
+
+(GP) regression, provide access to predictive uncertainty and have been demonstrated to
+
+efficiently select sufficiently representative training sets via active learning in all-atom set-
+
+tings [47, 49, 50]. One limitation is the increase of the computational cost of the training
+
+and inference tasks with the size of the training set. However, in many cases the full GP
+
+can be mapped onto an exact model for predicting both the mean and uncertainty with a
+
+cost that is independent of the training set size. Application of these recent methods have
+
+been demonstrated to simulations of complex heterogeneous systems at record speed and
+
+size, reaching 500 billion atoms [51, 60, 61].
+
+In this work, we present an active learning regression framework based on principled
+
+Bayesian uncertainty inherent to sparse Gaussian processes (SGP’s) for autonomous devel-
+
+opment of coarse grained force field models. First, we demonstrate the ability of Gaussian
+
+process regression to learn the coarse grained PMF on-the-fly, thereby reducing the guess
+
+work typically needed to construct the training set. In practice, this allows the model to
+
+discover unknown configurations that may appear at long timescales by bypassing the more
+
+predictable motions of faster degrees of freedom. Second, we show that uncertainty-aware
+
+active learning enables the development of more transferable coarse grained models.
+In
+
+particular, we demonstrate how uncertainty, along with the locality, allows models of one
+
+molecular system to be ”transferred” to a new system by updating the training database.
+
+Third, we find that uncertainty allows for a rapid and direct assessment of model robustness
+
+and limitations without the need for test set data, accelerating deployment and facilitating
+
+automatic refinement.
+
+II.
+RESULTS
+
+A.
+Validity of uncertainty aware on-the-fly learning of coarse grained models
+
+Bottom-up training of coarse grained models is typically done by regressing the PMF
+
+derivatives to time averages of forces, the precise form of which is given by equations (7) and
+
+(8). A common approach is to utilize instantaneous forces in a long unconstrained molecular
+
+dynamics trajectory to minimize appropriate functionals that reproduce the PMF [27, 33].
+
+This approach requires care in dealing with two implicit timescales in the problem. For one,
+
+4
+
+
+the simulation times of the fast degrees of freedom must be long enough to ensure that the
+
+sampled all-atom configurations are not highly correlated. Also, collecting sufficient training
+
+data requires simulating long enough time scales in order to visit a full range of coarse
+
+grained configurations. Even so, depending on the shape of the PMF, some regions in CG
+
+configuration space separated by barriers may not be visited during the training simulation.
+
+Principled quantitative uncertainty provides a rigorous way of identifying configurations that
+
+lie within and outside the training set.
+
+Here, we introduce a novel on-the-fly CG workflow implemented in the FLARE frame-
+
+work [49, 50], depicted in Fig. 1, that utilizes the predictive Bayesian uncertainty of SGPs.
+
+The goal of this FLARE-CG approach is to automate the collection of the PMF labels by
+
+deriving a decision threshold of data acquisition from the uncertainty associated with every
+
+prediction during a CG MD simulation. This is implemented by directly comparing each
+
+local CG environment for which predictions are made with those in the training set using
+
+a pre-defined kernel function operating on geometric descriptors of local configuration en-
+
+vironments. Specifically, we consider the local environment of CG sites within a defined
+
+cutoff radius from the central site. Many-body symmetry preserving descriptors based on
+
+the atomic cluster expansion (ACE) are constructed for this purpose, with different hyper-
+
+parameters allowing for different levels of expressiveness [50, 62].
+
+The workflow begins from an initial coarse grained structural configuration, for which
+
+a constrained dynamics trajectory is performed to acquire force labels for training. Subse-
+
+quently, for each configuration, the predicted models local PMF uncertainties are used to
+
+decide whether to evolve the system forward in time. If the uncertainty of the model on
+
+the new configuration is above a user-defined threshold, more constrained dynamics data is
+
+collected to augment the Gaussian process model database; otherwise, the CG MD step is
+
+accepted, and the system evolves forward by a time step. This process is repeated at every
+
+step of the CG MD trajectory, forming an autonomous active learning loop. Eventually,
+
+after the model no longer makes frequent calls to the all-atom baseline, the trained SGP
+
+model’s explicit dependence on the training set size can be eliminated by mapping it onto
+
+an exactly equivalent and much faster parametric model [50].
+
+During the active learning process, the model hyperparameters are adaptively optimized
+
+by maximizing the log-likelihood in response to new training data. By maintaining well
+
+calibrated uncertainties, models are then capable of discovering new configurations on their
+
+5
+
+
+own, circumventing a major problem of potentially missing unknown structures in a model’s
+
+training set. Further, this methodology allows us to rely on the all-atom models only to
+
+remove fast degrees of freedom and obtain CG force training labels, so that the slow degrees
+
+of freedom are evolved directly using the learned low-resolution CG surrogate model. We
+
+illustrate the performance of SGPs trained on-the-fly for a pentane liquid structure consisting
+
+of 70 molecules, with the hydrogen degrees of freedom integrated out (Fig. 2).
+
+The all-atom to CG mapping sequence is shown schematically in Fig. 2a. Our approach
+
+requires a prior definition of CG sites. Although recent works have considered automating
+
+the CG site selection process [37, 57, 58, 63–65], more work is needed to integrate these
+
+approaches with our proposed framework. We instead rely on chemical intuition to choose
+
+the CG mapping, where for the pentane system we choose to map the all-atom system to
+
+carbon sites. In this example, the hydrogen atoms are integrated out, effectively setting to
+
+zero their weight in the mapping function, defined in equation (3) of Methods.
+
+Existing empirical and ML CG models often label coarse grained species by their under-
+
+lying all-atom composition and bond topology, suggesting the end carbon atoms of pentane
+
+should be treated differently than those on the interior of the chain [3, 33]. In particular, CG
+
+carbons can be treated as different species types in the descriptor equation (15) depending
+
+on whether they are at the end of the molecular chain. Alternatively, all carbons can be
+
+treated as the same species type, and we can rely on the ML model to correctly learn CG
+
+forces from the geometry of the local environment structure.
+
+We investigate the impact of this choice by exploring the performance of models of pentane
+
+with and without explicit labeling of end carbons as a different species in the descriptor.
+
+Hydrocarbon systems such as pentane liquid are a convenient test case, as many top-down
+
+empirical models are parameterized for them. In the following, we compare the accuracy of
+
+our ML CG models, whose all atom baseline is the OPLS force field, to an empirical CG
+
+force field with the same CG site mapping, OPLS-UA [17, 66]. For the ML CG approach,
+
+we find in Fig. 2c that the single-species and the two-species models provide similar force
+
+accuracy as well as the reproduction of structural properties compared to the all-atom
+
+baseline. Such comparisons are valuable because the less complex single-species models have
+
+shorter inference times. This arises from the scaling of the dimensions of ACE descriptors
+
+and kernel matrices with increasing number of species, associated with more computationally
+
+heavy linear algebra computations at inference. We are not claiming, however, that this
+
+6
+
+
+finding for pentane is a general result expected to hold for other molecular systems.
+
+Similarly, comparing the learning of on-the-fly models for both single- and two-species
+
+realizations in Fig. 2c, we find both types of models achieve comparable force accuracy. We
+
+note that the predictive uncertainties of each model differ between single- and two- species
+
+as a result of having inherently different model complexity. In practice this means that
+
+single-species models will tend to make fewer calls to the reference method (constrained all-
+
+atom dynamics). In this example, we use a predictive uncertainty value threshold, defined
+
+in equation 19 of Methods, of 0.02 for the two species case and 0.01 for the single species
+
+case to further highlight this contrast in behavior with respect to uncertainty. The final
+
+mean absolute force error, as a percentage of the mean absolute force component of the
+
+model predictions, on a test set lies around 9% for both single and two species models. For
+
+comparison, we also compute the error in forces predicted by the OPLS-UA force field on
+
+the same test set and find an error of 30%.
+
+To emphasize that uncertainties are indeed predictive, in Fig. 2c we show the (unitless)
+
+mean local PMF uncertainty given by equation 19 of Methods in each test set frame. A
+
+frame refers to a structure snapshot together with atomic force information. As a function
+
+of training set size, the uncertainty correlates directly with the trends followed by the mean
+
+absolute force errors on the test set. Even though the quantitative values of uncertainty and
+
+force test-set error do not agree, the crucial point is that the same trend behavior persists.
+
+Fig. 2b and Fig 2d demonstrate that the inter- and intra-molecular properties, respec-
+
+tively, of the CG carbon sites match the behavior of the all-atom carbon atoms with high
+
+fidelity. The full carbon-carbon radial distribution functions are well reproduced, as are the
+
+end-to-end molecule chain distance. This distance is defined as the linear separation between
+
+the two carbons on the ends of each molecule. For completeness, we compare the structural
+
+performance of our coarse grained models to an existing empirical (non-ML) model, OPLS-
+
+UA [17]. We find far greater fidelity in the reproduction of structural properties with our
+
+SGPs compared to this empirical model, further motivating the use of ML approaches to
+
+PMF modeling.
+
+7
+
+
+B.
+Transferability across molecular systems
+
+Bottom-up CG models are typically developed to preserve the partition function of the
+
+Boltzmann distribution maintained by thermostats in the all-atom MD simulation, thereby
+
+ensuring consistency with the AA thermodynamics. However, this implicitly assumes that
+
+the model will be specific to both the chemical make up of the all-atom system as well as
+
+the thermodynamic state points. Particularly in this setting, where models are specific to a
+
+given system, predictive model uncertainty is helpful in quantifying the distance of local CG
+
+configurations in the test set from those in the training set. This enables us to systematically
+
+adjust and improve CG models.
+
+To examine the degree to which SGP CG models trained on one system can ”transferred”
+
+to another system, we consider several ways in which a model trained on the pentane liquid
+
+can be applied and adapted to an octane liquid, as summarized graphically on Fig. 3a.
+
+”Direct” CG models of octane are trained on all-atom octane data on-the-fly using active
+
+learning. ”Unadapted” CG models are trained on-the-fly on the pentane system for 100,000
+
+time steps and then deployed directly on octane.
+Here, the SGP evolves the system in
+
+CG space over time for 100,000 steps, checking the uncertainty against the user defined
+
+threshold at each step, before being deployed on octane. Note that 100,000 does not refer
+
+to the number of AA constrained dynamics steps used when collecting more data. The
+
+”adapted (50)” and ”adapted (100)” models have identical pentane training data, but their
+
+training sets are subsequently augmented on-the-fly for 50k and 100k time steps with octane
+
+training data, respectively, via the same procedure defined for the pentane on-the-fly loop.
+
+We also compare the performance of trained CG pentane models to the underlying AA
+
+results for octane. The goal of this experiment is to determine whether or not uncertainty
+
+can enable models previously trained on other systems to be extended to a new system more
+
+efficiently than starting over and without loss of accuracy. The results of each model type
+
+shown in Fig. 3 and Table I is the average of 40 independently trained models.
+
+We find in Fig. 3c for the two species models that the inter- and intra-molecular structure
+
+of the carbon atoms is reproduced substantially better with the adapted models than their
+
+unadapted counterparts. This is further reflected in the end-to-end chain distance RMSE
+
+values given in Table I. Note, however, that the unadapted single-species models shown in
+
+Fig. 3b give higher fidelity radial distribution functions compared to the unadapted two
+
+8
+
+
+species models while using far less training data on pentane (see Table I). This result can be
+
+attributed to the higher dimensionality of the two-species descriptors, which makes the two-
+
+species model more sensitive to changes in local environments. In the single-species case, for
+
+example, local environments near the end of the hydrocarbon chains, look highly similar to
+
+those of octane. For the two-species case, this is not true as the local environments, within
+
+the 4.5 ˚Acutoff, of octane carbon sites will almost never contain both ends of the chain,
+
+which is likely to happen in pentane. As a result, to a single species kernel, octane looks
+
+more similar to pentane and it is able to extrapolate with a limited amount of data.
+
+To highlight the benefits of using an adapted model on systems outside of the training
+
+set, we compare the computational cost of AA constrained dynamics reference computations
+
+as well as the resulting force errors and structural properties of adapted models compared
+
+to training an octane model from scratch (Table I). Assuming the pentane data is already
+
+available, we find that by using an SGP containing data from a chemically similar system,
+
+far fewer AA reference calls to the new system are needed compared to starting from scratch.
+
+In both the single- and two-species cases, the force accuracy of adapted models with fewer
+
+active learning calls to the octane reference AA constrained dynamics method is higher
+
+than in direct models trained on octane from scratch which also requests more data in
+
+active learning. Additionally, over the course of the 50,000 and 100,000 on-the-fly training
+
+steps, we report in Table I the average number of frames in which the models request more
+
+octane data. We see explicitly that in all cases, models starting from pentane request fewer
+
+frames of data for the new system. This is a crucial point, as the reduction in required
+
+constrained dynamics calls of adapted models significantly reduces the computational cost
+
+of model training. We observe that the single- and two-species models display comparable
+
+force errors despite their disagreement in the reproduction of chain distance distributions,
+
+which we explore further in the next section.
+
+C.
+Correlating Model Robustness and PMF Uncertainty
+
+In this section we aim to examine the correlation between the force error and error in
+
+structural properties determined by the PMF. Specifically, we focus our attention on the end-
+
+to-end chain distance distribution. Physically, the multi-modal distributions that appear in
+
+pentane and octane systems arise from the PMF minima at two values of dihedral angles
+
+9
+
+
+along the chain. For shorter chains, fewer pairs of dihedral angles exist that are energetically
+
+favorable, whereas longer chains effectively become more flexible to bending.
+
+To quantify the variation between a model and the AA system in the end-to-end chain
+
+distance distribution, we define the population error as
+
+100 ×
+
+�����
+pcg
+1 /pcg
+2
+
+paa
+1 /paa
+2
+− 1
+
+�����
+(1)
+
+where p1,2 are the populations (i.e. frequencies of sampling end-to-end chain distance values)
+
+of the first and second PMF basins of the AA or CG system.
+
+With this definition, we can motivate this discussion by considering the relationship
+
+between mean force errors and population errors for the octane models discussed in the
+
+previous section.
+The mean force errors of the adapted single-species models are quite
+
+similar to the two-species models, while the population error between the single- and two-
+
+species approaches differ substantially (see Table. I). The population error of the adapted
+
+(100) single- and two-species models differ by nearly a factor of 10. This result points to a
+
+clear disconnect between force and PMF errors.
+
+For the remainder of this section, we focus our attention on the case of pentane specif-
+
+ically as it has a much more bimodal distribution in chain distances compared to octane,
+
+corresponding to a more challenging energy landscape in which to study population ratio
+
+errors. Even longer chains do not display such bimodal distributions at all (see SI Fig. 3).
+
+To this end, in Fig. 4a we show the end-to-end chain distance distributions for a set of 40
+
+pentane models, each trained with subsets of 50 training frames and 50 sparse points per
+
+frame, drawn randomly from the same set of AA constrained dynamics data. It is clear that
+
+models vary widely in predicting end-to-end pentane chain distance distributions, despite
+
+all models exhibiting low errors on forces. Quantitatively, we show in Fig. 4b the learning
+
+curves for the set of 40 models along with their corresponding population errors defined by
+
+equation 1. Black and red lines correspond to monotonically and non-monotonically de-
+
+creasing quantities, respectively. Each model in the ensemble exhibits monotonic decrease
+
+in the force error with more force training data. At the same time, many models show
+
+non-monotonic evolution in the population error as a function of the training set size.
+
+These trends can be understood by noting that pentane chain distance distributions
+
+are characterized by the difference in PMF values between the two basins. However, in
+
+our training, only PMF derivatives (forces) are used, which only implicitly constrain the
+
+10
+
+
+model’s estimate of PMF. As a result, in a test set with minimal representation of transition
+
+structures and high sampling of equilibrium ones, we expect that mean force errors will
+
+decrease with added data more rapidly than the PMF errors. Thus, improving the fidelity
+
+with which these models reproduce distributions of structural properties requires a large
+
+amount of force data, especially in the rarely sampled transition region. We note that despite
+
+the variability across models in the ensemble, the mean population error as a function of
+
+training set size indeed decreases, as does the mean force error. The insets of Fig. 4b show
+
+the mean force error and population error of the ensemble of models, along with the standard
+
+deviation represented with error bars.
+
+The overlap in the distribution of force errors is far smaller than that of the population
+
+errors. In each step of the learning process, a model’s PMF predictions are less constrained
+
+than the force predictions. As a result, there are effectively more learning pathways that
+
+quantities arising from the PMF, such as population errors considered here, can take towards
+
+a converged value. Because of the substantial overlap in distributions at different stages of
+
+training, many of these pathways are not necessarily monotonically decreasing functions.
+
+One possible solution to minimize this variability would be to include PMF labels in
+
+the training set. However, free energies are difficult to compute. In the absence of such
+
+PMF labels, however, we argue that by training with force labels alone, the local PMF
+
+uncertainties can still be meaningfully interpreted, and that the uncertainties are able to
+
+capture useful information regarding the impact force data will have on the model’s PMF
+
+predictions.
+
+To connect uncertainty more directly to the performance of observable properties, we
+
+explore the local PMF uncertainties of CG environments and their relationship to equation
+
+*1). First, we define the molecular uncertainty as the average local PMF uncertainty on CG
+
+sites, i, belonging to molecules with an end-to-end chain distance L. Formally, this is given
+
+by
+
+σ(L) = 1
+
+N
+
+��
+
+t
+
+�
+
+mt(L)
+
+�
+
+i∈mt(L)
+δε2
+i
+(2)
+
+where δε2
+i is the local PMF uncertainty of CG site i belonging to a molecule m of length
+
+L, evaluated on a frame in a test set t. The average is performed over all molecules whose
+
+end-to-end chain distance lies within a range L ± ∆L in the test set.
+
+In addition to the mean and standard deviation of force errors and population errors
+
+11
+
+
+shown in Fig. 4b, we plot the molecular PMF uncertainty in equation 2 as a function of
+
+the training set size for a single model averaged over molecules within the transition state
+
+region. The molecular uncertainty follows the monotonic trend of the true population error
+
+averaged over the ensemble of models, while individual models do not necessarily follow
+
+such monotonic trends in population errors, as mentioned above. We suggest that, due to
+
+the wide variation across models, the local PMF uncertainty for a single model does not
+
+necessarily predict the true error of populations on a single model, but rather correlates
+
+with the expected average error of an ensemble of models.
+
+We also find that force training labels alone constrain PMF predictions in a meaningful
+
+way. In particular, the ”usefulness” of the force data that is added is also reflected in the local
+
+PMF uncertainties, supporting its use as a metric in on-the-fly training. To demonstrate
+
+this, we examine the molecular uncertainty defined by equation (2) as a function of chain
+
+distance for two different scenarios. Starting from a baseline model trained with 50 frames of
+
+pentane force data, we compute σ(L) on an independent test set. Subsequently, we consider
+
+the addition of force labels in a molecule whose chain distance lies within the transition
+
+region (˜4.8 ˚A, model A) compared to the addition of sites in a stretched molecule of chain
+
+distance ˜6.3 ˚A, model B. The stretched configuration in model B is highly energetically
+
+unfavorable, and we expect that this data would have a less meaningful impact on the local
+
+PMF uncertainties of the model within the more well-explored regions of phase space.
+
+In Fig. 4c, we plot differences of molecular uncertainties, σ(L) − σA,B(L), between the
+
+baseline model and models A and B as a function of chain distance. Indeed, the transition
+
+state model shows a sharper decrease in uncertainty overall compared to the stretched model,
+
+directly indicating that the local PMF uncertainties are capable of identifying how force data
+
+will constrain the corresponding PMF predictions.
+
+III.
+DISCUSSION
+
+In this work, we have explored the utility of uncertainty aware machine learning models
+
+for coarse graining.
+The principled Bayesian uncertainty measure of Gaussian processes
+
+enables a novel on-the-fly active learning scheme for CG models that allows for automating
+
+the creation of training sets.
+A key aspect of the on-the-fly ML CG method is that it
+
+overcomes the time- and length-scale limitations of AA models by integrating the AA system
+
+12
+
+
+in time only over fast degrees of freedom. In addition, by collecting training data only when
+
+necessary during MD, we eliminate the need for specifying a priori which configurations
+
+our model will need to be trained on. Instead, as the algorithm explores configurations, it
+
+automatically decides if they are new enough to be added to the training set.
+
+Moreover, the on-the-fly framework enables models to be transferred across molecular
+
+systems in a principled way. By the locality assumption inherent in the structural descrip-
+
+tors, for local environments that are similar across systems forces will be predicted to be
+
+similar, at a given thermodynamic state. Similarly, environments that differ will result in
+
+small kernel values and contribute proportionally less to the prediction of forces on new
+
+environments, and the framework will request more data.
+
+In practice, this approach could be used to develop CG models for common polymer
+
+backbones that could then be efficiently adapted to systems with differing functionalization.
+
+In this case, only data around new functional groups would be required, as opposed to
+
+starting from scratch. This would allow for more rapid development of coarse grained models
+
+in materials screening settings. We emphasize that there is a tradeoff in single- and two-
+
+species representations for transferable models. In the octane example considered in this
+
+work, there is an ease of direct transferability of single-species models without adaption.
+
+On the other hand, the achievable accuracy upon the addition of more data of the more
+
+descriptive two-species model may be more desirable. In general, it is difficult to anticipate
+
+the extent of this complex tradeoff.
+
+The issue of model variance is further addressed herein as arising from limited direct PMF
+
+information. By training on time-averaged forces only, obtained from unbiased MD config-
+
+urations, PMF in transition regions is difficult to capture. What’s more, examining force
+
+errors alone can seem to suggest that models should always improve with more data. In fact,
+
+we show that over an ensemble of models, average force errors indeed decrease monotonically
+
+with more data, while PMF errors do not necessarily decrease for each model. As a result,
+
+properties arising from PMF values, such as population ratios of stable configurations, can
+
+vary significantly and converge slowly in the training process. We find only that the average
+
+over a set of models will improve such property predictions. We demonstrate that despite
+
+the lack of direct PMF labels in the training set, providing forces still imparts meaningful
+
+PMF information to the model.
+
+We note that the molecular local PMF uncertainty plotted in Figs. 4b,c does not cor-
+
+13
+
+
+respond quantitatively to the mean absolute force error or population error. While some
+
+work has been done on understanding how to more concretely link uncertainty and perfor-
+
+mance [67], it is not well understood how we can, for example, translate specific values of
+
+uncertainty directly to the variance of observed structural properties over an ensemble of
+
+models. This remains an open question and demands systematic investigation even for force-
+
+fields in all-atom simulations. Moreover, the particular form in which we analyze molecular
+
+uncertainty in equation 2 is a choice. Other functional forms of molecular uncertainty can
+
+be conceptualized that may or may not provide deeper physical insight. This will require
+
+careful considerations in future works.
+
+Finally, we note that a particular challenge in making the proposed method more generally
+
+applicable is the reconstruction of all-atom configurations to enable constrained dynamics
+
+during the active learning loop. In order to seamlessly go between the all-atom and coarse
+
+grained representations, a scheme for recovering lost degrees of freedom must be designed.
+
+In many cases this is done with techniques designed for specific systems (as we have utilized
+
+in this work), or brute force methods such as a multi-stage compression and expansion of the
+
+system box to equilibrate replaced degrees of freedom. Recent works have begun to examine
+
+this problem from the perspective of machine learning [57, 58, 63–65], but such approaches
+
+require pre-selected training sets to learning the CG mapping that would require additional
+
+work to reconcile with our active learning scheme. Doing so will enable a much broader
+
+study of materials at a variety of resolutions.
+
+IV.
+METHODS
+
+A.
+Potential of Mean Force
+
+While many approaches exist for designing coarse grained models, top-down approaches
+
+lack thermodynamic consistency. A thermodynamically consistent coarse grained model is
+
+one for which the Boltzmann distribution of the coarse grained sites is the same as that
+
+implied by the underlying all-atom model [27]. In principle, all of the thermodynamics of
+
+the all-atom system may be recovered from the resulting potential of mean force.
+
+Suppose we have an all-atom model consisting of n atoms at a set of positions rn =
+
+{r1, r2, . . . , rn} and governed by a potential u(rn).
+We consider a mapping of the AA
+
+14
+
+
+system to N coarse grained sites, given by RN = {R1, R2, . . . , RN}, of the form
+
+Rj = Mj(rn) =
+
+n
+�
+
+i=1
+cijri
+(3)
+
+where j denotes the index of the coarse grained site and i the index of each atom. The
+
+mapping coefficients cij must satisfy �
+
+i cij = 1 to ensure translation invariance of the
+
+resulting model [27].
+
+The above information is enough to define the Boltzmann probability distribution of the
+
+AA system within the canonical ensemble, so that
+
+p(rn) = exp(−u(rn)/kBT)
+
+Zr
+(4)
+
+with Boltzmann constant kB, temperature T, and partition function Zr. Let the coarse
+
+grained system be governed by its own potential, U(RN), so that we can define a Boltzmann
+
+probability for the coarse grained sites at the same state points as
+
+P(RN) = exp(−U(RN)/kBT)
+
+ZR
+(5)
+
+For a consistent coarse grained model, we would like the probability of sampling a given
+
+coarse grained configuration to be the same as if we had sampled the sites from the AA
+
+system. In other words,
+
+P(RN) =
+�
+p(rn)
+
+N
+�
+
+j=1
+δ(Mj(rn) − Rj)drn
+(6)
+
+This requirement defines the potential of mean force, U(RN), as a coordinate-dependent
+
+free energy surface in terms of an underlying AA model. In particular,
+
+exp(−U(RN)/kBT) ∝
+�
+p(rn)
+
+N
+�
+
+j=1
+δ(Mj(rn) − Rj)drn
+(7)
+
+The PMF allows us to define a force on each coarse grained site as a gradient of the free
+
+energy. This force captures not only energetic effects, but also the entropic contributions to
+
+the free energy arising from the degrees of freedom being integrated out.
+
+Formally, for mappings that take a group of atoms to their center of mass, and for which
+
+no atom belongs to more than one coarse grained site, the mean force on each site is [27]
+
+Fj(RN) =
+� �
+
+i∈Sj
+fi
+�
+
+RN
+(8)
+
+15
+
+
+where Sj is the set of atoms involved in the mapping to site j, fi is the atomistic force on
+
+atom i, and the average is a weighted ensemble average defined as
+
+⟨g(rn)⟩RN =
+
+�
+g(rn)e−u(rn)/kBT �N
+j=1 δ(Mj(rn) − Rj)drn
+
+�
+e−u(rn)/kBT �N
+j=1 δ(Mj(rn) − Rj)drn
+(9)
+
+for an arbitrary function g of the atomistic coordinates. Note that it is not a requirement
+
+that every atom have a non-zero weight in at least one mapping to a coarse grained site. In
+
+the hydrocarbon systems we consider, the hydrogen atoms have corresponding coefficients
+
+cij = 0 for all CG sites, j.
+
+To model the PMF independent of atomic details, we must define a functional approxi-
+
+mation to U(RN) as well as how the parameters of this function will be fit. In the following
+
+section, we describe the sparse Gaussian process model used to approximate the PMF, and
+
+the mean force labels in equation (8) can be estimated using constrained molecular dynamics.
+
+B.
+All-Atom Reconstruction
+
+In order to go from the coarse grained resolution back to an AA representation, we must
+
+define a method for recovering AA degrees of freedom. For the n-alkane systems studied in
+
+this work, we use the idea of excluded volumes. In all cases, we have chosen to map AA
+
+structures onto a carbon site based structure representation, leaving only hydrogen atoms
+
+to be reconstructed.
+
+A schematic of this reconstruction scheme is provided in Fig. 1. Initially, excluded vol-
+
+umes of radius RC are placed around each CG carbon site.
+For each site, we define a
+
+procedure for reconstructing all hydrogen atoms that are bonded to the central site. We
+
+wish to place a hydrogen atom a distance RC−H away from its bonded carbon, which re-
+
+quires a polar and azimuthal angle to define a complete coordinate. A random pair of angles
+
+is drawn, and it is determined whether or not the resulting point lies within a restricted
+
+region.
+
+Such restricted regions are defined in terms of overlapping excluded volumes. In partic-
+
+ular, a conical region is constructed whose central axis is defined by the vector from the
+
+central carbon to the neighboring atom creating an excluded volume overlap. The angular
+
+extent of the conical region is determined by the angle between the central axis and the
+
+lines connecting the central carbon to the circular intersection of the edges of the excluded
+
+16
+
+
+environments.
+
+Should the angle between the vector from the carbon to the new hydrogen site and the
+
+central axis vector of any restricted region be less than that regions angular extent, a new
+
+pair of polar and azimuthal angles is drawn for the hydrogen until a position that does not
+
+lie in an overlapping region is found. This process is iterated for each hydrogen atom bonded
+
+to the carbon site before proceeding to the next carbon atom. Note that in general, RC−H
+
+and RC need not be equal, and in our implementation, RC−H is taken to be the experimental
+
+value of 1.118 ˚A.
+
+In addition, for each hydrogen atom placed, a new excluded volume is introduced into the
+
+system centered at this location, with a radius RH. In this way, the presence of reconstructed
+
+degrees of freedom can influence subsequent placements, allowing for easy avoidance of non-
+
+physical AA reconstructions. We find stable reconstruction results when setting RC and RH
+
+to 1.6 ˚A and 1.1 ˚A, respectively. These quantities are comparable with the experimental
+
+C-H and C-C bond lengths of 1.118 ˚A and 1.531 ˚A.
+
+In order to reduce the time spent on sampling, we place a restriction on our reconstruction
+
+algorithm such that if an acceptable sample is not drawn in a predefined amount of time,
+
+the excluded volume radii are reduced by 10%. However, we rarely find this to be necessary.
+
+Once all hydrogen atoms have been reconstructed, energy minimization (see SI.1) is per-
+
+formed, after which hydrogen velocities are drawn at random from a Boltzmann distribution
+
+at 250K and equilibrated with a 0.5 fs timestep for 20,000 steps.
+
+C.
+Sparse Gaussian Processes
+
+Bottom-up coarse graining models often require an accurate description of many-body
+
+interactions. Here, we use sparse Gaussian processes to do so. We outline the methodology
+
+here, with more detail available in Ref. [50].
+
+1.
+Descriptors of Local Free Energy
+
+We assume that the PMF can be modeled with a purely local function. In particular, given
+
+a set of coarse grained coordinates RN = {R1, R2, . . . , RN} with chemical-type identities
+
+{s1, s2, . . . , sN}, the PMF is given by a sum of local free energy contributions from the CG
+
+17
+
+
+sites in the form
+
+U(R1, R2, . . . , RN; s1, s2, . . . , sN) =
+
+N
+�
+
+i
+ε(si, ρi)
+(10)
+
+where ρi is some description of the local environment of CG site i.
+In particular, the
+
+environment is the set of distance vectors between neighboring sites, such that j ̸= i, within
+
+a cutoff radius of r
+(si,sj)
+cut
+that can, in general, be species dependent. Formally,
+
+ρi = {(sj,⃗rij) |rij < r
+(si,sj)
+cut
+}
+(11)
+
+Following the Atomic Cluster Expansion approach introduced by Drautz [62], the local
+
+environment of a site can be projected onto single-particle basis functions
+
+⟨φnℓm|ρi⟩ = φnℓm(rij)
+(12)
+
+where we choose for φ a decomposition into radial and spherical harmonic components with
+
+cutoff function, c,
+
+φnℓm(rij) = Rn
+
+�
+rij
+
+r
+(si,sj)
+cut
+
+�
+
+· Yℓm(ˆrij) · c(rij, r
+(si,sj)
+cut
+)
+(13)
+
+In this work we use Chebyshev polynomials for the radial basis and spherical harmonics for
+
+the angular basis. A covariant tensor can be constructed by summing the basis functions
+
+over sites within the local environment as
+
+cisnℓm =
+�
+
+j∈ρi
+δs,sjφnℓm(rij)
+(14)
+
+Utilizing the sum rule of the spherical harmonic functions, a rotationally invariant descriptor,
+
+di, is
+
+dis1s2n1n2ℓ =
+
+ℓ
+�
+
+m=−ℓ
+cis1n1ℓmcis2n2ℓm
+(15)
+
+The parameters n, ℓ, and rcut are hyperparameters that we manually specify. To do so,
+
+we maximize the marginal log-likelihood (see SI.2), and use the values n = 12, ℓ = 5, and
+
+rcut = 4.5 ˚A, independent of chemical type.
+
+2.
+Model Predictions
+
+To complete the description of the sparse Gaussian process, we must define a kernel
+
+that compares the local environment descriptors. As in Ref. [50], we choose a kernel that
+
+18
+
+
+resembles the smooth overlap of atomic potentials (SOAP) kernel [54–56] and takes the form
+
+k(di, ds) = σ2
+�
+d1 · d2
+d1d2
+
+�ξ
+(16)
+
+Here, the hyperparameter, σ, is optimized by maximizing the marginal log-likelihood during
+
+on-the-fly training, and ξ is a chosen parameter that can be used to increase the body-order
+
+of the model.
+
+For a set of sparse coarse grained environments, S, that is a subset of a larger training
+
+set, F, a prediction of the local free energy on a new environment ρi can be cast as a sum
+
+over the sparse points:
+
+ε(ρi) =
+
+Ns
+�
+
+s∈S
+k(di, ds)αs
+(17)
+
+where
+
+α = (σ−1
+n KSFKFS + KSS)−1KSFy
+(18)
+
+where y is the vector of training force labels, KSF the matrix of kernel values between the
+
+sparse set and training set, and KSS the matrix of kernel values between points in the sparse
+
+set alone. The noise hyperparemter, σn, quantifies the inherent uncertainty present in the
+
+training labels and is another hyperparameter that is tuned via maximizing the marginal
+
+log-likelihood.
+
+Such mean predictions with the sparse Gaussian process also allow for posterior predictive
+
+distribution variances. For SGP’s, computing the variance requires approximate methods,
+
+where we choose in this work to use the Deterministic Training Conditional (DTC) approx-
+
+imation [68]. As in Ref. [50], we use a further simplified form that is the predictive variance
+
+of a fictitious Gaussian process trained on local free energies of the sparse environments
+
+alone. The resulting uncertainty on local free energies is
+
+˜V (ε) = kεε − kεSK−1
+SSkSε
+
+σ2
+(19)
+
+Lying between 0 and 1, this form gives us a unitless measure in defining uncertainty thresh-
+
+olds during on-the-fly training. We find a relative tolerance of 0.02 to perform well. This
+
+is found to be stable from our empirical observations and is consistent with similar values
+
+used in Ref. [50]
+
+The resulting models, following the on-the-fly training trajectory, can be simplified such
+
+that the summation over sparse points in the predictive distribution can be computed once
+
+19
+
+
+and used for all future predictions [50]. This simplification allows for efficient inference upon
+
+deployment of the SGPs.
+
+D.
+Computational Details
+
+The LAMMPS package [69] was used for all production simulations. The OPLS-AA [66]
+
+and OPLS-UA [17] force fields were used in addition to the SGP models. The on-the-fly MD
+
+active learning loop was performed using the Atomic Simulation Environment (ASE) [70],
+
+and mapped SGP potentials were used in a custom implementation of a LAMMPS pair-
+
+style, available as an executable in the FLARE repository [49, 50]. We have adapted the
+
+on-the-fly framework to coarse grained applications, and the software package, FLARE CG,
+
+is available upon request. The specific version of the FLARE code used in the production
+
+of these results is also available upon request. Parsing of LAMMPS output files for RDFs
+
+was done primarily through Ovito [71]. Parameters for all simulations are provided in the
+
+Supplementary Information.
+
+V.
+DATA AVAILABILITY
+
+All input and output files from the FLARE training and LAMMPS simulations are available
+
+upon request.
+
+VI.
+CODE AVAILABILITY
+
+The code used to perform coarse graining and the integration with FLARE will be made
+
+public on github. The version used for the data collected herein is otherwise available upon
+
+request.
+
+VII.
+ACKNOWLEDGEMENTS
+
+The authors thank Yu Xie, Lixin Sun, Cameron Owen, Anders Johansson, Noah Bice,
+
+and Benjamin Jensen for helpful discussions. This work was supported by a NASA Space
+
+Technology Graduate Research Opportunity, by the NSF through the Harvard University
+
+Materials Research Science and Engineering Center Grant No. DMR-2011754, and by a
+
+20
+
+
+Multidisciplinary University Research Initiative sponsored by the Office of Naval Research,
+
+under Grant N00014-20-1-2418. All computational experiments utilized the resources pro-
+
+vided and maintained by Harvard FAS Research Computing.
+
+VIII.
+COMPETING INTERESTS
+
+The authors declare no competing financial or non-financial interests.
+
+IX.
+AUTHOR CONTRIBUTIONS
+
+B. R. D. developed the coarse graining extension code to FLARE and performed all com-
+
+putational experiments. J. V. led the development of the all-atom FLARE code and helped
+
+with its adaptation and with interpretation of trained models. N. M. assisted in assessing
+
+molecular dynamics results and the physical interpretations of the data, as well as con-
+
+tributed to figure design.
+B. K. supervised the work and contributed to the theoretical
+
+developments. B. R. D. wrote the manuscript, and all authors contributed to manuscript
+
+preparation.
+
+X.
+REFERENCES
+
+[1] M. P. Allen and D. J. Tildesley, Computer Simulation of Liquids (Oxford University Press,
+
+1987).
+
+[2] Daan Frenkel and Berend Smit, Understanding Molecular Simulation: From Algorithms to
+
+Applications (Academic Press, 2002).
+
+[3] Siewert J. Marrink, H. Jelger Risselada, Serge Yefimov, D. Peter Tieleman,
+and Alex H.
+
+De Vries, “The martini force field: Coarse grained model for biomolecular simulations,” Jour-
+
+nal of Physical Chemistry 111, 7812–7824 (2007).
+
+[4] Sebastian Kmiecik, Dominik Gront, Michal Kolinski, Lukasz Wieteska, Aleksandra Elzbi-
+
+eta Dawid,
+and Andrzej Kolinski, “Coarse-grained protein models and their applications,”
+
+Chem. Rev. 116, 7898–7936 (2016).
+
+21
+
+
+[5] ˚A A. Skjevik, Benjamin D. Madej, Callum J. Dickson, Knut Teigen, Ross C. Walker,
+and
+
+Ian R. Gould, “All-atom lipid bilayer self-assembly with the amber and charmm lipid force
+
+fields,” Chem. Commun. 51, 4402 (2015).
+
+[6] Sun Young Woo and Hwankyu Lee, “All-atom simulations and free energy calculations of
+
+coiled-coil peptides with lipid bilayers: binding strength, structural transition, and effect on
+
+lipid dynamics,” Scientific Reports 6, 22299 (2016).
+
+[7] M. Bonomi, A. Barducci,
+and M. Parrinello, “Reconstructing the equilibrium Boltzmann
+
+distribution from well-tempered metadynamics,” Journal of Computational Chemistry 30,
+
+1615–1621 (2009), 00220.
+
+[8] Glenn M Torrie and John P Valleau, “Nonphysical sampling distributions in monte carlo
+
+free-energy estimation: Umbrella sampling,” Journal of Computational Physics 23, 187–199
+
+(1977).
+
+[9] Alessandro Barducci, Massimiliano Bonomi, and Michele Parrinello, “Metadynamics,” Wiley
+
+Interdisciplinary Reviews: Computational Molecular Science 1, 826–843 (2011).
+
+[10] Marc Souaille and Benoıt Roux, “Extension to the weighted histogram analysis method: com-
+
+bining umbrella sampling with free energy calculations,” Computer physics communications
+
+135, 40–57 (2001).
+
+[11] �lL Baran and W R˙zysko, “Application of a coarse-grained model for the design of complex
+
+supramolecular networks,” Mol. Syst. Des. Eng., 5, 484–492 (2020).
+
+[12] J. W. Ponder and D. A. Case, “Force fields for protein simulations,” Adv. Prot. Chem. 66,
+
+27–85 (2003).
+
+[13] Luca Monticelli, Senthil K. Kandasamy, Xavier Periole, Ronald G. Larson, D. Peter Tieleman,
+
+and Siewert-Jan Marrink, “The martini coarse-grained force field: Extension to proteins,” J.
+
+Chem. Theory Comput. 4, 819–834 (2008).
+
+[14] Cesar A. L´opez, Andrzej J. Rzepiela, Alex H. de Vries, Lubbert Dijkhuizen, Philippe H.
+
+H`‘unenberger,
+and Siewert J. Marrink, “Martini coarse-grained force field: Extension to
+
+carbohydrates,” J. Chem. Theory Comput. 5, 3195–3210 (2009).
+
+[15] Djurre H. de Jong, Gurpreet Singh, W. F. Drew Bennett, Clement Arnarez, Tsjerk A. Wasse-
+
+naar, Lars V. Sch`‘afer, Xavier Periole, D. Peter Tieleman, and Siewert J. Marrink, “Improved
+
+parameters for the martini coarse-grained protein force field,” J. Chem. Theory Comput. 9,
+
+687–697 (2013).
+
+22
+
+
+[16] Semen O. Yesylevskyy, Lars V. Sch´’afer, Durba Sengupta, and Siewert J. Marrink, “Polariz-
+
+able water model for the coarse-grained martini force field,” PLOS Computational Biology 6
+
+(2010).
+
+[17] D. L. Beveridge and W. L. Jorgensen, “The opls potential functions for proteins. energy
+
+minimizations for crystals of cyclic peptides and crambin,” Annu. Rev. Biophys. Bioeng. 110,
+
+18 (1988).
+
+[18] Andrzej Koli´nski, “Protein modeling and structure prediction with a reduced representation,”
+
+Acta Biochimica Polonica 51, 349–71 (2004).
+
+[19] Marcus G. Martin and J. Ilja Siepmann, “Transferable potentials for phase equilibria. 1.
+
+united-atom description of n-alkanes,” J. Phys. Chem. B 102, 2569–2577 (1998).
+
+[20] Carol A. Rohl, Charlie E. M. Strauss, Kira M. S. Misura, and David Baker, “Protein structure
+
+prediction using rosetta,” Num. Comp. Methods 383, 66–93 (2004).
+
+[21] Adam Liwo, Maciej Baranowski, Cezary Czaplewski, Ewa Go�la´s, Yi He, Dawid Jagie�la, Pawe�l
+
+Krupa, Maciej Maciejczyk, Mariusz Makowski, Magdalena A Mozolewska, Andrei Niadzvedt-
+
+ski, Stanis�law O�ldziej, Harold A Scheraga, Adam K Sieradzan, Rafa�l ´Slusarz, Tomasz Wirecki,
+
+Yanping Yin,
+and Bart�lomiej Zaborowski, “A unified coarse-grained model of biological
+
+macromolecules based on mean-field multipole–multipole interactions,” Journal of Molecu-
+
+lar Modeling 20 (2014).
+
+[22] W. G. Noid, “Perspective: coarse-grained models for biomolecular systems,” The Journal of
+
+Chemical Physics 139, 90901 (2013).
+
+[23] Yaoyi Chen, Andreas Kr¨amer, Nicholas E. Charron, Brooke E. Husic, Cecilia Clementi, and
+
+Frank No´e, “Machine learning implicit solvation for molecular dynamics,” arXiv preprint
+
+arXiv:2106.07492 (2021).
+
+[24] Biswaroop Mukherjee, Luigi Delle Site, Kurt Kremer,
+and Christine Peter, “Derivation of
+
+coarse grained models for multiscale simulation of liquid crystalline phase transitions,” J.
+
+Phys. Chem. B 116 (2012).
+
+[25] Anton V Sinitskiy and Gregory A Voth, “Quantum mechanics/coarse-grained molecular me-
+
+chanics (QM/CG-MM),” J. Chem. Phys. 148, 014102 (2018).
+
+[26] Alexander V Mironenko and Gregory A Voth, “Density functional theory-based quantum
+
+mechanics/coarse-grained molecular mechanics: Theory and implementation,” J. Chem. The-
+
+ory Comput. 16, 6329–6342 (2020).
+
+23
+
+
+[27] W. G. Noid, Jhih-Wei Chu, Gary S. Ayton, Vinod Krishna, Sergei Izvekov, Gregory A. Voth,
+
+Avisek Das,
+and Hans C. Andersen, “The multiscale coarse-graining method. i. a rigorous
+
+bridge between atomistic and coarse-grained models,” The Journal of Chemical Physics 128,
+
+244114 (2008).
+
+[28] Ronald D. Hills Jr., Lanyuan Lu, and Gregory A. Voth, “Multiscale coarse-graining of the
+
+protein energy landscape,” PLOS Computational Biology 6 (2010).
+
+[29] W. G. Noid, Jhih-Wei Chu, Gary S. Ayton, and Gregory A. Voth, “Multiscale coarse-graining
+
+and structural correlations: Connections to liquid-state theory,” J. Phys. Chem. B 111, 4116–
+
+4127 (2007).
+
+[30] Luca Larini, Lanyuan Lu, and Gregory A. Voth, “The multiscale coarse-graining method. vi.
+
+implementation of three-body coarse-grained potentials,” J. Chem. Phys. 132, 164107 (2010).
+
+[31] M. Scott Shell, “The relative entropy is fundamental to multiscale and inverse thermodynamic
+
+problems,” The Journal of Chemical Physics 129, 144108 (2008).
+
+[32] Segei Izvekov and Gregory A. Voth, “Multiscale coarse graining of liquid-state systems,” J.
+
+Chem. Phys. 123, 134105 (2005).
+
+[33] Jiang Wang, Simon Olsson, Christoph Wehmeyer, Adri`a P´erez, Nicholas E. Charron, Gianni
+
+De Fabritiis, Frank No´e, and Cecilia Clementi, “Machine learning of coarse-grained molecular
+
+dynamics force fields,” ACS Central Science 5, 755–767 (2019).
+
+[34] Linfeng Zhang, Jiequn Han, Han Wang, Roberto Car, and Weinan E, “Deepcg: Construct-
+
+ing coarse-grained models via deep neural networks,” The Journal of Chemical Physics 149,
+
+034101 (2018).
+
+[35] Jurgis Ruza, Wujie Wang, Daniel Schwalbe-Koda, Simon Axelrod, William H. Harris,
+and
+
+Rafael G´omez-Bombarelli, “Temperature-transferable coarse-graining of ionic liquids with dual
+
+graph convolutional neural networks,” The Journal of Chemical Physics 153, 164501 (2020).
+
+[36] Brooke E. Husic, Nicholas E. Charron, Dominik Lemm, Jiang Wang, Adri`a P´erez, Andreas
+
+Kr¨amer, Yaoyi Chen, Simon Olsson, Gianni de Fabritiis, Frank No´e, and Cecilia Clementi,
+
+“Coarse graining molecular dynamics with graph neural networks,” J. Chem. Phys. 153,
+
+194101 (2020).
+
+[37] Wujie Wang and Rafael G´omez-Bombarelli, “Coarse-graining auto-encoders for molecular dy-
+
+namics,” npj Computational Materials 5 (2019).
+
+24
+
+
+[38] S. T. John and G´abor Cs´anyi, “Many-body coarse-grained interactions using gaussian approx-
+
+imation potentials,” The Journal of Physical Chemistry B 121, 10934–10949 (2017).
+
+[39] Jiang Wang, Stefan Chmiela, Klaus-Robert M¨uller, Frank No`e, and Cecilia Clementi, “En-
+
+semble learning of coarse-grained molecular dynamics force fields with a kernel approach,”
+
+arXiv preprint arXiv:2005.01851 (2020).
+
+[40] Christoph Scherer, Ren´e Scheid, Denis Andrienko,
+and Tristan Bereau, “Kernel-based ma-
+
+chine learning for efficient simulations of molecular liquids,” The Journal of Chemical Theory
+
+and Computation 16, 3194–3204 (2020).
+
+[41] J¨org Behler and Michele Parrinello, “Generalized neural-network representation of high-
+
+dimensional potential-energy surfaces,” Physical Review Letters 98, 146401 (2007).
+
+[42] J¨org Behler, “Atom-centered symmetry functions for constructing high-dimensional neural
+
+network potentials,” The Journal of Chemical Physics 134 (2011).
+
+[43] Albert P. Bart´ok, Mike C. Payne, Risi Kondor, and G´abor Cs´anyi, “Gaussian approximation
+
+potentials: The accuracy of quantum mechanics, without the electrons,” Physical Review
+
+Letters 104 (2010).
+
+[44] Albert P. Bart´ok, Risi Kondor, and G´abor Cs´anyi, “On representing chemical environments,”
+
+Physical Review B 87 (2013).
+
+[45] Zhenwei Li, James R. Kermode, and Alessandro De Vita, “Molecular dynamics with on-the-fly
+
+machine learning of quantum-mechanical forces,” Physical Review Letters 114 (2015).
+
+[46] Aldo Glielmo, Peter Sollich, and Alessandro De Vita, “Accurate interatomic force fields via
+
+machine learning with covariant kernels,” Physical Review B 95 (2017).
+
+[47] Aldo Glielmo, Claudio Zeni, and Alessandro De Vita, “Efficient nonparametric n -body force
+
+fields from machine learning,” Physical Review B 97 (2018).
+
+[48] K. T. Sch¨utt, H. E. Sauceda, P. J. Kindermans, A. Tkatchenko, and K. R. M¨uller, “Schnet
+
+- a deep learning architecture for molecules and materials,” The Journal of Chemical Physics
+
+148 (2018).
+
+[49] Jonathan Vandermause, Steven B. Torrisi, Simon Batzner, Yu Xie, Lixin Sun, Alexie M.
+
+Kolpak, and Boris Kozinsky, “On-the-fly active learning of interpretable bayesian force fields
+
+for atomistic rare events,” npj Computational Materials 6 (2020).
+
+[50] Jonathan Vandermause, Yu Xie, Jin Soo Lim, Cameron J. Owen, and Boris Kozinsky, “Active
+
+learning of reactive bayesian force fields: Application to heterogeneous hydrogen-platinum
+
+25
+
+
+catalysis dynamics,” arXiv preprint arXiv:2106.01949 (2021).
+
+[51] Yu Xie, Jonathan Vandermause, Lixin Sun, Andrea Cepellotti,
+and Boris Kozinsky, “Fast
+
+bayesian force fields from active learning:
+Study of inter-dimensional transformation of
+
+stanene,” npj Computational Materials 7 (2021).
+
+[52] Simon Batzner, Albert Musaelian, Lixin Sun, Mario Geiger, Jonathan P. Mailoa, Mordechai
+
+Kornbluth, Nicola Molinari, Tess E. Smidt, and Boris Kozinsky, “E(3)-equivariant graph neu-
+
+ral networks for data-efficient and accurate interatomic potentials,” Nature Communications
+
+13, 1–11 (2022).
+
+[53] Albert Musaelian, Simon Batzner, Anders Johansson, Lixin Sun, Cameron J. Owen, Mordechai
+
+Kornbluth,
+and Boris Kozinsky, “Learning local equivariant representations for large-scale
+
+atomistic dynamics,” arXiv preprint arXiv:2204.05249 (2022).
+
+[54] Albert P Bart´ok, Mike C Payne, Risi Kondor, and G´abor Cs´anyi, “Gaussian approximation
+
+potentials: The accuracy of quantum mechanics, without the electrons,” Physical review
+
+letters 104, 136403 (2010).
+
+[55] Albert P Bart´ok, Risi Kondor, and G´abor Cs´anyi, “On representing chemical environments,”
+
+Physical Review B 87, 184115 (2013).
+
+[56] Albert P Bart´ok and G´abor Cs´anyi, “Gaussian approximation potentials: A brief tutorial
+
+introduction,” International Journal of Quantum Chemistry 115, 1051–1057 (2015).
+
+[57] Junhui Peng, Chuang Yuan, Rongsheng Ma, and Zhiyong Zhang, “Backmapping from mul-
+
+tiresolution coarse-grained models to atomic structures of large biomolecules by restrained
+
+molecular dynamics simulations using bayesian inference,” J. Chem. Theory Comput. 15,
+
+3344–3353 (2019).
+
+[58] Wei Li, Craig Burkhart, Patrycja Poli´nska, Vagelis Harmandaris,
+and Manolis Doxastakis,
+
+“Backmapping coarse-grained macromolecules: An efficient and versatile machine learning
+
+approach,” The Journal of Chemical Physics 153 (2020).
+
+[59] Wujie Wang, Minkai Xu, Chen Cai, Benjamin Kurt Miller, Tess Smidt, Yusu Wang, Jian
+
+Tang, and Rafael G´omez-Bombarelli, “Force-matching coarse-graining without forces,” arXiv
+
+preprint arXiv:2203.11167 (2022).
+
+[60] Anders Johansson, Yu Xie, Cameron J. Owen, (David) Lim Jin Soo, Lixin Sun, Jonathan
+
+Vandermause, and Boris Kozinsky, “Micron-scale heterogeneous catalysis with bayesian force
+
+fields from first principles and active learning,” arXiv preprint arXiv:2204.12573 (2022).
+
+26
+
+
+[61] Yu Xie, Jonathan Vandermause, Senja Ramakers, Nakib H. Protik, Anders Johansson, and
+
+Boris Kozinsky, “Uncertainty-aware molecular dynamics from bayesian active learning: Phase
+
+transformations and thermal transport in sic,” arXiv preprint arXiv:2203.03824 (2022).
+
+[62] Ralf Drautz, “Atomic cluster expansion for accurate and transferable iteratomic potentials,”
+
+Phys. Rev. B 99, 014104 (2019).
+
+[63] Wujie Wang, Minkai Xu, Chen Cai, Benjamin Kurt Miller, Tess Smidt, Yusu Wang, Jian
+
+Tang,
+and Rafael G´omez-Bombarelli, “Generative coarse-graining of molecular conforma-
+
+tions,” arXiv preprint arXiv:2201.12176 (2022).
+
+[64] Li-Jun Chen, Hu-Jun Qian, Zhong-Yuan Lu, Ze-Sheng Li,
+and Chia-Chung Sun, “An au-
+
+tomatic coarse-graining and fine-graining simulation method: Application on polyethylene,”
+
+The Journal of Physical Chemistry B 110, 24093–24100 (2006).
+
+[65] Simon Hunkler, Tobias Lemke, Christine Peter, and Oleksandra Kukharenko, “Back-mapping
+
+based sampling: Coarse grained free energy landscapes as a guideline for atomistic explo-
+
+ration,” The Journal of Chemical Physics 151 (2019).
+
+[66] William L Jorgensen, David S. Maxwell, and Julian Tirado-Rives, “Development and testing
+
+of the opls all-atom force field on conformational energetics and properties of organic liquids,”
+
+J. Am. Chem. Soc 118, 11225–11236 (1996).
+
+[67] Giulio Imbalzano, Yongbin Zhuang, Venkat Kapil, Kevin Rossi, Edgar A. Engel, Federico
+
+Grasselli,
+and Michele Ceriotti, “Uncertainty estimation for molecular dynamics and sam-
+
+pling,” J. Chem. Phys. 154, 074102 (2021).
+
+[68] Joaquin Candela-Qui˜nonero and Carl Edward Rasmussen, “A unifying view of sparse ap-
+
+proximate gaussian process regression,” Journal of Machine Learning Research 6, 1939–1959
+
+(2005).
+
+[69] Steve Plimpton, “Fast parallel algorithms for short-range molecular dynamics,” Journal of
+
+computational physics 117, 1–19 (1995).
+
+[70] Ask Hjorth Larsen, Jens Jørgen Mortensen, Jakob Blomqvist, Ivano E. Castelli, Rune Chris-
+
+tensen, Marcin Dulak, Jesper Friis, Michael N. Groves, Bjørk Hammer, Cory Hargus, et al.,
+
+“The atomic simulation environment - a python library for working with atoms,” Journal of
+
+Physics: Condensed Matter 29 (2017).
+
+[71] A. Stukowski, “Visualization and analysis of atomistic simulation data with ovito - the open
+
+visualization tool,” Modelling Simul. Mater. Sci. Eng. 18, 015012 (2010).
+
+27
+
+
+XI.
+FIGURE LEGENDS
+
+FIG. 1. FLARE-CG is an extension of the Fast Learning of Atomic Rare Events software [49–51].
+
+Here we schematically demonstrate the workflow of the on-the-fly active learning training loop. An
+
+initial all-atom frame is run under constrained dynamics and coarse grained to obtain initial force
+
+labels. A select number of sparse environments are randomly added to the training set of the Gaus-
+
+sian process. The construction of model descriptors is performed, and the hyperparameters of the
+
+SGP updated by maximizing the log marginal likelihood. The model proposes a molecular dynam-
+
+ics step, along with force and local free energy uncertainties. If all local free energy uncertainties
+
+are below a tolerance threshold, the step is accepted. Otherwise, reconstruction is performed in
+
+order to collect more constrained dynamics training data. To perform reconstruction, we construct
+
+excluded volumes around already placed atomic centers in the system. New atom placements are
+
+proposed by randomly drawing an azimuthal and polar angle pair, which are subsequently accepted
+
+if they do not lie within regions of overlap between existing excluded volumes.
+
+28
+
+
+FIG. 2. a) atoms in a pentane liquid are mapped directly to their carbon sites, integrating out hy-
+
+drogen degrees of freedom. In two experiments, the beads are treated as either one or two different
+
+species, based on the underlying bond topology. b) the end-to-end chain distance distribution of
+
+single and two species models are compared to the all-atom training baseline, as well as a common
+
+coarse grained force field for hydrocarbon liquids, OPLS-UA. c) the learning rate for two and sin-
+
+gle species models is reported by showing the mean absolute force error on a test set as a relative
+
+percentage to the mean absolute force component in each test frame. We also report the mean free
+
+energy uncertainty of the model on the set set, defined in equation 19, which is a unitless quantity.
+
+d) the full carbon-carbon radial distribution function for single species, two species, all atom, and
+
+OPLS-UA simulations. The inset shows a zoomed-in view of the long-range structure.
+
+29
+
+
+GP Model
+
+Pentane
+Frames
+
+Octane
+Frames
+
+Force
+MAE/MAC (%)
+Population Error (%)
+
+Single Species
+
+Unadapted Pentane
+11.45
+0
+15.29
+34.98
+
+Adapted (50) Pentane
+11.45
+1.77
+10.10
+53.71
+
+Adapted (100) Pentane
+11.45
+2.02
+10.10
+52.09
+
+Direct
+0
+12.1
+10.18
+49.72
+
+Two Species
+
+Unadapted Pentane
+42.42
+0
+78.18
+597.05
+
+Adapted (50) Pentane
+42.42
+15.26
+10.14
+9.84
+
+Adapted (100) Pentane
+42.42
+17.52
+10.04
+5.85
+
+Direct
+0
+54.73
+10.20
+13.86
+
+TABLE I. The average number of all-atom LAMMPS calls over a set of 40 models, as well as the
+
+average total number of training frames in the GP, is reported for both single- and two-species
+
+models.
+In addition, we report the mean absolute force error on a test set, averaged over 10
+
+models, as a percentage of the mean absolute force component (MAC) in each test frame, as well
+
+as the population error of the averaged chain distance distribution from the all-atom ground truth,
+
+defined in equation 1.
+
+30
+
+
+FIG. 3. a) a schematic representation of the computational experiment considered. Adapted (50
+
+and 100) pentane models are those that have seen extra octane data, generated on the fly for
+
+50,000 and 100,000 steps, respectively. Unadapted models are pentane models deployed directly
+
+on octane with no additional training. b) the carbon-carbon radial distribution function and the
+
+end-to-end chain distance frequency are shown for single species models. The inset shows the long-
+
+range structure of the liquid c) the carbon-carbon radial distribution function and the end-to-end
+
+chain distance frequency are shown for two species models, with the inset showing the long-range
+
+structure.
+
+31
+
+
+FIG. 4. a) the end-to-end chain distance distribution of an ensemble of 40 pentane models, each
+
+trained with 50 frames of data b) the distribution of mean absolute force errors and c) the pop-
+
+ulation errors defined in Eqn. 2 for the pentane ensemble as a function of training set size. Red
+
+lines correspond to non-monotonic trends, while black are monotonic. The insets show the mean
+
+and standard deviation of the computed property (black), as well as the uncertainty defined in
+
+equation 2 averaged over models in the ensemble and over molecules within the transition region
+
+(magenta). The uncertainty does not share an axis with the force or population errors, but is
+
+simply a unitless quantity as described in the Methods d) the effect of adding different types of
+
+data is shown. The carbon sites of a transition state molecule (blue) and unphysically stretched
+
+molecule (red) are added as new data to a model having 50 frames of data. The resulting change
+
+in molecular uncertainty from the baseline model is shown as a function of chain distance.
+
+32
+
+

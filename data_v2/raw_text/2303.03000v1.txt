@@ -1,0 +1,2767 @@
+Transfer learning on large datasets for the accurate prediction of material properties
+
+Noah Hoffmann,1 Jonathan Schmidt,2, 1 Silvana Botti,2 and Miguel A. L. Marques1, ∗
+
+1Institut für Physik, Martin-Luther-Universität Halle-Wittenberg, D-06099 Halle, Germany
+2Institut für Festkörpertheorie und -optik, Friedrich-Schiller-Universität Jena, Max-Wien-Platz 1, 07743 Jena, Germany
+(Dated: March 7, 2023)
+
+Graph neural networks trained on large crystal structure databases are extremely effective in
+replacing ab initio calculations in the discovery and characterization of materials. However, crystal
+structure datasets comprising millions of materials exist only for the Perdew-Burke-Ernzerhof (PBE)
+functional. In this work, we investigate the effectiveness of transfer learning to extend these models
+to other density functionals. We show that pre-training significantly reduces the size of the dataset
+required to achieve chemical accuracy and beyond. We also analyze in detail the relationship between
+the transfer-learning performance and the size of the datasets used for the initial training of the model
+and transfer learning. We confirm a linear dependence of the error on the size of the datasets on a log-
+log scale, with a similar slope for both training and the pre-training datasets. This shows that further
+increasing the size of the pre-training dataset, i.e. performing additional calculations with a low-
+cost functional, is also effective, through transfer learning, in improving machine-learning predictions
+with the quality of a more accurate, and possibly computationally more involved functional. Lastly,
+we compare the efficacy of interproperty and intraproperty transfer learning.
+
+I.
+INTRODUCTION
+
+Over the past decade, machine learning models have
+emerged as unbeatable tools to accelerate materials re-
+search in fields ranging from quantum chemistry [1] to
+drug discovery [2] to solid-state materials science [3–6].
+One of the major drivers of progress has been the tran-
+sition from simpler models based on a single material
+family to more advanced and more universal models [7–
+9]. The current state of the art are graph neural net-
+works and graph transformers [10]. However, the accu-
+racy of these complex models, which include millions of
+parameters, depends heavily on the amount and qual-
+ity of the training data [11]. Consequently, the develop-
+ment of such models depends on the availability of large
+databases of calculations obtained with consistent com-
+putational parameters.
+In quantum chemistry, there are a variety of large
+databases that gather calculations with varying degrees
+of accuracy, from density functional theory (with dif-
+ferent functionals) to coupled-cluster [12]. In compari-
+son, in solid-state materials science, all large databases
+(>105 compounds) contain calculations performed using
+the Perdew-Burke-Ernzerhof (PBE) functional [13]. The
+list includes AFLOW [14], the OQMD [15, 16], the Mate-
+rials Project [17], and DCGAT [18]. An exception is the
+smaller JARVIS database that encompasses ∼ 55k cal-
+culations obtained using OptB88-vdW [19, 20] and the
+modified Becke-Johnson potential [21–23]. The first large
+databases beyond the PBE functional have been pub-
+lished only recently [24, 25]. These datasets are based on
+the PBE functional for solids (PBEsol) [26], the highly
+constrained and appropriately normalized semilocal func-
+tional (SCAN)
+[27], and the R2SCAN functional [28].
+
+∗ miguel.marques@physik.uni-halle.de
+
+All of these density functionals yield much more accu-
+rate geometries than the PBE, and the latter two also
+yield more accurate formation energies and band gaps.
+Nevertheless, these databases are one to two orders of
+magnitude smaller than the largest PBE databases.
+Currently, graph networks
+[7, 8, 29–31] are the best
+performing models for datasets including more than 104
+
+compounds [11].
+However, they improve dramatically
+with increasing dataset size beyond this number. Conse-
+quently, despite the higher accuracy of PBEsol or SCAN,
+models trained on these smaller datasets have a signif-
+icantly larger prediction error compared to their PBE
+counterparts. One way to circumvent the problem of data
+sparsity is to perform transfer learning and pre-training,
+as these approaches have proved to be extremely effec-
+tive in other fields [32, 33].
+In the areas of computer
+vision and natural language processing, for instance, al-
+most all non-edge applications can be improved by using
+large pre-trained models [32, 33].
+In recent years, transfer learning and multi-fidelity
+learning have also arrived in materials science [7, 34–45].
+The published works deal with rather small datasets for
+both pre-training and transfer learning, usually <∼ 104
+
+data points for the transfer dataset and <∼ 105 data
+points for the pre-training dataset. In this context, band
+gaps [7, 34, 42, 44] and formation energies [35, 44] are the
+most popular features for transfer learning, since there is
+abundance of multi-fidelity theoretical and experimental
+data (∼ 103 measurements).
+Very few applications have been made in the realm
+of big data, since hardly any large data sets exist.
+Smith et al. [12] improved ANI [36] quantum chemistry
+force fields beyond the accuracy of DFT by transferring
+from the ANI-1x DFT dataset that contains 5.2 million
+molecules to a dataset of 0.5 million molecules computed
+with coupled cluster [12]. Kolluru et al. [41] used a model
+pre-trained on the Open Catalyst Dataset OC20 [46] to
+obtain better results on the smaller MD17 dataset [47].
+
+arXiv:2303.03000v1  [cond-mat.mtrl-sci]  6 Mar 2023
+
+
+2
+
+They successfully reduced training times and arrived at
+a mean improvement of ∼6% over a model trained from
+scratch.
+In this work, we investigate the benefits of transfer
+learning when large materials datasets are available, in-
+vestigating both cross-property transfer and prediction
+improvement through high-accuracy data.
+We focus mainly on properties that are important for
+the discovery of new crystal structures. In this context,
+the energy distance to the convex hull of thermodynamic
+stability is a key quantity, as it compares the formation
+energy of a crystalline compound with the combined en-
+ergy of the available decomposition channels.
+In Ref.
+we have published a data set with 175k SCAN [27] to-
+tal energies and PBEsol [26] geometries of stable and
+metastable systems. In preparation of this work, we have
+extended that dataset to include additional ∼50k calcu-
+lations of randomly selected unstable systems with a dis-
+tance from the convex hull of thermodynamic stability
+below 800 meV/atom.
+Calculations using SCAN show
+about half the mean absolute error (MAE) for formation
+energies compared to calculations with the standard PBE
+functional [48]. Similarly, calculations using PBEsol re-
+duce the mean absolute percent errors on volumes by 40%
+compared to PBE [49].
+In the following, we will demonstrate that pre-training
+using a large PBE dataset allows us to obtain improved
+predictions, with the accuracy of more advanced density
+functionals, even when the available training data is lim-
+ited for the latter.
+Furthermore, we will evaluate the
+dependence of the error on the size of the training and
+pre-training data to quantify potential gains through fu-
+ture expansion of the datasets of calculations. We also
+investigate to which extent transfer learning is useful to
+improve predictions of different materials properties.
+
+II.
+RESULTS
+
+We started our transfer learning experiments by train-
+ing crystal graph-attention neural networks [31] on a
+PBE dataset with 1.8M structures [18] from the DC-
+GAT database, and on the extended PBEsol and SCAN
+datasets from Ref. [24].
+The DCGAT dataset com-
+bines compatible data from AFLOW [14], the materi-
+als project [17] and Refs. [18, 31, 50–52]. We generally
+used a train/val/test split of 80/10/10%.
+The valida-
+tion and test set were randomly selected once and then
+kept constant for all experiments on SCAN and PBEsol
+to ensure a fair comparison.
+As a starting point, one
+model was trained for each of the three functionals and
+for four properties, specifically the distance to the con-
+vex hull (EHull), the formation energy (EForm), the band
+gap and the volume per atom of the unit cell. For the
+band gaps only PBE and SCAN models were trained, as
+PBEsol and PBE band gaps are very similar, and we did
+not perform transfer learning for SCAN volumes as we
+only have calculated PBE and PBEsol geometries.
+
+The initial neural network,
+trained on the PBE
+datasets comprising 1.8M calculations, predicts the dis-
+tance to the convex hull of the systems in the test set
+with a MAE of 23 meV/atom. As expected, the same
+neural networks, trained from scratch using significantly
+smaller PBEsol and SCAN datasets (this procedure is
+labelled “no transfer” in the figures and tables), perform
+worse and yield, respectively, 9% and 23% higher MAEs.
+To take advantage of transfer learning we considered two
+options: starting from the neural network trained with
+the large PBE dataset, we either continue the training of
+the whole network with the PBEsol or the SCAN data
+(this procedure is denoted “full transfer”), or we fix most
+of the weights and train only the residual part of the neu-
+ral network, i.e. the one that calculates the scalar output
+from the final graph embedding (this procedure is indi-
+cated as “only residual”). Comparing in fig. 1 and table I
+these two approaches of transfer learning to the origi-
+nal model trained solely on the smaller datasets, we can
+immediately conclude that, in all cases, transfer learn-
+ing enhances considerably the performance of the neural
+network.
+Applying the neural network trained on the PBE
+data, after retraining only its residual part on the
+PBEsol/SCAN dataset, resulted in improved predictions
+in comparison to the ones of the same network trained
+only on the PBEsol/SCAN dataset. This type of trans-
+fer learning leads to a 15 % smaller test MAE for the
+PBEsol data and 16 % smaller test MAE for the SCAN
+data.
+Retraining the full network resulted in an even
+better performance, with a reduction of the MAE on the
+test set, after only ∼70 epochs, by 27 % and 29 % for the
+PBEsol and SCAN data, respectively.
+If we use the same neural network to predict the for-
+mation energy instead of the distance to the convex hull,
+the results are very similar, as shown in table I. Trans-
+fer learning with retraining of the residual network leads
+in this case to an error reduction of 10 % and 8 % for
+PBEsol and SCAN, respectively.
+On the other hand,
+extending the training of the full network to the addi-
+tional datasets brings an even higher error reduction of
+35 and 33 % for PBEsol and SCAN, respectively. Again
+both transfer learning approaches give consistently a
+lower MAE than the neural network trained anew on
+smaller datasets, demonstrating the benefit of exploiting
+the larger database of less accurate, but computationally
+more affordable, PBE calculations.
+The visible discrepancies in the performance of the
+fully retrained network and the partially retrained net-
+work, where only the weights of the residual network are
+further optimized, hint to the fact that the crystal graph
+embeddings for the three functionals must differ signifi-
+cantly.
+We only have available PBEsol volumes, as the data
+was generated with the approach of Ref. [24].
+Conse-
+quently, we only test the transfer learning for the PBEsol
+functional achieving an improvement of 23 %.
+The band gaps are the sole material property where
+
+
+3
+
+PBE
+PBEsol
+SCAN
+
+no transfer only residual full transfer no transfer only residual full transfer
+
+EHull[meV/atom]
+23
+26
+22 (15%)
+19 (27%)
+31
+26 (16%)
+22 (29%)
+EForm[meV/atom]
+18
+20
+18 (10%)
+13 (35%)
+24
+22 (8%)
+16 (33%)
+Volume [Å3/atoms ] 0.24
+0.21
+0.18 (14%)
+0.16 (23%)
+
+Band gap [eV] 0.020
+0.078
+0.93 (-19%) 0.068 (13%)
+
+TABLE I: Intra-property transfer learning. We report the mean absolute errors on the test set for the neural
+networks trained on the large PBE dataset only and the neural networks trained on the PBEsol and SCAN datasets
+with and without transfer learning. The different approaches for transfer learning (only residual and full transfer)
+are explained in the text. The models with the best performance for PBEsol/SCAN are indicated with bold letters.
+The percent improvement in comparison to the case of no transfer learning are shown in parenthesis.
+
+0
+100
+200
+300
+400
+
+Epoch
+
+20
+
+30
+
+40
+
+50
+
+60
+
+Val MAE [meV/atom]
+
+EPBE
+Hull to EPBEsol
+Hull
+
+no transfer
+full transfer
+only residual
+
+0
+100
+200
+300
+400
+
+Epoch
+
+30
+
+40
+
+50
+
+60
+
+Val MAE [meV/atom]
+
+EPBE
+Hull to ESCAN
+Hull
+
+no transfer
+full transfer
+only residual
+
+FIG. 1. Learning curves, i.e. MAE on the validation set as a function of the training epoch, for the prediction of EPBEsol
+Hull
+(left)
+and ESCAN
+Hull
+(right) using the different training procedures, without pre-training (no transfer), with pre-training using EPBE
+Hull
+data and freezing part of the weights (only residual) and with pre-training using EPBE
+Hull data and successive full reoptimization
+of all weights (full transfer).
+
+we only obtain an improvement (with a 13% MAE re-
+duction) when the training on the new data is performed
+for the whole network. We have to be careful in consid-
+ering MAE for this dataset as most of the materials are
+metals with a band gap equal to zero. If the machine pre-
+dicts a metal the associated error on the band gap value
+will be zero, while a finite error can be associated to the
+prediction of an open band gap. There are remarkable
+differences in the band gap distribution for calculations
+performed with the two different functionals (also visible
+in fig. 8d), as PBE underestimates the band gap more
+strongly than SCAN. This results in an average band gap
+of 0.08 eV in the PBE dataset and of 0.47 eV in the SCAN
+dataset. The fact that PBE misclassifies some semicon-
+ductors as metals leads to a MAE artificially smaller for
+the machine trained on PBE data, as more metals are
+contained in the PBE dataset. While the distributions
+for other properties also differ, there is in this case a qual-
+itative difference between metals and semiconductors and
+it is necessary that the network trained on the SCAN
+data also learns also how to distinguish false metals in
+the PBE dataset. The training of the residual network
+only is therefore totally insufficient.
+
+Now that we are convinced of the benefits of pre-
+
+training on a larger lower-quality dataset to speed up
+successive training on a higher-quality dataset, we can
+further inspect how the performance of transfer learn-
+ing depends on the size of the training set. The log-log
+plots of fig. 2 offer a clear insight into the quantity of
+high-quality data required in case of transfer from the
+pre-trained PBE model (with training of the full net-
+work on the new data) and no transfer.
+In the left
+panel of fig. 2 we show the MAE for the prediction of
+SCAN and PBEsol energy distances to the convex hull
+ESCAN/PBEsol
+hull
+, while in the right panel of fig. 2 the MAE
+for the prediction of SCAN and PBEsol formation en-
+ergies ESCAN/PBEsol
+Form
+is displayed. All models are again
+evaluated on the same test set. In both panels of fig. 2
+we observe that we reach chemical precision (i.e., an er-
+ror below 43 meV/atom) already at 11k training systems.
+We can therefore conclude that fitting neural networks to
+computationally expensive calculations based on hybrid
+or double-hybrid functionals will be enabled in the near
+future by transfer learning. We can easily fit the points
+in the log-log plots with lines and extrapolate the number
+of training datapoints needed to achieve the same MAE
+with and without transfer learning. The resulting num-
+
+
+4
+
+10
+30
+90
+270
+810
+1600
+
+Number of 1000 systems in the training set
+
+12
+
+18
+
+27
+
+40
+
+61
+
+91
+
+MAE[meV/atom]
+
+no transfer ESCAN
+Form
+
+full transfer ESCAN
+Form
+
+no transfer EPBEsol
+Form
+
+full transfer EPBEsol
+Form
+
+10
+30
+90
+270
+810
+1600
+
+Number of 1000 systems in the training set
+
+12
+
+18
+
+27
+
+40
+
+61
+
+91
+
+MAE[meV/atom]
+
+no transfer ESCAN
+Hull
+
+full transfer ESCAN
+Hull
+
+no transfer EPBEsol
+Hull
+
+full transfer EPBEsol
+Hull
+
+FIG. 2. Log-log plot of the test MAE for the prediction of ESCAN/PBEsol
+Form
+(left) and ESCAN/PBEsol
+Hull
+(right) as a function of the
+training set size for a model trained solely on SCAN/PBEsol data (no transfer) vs a model pre-trained on PBE data (full
+transfer). The lines show a log-log linear fit to the data.
+
+bers are very consistent: 1.6M (ESCAN
+Hull ), 1.7M (EPBEsol
+Hull
+),
+1.5M (ESCAN
+Form ) and 1.6M (EPBEsol
+Form
+). Similarly, we can ex-
+trapolate for how many training systems the neural net-
+work, trained without transfer learning, would have the
+same MAE of the best network that we have trained with
+transfer learning. We obtain in this case these number of
+systems: 613k (SCAN) and 637k (PBEsol) for predicting
+EHull and 513k (SCAN) and 568k (PBEsol) for predicting
+EForm. In other words, it is necessary at least to double
+the size of the training datasets of PBEsol and SCAN
+calculations to achieve the performance we already have
+with the available data.
+We can now ask a similar question for the size of the
+pre-training data set. In fact, it can be even more inter-
+esting to assess if increasing the quantity of PBE data
+used for the pre-training can also improve the final MAE
+of the network to predict PBEsol and SCAN properties,
+without adding new calculations to these higher-quality
+datasets. To quantify this effect we trained four neural
+networks, using datasets of PBE calculations with differ-
+ent size, to predict EPBE
+Hull . We then used these models
+as starting points for transfer learning to predict PBEsol
+and SCAN energies, following the same procedure as be-
+fore.
+In the left panel of fig. 3 we can see the MAE on the
+test set for predicting ESCAN
+Hull , plotted on a log-log scale
+as a function of the number of systems in the training
+set. The different curves correspond to pretraining using
+PBE datasets of different size, while the orange curve
+shows the performance of the network trained without
+transfer learning.
+We can observe that the points draw lines with very
+similar slopes for pretraining datasets of different sizes.
+In fact, the slope decreases only slightly with the increas-
+ing size of the pre-training dataset.
+This behavior is
+expected, as when more PBE data is already given to
+the model, less new information can be found in the ad-
+
+ditional SCAN data. The MAE decreases significantly
+and consistently with the increasing size of the pretrain-
+ing set. The neural network trained only on the SCAN
+dataset (no transfer) has the largest MAE in all cases,
+even when the pre-training dataset is reduced by a factor
+of 10.
+In the right panel of fig. 3 we demonstrate that also the
+error as a function of the size of the pre-training dataset
+can be fitted by a line in the log-log graph.
+Here the
+slopes are smaller than in the left panel. Consequently,
+similar reductions of the MAE can be achieved by trans-
+fer learning at the cost of using significantly more pre-
+training data than training data.
+On the other hand,
+extra pre-training data can be generated with lower-level
+approximations at a reduced computational cost, and the
+pre-trained model can be used as a starting point for the
+training of several new models.
+It is important to comment on the cost of calculations
+of the same property using different DFT functionals.
+For example, SCAN calculations are at least five time
+more expensive than PBE calculations. Calculations us-
+ing hybrid functionals are even more computationally de-
+manding. In the latter case, the possibility to use larger
+pre-training datasets to reduce the MAE of a predicted
+property becomes even more appealing and effective.
+Seeing the promising results of transfer learning on two
+datasets of calculations of the same property, we also at-
+tempted to apply transfer learning to predict different
+properties.
+We consider therefore transfer learning to
+predict SCAN formation energies and PBEsol volumes,
+starting from neural networks trained to output PBE vol-
+umes and PBE formation energies, respectively.
+As we can see in fig. 4 only retraining the residual net-
+work does not improve the performance of the model.
+This is true for both examples selected here and we can
+expect this to be a general rule. In fact, the strong depen-
+dence of the graph embeddings on the low-dimensional
+
+
+5
+
+FIG. 3. The left panel shows the log-log plot for the MAE on the test set for the prediction of ESCAN
+Hull
+as a function of the
+training set size. We consider the cases of full transfer with pretraining datasets of different size (different shades of blue) or
+no transfer (orange). The right panel shows the same MAE as a function of the pre-training dataset, for different values of the
+training datasets (different shades of blue). In the insets we indicate the slopes and the y-intercepts according to the linear fit
+
+0
+100
+200
+300
+400
+
+Epoch
+
+50
+
+100
+
+150
+
+200
+
+250
+
+Val MAE [meV/atom]
+
+PBE volume to ESCAN
+Form
+
+no transfer
+full transfer
+only residual
+
+0
+100
+200
+300
+400
+
+Epoch
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+Val MAE [˚A
+3/atom]
+
+EPBE
+Form to SCAN volume
+
+no transfer
+full transfer low lr
+only residual
+full transfer normal lr
+
+FIG. 4. Learning curves, i.e. MAE on the validation set as a function of the training epoch, for the prediction of PBEsol
+volumes with transfer learning from a model pre-trained for EPBE
+Form (left panel) and for the prediction of ESCAN
+Form from a model
+pre-trained for PBE volumes (right panel). The different curves are obtained with the training procedures described in the
+text: without pre-training (no transfer), with pre-training using 1.8M PBE calculations and freezing part of the weights (only
+residual) and with pre-training using 1.8M PBE calculations and successive full reoptimization of all weights (full transfer). In
+the right panel we consider full transfer with two different learning rates (lr).
+
+features that are good descriptors for a specific property
+makes this part of the network strongly property depen-
+dent.
+We observe that reoptimizing all weights of the neural
+network, starting from the model pre-trained to predict
+another PBE property, leads to a very unstable learning
+curve and does not produce better results than training
+from scratch. To enforce convergence we retrained the
+full network with a learning rate 10 times smaller than
+before. This improves marginally the situation for trans-
+fer learning for the prediction of PBEsol volumes from
+PBE formation energies.
+However, the lower learning
+rate leads the neural network to settle down very quickly
+in a suboptimal local minimum from which it is unable
+
+to escape, yielding a model that is still worse than the
+one obtained from training on the PBEsol dataset only.
+We have to conclude that two properties such as forma-
+tion energy and optimized volume, are too far dissimilar
+to perform successful transfer learning. Of course, it is
+always possible that an extensive hyperparameter vari-
+ation would improve this result. However, in this case,
+a hyperparameter search with the same resources should
+be performed also for the original model to make a valid
+comparison.
+Transfer learning between a neural network that pre-
+dicts PBE formation energies and a neural network that
+outputs SCAN energy distances to the convex hull per-
+forms better as these two properties are closely related.
+
+
+6
+
+0
+100
+200
+300
+400
+
+Epoch
+
+30
+
+40
+
+50
+
+60
+
+70
+
+Val MAE [meV/atom]
+
+EPBE
+Form to ESCAN
+Hull
+
+no transfer
+full transfer
+only residual
+
+FIG. 5.
+Learning curves, i.e.
+MAE on the validation set
+as a function of the training epoch, for the prediction of
+ESCAN
+Form with transfer learning from a neural network that pre-
+dicts accurately EPBE
+Hull ˙The different curves are obtained with
+the training procedures described in the text: without pre-
+training (no transfer), with pre-training using 1.8M PBE cal-
+culations and freezing part of the weights (only residual) and
+with pre-training using 1.8M PBE calculations and successive
+full reoptimization of all weights (full transfer).
+
+10
+30
+90
+270
+810
+1600
+
+Number of 1000 systems in the training set
+
+12
+
+18
+
+27
+
+40
+
+61
+
+91
+
+MAE[meV/atom]
+
+no transfer ESCAN
+Form
+
+EPBE
+Form to ESCAN
+Form
+
+EPBE
+Hull to ESCAN
+Form
+
+FIG. 6. Log-log plot of the MAE on the validation set for
+the prediction of ESCAN
+Form
+as a function of the training set
+size for a model trained solely on SCAN data (no transfer),
+a model pre-trained on a dataset of EPBE
+Hull calculations and a
+model pre-trained on EPBE
+Form calculations. The lines indicate a
+log-log linear fit to the data.
+
+In fig. 5 we can see that only retraining the residual net-
+work does not bring a significant error reduction.
+On
+the other hand, the full retraining is now able to im-
+prove considerably the model performance with an error
+reduction of 18 %. In fig. 6
+we compare the MAE on
+the validation set for the prediction of ESCAN
+Form as a func-
+tion of the training set size, considering the case of no
+transfer learning, and two approaches for transfer learn-
+ing, either starting from a neural network pre-trained on
+
+the same property calculated with PBE or on EPBE
+Hull . As
+expected, the inter-property transfer learning performs
+better, providing an 56–59% larger improvement than
+the intra-property transfer learning for the whole range
+of considered training set sizes.
+
+III.
+CONCLUSIONS
+
+We demonstrated that performing transfer learning us-
+ing a crystal graph neural network trained on a large
+(>106) dataset of less accurate but faster calculations
+enables efficient training of the same neural network on
+a smaller (≈ 104 − 105) dataset of more accurate calcu-
+lations. The final prediction error is significantly lower
+compared to the error that would be obtained if the neu-
+ral network was trained from scratch only on the smaller
+dataset.
+We demonstrated that the obtained perfor-
+mance improvement is consistent when we perform trans-
+fer learning for different functionals and similar electronic
+properties, e.g., Eform, Ehull. Thanks to transfer learn-
+ing, we can assume that a training set of about 104 high-
+quality ab initio calculations is sufficient to obtain pre-
+dictions of electronic quantities with chemical precision.
+High-throughput studies involving tens of thousands of
+calculations using advanced electronic structure methods
+are foreseeable in the near future. Transfer learning may
+therefore have a strong impact on future machine learn-
+ing studies in solid-state physics, allowing prediction of
+properties with unprecedented accuracy.
+
+We also demonstrated that the learning error after
+transfer learning decreases with increasing size of the pre-
+training dataset with a linear scaling in a log-log graph.
+Using this property, we can determine the relative size of
+the pre-training and training datasets, which allows us
+to minimize the prediction error and, at the same time,
+the total computational cost, given the different compu-
+tational resources required for less accurate and more ac-
+curate ab initio calculations. This is of particular interest
+for training universal force fields, an emerging application
+of machine learning that has attracted increasing atten-
+tion in recent years (see, e.g.,
+[9]).
+In fact, universal
+force fields are trained on PBE data so far. Since these
+force fields also use universal message-passing networks,
+we expect that transfer learning can also be easily ap-
+plied to efficiently train the existing force fields to the
+quality of higher-fidelity functionals.
+
+Unfortunately, our results show that transfer learning
+is only effective for physically similar electronic proper-
+ties.
+If the pre-trained property is too dissimilar, the
+pre-training may actually paralyze the neural network
+in predicting the new property. It is in that case more
+convenient to produce a large database of lower-quality
+calculations of the desired final property than to perform
+inter-property transfer learning.
+
+
+7
+
+IV.
+METHODS
+
+A.
+Data
+
+Our main PBE dataset consists of calculations from
+the Materials Project database [53], AFLOW [54] and
+our own calculations.
+This set of around two million
+compounds was accumulated in Ref. [18, 31]. In Ref. [24]
+we reoptimized the geometries of 175k materials using
+PBEsol followed by a final energy evaluation with the
+PBEsol and SCAN functional as described in [24]. By
+now we extended these datasets by another 50k randomly
+selected materials arriving at 225k entries.
+In fig. 7a we can see the element distribution of the
+PBE dataset. This set features a large variety of elements
+with oxygen and nitrogen being the most prominent fol-
+lowed by lithium. Not included are the noble gases and
+heavy radioactive chemical elements.
+In the elemental
+distribution of the PBEsol and SCAN dataset, depicted
+in fig. 7b, oxygen is even more prevalent while nitrogen
+and hydrogen appear less often. This is a result of the
+many stable oxides in the PBE dataset.
+In fig. 8 we plot the distribution of the various datasets
+we used in this work. As expected the materials of the
+PBEsol/SCAN dataset are on average far more stable
+with only a small long tail in the EForm and EHull distri-
+butions introduced by the 50k random systems. The dif-
+ferences in the distributions also show that the results are
+valid for transfer learning between datasets with rather
+different distributions. The volume dataset on the other
+hand is very similarly distributed for PBE and PBEsol
+with respective medians/means/standard deviations of
+22.1/23.5/9.2 Å3/atom and 18.7/19.9/7.4 Å3/atom. The
+slightly higher median and mean of the PBE dataset are
+expected due to the underbinding of the PBE that is
+somewhat corrected by PBEsol. The distribution of the
+band gaps was already discussed earlier but the main dif-
+ference is the percentage of metals that is roughly 4 times
+larger in the PBE dataset.
+
+B.
+Crystal graph attention networks
+
+Crystal graph attention networks were developed in
+Ref. [31] for the discovery of new stable materials. Using
+the periodic graph representation of the crystalstructure,
+the networks apply an attention based message passing
+mechanism. By using solely the graph distance of the
+atoms to their neighbors as edge information, CGATs
+can perform precise predictions based on unrelaxed ge-
+ometries. Follow the notation of Ref. [31], we label the
+embedding of the ith node, i.e.
+atom, at time steps t
+of the message passing process as ht
+i and the respective
+edge embedding to the atoms j as et
+ij. FCNNNt,n
+a
+is the
+network of the nth attention head at message passing
+step t and HFCNNt
+θtg a hypernetwork depending on the
+difference between the embedding at step t and the pre-
+
+vious step. Using this notation we arrive at the following
+equations for the updates of the node embeddings:
+
+st,n
+ij = FCNNNt,n
+a (ht
+i||ht
+j||eij)
+(1a)
+
+at,n
+ij =
+exp(st,n
+ij )
+
+�
+
+j exp(st,n
+ij )
+(1b)
+
+mt,n
+ij = FCNNt,n
+m (ht
+i||ht
+j||eij).
+(1c)
+
+ht+1
+i
+= ht
+i + HFCNNt
+θtg
+
+
+
+ 1
+
+N
+
+�
+
+n
+
+�
+
+j
+an
+ijmn
+ij
+
+
+
+ .
+(1d)
+
+The edges are updated similarly:
+
+se,n
+ij
+= FCNNNn
+a(ht
+i||ht
+j||et
+ij)
+(2a)
+
+ae,n
+ij
+=
+exp(sij)
+�
+
+n exp(sn
+i )
+(2b)
+
+me,n
+ij
+= FCNNNn(ht
+i||ht
+j||et
+ij)
+(2c)
+
+et+1
+ij
+= et
+ij + FCNNn,t
+θtg
+
+�
+||
+n
+ae,n
+ij me,n
+ij .
+�
+(2d)
+
+In parallel a ROOST
+[30] model calculates a repre-
+sentation vector of the composition that is used as a
+global context vector and is concatenated with the fi-
+nal node embeddings.
+Lastly, an attention layer cal-
+culates the embedding for the whole crystal structure.
+Then a residual network transforms the graph embed-
+ding into the prediction. We used the following hyper-
+parameters: AdamW; learning rate: 0.000125 (0.0000125
+for transfer learning); starting embedding: matscholar-
+embedding[55]; nbr-embedding-size: 512; msg-heads: 6;
+batch-size: 512; max-nbr: 24; epochs: 390; loss: L1-loss;
+momentum: 0.9; weight-decay: 1e-06; atom-fea-len: 128;
+message passing steps: 5; roost message passing steps: 3;
+other roost parameters: default; vector-attention: True;
+edges:
+updated; learning rate:
+cyclical; learning rate
+schedule: (0.1, 0.05); learning rate period: 130 (70 for
+transfer learning, 90 for pre-training during the experi-
+ments shown in fig. 3); hypernetwork: 3 hidden layers,
+size 128; hypernetwork activation function: tanh; FCNN:
+1 hidden layer, size 512; FCNN activation function: leaky
+RELU [56]; Nvidia apex mixed precision level O2 (almost
+FP16).
+
+V.
+DATA AVAILABILITY STATEMENT
+
+This
+study
+was
+carried
+out
+using
+pub-
+licly
+available
+data
+from
+https://doi.org/
+10.24435/materialscloud:ka-br
+and
+https:
+//doi.org/10.24435/materialscloud:m7-50.
+Ad-
+ditional SCAN and PBEsol data will be added to
+https://doi.org/10.24435/materialscloud:ka-br.
+
+
+8
+
+H
+
+1
+
+91881
+
+He
+
+2
+
+Li
+
+3
+
+105622
+
+Be
+
+4
+
+62081
+
+B
+
+5
+
+61728
+
+C
+
+6
+
+63559
+
+N
+
+7
+
+118227
+
+O
+
+8
+
+128071
+
+F
+
+9
+
+79673
+
+Ne
+
+10
+
+Na
+
+11
+
+80576
+
+Mg
+
+12
+
+99120
+
+Al
+
+13
+
+95182
+
+Si
+
+14
+
+80317
+
+P
+
+15
+
+96289
+
+S
+
+16
+
+92405
+
+Cl
+
+17
+
+75969
+
+Ar
+
+18
+
+K
+
+19
+
+71030
+
+Ca
+
+20
+
+88241
+
+Sc
+
+21
+
+89665
+
+Ti
+
+22
+
+73035
+
+V
+
+23
+
+67791
+
+Cr
+
+24
+
+61790
+
+Mn
+
+25
+
+79305
+
+Fe
+
+26
+
+78775
+
+Co
+
+27
+
+85546
+
+Ni
+
+28
+
+98397
+
+Cu
+
+29
+
+99232
+
+Zn
+
+30
+
+102182
+
+Ga
+
+31
+
+101934
+
+Ge
+
+32
+
+89954
+
+As
+
+33
+
+82537
+
+Se
+
+34
+
+94058
+
+Br
+
+35
+
+75668
+
+Kr
+
+36
+
+Rb
+
+37
+
+68719
+
+Sr
+
+38
+
+81540
+
+Y
+
+39
+
+85742
+
+Zr
+
+40
+
+77709
+
+Nb
+
+41
+
+65685
+
+Mo
+
+42
+
+56619
+
+Tc
+
+43
+
+66520
+
+Ru
+
+44
+
+81684
+
+Rh
+
+45
+
+96776
+
+Pd
+
+46
+
+99152
+
+Ag
+
+47
+
+90917
+
+Cd
+
+48
+
+94679
+
+In
+
+49
+
+102345
+
+Sn
+
+50
+
+95883
+
+Sb
+
+51
+
+89148
+
+Te
+
+52
+
+93926
+
+I
+
+53
+
+87630
+
+Xe
+
+54
+
+Cs
+
+55
+
+51323
+
+Ba
+
+56
+
+77625
+
+Ln
+Hf
+
+72
+
+70672
+
+Ta
+
+73
+
+60162
+
+W
+
+74
+
+51583
+
+Re
+
+75
+
+53913
+
+Os
+
+76
+
+66956
+
+Ir
+
+77
+
+84685
+
+Pt
+
+78
+
+94496
+
+Au
+
+79
+
+97827
+
+Hg
+
+80
+
+94023
+
+Tl
+
+81
+
+92410
+
+Pb
+
+82
+
+84450
+
+Bi
+
+83
+
+74639
+
+Po
+
+84
+
+At
+
+85
+
+Rn
+
+86
+
+La
+
+57
+
+87928
+
+Ce
+
+58
+
+32015
+
+Pr
+
+59
+
+30044
+
+Nd
+
+60
+
+30249
+
+Pm
+
+61
+
+32165
+
+Sm
+
+62
+
+30048
+
+Eu
+
+63
+
+25002
+
+Gd
+
+64
+
+28863
+
+Tb
+
+65
+
+31463
+
+Dy
+
+66
+
+31305
+
+Ho
+
+67
+
+31329
+
+Er
+
+68
+
+31281
+
+Tm
+
+69
+
+31752
+
+Yb
+
+70
+
+8475
+
+Lu
+
+71
+
+29465
+
+Ac
+
+89
+
+29391
+
+Th
+
+90
+
+27010
+
+Pa
+
+91
+
+21430
+
+U
+
+92
+
+12793
+
+Np
+
+93
+
+11399
+
+Pu
+
+94
+
+29609
+
+Am
+
+95
+
+Cm
+
+96
+
+Bk
+
+97
+
+Cf
+
+98
+
+Es
+
+99
+
+Fm
+
+100
+
+Md
+
+101
+
+No
+
+102
+
+Lr
+
+103
+
+20000
+40000
+60000
+80000
+100000
+120000
+
+MAE [meV/atom]
+
+(a)
+
+H
+
+1
+
+6472
+
+He
+
+2
+
+Li
+
+3
+
+14974
+
+Be
+
+4
+
+6319
+
+B
+
+5
+
+8532
+
+C
+
+6
+
+7782
+
+N
+
+7
+
+6680
+
+O
+
+8
+
+28878
+
+F
+
+9
+
+8717
+
+Ne
+
+10
+
+Na
+
+11
+
+7412
+
+Mg
+
+12
+
+13190
+
+Al
+
+13
+
+18115
+
+Si
+
+14
+
+11995
+
+P
+
+15
+
+9860
+
+S
+
+16
+
+9622
+
+Cl
+
+17
+
+8445
+
+Ar
+
+18
+
+K
+
+19
+
+9362
+
+Ca
+
+20
+
+11616
+
+Sc
+
+21
+
+8802
+
+Ti
+
+22
+
+6434
+
+V
+
+23
+
+2575
+
+Cr
+
+24
+
+5224
+
+Mn
+
+25
+
+8790
+
+Fe
+
+26
+
+9528
+
+Co
+
+27
+
+12542
+
+Ni
+
+28
+
+15331
+
+Cu
+
+29
+
+16552
+
+Zn
+
+30
+
+13688
+
+Ga
+
+31
+
+11564
+
+Ge
+
+32
+
+11125
+
+As
+
+33
+
+9961
+
+Se
+
+34
+
+10308
+
+Br
+
+35
+
+6952
+
+Kr
+
+36
+
+Rb
+
+37
+
+7182
+
+Sr
+
+38
+
+10516
+
+Y
+
+39
+
+9669
+
+Zr
+
+40
+
+7960
+
+Nb
+
+41
+
+4597
+
+Mo
+
+42
+
+4479
+
+Tc
+
+43
+
+2886
+
+Ru
+
+44
+
+7920
+
+Rh
+
+45
+
+13307
+
+Pd
+
+46
+
+10354
+
+Ag
+
+47
+
+11502
+
+Cd
+
+48
+
+11059
+
+In
+
+49
+
+13674
+
+Sn
+
+50
+
+10390
+
+Sb
+
+51
+
+9294
+
+Te
+
+52
+
+8900
+
+I
+
+53
+
+5424
+
+Xe
+
+54
+
+Cs
+
+55
+
+6358
+
+Ba
+
+56
+
+10891
+
+Ln
+Hf
+
+72
+
+4660
+
+Ta
+
+73
+
+5010
+
+W
+
+74
+
+3582
+
+Re
+
+75
+
+3027
+
+Os
+
+76
+
+4505
+
+Ir
+
+77
+
+9851
+
+Pt
+
+78
+
+13253
+
+Au
+
+79
+
+11803
+
+Hg
+
+80
+
+8718
+
+Tl
+
+81
+
+9689
+
+Pb
+
+82
+
+8952
+
+Bi
+
+83
+
+6063
+
+Po
+
+84
+
+At
+
+85
+
+Rn
+
+86
+
+La
+
+57
+
+10293
+
+Ce
+
+58
+
+4961
+
+Pr
+
+59
+
+5114
+
+Nd
+
+60
+
+5172
+
+Pm
+
+61
+
+793
+
+Sm
+
+62
+
+4774
+
+Eu
+
+63
+
+3578
+
+Gd
+
+64
+
+3129
+
+Tb
+
+65
+
+5202
+
+Dy
+
+66
+
+5094
+
+Ho
+
+67
+
+4853
+
+Er
+
+68
+
+4934
+
+Tm
+
+69
+
+4846
+
+Yb
+
+70
+
+Lu
+
+71
+
+3853
+
+Ac
+
+89
+
+691
+
+Th
+
+90
+
+3667
+
+Pa
+
+91
+
+1281
+
+U
+
+92
+
+2370
+
+Np
+
+93
+
+1747
+
+Pu
+
+94
+
+2986
+
+Am
+
+95
+
+Cm
+
+96
+
+Bk
+
+97
+
+Cf
+
+98
+
+Es
+
+99
+
+Fm
+
+100
+
+Md
+
+101
+
+No
+
+102
+
+Lr
+
+103
+
+5000
+10000
+15000
+20000
+25000
+
+MAE [meV/atom]
+
+(b)
+
+FIG. 7. Number of the compounds containing each elements (a) in the PBE dataset and (b) in the PBEsol/SCAN dataset.
+
+VI.
+CODE AVAILABILITY STATEMENT
+
+The CGAT code is available on https://github.com/
+hyllios/CGAT. The trained models resulting from all the
+experiments are available upon request.
+
+VII.
+AUTHOR CONTRIBUTIONS
+
+JS and NH performed the training of the machines
+and the machine learning predictions of the distance to
+the hull; MALM performed the DFT high-throughput
+calculations; JS, SB and MALM directed the research;
+all authors contributed to the analysis of the results and
+to the writing of the manuscript.
+
+
+9
+
+0
+1
+2
+3
+4
+
+EHull eV/atom
+
+0
+
+5000
+
+10000
+
+15000
+
+20000
+
+25000
+
+30000
+
+Number of 1000 systems
+
+PBE
+PBEsol
+SCAN
+
+−4
+−3
+−2
+−1
+0
+1
+2
+3
+4
+
+EForm [eV/atom]
+
+0
+
+5000
+
+10000
+
+15000
+
+20000
+
+Number of 1000 systems
+
+PBE
+PBEsol
+SCAN
+
+(a)
+(b)
+
+10
+20
+30
+40
+50
+60
+70
+
+Volume [˚A3/atom]
+
+0
+
+2000
+
+4000
+
+6000
+
+8000
+
+10000
+
+12000
+
+14000
+
+Number of 1000 systems
+
+PBE
+PBEsol
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+band gap [eV]
+
+100
+
+101
+
+102
+
+103
+
+104
+
+105
+
+106
+
+Number of 1000 systems
+
+PBE
+SCAN
+
+(c)
+(d)
+
+FIG. 8. Histogram of (a) the distances to the convex hull and (b) the formation energies of the PBE, PBEsol and SCAN
+datasets. (c) Histogram of the volumes of the PBE and PBEsol dataset. (d) Histogram of the band gaps of the PBE and SCAN
+datasets.
+
+VIII.
+COMPETING INTERESTS
+
+The authors declare that they have no competing in-
+terests.
+
+IX.
+ACKNOWLEDGEMENTS
+
+The authors gratefully acknowledge the Gauss Cen-
+tre for Supercomputing e.V. (www.gauss-centre.eu) for
+funding this project by providing computing time on
+the GCS Supercomputer SUPERMUC-NG at Leibniz
+Supercomputing Centre (www.lrz.de) under the project
+pn25co. This project received funding from the European
+Union’s HORIZON-MSCA-2021-DN-01 program under
+grant agreement number 101073486 (EUSpecLab).
+
+X.
+REFERENCES
+
+[1] A. C. Mater and M. L. Coote, Deep learning in
+chemistry,
+J.
+Chem.
+Inf.
+Model.
+59,
+2545
+(2019),
+https://doi.org/10.1021/acs.jcim.9b00266.
+
+[2] J. Vamathevan, D. Clark, P. Czodrowski, I. Dunham,
+E. Ferran, G. Lee, B. Li, A. Madabhushi, P. Shah,
+
+M. Spitzer, and S. Zhao, Applications of machine learn-
+ing in drug discovery and development, Nat. Rev. Drug
+Discov. 18, 463 (2019), https://doi.org/10.1038/s41573-
+019-0024-5.
+
+
+10
+
+[3] J. Schmidt, M. R. G. Marques, S. Botti, and M. A. L.
+Marques, Recent advances and applications of machine
+learning in solid-state materials science, Npj Comput.
+Mater. 5, 83 (2019).
+
+[4] H. J. Kulik, T. Hammerschmidt, J. Schmidt, S. Botti,
+M. A. L. Marques, M. Boley, M. Scheffler, M. Todor-
+ović, P. Rinke, C. Oses, A. Smolyanyuk, S. Curtarolo,
+A. Tkatchenko, A. P. Bartók, S. Manzhos, M. Ihara,
+T. Carrington, J. Behler, O. Isayev, M. Veit, A. Grisafi,
+J. Nigam, M. Ceriotti, K. T. Schütt, J. Westermayr,
+M. Gastegger, R. J. Maurer, B. Kalita, K. Burke, R. Na-
+gai, R. Akashi, O. Sugino, J. Hermann, F. Noé, S. Pilati,
+C. Draxl, M. Kuban, S. Rigamonti, M. Scheidgen, M. Es-
+ters, D. Hicks, C. Toher, P. V. Balachandran, I. Tam-
+blyn, S. Whitelam, C. Bellinger, and L. M. Ghiringhelli,
+Roadmap on machine learning in electronic structure,
+Electron. Struct. 4, 023004 (2022).
+
+[5] G. L. W. Hart, T. Mueller, C. Toher, and S. Curtarolo,
+Machine learning for alloys, Nat. Rev. Mater. 6, 730
+(2021).
+
+[6] G. Pilania, Machine learning in materials science: From
+explainable predictions to autonomous design, Comput.
+Mater. Sci. 193, 110360 (2021).
+
+[7] C. Chen, W. Ye, Y. Zuo, C. Zheng, and S. P. Ong, Graph
+networks as a universal machine learning framework for
+molecules and crystals, Chem. Mater. 31, 3564 (2019).
+
+[8] T. Xie and J. C. Grossman, Crystal graph convolutional
+neural networks for an accurate and interpretable predic-
+tion of material properties, Phys. Rev. Lett. 120, 145301
+(2018).
+
+[9] C. Chen and S. P. Ong, A universal graph deep learn-
+ing interatomic potential for the periodic table, arXiv
+preprint
+arXiv:2202.02450
+10.48550/arXiv.2202.02450
+(2022).
+
+[10] X. Fu, Z. Wu, W. Wang, T. Xie, S. Keten, R. Gomez-
+Bombarelli, and T. Jaakkola, Forces are not enough:
+Benchmark and critical evaluation for machine learning
+force fields with molecular simulations, arXiv preprint
+arXiv:2210.07237 (2022).
+
+[11] A. Dunn, Q. Wang, A. Ganose, D. Dopp, and A. Jain,
+Benchmarking materials property prediction methods:
+the matbench test set and automatminer reference al-
+gorithm, Npj Comput. Mater. 6, 138 (2020).
+
+[12] J. S. Smith, R. Zubatyuk, B. Nebgen, N. Lubbers,
+K. Barros, A. E. Roitberg, O. Isayev, and S. Tretiak, The
+ani-1ccx and ani-1x data sets, coupled-cluster and den-
+sity functional theory properties for molecules, Scientific
+data 7, 1 (2020).
+
+[13] J. P. Perdew, K. Burke, and M. Ernzerhof, Generalized
+gradient approximation made simple, Phys. Rev. Lett.
+77, 3865 (1996).
+
+[14] S. Curtarolo, W. Setyawan, G. L. Hart, M. Jahnatek,
+R. V. Chepulskii, R. H. Taylor, S. Wang, J. Xue, K. Yang,
+O. Levy, M. J. Mehl, H. T. Stokes, D. O. Demchenko, and
+D. Morgan, AFLOW: An automatic framework for high-
+throughput materials discovery, Comput. Mater. Sci. 58,
+218 (2012).
+
+[15] J. E. Saal, S. Kirklin, M. Aykol, B. Meredig, and
+C. Wolverton, Materials design and discovery with high-
+throughput density functional theory: The open quan-
+tum materials database (OQMD), JOM 65, 1501 (2013).
+
+[16] S. Kirklin, J. E. Saal, B. Meredig, A. Thompson, J. W.
+Doak, M. Aykol, S. Rühl, and C. Wolverton, The open
+quantum materials database (OQMD): assessing the ac-
+
+curacy of DFT formation energies, npj Comput. Mater.
+1, 15010 (2015).
+
+[17] A. Jain, S. P. Ong, G. Hautier, W. Chen, W. D. Richards,
+S. Dacek, S. Cholia, D. Gunter, D. Skinner, G. Ceder,
+and K. A. Persson, Commentary: The materials project:
+A materials genome approach to accelerating materials
+innovation, APL Mater. 1, 011002 (2013).
+
+[18] J. Schmidt, N. Hoffmann, H.-C. Wang, P. Borlido, P. J.
+Carriço, T. F. Cerqueira, S. Botti, and M. A. Marques,
+Large-scale machine-learning-assisted exploration of the
+whole materials space, arXiv preprint arXiv:2210.00579
+10.48550/arXiv.2210.00579 (2022).
+
+[19] T. Thonhauser,
+V. R. Cooper,
+S. Li,
+A. Puzder,
+P. Hyldgaard, and D. C. Langreth, Van der waals density
+functional: Self-consistent potential and the nature of the
+van der waals bond, Phys. Rev. B 76, 125112 (2007).
+
+[20] J. c. v. Klimeš, D. R. Bowler, and A. Michaelides, Van der
+waals density functionals applied to solids, Phys. Rev. B
+83, 195131 (2011).
+
+[21] K. Choudhary, K. F. Garrity, A. C. E. Reid, B. DeCost,
+A. J. Biacchi, A. R. H. Walker, Z. Trautt, J. Hattrick-
+Simpers,
+A. G. Kusne,
+A. Centrone,
+A. Davydov,
+J. Jiang, R. Pachter, G. Cheon, E. Reed, A. Agrawal,
+X. Qian, V. Sharma, H. Zhuang, S. V. Kalinin, B. G.
+Sumpter, G. Pilania, P. Acar, S. Mandal, K. Haule,
+D. Vanderbilt, K. Rabe, and F. Tavazza, The joint au-
+tomated repository for various integrated simulations
+(JARVIS) for data-driven materials design, npj Comput.
+Mat. 6, 10.1038/s41524-020-00440-1 (2020).
+
+[22] K. Choudhary,
+Q. Zhang,
+A. C. Reid,
+S. Chowd-
+hury,
+N. V. Nguyen,
+Z. Trautt,
+M. W. Newrock,
+F. Y. Congo, and F. Tavazza, Computational screen-
+ing of high-performance optoelectronic materials us-
+ing OptB88vdw and TB-mBJ formalisms, Sci. Data 5,
+10.1038/sdata.2018.82 (2018).
+
+[23] K. Choudhary, G. Cheon, E. Reed, and F. Tavazza, Elas-
+tic properties of bulk and low-dimensional materials us-
+ing van der Waals density functional, Phys. Rev. B 98,
+014107 (2018).
+
+[24] J. Schmidt, H.-C. Wang, T. F. T. Cerqueira, S. Botti,
+and M. A. L. Marques, A new dataset of 175k stable and
+metastable materials calculated with the pbesol and scan
+functionals, Sci. Data 12, 10.1038/s41597-022-01177-w
+(2021).
+
+[25] R. Kingsbury, A. S. Gupta, C. J. Bartel, J. M. Munro,
+S. Dwaraknath, M. Horton, and K. A. Persson, Perfor-
+mance comparison of r 2 scan and scan metagga density
+functionals for solid materials via an automated, high-
+throughput computational workflow, Phys. Rev. Materi-
+als 6, 013801 (2022).
+
+[26] J. P. Perdew, A. Ruzsinszky, G. I. Csonka, O. A. Vydrov,
+G. E. Scuseria, L. A. Constantin, X. Zhou, and K. Burke,
+Restoring the density-gradient expansion for exchange in
+solids and surfaces, Phys. Rev. Lett. 100, 136406 (2008).
+
+[27] J. Sun, A. Ruzsinszky, and J. P. Perdew, Strongly con-
+strained and appropriately normed semilocal density
+functional, Phys. Rev. Lett. 115, 036402 (2015).
+
+[28] J. W. Furness, A. D. Kaplan, J. Ning, J. P. Perdew, and
+J. Sun, Accurate and numerically efficient r2scan meta-
+generalized gradient approximation, J. Phys. Chem. Lett
+11, 8208 (2020).
+
+[29] C. W. Park and C. Wolverton, Developing an improved
+crystal graph convolutional neural network framework for
+accelerated materials discovery, Phys. Rev. Materials 4,
+
+
+11
+
+063801 (2020).
+
+[30] R. E. A. Goodall and A. A. Lee, Predicting materials
+properties without crystal structure:
+deep representa-
+tion learning from stoichiometry, Nat. Commun. 11, 6280
+(2020).
+
+[31] J. Schmidt, L. Pettersson, C. Verdozzi, S. Botti, and
+M. A. L. Marques, Crystal graph attention networks for
+the prediction of stable materials, Sci. Adv. 7, eabi7948
+(2021).
+
+[32] C. Tan, F. Sun, T. Kong, W. Zhang, C. Yang, and C. Liu,
+A survey on deep transfer learning, in International con-
+ference on artificial neural networks (Springer, 2018) pp.
+270–279.
+
+[33] K. S. Kalyan, A. Rajasekharan, and S. Sangeetha,
+Ammus:
+A survey of transformer-based pretrained
+models in natural language processing, arXiv preprint
+arXiv:2108.05542 (2021).
+
+[34] M. L. Hutchinson, E. Antono, B. M. Gibbons, S. Par-
+adiso, J. Ling, and B. Meredig, Overcoming data scarcity
+with transfer learning, arXiv preprint arXiv:1711.05099
+(2017).
+
+[35] D.
+Jha,
+K.
+Choudhary,
+F.
+Tavazza,
+W.-k.
+Liao,
+A. Choudhary, C. Campbell, and A. Agrawal, Enhanc-
+ing materials property prediction by leveraging compu-
+tational and experimental data using deep transfer learn-
+ing, Nature communications 10, 1 (2019).
+
+[36] J. S. Smith, B. T. Nebgen, R. Zubatyuk, N. Lubbers,
+C. Devereux, K. Barros, S. Tretiak, O. Isayev, and A. E.
+Roitberg, Approaching coupled cluster accuracy with a
+general-purpose neural network potential through trans-
+fer learning, Nature communications 10, 1 (2019).
+
+[37] S. Kong, D. Guevarra, C. P. Gomes, and J. M. Gregoire,
+Materials representation and transfer learning for multi-
+property prediction, Applied Physics Reviews 8, 021409
+(2021), https://doi.org/10.1063/5.0047066.
+
+[38] V. Gupta, K. Choudhary, F. Tavazza, C. Campbell,
+W. keng Liao, A. Choudhary, and A. Agrawal, Cross-
+property deep transfer learning framework for enhanced
+predictive analytics on small materials data, Nat. Com-
+mun. 12, 10.1038/s41467-021-26921-5 (2021).
+
+[39] H. Yamada, C. Liu, S. Wu, Y. Koyama, S. Ju, J. Shiomi,
+J. Morikawa, and R. Yoshida, Predicting materials prop-
+erties with little data using shotgun transfer learning,
+ACS Central Science 5, 1717 (2019).
+
+[40] E. Ford, K. Maneparambil, A. Kumar, G. Sant, and
+N. Neithalath, Transfer (machine) learning approaches
+coupled with target data augmentation to predict the me-
+chanical properties of concrete, MLWA 8, 100271 (2022).
+
+[41] A. Kolluru, N. Shoghi, M. Shuaibi, S. Goyal, A. Das,
+C. L. Zitnick, and Z. Ulissi, Transfer learning using atten-
+tions across atomic systems with graph neural networks
+(TAAG), J. Chem. Phys. 156, 184702 (2022).
+
+[42] C. Chen, Y. Zuo, W. Ye, X. Li, and S. P. Ong, Learn-
+ing properties of ordered and disordered materials from
+multi-fidelity data, Nat. Comput. Sci. 1, 46 (2021).
+
+[43] S. Feng, H. Zhou, and H. Dong, Application of deep
+transfer learning to predicting crystal structures of in-
+organic substances, Comput. Mater. Sci. 195, 110476
+
+(2021).
+
+[44] P.-P. De Breuck, G. Hautier, and G.-M. Rignanese, Ma-
+terials property prediction for limited datasets enabled
+by feature selection and joint learning with modnet, Npj
+Comput. Mater. 7, 1 (2021).
+
+[45] C. Chen and S. P. Ong, Atomsets as a hierarchical trans-
+fer learning framework for small and large materials
+datasets, Npj Comput. Mater. 7, 1 (2021).
+
+[46] L. Chanussot, A. Das, S. Goyal, T. Lavril, M. Shuaibi,
+M. Riviere, K. Tran, J. Heras-Domingo, C. Ho, W. Hu,
+A. Palizhati, A. Sriram, B. Wood, J. Yoon, D. Parikh,
+C. L. Zitnick, and Z. Ulissi, Open catalyst 2020 (oc20)
+dataset and community challenges, ACS Catalysis 11,
+6059 (2021), https://doi.org/10.1021/acscatal.0c04525.
+
+[47] S.
+Chmiela,
+A.
+Tkatchenko,
+H.
+E.
+Sauceda,
+I. Poltavsky, K. T. Schütt, and K.-R. Müller, Ma-
+chine learning of accurate energy-conserving molec-
+ular
+force
+fields,
+Sci.
+Adv.
+3,
+e1603015
+(2017),
+https://www.science.org/doi/pdf/10.1126/sciadv.1603015.
+
+[48] Y. Zhang, D. A. Kitchaev, J. Yang, T. Chen, S. T. Dacek,
+R. A. Sarmiento-Pérez, M. A. L. Marques, H. Peng,
+G. Ceder, J. P. Perdew, and J. Sun, Efficient first-
+principles prediction of solid stability: Towards chemical
+accuracy, Npj Comput. Mater. 4, 10.1038/s41524-018-
+0065-z (2018).
+
+[49] R. Hussein, J. Schmidt, T. Barros, M. A. Marques,
+and S. Botti, Machine-learning correction to density-
+functional crystal structure optimization, MRS Bull.
+10.1557/s43577-022-00310-9 (2022).
+
+[50] J. Schmidt, L. Chen, S. Botti, and M. A. L. Marques, Pre-
+dicting the stability of ternary intermetallics with density
+functional theory and machine learning, J. Chem. Phys.
+148, 241728 (2018).
+
+[51] J. Schmidt, J. Shi, P. Borlido, L. Chen, S. Botti, and
+M. A. L. Marques, Predicting the thermodynamic sta-
+bility of solids combining density functional theory and
+machine learning, Chem. Mater. 29, 5090 (2017).
+
+[52] J. Schmidt, H. Wang, G. Schmidt, and M. Marques,
+Machine learning guided high-throughput search of non-
+oxide garnets, arXiv preprint arXiv:2208.13742 (2022).
+
+[53] A. Jain, S. P. Ong, G. Hautier, W. Chen, W. D. Richards,
+S. Dacek, S. Cholia, D. Gunter, D. Skinner, G. Ceder,
+et al., Commentary: The materials project: A materials
+genome approach to accelerating materials innovation,
+APL materials 1, 011002 (2013).
+
+[54] S. Curtarolo, W. Setyawan, G. L. Hart, M. Jahnatek,
+R. V. Chepulskii, R. H. Taylor, S. Wang, J. Xue, K. Yang,
+O. Levy, et al., Aflow: An automatic framework for high-
+throughput materials discovery, Comput. Mater. Sci. 58,
+218 (2012).
+
+[55] V. Tshitoyan, J. Dagdelen, L. Weston, A. Dunn, Z. Rong,
+O. Kononova, K. A. Persson, G. Ceder, and A. Jain, Un-
+supervised word embeddings capture latent knowledge
+from materials science literature, Nature 571, 95 (2019).
+
+[56] S. S. Liew, M. Khalil-Hani, and R. Bakhteri, Bounded ac-
+tivation functions for enhanced training stability of deep
+neural networks on visual pattern recognition problems,
+Neurocomputing 216, 718 (2016).
+
+

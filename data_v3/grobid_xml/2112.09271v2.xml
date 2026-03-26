@@ -1,0 +1,1081 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">A scalable DG solver for the electroneutral Nernst-Planck equations</title>
+				<funder>
+					<orgName type="full">U.S. Department of Energy</orgName>
+				</funder>
+				<funder ref="#_4HY4VHp #_Kumj3pu #_xtZgcZf">
+					<orgName type="full">unknown</orgName>
+				</funder>
+				<funder ref="#_p8yqrKf">
+					<orgName type="full">Lawrence Livermore National Laboratory</orgName>
+				</funder>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2022-12-20">20 Dec 2022</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Thomas</forename><surname>Roy</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="institution">Lawrence Livermore National Laboratory</orgName>
+								<address>
+									<postCode>94550</postCode>
+									<settlement>Livermore</settlement>
+									<region>CA</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Julian</forename><surname>Andrej</surname></persName>
+							<email>andrej1@llnl.gov</email>
+							<affiliation key="aff0">
+								<orgName type="institution">Lawrence Livermore National Laboratory</orgName>
+								<address>
+									<postCode>94550</postCode>
+									<settlement>Livermore</settlement>
+									<region>CA</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Victor</forename><forename type="middle">A</forename><surname>Beck</surname></persName>
+							<email>beck33@llnl.gov</email>
+							<affiliation key="aff0">
+								<orgName type="institution">Lawrence Livermore National Laboratory</orgName>
+								<address>
+									<postCode>94550</postCode>
+									<settlement>Livermore</settlement>
+									<region>CA</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">A scalable DG solver for the electroneutral Nernst-Planck equations</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2022-12-20">20 Dec 2022</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">5B328E88BFB8ED1DA16F00A65CEF4844</idno>
+					<idno type="arXiv">arXiv:2112.09271v2[math.NA]</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-04T00:56+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<textClass>
+				<keywords>
+					<term>Electrochemical flow</term>
+					<term>Nernst-Planck</term>
+					<term>Electroneutrality</term>
+					<term>Discontinuous Galerkin</term>
+					<term>Preconditioning 2010 MSC: 65N30</term>
+					<term>65F08</term>
+					<term>78A57</term>
+				</keywords>
+			</textClass>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>The robust, scalable simulation of flowing electrochemical systems is increasingly important due to the synergy between intermittent renewable energy and electrochemical technologies such as energy storage and chemical manufacturing. The high Péclet regime of many such applications prevents the use of off-the-shelf discretization methods. In this work, we present a high-order Discontinuous Galerkin scheme for the electroneutral Nernst-Planck equations. The chosen charge conservation formulation allows for the specific treatment of the different physics: upwinding for advection and migration, and interior penalty for diffusion of ionic species as well the electric potential. Similarly, the formulation enables different treatments in the preconditioner: AMG for the potential blocks and ILU-based methods for the advection-dominated concentration blocks. We evaluate the convergence rate of the discretization scheme through numerical tests. Strong scaling results for two preconditioning approaches are shown for a large 3D flow-plate reactor example.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1.">Introduction</head><p>With the steady transition to renewable energy comes a surge of intermittent electricity <ref type="bibr" target="#b0">[1,</ref><ref type="bibr" target="#b1">2]</ref>. Fortunately, various electrochemical technologies such as energy storage and electrochemical manufacturing can capitalize on this otherwise wasted energy <ref type="bibr" target="#b2">[3,</ref><ref type="bibr" target="#b3">4]</ref>. To handle the rise of renewable energy, the development and scaling-up of these technologies is crucial. Naturally, this brings a need for simulation to aid design of electrochemical devices at the industrial scale.</p><p>Such simulations require the solution of highly coupled systems of partial differential equations (PDEs). An important model in the presence of fluid flow is the Nernst-Planck (NP) equation, which describes the transport of an ionic species by advection, diffusion and electromigration <ref type="bibr" target="#b4">[5]</ref>. For multi-ion transport, the system consisting of an NP equation for each species can be closed by a Poisson equation for the electric potential. However, the Poisson equation operates on a much smaller lengthscale and is thus challenging to solve computationally <ref type="bibr" target="#b5">[6]</ref>. Due to the scale separation, it is commonly replaced by the electroneutrality condition: an algebraic equation for the ionic concentrations.</p><p>For the electroneutral system, arriving at a steady-state solution is a challenging numerical task and therefore the discretization scheme has to be chosen with care. In particular, specific treatment is required for the typically advection-dominated nature of the flow. The considered physical equations have been successfully discretized with several methods in the past. The authors in <ref type="bibr" target="#b6">[7]</ref> use a multi-dimensional upwinding method similar to a finite volume approach. A continuous Galerkin finite element method has to employ a stabilization scheme because of the advection-dominated system, which was shown in <ref type="bibr" target="#b7">[8]</ref> using a Variational Multiscale Method. There have been attempts at onedimensional problems using the Discontinuous Galerkin (DG) Method <ref type="bibr" target="#b8">[9,</ref><ref type="bibr" target="#b9">10]</ref>, which showed promising results and motivated this research. To the best of the authors' knowledge, none of the previously mentioned references looked into the benefits of high-order DG spatial discretizations, which are frequently used in advection-dominated transport and compressible flow applications <ref type="bibr" target="#b10">[11]</ref>.</p><p>After discretization and linearization, large, sparse linearized systems must be solved. Iterative methods using appropriate preconditioning techniques <ref type="bibr" target="#b11">[12]</ref> are key to obtaining a scalable solver. Designing preconditioners for problems with several, simultaneous, coupled physical phenomena is especially challenging since different parts of the problem may require different treatments. In the case of electroneutral ion transport, the equations are elliptic with respect to the electrical potential but hyperbolic with respect to the concentration variables. Scalable solvers for this problem are not available in commercial tools, where directs solver are used. This is especially restrictive when aiming for industrial scale 3D simulations, as well as the simulation of porous electrodes at the resolved pore-scale.</p><p>In this paper, we present a high-order DG spatial discretization and scalable preconditioning approaches for the electroneutral Nernst-Planck equations. The electroneutral system is arranged in a charge-conservation formulation that is necessary for the proper penalization of the potential terms in the DG scheme. Additionally, this formulation also allows for block preconditioning with specific treatment of the potential block and concentration blocks.</p><p>In section 2, the equations for the relevant electrochemical physics in an electroneutral setting are described. We explain how to reorder the equations and exploit the electroneutrality condition to eliminate a species variable and construct the charge conservation equation. Next, in section 3, we detail the spatial discretization process using the DG finite element method including necessary treatment for the hyperbolic and elliptic parts of the resulting system. Then, in section 4, we outline our approach to numerically precondition and solve the resulting discrete nonlinear problem. Finally, in section 5, we perform a convergence test for our discrete scheme and show scaling results for a large three-dimensional, industry-relevant problem.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.">Governing Equations</head><p>We consider the equations for electroneutral multi-ion transport. First, we describe the standard Electroneutral-Nernst-Planck model, as well as appropriate boundary conditions for a flow-plate reactor. Then, we discuss alternative formulations including the Charge-Conservation-Nernst-Planck model, which will be used for our Discontinuous Galerkin scheme in section 3. A nondimensionalization of that model is also given.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1.">Electroneutral Nernst-Planck equation</head><p>We consider the flow of a dilute electrolyte solution containing m ≥ 2 chemical species in a domain Ω ∈ R d , d = 1, 2, or 3. In the presence of an electric field, the mass transport is described by the Nernst-Planck equation <ref type="bibr" target="#b4">[5]</ref>. For simplicity, we do not consider the transient case, although our approach would still be applicable.</p><p>At steady state, the conservation of mass of each species k = 1, . . . , m is given by</p><formula xml:id="formula_0">-∇ • (D k ∇c k ) + ∇ • (c k u) -∇ • (z k µ k F c k ∇Φ) -R k = 0 in Ω,<label>(1)</label></formula><p>where c k is the molar concentration of species k, D k is the molecular diffusion coefficient, u is the velocity of the electrolyte, z k is the valence (charge number), µ k is the mobility constant, F is the Faraday constant, Φ is the electric potential in the electrolyte, and R k is a reaction term. The first term in (1) describes molecular diffusion, the second, advection, and the third, electromigration. The mobility constant is given by the Nernst-Einstein relation <ref type="bibr" target="#b4">[5]</ref> </p><formula xml:id="formula_1">µ k = D k RT ,<label>(2)</label></formula><p>where R is the universal gas constant, and T is the thermodynamic temperature.</p><p>The system currently consists of m equations (1), and m + 1 unknowns: the m concentrations c k and the potential Φ. An additional equation is required to complete the system. A commonly-used relation is the electroneutrality approximation</p><formula xml:id="formula_2">m k=1 z k c k = 0 in Ω,<label>(3)</label></formula><p>which states that there is no charge separation and that neutrality is maintained everywhere. This approximation is obtained from the Poisson equation and is appropriate when considering length scales greater than nanometers <ref type="bibr" target="#b5">[6]</ref>.</p><p>In <ref type="bibr" target="#b7">[8]</ref>, the system consisting of (1) and ( <ref type="formula" target="#formula_2">3</ref>) is called the Electroneutrality-Nernst-Planck (ENP) model.</p><p>For convenience, we denote the advection-migration transport as q k = uz k µ k F ∇Φ so that (1) can be written as</p><formula xml:id="formula_3">-∇ • (D k ∇c k ) + ∇ • (c k q k ) -R k = 0 in Ω. (<label>4</label></formula><formula xml:id="formula_4">)</formula><p>We now provide boundary conditions that are appropriate for a flow plate reactor. The boundary ∂Ω is partitioned with respect to the direction of the velocity at the boundary into the inlet boundary Γ in , the outlet boundary Γ out , the wall boundary Γ wall and the electrode boundary Γ elec . We have</p><formula xml:id="formula_5">Γ in = {x ∈ ∂Ω | u • n &lt; 0} , Γ out = {x ∈ ∂Ω | u • n &gt; 0} , Γ wall ∪ Γ elec = {x ∈ ∂Ω | u • n = 0} ,</formula><p>where n is the outward normal, so that</p><formula xml:id="formula_6">∂Ω = Γ in ∪ Γ out ∪ Γ wall ∪ Γ elec . Each boundary is such that Γ i ∩ Γ j = ∅.</formula><p>The location of the wall and electrode boundaries are determined beforehand.</p><p>The boundary conditions are given by</p><formula xml:id="formula_7">(c k q k -D k ∇c k ) • n = c in k u • n on Γ in ,<label>(5)</label></formula><formula xml:id="formula_8">(D k ∇c k + z k µ k F c k ∇Φ) • n = 0 on Γ out ,<label>(6)</label></formula><formula xml:id="formula_9">(D k ∇c k + z k µ k F c k ∇Φ) • n = g k on Γ elec ,<label>(7)</label></formula><formula xml:id="formula_10">(D k ∇c k + z k µ k F c k ∇Φ) • n = 0 on Γ wall ,<label>(8)</label></formula><p>where g k represents electrochemical reactions at the electrode surface.</p><p>In our numerical experiments, we will consider the specific case of a simple n-electron transfer redox reaction Ox + ne -→ Red, where the current density J n at the electrodes is given by the Butler-Volmer equation</p><formula xml:id="formula_11">J n = J 0 c r c * r γ exp α 1 nF RT (Φ app -Φ) - c o c * o γ exp -α 2 nF RT (Φ app -Φ) ,<label>(9)</label></formula><p>where J 0 is the exchange current density, c o and c r are the concentrations of the oxidant Ox and reductant Red, respectively, c * o and c * r are reference concentrations, α 1 and α 2 are the anodic and cathodic charge transfer coefficients, respectively, n is the number of electrons in the reaction, and Φ app is the applied potential. The reaction rate in <ref type="bibr" target="#b6">(7)</ref> is given by g k = Jn nF if k is the oxidant, g k = -Jn nF if it is the reductant, and g k = 0 otherwise.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.">Alternative formulations</head><p>Alternative formulations of the ENP system (1) and ( <ref type="formula" target="#formula_2">3</ref>) have different advantages with respect to the numerical solution <ref type="bibr" target="#b7">[8]</ref>.</p><p>In our case, we are interested in the Discontinuous Galerkin (DG) finite element method <ref type="bibr" target="#b12">[13]</ref>. In particular, we will consider upwinding techniques for the advection and migration terms. The current formulation, ENP, is problematic with respect to the stabilization and penalization of the potential Φ. Indeed, the mass conservation equations (1) will be treated as transport problems for the concentrations, using an upwinding scheme, leaving Φ untreated. In this electroneutral Nernst-Planck system, the electroneutrality approximation replaces the Poisson equation, where stabilization and penalization appropriate for an elliptic problem could have been used. We need an equation that plays this role for Φ.</p><p>We formulate a charge conservation equation by summing over all conservation of mass equations (1) weighting each by z k F . The advection terms cancel due to electroneutrality (3), and we obtain</p><formula xml:id="formula_12">-F ∇ • m k=1 z k D k ∇c k -∇ • m k=1 z 2 k µ k F 2 c k ∇Φ - m k=1 z k F R k = 0 in Ω.</formula><p>(10) However, we note that the system consisting of (1) and ( <ref type="formula">10</ref>) is linearly dependent. To circumvent this, one of the concentration unknowns can be eliminated using the electroneutrality condition. Without loss of generality, we eliminate the concentration c m using the substitution</p><formula xml:id="formula_13">c m = - 1 z m m-1 k=1 z k c k ,<label>(11)</label></formula><p>assuming that z m = 0. Combining <ref type="bibr" target="#b9">(10)</ref> and <ref type="bibr" target="#b10">(11)</ref>, we obtain</p><formula xml:id="formula_14">-F ∇ • m-1 k=1 z k (D k -D m )∇c k -∇ • m-1 k=1 z k (z k µ k -z m µ m )F 2 c k ∇Φ - m-1 k=1 z k F R k = 0 in Ω. (<label>12</label></formula><formula xml:id="formula_15">)</formula><p>This conservation of charge equation replaces the conservation of mass of species m in the system. The system now consists of m equations: conservation of mass equations (1) for k = 1, . . . , m -1, and a conservation of charge equation <ref type="bibr" target="#b11">(12)</ref>, and m unknowns: concentration unknowns c k for k = 1, . . . , m -1, and the electric potential Φ. As in <ref type="bibr" target="#b7">[8]</ref>, we call this formulation the Charge-conservation-Nernst-Planck (CNP) model. In terms of the DG scheme, stabilization and penalization of c m is no longer needed since it is no longer an unknown of the system. We can instead treat <ref type="bibr" target="#b11">(12)</ref> as an elliptic equation for Φ in terms of the DG stabilization and penalization.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.3.">Nondimensionalization</head><p>Here we perform a nondimensionalization of the CNP model consisting of (1) and <ref type="bibr" target="#b9">(10)</ref> and boundary conditions <ref type="bibr" target="#b4">(5)</ref> to <ref type="bibr" target="#b7">(8)</ref>. Note that this scaling process generally helps numerical algorithms. Indeed, for the considered test cases, this greatly accelerates the convergence of the iterative methods.</p><p>Let the following nondimensional variables:</p><formula xml:id="formula_16">Φ = F RT Φ, ĉk = c k c in k , x = 1 L x, û = 1 u avg u,<label>(13)</label></formula><p>and the differential operator with respect x</p><formula xml:id="formula_17">∇ = L∇.<label>(14)</label></formula><p>Substituting ( <ref type="formula" target="#formula_16">13</ref>) and ( <ref type="formula" target="#formula_17">14</ref>) into (1), we obtain</p><formula xml:id="formula_18">-∇ • ( Dk ∇ĉ k ) + ∇ • (ĉ k û) -∇ • (z k Dk ĉk ∇ Φ) - L c in k u avg R k = 0 in Ω, (<label>15</label></formula><formula xml:id="formula_19">)</formula><p>where Dk = D k Luavg is the inverse Péclet number. We note that the electroneutrality condition ( <ref type="formula" target="#formula_2">3</ref>) is now</p><formula xml:id="formula_20">m k=1 z k c in k ĉk = 0,<label>(16)</label></formula><p>so that ĉm is eliminated using</p><formula xml:id="formula_21">ĉm = - 1 z m c in m m-1 k=1 z k c in k ĉk .<label>(17)</label></formula><p>In order to nondimensionalize the charge conservation equation ( <ref type="formula">10</ref>), we introduce the reference concentration c ref to obtain</p><formula xml:id="formula_22">-∇ • m k=1 z k Dk c in k c ref ∇ĉ k -∇ • m k=1 z 2 k Dk c in k c ref ĉk ∇ Φ - m k=1 L c ref u avg z k R k = 0 in Ω. (<label>18</label></formula><formula xml:id="formula_23">)</formula><p>The boundary conditions ( <ref type="formula" target="#formula_7">5</ref>) to ( <ref type="formula" target="#formula_10">8</ref>) become</p><formula xml:id="formula_24">(ĉ k qk -Dk ∇c k ) • n = û • n on Γ in ,<label>(19)</label></formula><formula xml:id="formula_25">( Dk ∇ĉ k + z k Dk ĉk ∇ Φ) • n = 0 on Γ out ,<label>(20)</label></formula><formula xml:id="formula_26">( Dk ∇ĉ k + z k Dk ĉk ∇ Φ) • n = 1 u avg c in k g k on Γ elec ,<label>(21)</label></formula><formula xml:id="formula_27">( Dk ∇ĉ k + z k Dk ĉk ∇ Φ) • n = 0 on Γ wall .<label>(22)</label></formula><p>In the specific case of the Butler-Volmer equation ( <ref type="formula" target="#formula_11">9</ref>), if k is an oxidant, ( <ref type="formula" target="#formula_26">21</ref>) becomes</p><formula xml:id="formula_28">( Dk ∇ĉ k + z k Dk ĉk ∇ Φ) • n = Ĵ0 ĉr c in r c * r c * k c in k γ exp Φapp -Φ -ĉ γ k exp -( Φapp -Φ) ,<label>(23)</label></formula><p>where</p><formula xml:id="formula_29">Ĵ0 = J 0 (c in k ) γ-1 u avg F (c * k ) γ and Φapp = F RT Φ app .</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.">Discontinuous Galerkin method</head><p>In this section, we introduce a Discontinuous Galerkin (DG) scheme for the CNP model ( <ref type="formula" target="#formula_3">4</ref>) and <ref type="bibr" target="#b11">(12)</ref>. After reviewing preliminary DG concepts, we provide DG schemes for a hyperbolic and an elliptic equation. The resulting numerical fluxes are then used for the full system ( <ref type="formula" target="#formula_3">4</ref>) and <ref type="bibr" target="#b11">(12)</ref>. For generality, we provide the scheme for the dimensional equations instead of the nondimensionalized version from section 2.3.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1.">Preliminaries</head><p>We begin by introducing the appropriate functional notation. Let T h be a subdivision of Ω with element K ∈ T h . The broken Sobolev spaces are defined as</p><formula xml:id="formula_30">H l (T h ) = {v ∈ L 2 (Ω) : v| K ∈ H l (K)}. (<label>24</label></formula><formula xml:id="formula_31">)</formula><p>Let Γ = ∪ K∈T h ∂K denote the set of element boundaries. The restrictions of functions in H 1 (T h ) to Γ are called traces and belong to the function space</p><formula xml:id="formula_32">T (Γ) = Π K∈T h L 2 (∂K).</formula><p>Denote the space of polynomials of degree p on each element κ with Q p . A proper finite element space is defined as</p><formula xml:id="formula_33">V p h = {v h ∈ L 2 (Ω) : v h | K ∈ Q p }.<label>(25)</label></formula><p>Next we introduce some trace operators needed for the numerical fluxes. For u ∈ T (Γ), we define the average {u} and jump <ref type="bibr">[[u]</ref>] on interior faces as</p><formula xml:id="formula_34">{u} = 1 2 (u -+ u + ), [[u]] = u -n -+ u + n + on e ∈ E • ,<label>(26)</label></formula><p>and</p><formula xml:id="formula_35">for q ∈ [T (Γ)] d , {q} = 1 2 (q -+ q + ), [[u]] = q -• n -+ q + • n + on e ∈ E • . (<label>27</label></formula><formula xml:id="formula_36">)</formula><p>Jumps on exterior faces are defined as</p><formula xml:id="formula_37">[[u]] = un, {u} = u on e ∈ E Γ .<label>(28)</label></formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2.">Applied to the CNP model</head><p>Following a combination of <ref type="bibr" target="#b13">[14,</ref><ref type="bibr" target="#b14">15,</ref><ref type="bibr" target="#b15">16]</ref>, we derive a Discontinuous Galerkin formulation for the CNP model. In this section, we only consider zero-Dirichlet boundary conditions for simplicity. The full scheme with boundary conditions ( <ref type="formula" target="#formula_7">5</ref>) to ( <ref type="formula" target="#formula_10">8</ref>) is given in section 3.3.</p><p>Analyzing <ref type="bibr" target="#b3">(4)</ref> we can see that it consists of a diffusion, advection-migration, and reaction term. Each term has to be treated carefully in order to achieve a convergent DG discretization.</p><p>We multiply (4) by a test function v and integrate over the domain Ω.</p><p>-</p><formula xml:id="formula_38">Ω ∇ • (D k ∇c k )v dx + Ω ∇ • (c k q k )v dx - Ω R k v dx = 0 in Ω. (<label>29</label></formula><formula xml:id="formula_39">)</formula><p>The diffusion term can be treated exactly like in <ref type="bibr" target="#b15">[16]</ref> with the appropriate flux choices</p><formula xml:id="formula_40">ĉk = {c k } on Γ I , ĉk = 0 on ∂Ω, σ = {∇c k } -D k δ p [[c k ]] on Γ, (<label>30</label></formula><formula xml:id="formula_41">)</formula><p>where δ p is a penalty parameter that depends on the polynomial order p of the finite elements. In <ref type="bibr" target="#b10">[11]</ref>, it is given by</p><formula xml:id="formula_42">δ p = C IP p 2 h ,<label>(31)</label></formula><p>where C IP &gt; 0 needs to be large enough for stability, and h is the cell diameter.</p><p>The diffusion term results in</p><formula xml:id="formula_43">- Ω ∇ • (D k ∇c k )v dx ≈ Ω D k ∇c k • ∇v dx - Γ D k ([[c k ]] • {∇v} + {∇c k } • [[v]]) ds + Γ D k δ p [[c k ]] • [[v]] ds.<label>(32)</label></formula><p>The advection-migration term combines the advection effect from the transport velocity v and the migration effect from the potential gradient ∇Φ, which can be treated with the combined variable q k . This combined term is treated as in <ref type="bibr" target="#b14">[15]</ref> with the upwind flux, resulting in</p><formula xml:id="formula_44">Ω ∇ • (c k q k )v dx ≈ - Ω c k q k • ∇v dx + Γ I {c k q k } + |q k • n| 2 [[c k ]] • [[v]] ds. (<label>33</label></formula><formula xml:id="formula_45">)</formula><p>Since the reaction term is cell-local, and it is assumed not to contain derivatives of the primary solution variables, no further treatment is needed. Note that the gradient potential term ∇Φ in the mass conservation equations ( <ref type="formula" target="#formula_3">4</ref>) is only treated like a velocity in an advective term for the concentrations.</p><p>A penalty term is required for the stability of the DG scheme and that is why we are using the CNP model. Indeed, the gradient potential term in the charge conservation equation ( <ref type="formula" target="#formula_14">12</ref>) will be treated like an elliptic term, with appropriate penalization. Conversely, since we have already penalized the concentration gradients ∇c k in our treatment of (4), it is not required to do so for <ref type="bibr" target="#b11">(12)</ref>.</p><p>We introduce the following short-hand notation for ( <ref type="formula" target="#formula_14">12</ref>)</p><formula xml:id="formula_46">a km = F z k (D k -D m ),<label>(34)</label></formula><formula xml:id="formula_47">κ = m-1 k=1 z k (z k µ k -z m µ m )F 2 ,<label>(35)</label></formula><formula xml:id="formula_48">f = m k=1 z k F R k ,<label>(36)</label></formula><p>which results in</p><formula xml:id="formula_49">-∇ • m-1 k=1 a km ∇c k -∇ • (κ∇Φ) -f = 0 in Ω. (<label>37</label></formula><formula xml:id="formula_50">)</formula><p>The fluxes for the concentration term are chosen as</p><formula xml:id="formula_51">ĉk = {c k } on Γ I , ĉk = 0 on ∂Ω, σ = {∇c k } on Γ. (<label>38</label></formula><formula xml:id="formula_52">)</formula><p>Without loss of generality, the case with only two species in the system (k = 2) results in</p><formula xml:id="formula_53">Ω a 1 ∇c 1 • ∇v dx - Γ a 1 ([[c 1 ]] • {∇v} + {∇c 1 } • [[v]]) ds = Ω f v dx, (<label>39</label></formula><formula xml:id="formula_54">)</formula><p>where a 1 = a 12 . For the potential term, we choose fluxes with interior penalty</p><formula xml:id="formula_55">Φ = {Φ} on Γ I , Φ = 0 on ∂Ω, σ = {κ∇Φ} -{κ}δ p [[Φ]] on Γ. (<label>40</label></formula><formula xml:id="formula_56">)</formula><p>This results in</p><formula xml:id="formula_57">Ω κ∇Φ • ∇v dx - Γ ([[Φ]] • {κ∇v} + {κ∇Φ} • [[v]]) ds + Γ {κ}δ p [[Φ]] • [[v]] ds = Ω f v dx, (<label>41</label></formula><formula xml:id="formula_58">)</formula><p>with the standard symmetric interior penalty flux. Note that in this example we assume the same test function space for all concentrations c k and the potential Φ. Therefore, we use the same penalty parameter δ p . If the polynomial spaces have different orders, the penalty parameters for both terms should be chosen accordingly. In our numerical experiments, we use <ref type="bibr" target="#b30">(31)</ref> with C IP = 10.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3.">Scheme</head><p>Let the short-hand notation for the current at the electrode boundary</p><formula xml:id="formula_59">g = m k=1 z k F g k ,<label>(42)</label></formula><p>where g k are the reaction rates from <ref type="bibr" target="#b6">(7)</ref>.</p><p>The DG scheme for the problem eqs. ( <ref type="formula" target="#formula_3">4</ref>) to ( <ref type="formula" target="#formula_10">8</ref>) and ( <ref type="formula" target="#formula_14">12</ref>) is given by: Find</p><formula xml:id="formula_60">c k ∈ V p h for k = 1, . . . , m -1, and Φ ∈ V p h such that Ω D k ∇c k • ∇v k dx - Γ I ([[c k ]] • {D k ∇v k } + {D k ∇c k } • [[v k ]]) ds + Γ I {D k }δ p [[c k ]] • [[v k ]] ds - Ω c k q k • ∇v k dx + Γ I {c k q k } + |q k • n| 2 [[c k ]] • [[v k ]] ds + Γout (q k • n)c k v k ds + Γin (u • n)c in k v k ds - Γ elec g k v k ds - Ω R k v k dx = 0, (43a) for all v k ∈ V p h , for k = 1, . . . , m -1, and m-1 k=1 Ω a km ∇c k • ∇v m dx - Γ I ([[c k ]] • {a km ∇v m } + {a km ∇c k } • [[v m ]]) ds + Ω κ∇Φ • ∇v m dx - Γ I ([[Φ]] • {κ∇v m } + {κ∇Φ} • [[v m ]]) ds + Γ I {κ}δ p [[Φ]] • [[v m ]] ds - Γ elec gv m ds - Ω f v m dx = 0, (43b)</formula><p>for all v m ∈ V p h . Recall that the eliminated concentration c m can be recovered from the substitution <ref type="bibr" target="#b10">(11)</ref>. Note that in (43b), the inlet boundary conditions cancel due to electroneutrality.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.">Numerical details and preconditioning</head><p>A crucial aspect in the practical usability of this specific discretization is the ability to solve it efficiently when applied to real world problems. Domains for such applications are usually three-dimensional and nonlinear couplings appear through species reactions. Consequently, the numerical solution approach has to be scalable on a desired hardware architecture to provide feasible turnaround times for experiments. As a first performance measure, we are focusing on hexahedral mesh elements, which allow for a tensor product element approach <ref type="bibr" target="#b16">[17]</ref>, a fact that we exploit in our implementation (note that we are not exploiting Gauss-Legendre-Lobatto nodes, because we tend to use higher-order quadrature rules compared to the polynomial degree).</p><p>After discretization, the nonlinear system arising from (43) has to be linearized and solved frequently. To solve the nonlinear system, we employ a Newton method along with backtracking linesearch <ref type="bibr" target="#b17">[18]</ref>. To ensure a scalable linear solving procedure we have to employ appropriate preconditioning techniques <ref type="bibr" target="#b11">[12]</ref>.</p><p>We can rewrite (43) as a block residual equation</p><formula xml:id="formula_61">R =      R Φ R c1 . . . R cm-1      = 0,</formula><p>where R Φ is the residual of the discretized charge conservation equation (43b), and R ci , i = 1, . . . , m -1, correspond to the residuals of the mass conservation equations (43a). Linearization of the residual R results in the block matrix</p><formula xml:id="formula_62">J = ∂R ∂(Φ, c 1 , . . . , c m-1 ) =        ∂RΦ ∂Φ ∂RΦ ∂c1 . . . ∂RΦ ∂cm-1 ∂Rc 1 ∂Φ ∂Rc 1 ∂c1 . . . ∂Rc 1 ∂cm-1 . . . . . . . . . . . . ∂Rc m-1 ∂Φ ∂Rc m-1 ∂c1</formula><p>. . .</p><formula xml:id="formula_63">∂Rc m-1 ∂cm-1        =      A ΦΦ A Φc1 . . . A Φcm-1 A c1Φ A c1c1 . . . A c1cm-1 . . . . . . . . . . . . A cm-1Φ A cm-1c1 . . . A cm-1cm-1      . (<label>44</label></formula><formula xml:id="formula_64">)</formula><p>This block system is used in the following sections to determine preconditioning strategies.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.1.">Preconditioning for p = 1</head><p>We first describe the preconditioning strategy for a piecewise linear discretization.</p><p>When dealing with block systems resulting from the discretizations of systems of PDEs with different underlying physics, it is usually not sufficient and never optimal to use the same preconditioner for each block. Analyzing the linearized block system (44), we immediately notice that the A ΦΦ block only consists of terms that resemble a Poisson equation, for which preconditioners like Algebraic Multigrid (AMG) <ref type="bibr" target="#b18">[19]</ref> combined with Conjugate Gradient (CG) iterations work well.</p><p>Continuing with the diagonal, the A c k c k blocks are not as simple and involve a diffusive term as well as a (usually dominant) advective term with anisotropic coefficients. In this case, classical AMG will not work well since its heuristics require elliptic-like properties. Instead, we apply preconditioned GMRES iterations <ref type="bibr" target="#b19">[20]</ref> to the A c k c k blocks, considering two different preconditioners. The first preconditioning approach is an additive Schwarz method (ASM) <ref type="bibr" target="#b20">[21]</ref> where an incomplete LU factorization with 0 fill (ILU0) <ref type="bibr" target="#b21">[22]</ref> is applied to each subdomain. The subdomains are given by the parallel decomposition of the mesh. The second approach is a Geometric Multigrid (GMG) <ref type="bibr" target="#b22">[23]</ref> preconditioner where that same ASM-ILU0 method is used as a smoother. The coarsest grid can be solved directly with a full LU factorization. Although, naively solving the coarse grid this way does not scale to a large number processors when parallel performance is desired. Because the coarse grid and therefore the coarse discretization is usually small, even on computations with hundreds of processors, the communication between the processors is the bottleneck for performance. A solution is to redistribute and duplicate the coarse grid matrix to predefined subsets of processors. This technique performs redundant work but improves the overall solve time as shown in <ref type="bibr" target="#b23">[24]</ref>.</p><p>We choose a block-triangular preconditioner of the form</p><formula xml:id="formula_65">P =      A ΦΦ A c1Φ A c1c1 . . . . . . . . . A cm-1Φ A cm-1Ac 1 . . . A cm-1cm-1      -1 .<label>(45)</label></formula><p>Inverting a block-triangular matrix requires the inversion of the diagonal blocks, which are approximated by</p><formula xml:id="formula_66">A -1 ΦΦ ≈ CG(AMG(A ΦΦ )), A -1 c k c k ≈ GMRES(ASM(A c k c k )),<label>(46)</label></formula><p>in the first approach, and</p><formula xml:id="formula_67">A -1 ΦΦ ≈ CG(AMG(A ΦΦ )), A -1 c k c k ≈ GMRES(GMG(A c k c k )),<label>(47)</label></formula><p>in the second.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.2.">Preconditioning for high order</head><p>AMG is more memory intensive for higher-order discretizations. In this case, p-multigrid has been successful in the past <ref type="bibr" target="#b24">[25,</ref><ref type="bibr" target="#b25">26]</ref>. For the A ΦΦ block, we consider a p-multigrid strategy where AMG is applied to a lower-order pcoarsened problem. This coarsened problem uses the same DG discretization for p = 1, where the penalization terms are appropriately updated for the lower order. We include element-wise Jacobi as a relaxation scheme, where interelement contributions are ignored to maintain locality.</p><p>For the concentration blocks, we consider the same additive Schwarz method described for p = 1. We do not consider the use of GMG for the high-order case.</p><p>The block preconditioner (45) with the described p-multigrid method for the potential block exhibits convergence issues for some numerical experiments of section 5 for p = 3. It is unclear to the authors why this is the case. Instead, a different ordering of the preconditioning steps works better: solving the concentration blocks first, then the potential blocks. We theorize that the couplings are important in the low-order coarse problem but have only heuristic evidence. We thus use the following preconditioner:</p><formula xml:id="formula_68">P =      A ΦΦ A Φc1 . . . A Φcm-1 A c1c1 . . . . . . A cm-1Ac 1 . . . A cm-1cm-1      -1 . (<label>48</label></formula><formula xml:id="formula_69">)</formula><p>Inverting this matrix only requires the inversion of the diagonal blocks, which are approximated by</p><formula xml:id="formula_70">A -1 ΦΦ ≈ CG(PMG(A ΦΦ )), A -1 c k c k ≈ GMRES(ASM(A c k c k )). (<label>49</label></formula><formula xml:id="formula_71">)</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.3.">Implementation</head><p>The implementation is part of the EchemFEM package <ref type="bibr" target="#b26">[27]</ref>. It is realized using firedrake <ref type="bibr" target="#b27">[28]</ref> as a finite element discretization tool, which allows for automated code generation and optimization. We leverage the capability to generate kernels of tensor product finite elements <ref type="bibr" target="#b16">[17]</ref> on quadrilateral <ref type="bibr" target="#b28">[29]</ref> and extruded hexahedral meshes <ref type="bibr" target="#b29">[30]</ref>. Note that the algorithms and discretization techniques presented here can also be applied to triangular and tetrahedral elements. Furthermore, firedrake provides the necessary infrastructure to realize the presented GMG preconditioner <ref type="bibr" target="#b30">[31]</ref>. The nonlinear and linear solves are handed off to the PETSc <ref type="bibr" target="#b31">[32]</ref> linear algebra backend, and BoomerAMG <ref type="bibr" target="#b32">[33]</ref> from the hypre library <ref type="bibr" target="#b33">[34]</ref> is used for the AMG implementation. For higher-order simulations, we use firedrake's matrix-free capabilities <ref type="bibr" target="#b34">[35]</ref>. In appendix Appendix A we provide all solver options, along with relative tolerances of each inner Krylov method, the outer FGMRES <ref type="bibr" target="#b35">[36]</ref>, and the outer Newton solver.</p><p>To help the convergence of Newton's method, we start with a constant initial guess for the concentrations using the inlet values c in k . For the potential, we obtain an initial guess by first solving the charge conservation equation with constant concentrations (a Poisson equation). For this initial potential solution, we use the solver for the potential block defined in appendix Appendix A, with a conjugate gradient tolerance of 10 -2 .</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.">Numerical results</head><p>In this section, we investigate the numerical performance of the DG scheme and preconditioning strategies. We perform a convergence test for polynomial orders p = 1, 2, 3 and strong scaling tests for a large parallel plate flow channel example for p = 1 and p = 3. All tests are performed in three-dimensional domains.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.1.">Convergence tests</head><p>In section 3, we established a discretization scheme based on well-known DG methods. As a first step, we have to make sure that the presented method provides the expected accuracy. Optimally, we would be able to prove an error estimate and therefore a theoretical convergence rate through analysis of (43).</p><p>Another, although less thorough, way of determining the convergence rate is by solving a manufactured problem and comparing the solution against the known analytical solution. The way the scheme was set up, we expect the convergence rate to be similar to the minimum rate of each individual treated equation. Therefore, the convergence rate of the concentration variables should be close to that of an advection-diffusion-reaction equation, i.e. p + 1 2 in the advection-dominated regime <ref type="bibr" target="#b36">[37]</ref>, and the convergence rate of the potential variable should be close to that of a diffusion equation, i.e. p + 1 <ref type="bibr" target="#b15">[16]</ref>.</p><p>We use the nondimensional version of a two-ion system with inverse Péclet numbers D1 = 5 × 10 -6 and D2 = 10 -5 , and charge numbers z 1 = 2 and z 2 = -2. The analytical manufactured solution is chosen as</p><formula xml:id="formula_72">c 1ex = cos x + sin y + 3,<label>(50)</label></formula><formula xml:id="formula_73">Φ ex = sin x + cos y + 3,<label>(51)</label></formula><p>on the domain Ω ∈ (0, 1) 3 . All boundary conditions on ∂Ω are prescribed using the exact solutions. Additionally, a parabolic velocity profile is defined with u = (6y(1 -y), 0, 0) in the whole domain. We choose an initial mesh size using 64 hexahedral elements with a polynomial order of p = 1 and compute the L 2 error norms of each variable</p><formula xml:id="formula_74">c 1 -c 1ex 2 , Φ -Φ ex 2 . (<label>52</label></formula><formula xml:id="formula_75">)</formula><p>Then, we subsequently halve the element size h e using uniform refinement. The process is repeated for polynomial orders p = 2 and p = 3. Figure <ref type="figure" target="#fig_1">1</ref> shows the results for this test and one can observe a convergence rate of approximately p + 1 for Φ. For c 1 , the rate appears to be p + 1 for the coarser meshes, until the later refinements reveals the asymptotic rate of p + 1 2 . This asymptotic rate is not reached for p = 3.</p><p>Looking at these results, one has to keep in mind that we determined the convergence rates on a Cartesian grid, and they might deteriorate on unstructured or curved grids <ref type="bibr" target="#b37">[38,</ref><ref type="bibr" target="#b38">39]</ref>.</p><p>We now briefly investigate how the accuracy of the method relates to computational cost. For the manufactured solution problem described above, we calculate the total computational time and total L 2 error as we vary the size of the problem. The total error is the sum of the concentration and potential errors. On an Intel 18-core Xeon E5-2695 v4 architecture with 2.1 GHz clock speed, we use two nodes and a total of 64 processors. For p = 1, we use the preconditioner described in section 4.1 with the additive Schwarz method for the concentration blocks, and for p = 3 we use the preconditioner for high order described in section 4.2.   --</p><p>In table 1, we provide computational timings and total L 2 errors for p = 1 and p = 3 as we vary the problem size. We note that the computational resources are fixed so there is insufficient memory for the largest high-order case. Additionally, the first row of results is around a thousand degrees of freedom per processor, which is not typically cost-efficient. Even so, the smallest p = 3 problem is twice as accurate and seven times faster than the largest p = 1 problem. It is evident that increasing polynomial order is preferable to mesh refinement when seeking high accuracy results.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.2.">Parallel plate flow channel</head><p>We consider a 3D extension of the parallel plate reactor from <ref type="bibr" target="#b6">[7]</ref>. A schematic of the reactor is given in figure <ref type="figure" target="#fig_2">2</ref>. The distance between the two electrodes is h = 0.01 m, and their length is L = 0.02 m. The inlet and outlet regions included in the domain are of length L a = L b = 0.05 m, and the channel has a width w = 0.06 m.</p><p>The velocity field u = (u x , u y , u z ) in the reactor is given by the parabolic profile Choosing zero-Neumann boundary conditions on xy-faces means that the channel is periodic in the z-direction. For this test case, we choose u avg = 0.03 m s -1 . We consider the three-ion system from <ref type="bibr" target="#b6">[7]</ref> with an electrolyte solution consisting of 0.01 M CuSO 4 and 1.0 M H 2 SO 4 . The ions are H + , Cu 2+ , and SO 2-  4   with properties given in table 2. This results in average Péclet numbers, u avg h D k , of 3.22 × 10 4 , 4.17 × 10 5 , and 2.82 × 10 5 for H + , Cu 2+ , and SO 2- 4 , respectively. 93.12 × 10 -10 2.0 1</p><formula xml:id="formula_76">u x = 6u avg h 2 y(h -y), u y = u z = 0. (<label>53</label></formula><formula xml:id="formula_77">) Cathode Anode L a L L b h w x y z</formula><p>At the electrodes, the electrochemical reaction is given by the Butler-Volmer equation ( <ref type="formula" target="#formula_11">9</ref>) for the reacting ion, Cu 2+ , and no reaction for the other ions. The parameters for the Butler-Volmer equation are γ = 1, α 1 = α 2 = 0.5, T = 298.15 K, n = 2, and c * Cu 2+ is given by the inlet concentration of Cu 2+ in table 2. The applied potential Φ app is zero at the anode and 0.03 V at the cathode. For this redox reaction, Cu 2+ is the oxidant, and the solid copper of the electrode is the reductant (with constant concentration). To introduce variations in the z direction, we consider the following parabolic profile for the exchange current density:</p><formula xml:id="formula_78">J 0 = 3 5 J0 2 - z -w/2 w/2 2 ,<label>(54)</label></formula><p>which has an average of J0 = 30 A m -2 over the width of the channel. We first use a structured hexahedral mesh such that, in the xy-plane, elements are concentrated in the electrode region as illustrated in figure <ref type="figure" target="#fig_3">3</ref>, and elements are equally spaced in the z-plane. The coarse mesh of 64 × 16 × 8 elements is uniformly refined three times, resulting in a mesh with 4,194,304 elements. Note that this mesh has elements with large aspect ratios.</p><p>We also consider a mesh where the xy-plane is an unstructured mesh as illustrated in figure <ref type="figure" target="#fig_4">4</ref>. Similarly to the structured mesh, the coarse 2D mesh is  extruded in the z-direction with eight equally-spaced elements. After uniformly refining three times, we obtain a mesh with 4,153,344 elements.  We now investigate the strong scaling of the preconditioners for the parallel flow plane channel. The experiments are performed on an Intel 18-core Xeon E5-2695 v4 architecture with 2.1 GHz clock speed. Using elements of p = 1 polynomial order results in 100,663,296 degrees of freedom for the structured mesh, and 99,680,256 degrees of freedom for the unstructured mesh.</p><note type="other">Anode Cathode</note><p>We begin with 256 processors (on 8 nodes) and successively double the number of processors and nodes. In figure <ref type="figure" target="#fig_6">5</ref>, we illustrate the strong scaling results for both preconditioning approaches described in section 4on the structured mesh described above, and in figure <ref type="figure" target="#fig_7">6</ref> on the unstructured mesh. ASM refers to using the additive Schwarz method with ILU0 on the subdomains as a preconditioner for the concentration blocks, while GMG refers to using a geometric multigrid method with that same ASM as a smoother. For both ASM and GMG, we present solution times and the total number of outer FGMRES iterations. In each case, four Newton iterations are required to reach the prescribed tolerance.</p><p>First, we discuss the scaling results for the unstructured mesh in figure <ref type="figure" target="#fig_6">5</ref>. We observe that, overall, ASM is the more expensive method. Further investigation of the iteration counts of the inner GMRES used for the concentration blocks reveals that GMG only takes a few iterations, while ASM often takes around 50-100 iterations (sub-iterations not shown here). Now, in terms of scaling, ASM scales almost linearly until 2,048 processors. However, it is expected that ASM becomes a weaker preconditioner as the number of subdomains increases. For GMG, the scaling is close to being linear form 256 to 1,024 processors. Naturally, the direct solver used for the coarse problem of GMG does not scale linearly and eventually dominates the computational cost at 2,048 processors. Note that there is a decrease in iterations at 512 and 1,024 processors, which may be due to how the mesh is partitioned, thus increasing the performance of the smoother and the apparent quality of the scaling. Recall that we do not have control over the domain decomposition, which in general will not be ideal. In particular, the criticality of the electrode regions should be considered in a more controlled mesh partition. Now we compare the scaling results for the unstructured mesh in figure <ref type="figure" target="#fig_7">6</ref>. We observe that both methods have similar almost-linear scaling, with a bump in cost at 2,048 processors. Differently from the structured mesh case, ASM is the least expensive method. In fact, the GMRES iteration count for the concentration blocks for ASM are lower in this case, typically less than 30 (subiterations not shown here). The structured mesh has some elements with very large aspect ratio. This could affect the conditioning of the mesh, resulting in larger number of iterations. We note that the outer GMRES iterations is also lower for the unstructured case.</p><p>Finally, we look at the scaling results for p = 3 and the preconditioning strategy described in section 4.2. We note that the p-multigrid method used for the potential block performs poorly on meshes with high element aspect ratios such as the ones used above. The scaling tests are therefore performed on a mesh with moderate aspect ratios. The width of the channel is changed to w = 0.01 m. We consider an unstructured coarse mesh similar to the one illustrated in figure <ref type="figure" target="#fig_4">4</ref> but with slightly larger elements and extrude it in the zdirection with 6 elements. For p = 3, we uniformly refine the mesh 2 times for a total of 254,208 elements. One more refinement gives 2,033,664 elements, which is used for p = 1. Both problems consist of 48,807,936 degrees of freedom. We display the high-order scaling results in figure <ref type="figure" target="#fig_8">7</ref>. We observe that the scaling for p = 3 is about order 0.5, i.e. the cost is halved after quadrupling the number of processors. The computational timings for the smallest case is more than four times higher for p = 3 than p = 1. Nevertheless, this figure does not take into account the numerical accuracy of the results. Indeed, we recall from table 1 that higher accuracy can be obtained for higher-order problems of much smaller sizes. Strong scaling for p = 1 as at best linear, but increasing the polynomial order results in an exponential increase in accuracy.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6.">Conclusion</head><p>In this work, we propose a high-order Discontinuous Galerkin (DG) scheme and block preconditioners for the electroneutral Nernst-Planck equations. We choose a model formulation where the electroneutrality condition is substituted to obtain a charge conservation equation. In the DG scheme, this equation is treated as an elliptic equation for the electrical potential, whereas in the mass  conservation equations, an upwind scheme is used for the combined advectionmigration term. In numerical convergence tests, the scheme exhibits a p + 1 order of convergence for the potential and a p + 1 2 order of convergence for the concentrations.</p><p>For p = 1, both proposed block preconditioners use Algebraic Multigrid for the potential block whereas an Additive Schwarz method with ILU is used for the concentration blocks, by itself or as a smoother for a Geometric Multigrid method (GMG). While both methods exhibit decent strong scaling, the GMGbased approach is less expensive on the structured mesh, although its scaling is limited by the direct solver used for the coarse grid solution. For higher order, a p-multigrid method is used for the potential block, where Algebraic Multigrid is applied to the lower-order coarsened problem. The strong scaling is less than linear in the high-order case.</p><p>For future extensions, coupling this solver with fluid dynamics is of particular interest. The Stokes or incompressible Navier-Stokes equations are relevant for flow reactors as well as the pore-scale of porous electrode systems. On the larger length scale, Darcy flow is appropriate for porous electrodes, and its multiphase extension for gas-diffusion electrodes (GDE).</p><p>Further work is needed for preconditioning in the case where electrolyte bulk reactions are present, where reaction rate constants can vary wildly. Porous " coarsen_type " : " HMIS " , 14</p><p>" agg_nl " : 3 , 15 " interp_type " : " ext + i " , 16</p><p>" agg_num_paths " : 5 , 17 } , 18 } , 19 % For each concentration block k , using the ASM prec ondition er : 20 " fieldsplit_ [ k ] " : { 21 " ksp_rtol " : 1E -1 ,</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>22</head><p>" ksp_type " : " gmres " , 23</p><p>" pc_type " : " asm " , 24</p><p>" sub_pc_type " : " ilu " , 25 } , 26 % Otherwise , for each concentration block k , using the GMG precond itioner : 27 " fieldsplit_ [ k ] " : { 28 " ksp_rtol " : 1E -1 , 29</p><p>" ksp_type " : " gmres " , 30 " pc_type " : " mg " , 31 " m g _ l e v e l s _ k s p _ t y p e " : " richardson " , 32 " m g _ l e v e l s _ p c _ t y p e " : " asm " , 33 " m g _ l e v e l s _ s u b _ p c _ t y p e " : " ilu " , 34</p><p>" mg_coarse " : { 35 " pc_type " : " python " , 36</p><p>" pc _python_ type " : " firedrake . AssembledPC " , 37</p><p>" assembled " : { 38 " mat_type " : " aij " , 39</p><p>" pc_type " : " telescope " , 1 " mat_type " : " matfree " , 2 " snes_type " : " newton " , 3 " snes_rtol " : 1E -6 , 4 " ksp_type " : " fgmres " , 5 " ksp_rtol " : 1E -3 , 6 " pc_type " : " fieldsplit " , 7 % For the potential block 8 " fieldsplit_ [ m ] " : { 9</p><p>" ksp_rtol " : 1E -1 , 10 " ksp_type " : " cg " , 11</p><p>" pc_type " : " python " , 12</p><p>" mat_type " : " matfree " , 13</p><p>" pc _python_ type " : __name__ + " . C o a r s e n P e n a l t y P M G P C " , 14</p><p>" p m g _ m g _ l e v e l s _ k s p _ t y p e " : " chebyshev " , 15</p><p>" p m g _ m g _ l e v e l s _ k s p _ m a x _ i t " : 4 , 16</p><p>" p m g _ m g _ l e v e l s _ k s p _ n o r m _ t y p e " : " u n p r e c o n d i t i o n e d " , 17</p><p>" pm g_mg_lev els_ " : { 18 " pc_type " : " python " ,</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>19</head><p>" pc _python_ type " : __name__ + " . " + " Ce llIntegr alPC " , 20 " a s s e m b l e d _ p c _ t y p e " : " jacobi " , 21 } ,</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>22</head><p>" p m g _ c o a r s e _ m a t _ t y p e " : " aij " , 23</p><p>" pmg_mg_coarse " : { 24 " ksp_type " : " cg " , 25</p><p>" ksp_rtol " : 1e -3 , 26</p><p>" pc_type " : " hypre " , 27 } , 28 } , 29 % For each concentration block k , using the ASM prec ondition er : 30 " fieldsplit_ [k -1] " : { 31 " ksp_rtol " : 1E -1 , 32</p><p>" ksp_type " : " gmres " , 33</p><p>" pc_type " : " python " , 34</p><p>" pc _python_ type " : " firedrake . AssembledPC " , 35</p><p>" assembled " : { 36 " pc_type " : " asm " , 37</p><p>" pc _asm_ove rlap " : 1 ,</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>38</head><p>" sub_pc_type " : " ilu " 39 } , 40 } ,</p><p>The reduction factor REDFACTOR for the coarse grid redistribution is chosen depending on the number of processors such that the solver sub-communicator always includes exactly 8 nodes. The default overlap for ASM is one element.</p><p>The custom preconditioner CoarsenPenaltyPMGPC is p-multigrid with p = 1 on the coarse level where the proper penalization parameters are used for the DG discretization. The custom preconditioner CellIntegralPC is used to ignore inter-element contributions. These custom solvers are available in the EchemFEM package <ref type="bibr" target="#b26">[27]</ref>.</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>3 (a) L 2 3 (b) L 2</head><label>3232</label><figDesc>error for c1 showing a convergence rate of approximately p + 1 2 . The dotted lines represent a p + 1 2 rate. error for Φ showing a convergence rate of approximately p + 1. The dotted lines represent a p + 1 rate.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 1 :</head><label>1</label><figDesc>Figure 1: Convergence tests for the manufactured solution.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head>Figure 2 :</head><label>2</label><figDesc>Figure 2: Parallel plate reactor diagram.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Figure 3 :</head><label>3</label><figDesc>Figure 3: Cross-section of the coarse mesh in the xy-plane and zoom-in of the electrode region.</figDesc><graphic coords="17,235.89,186.04,139.48,66.14" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Figure 4 :</head><label>4</label><figDesc>Figure 4: Cross-section of the unstructured coarse mesh in the xy-plane.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>Figure 5 :</head><label>5</label><figDesc>Figure 5: Strong scaling timings for the parallel flow plane channel for p = 1. The total number of outer GMRES iterations are given in parentheses.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_7"><head>Figure 6 :</head><label>6</label><figDesc>Figure 6: Strong scaling timings for the parallel flow plane channel for p = 1. The total number of outer GMRES iterations are given in parentheses.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: Strong scaling timings for the parallel flow plane channel with ASM. The total number of outer GMRES iterations are given in parentheses.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head>10 "</head><label>10</label><figDesc>pc_type " : " hypre " , 11 " p c _ h y p r e _ b o o m e r a m g " : { 12 " s t r o n g _ t h r e s h o l d " : 0.7 , 13</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>Listing 2 :</head><label>2</label><figDesc>40 " p c _ t e l e s c o p e _ r e d u c t i o n _ f a c t o r " : REDFACTOR , 41 " p c _ t e l e s c o p e _ s u b c o m m _ t y p e " : " contiguous " , 42" t e l e s c o p e _ p c _ t y p e " : " lu " , 43" t e l e s c o p e _ p c _ f a c t o r _ m a t _ s o l v e r _ t y p e " : " mumps " Solver options for the discretized electrochemical system for p &gt; 1.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head>Table 1 :</head><label>1</label><figDesc>Computational time and total L 2 errors for varying problem sizes of the toy problem.</figDesc><table><row><cell></cell><cell cols="2">p = 1</cell><cell cols="2">p = 3</cell></row><row><cell># DoFs</cell><cell>CPU time (s)</cell><cell>L 2 error</cell><cell>CPU time (s)</cell><cell>L 2 error</cell></row><row><cell>65,536</cell><cell>15.31</cell><cell>3.84 × 10 -4</cell><cell>29.92</cell><cell>1.92 × 10 -7</cell></row><row><cell>524,288</cell><cell>18.17</cell><cell>1.14 × 10 -4</cell><cell>41.18</cell><cell>1.12 × 10 -8</cell></row><row><cell>4,194,304</cell><cell>34.95</cell><cell>3.40 × 10 -5</cell><cell>111.3</cell><cell>7.61 × 10 -10</cell></row><row><cell>33,554,432</cell><cell>209.1</cell><cell>9.82 × 10 -6</cell><cell></cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_1"><head>Table 2 :</head><label>2</label><figDesc>Physical parameters of the ions for the parallel plate flow reactor.</figDesc><table><row><cell>Ion</cell><cell cols="3">Diffusion coefficient (m 2 s -1 ) Inlet concentration (M) charge</cell></row><row><cell>Cu 2+</cell><cell>7.20 × 10 -10</cell><cell>0.01</cell><cell>2</cell></row><row><cell>SO 2-4 H +</cell><cell>10.65 × 10 -10</cell><cell>1.01</cell><cell>-2</cell></row></table></figure>
+		</body>
+		<back>
+
+			<div type="acknowledgement">
+<div><head>Acknowledgments</head><p>The authors would like to thank <rs type="person">Pablo Brubeck</rs> for his help on implementing p-multigrid. This work was performed under the auspices of the <rs type="funder">U.S. Department of Energy</rs> by <rs type="funder">Lawrence Livermore National Laboratory</rs> under Contract <rs type="grantNumber">DE-AC52-07NA27344</rs> and was supported by the <rs type="programName">LLNL-LDRD program</rs> under project numbers <rs type="grantNumber">19-ERD-035</rs> and <rs type="grantNumber">22-SI-006</rs>. <rs type="projectName">LLNL</rs> Release Number <rs type="grantNumber">LLNL-JRNL-829967</rs>.</p></div>
+			</div>
+			<listOrg type="funding">
+				<org type="funding" xml:id="_p8yqrKf">
+					<idno type="grant-number">DE-AC52-07NA27344</idno>
+					<orgName type="program" subtype="full">LLNL-LDRD program</orgName>
+				</org>
+				<org type="funding" xml:id="_4HY4VHp">
+					<idno type="grant-number">19-ERD-035</idno>
+				</org>
+				<org type="funded-project" xml:id="_Kumj3pu">
+					<idno type="grant-number">22-SI-006</idno>
+					<orgName type="project" subtype="full">LLNL</orgName>
+				</org>
+				<org type="funding" xml:id="_xtZgcZf">
+					<idno type="grant-number">LLNL-JRNL-829967</idno>
+				</org>
+			</listOrg>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>electrodes are also interesting since cathodic/anodic reactions occur throughout the domain rather than as boundary conditions.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix A. Solver parameters</head><p>Here we provide PETSc options used to construct the solvers described in section 4. The parameters used for the p = 1 case are provided in listing 1, and for p &gt; 1 in listing 2.</p><p>Listing 1: Solver options for the discretized electrochemical system for p = 1.</p><p>1 " snes_type " : " newton " , 2 " snes_rtol " : 1E -6 , 3 " ksp_type " : " fgmres " , 4 " ksp_rtol " : 1E -3 , 5 " pc_type " : " fieldsplit " , 6 % For the potential block 7 " fieldsplit_0 " : { 8 " ksp_rtol " : 1E -1 , 9</p><p>" ksp_type " : " cg " ,</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Opportunities and challenges for a sustainable energy future</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Chu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Majumdar</surname></persName>
+		</author>
+		<idno type="DOI">10.1038/nature11475</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<imprint>
+			<biblScope unit="volume">488</biblScope>
+			<biblScope unit="issue">7411</biblScope>
+			<biblScope unit="page" from="294" to="303" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">The path towards sustainable energy</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Chu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Cui</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Liu</surname></persName>
+		</author>
+		<idno type="DOI">10.1038/nmat4834</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Nature Materials</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="16" to="22" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Review of electrical energy storage technologies, materials and systems: challenges and prospects for large-scale grid storage</title>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">M</forename><surname>Gür</surname></persName>
+		</author>
+		<idno type="DOI">10.1039/c8ee01419a</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Energy &amp; Environmental Science</title>
+		<imprint>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="issue">10</biblScope>
+			<biblScope unit="page" from="2696" to="2767" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Chemical storage of renewable energy</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">W</forename><surname>Ager</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Lapkin</surname></persName>
+		</author>
+		<idno type="DOI">10.1126/science.aat7918</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">360</biblScope>
+			<biblScope unit="issue">6390</biblScope>
+			<biblScope unit="page" from="707" to="708" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<monogr>
+		<author>
+			<persName><forename type="first">J</forename><surname>Newman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">E</forename><surname>Thomas-Alyea</surname></persName>
+		</author>
+		<title level="m">Electrochemical systems</title>
+		<imprint>
+			<publisher>John Wiley &amp; Sons</publisher>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">The electroneutrality approximation in electrochemistry</title>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">J</forename><surname>Dickinson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">G</forename><surname>Limon-Petersen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">G</forename><surname>Compton</surname></persName>
+		</author>
+		<idno type="DOI">10.1007/s10008-011-1323-x</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Solid State Electrochemistry</title>
+		<imprint>
+			<biblScope unit="volume">15</biblScope>
+			<biblScope unit="issue">7-8</biblScope>
+			<biblScope unit="page" from="1335" to="1345" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">The multi-dimensional upwinding method as a new simulation tool for the analysis of multi-ion electrolytes controlled by diffusion, convection and migration. Part 1. Steady state analysis of a parallel plane flow channel</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Bortels</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Deconinck</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Van Den</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Bossche</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/0022-0728(95)04371-3</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Electroanalytical Chemistry</title>
+		<imprint>
+			<biblScope unit="volume">404</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="15" to="26" />
+			<date type="published" when="1996">1996</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<monogr>
+		<author>
+			<persName><forename type="first">G</forename><surname>Bauer</surname></persName>
+		</author>
+		<title level="m">A coupled finite element approach for electrochemical systems</title>
+		<imprint>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+		<respStmt>
+			<orgName>Technische Universität München</orgName>
+		</respStmt>
+	</monogr>
+	<note type="report_type">Ph.D. thesis</note>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">A free energy satisfying discontinuous Galerkin method for one-dimensional Poisson-Nernst-Planck systems</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Wang</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/j.jcp.2016.10.008</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">328</biblScope>
+			<biblScope unit="page" from="413" to="437" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">A discontinuous Galerkin method for nonlinear parabolic equations and gradient flow problems with interaction potentials</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">A</forename><surname>Carrillo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C.-W</forename><surname>Shu</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/j.jcp.2017.09.050</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">352</biblScope>
+			<biblScope unit="page" from="76" to="104" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Higher order and adaptive DG methods for compressible flows</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Hartmann</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Leicht</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">th Advanced CFD Lecture Series: Recent developments in higher order methods and industrial application in aeronautics</title>
+		<imprint>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1" to="156" />
+			<date type="published" when="2014">2014. 2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Preconditioning</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">J</forename><surname>Wathen</surname></persName>
+		</author>
+		<idno type="DOI">10.1017/s0962492915000021</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Numerica</title>
+		<imprint>
+			<biblScope unit="volume">24</biblScope>
+			<biblScope unit="page" from="329" to="376" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Discontinuous Galerkin methods for solving elliptic and parabolic equations: theory and implementation</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Rivière</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/1.9780898717440</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM</title>
+		<imprint>
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Discontinuous Galerkin methods for firstorder hyperbolic problems</title>
+		<author>
+			<persName><forename type="first">F</forename><surname>Brezzi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">D</forename><surname>Marini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Süli</surname></persName>
+		</author>
+		<idno type="DOI">10.1142/s0218202504003866</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical models and methods in applied sciences</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page" from="1893" to="1903" />
+			<date type="published" when="2004">2004</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Runge-Kutta discontinuous Galerkin methods for convection-dominated problems</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Cockburn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C.-W</forename><surname>Shu</surname></persName>
+		</author>
+		<idno type="DOI">10.1007/1-84628-205-5_5</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of scientific computing</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="173" to="261" />
+			<date type="published" when="2001">2001</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">Unified analysis of discontinuous Galerkin methods for elliptic problems</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">N</forename><surname>Arnold</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Brezzi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Cockburn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">D</forename><surname>Marini</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/s0036142901384162</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM journal on numerical analysis</title>
+		<imprint>
+			<biblScope unit="volume">39</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="1749" to="1779" />
+			<date type="published" when="2002">2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Automated generation and symbolic manipulation of tensor product finite elements</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">T T</forename><surname>Mcrae</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G.-T</forename><surname>Bercea</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Mitchell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">A</forename><surname>Ham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">J</forename><surname>Cotter</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/15M1021167</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">38</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="25" to="S47" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<monogr>
+		<title level="m" type="main">Numerical methods for unconstrained optimization and nonlinear equations</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">E</forename><surname>Dennis</surname><genName>Jr</genName></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">B</forename><surname>Schnabel</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="1996">1996</date>
+			<publisher>SIAM</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Algebraic multigrid</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">W</forename><surname>Ruge</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Stüben</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/1.9781611971057.ch4</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Multigrid methods</title>
+		<title level="s">Frontiers in Applied Mathematics</title>
+		<meeting><address><addrLine>Philadelphia</addrLine></address></meeting>
+		<imprint>
+			<publisher>SIAM</publisher>
+			<date type="published" when="1987">1987</date>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page" from="73" to="130" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">GMRES: A generalized minimal residual algorithm for solving nonsymmetric linear systems</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Saad</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">H</forename><surname>Schultz</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/0907058</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific and Statistical Computing</title>
+		<imprint>
+			<biblScope unit="volume">7</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="856" to="869" />
+			<date type="published" when="1986">1986</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">An additive variant of the Schwarz alternating method for the case of many subregions</title>
+		<author>
+			<persName><forename type="first">O</forename><surname>Widlund</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Dryja</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Tech. rep</title>
+		<imprint>
+			<date type="published" when="1987">1987</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">An iterative solution method for linear systems of which the coefficient matrix is a symmetric M-matrix</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">A</forename><surname>Meijerink</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">A</forename><surname>Van Der</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Vorst</surname></persName>
+		</author>
+		<idno type="DOI">10.1090/s0025-5718-1977-0438681-4</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Computation</title>
+		<imprint>
+			<biblScope unit="volume">31</biblScope>
+			<biblScope unit="issue">137</biblScope>
+			<biblScope unit="page" from="148" to="162" />
+			<date type="published" when="1977">1977</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Multi-level adaptive solutions to boundary-value problems</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Brandt</surname></persName>
+		</author>
+		<idno type="DOI">10.1090/s0025-5718-1977-0431719-x</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Computation</title>
+		<imprint>
+			<biblScope unit="volume">31</biblScope>
+			<biblScope unit="issue">138</biblScope>
+			<biblScope unit="page" from="333" to="390" />
+			<date type="published" when="1977">1977</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Extremescale multigrid components within PETSc</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">A</forename><surname>May</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Sanan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Rupp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">G</forename><surname>Knepley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">F</forename><surname>Smith</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/2929908.2929913</idno>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Platform for Advanced Scientific Computing Conference, PASC &apos;16</title>
+		<meeting>the Platform for Advanced Scientific Computing Conference, PASC &apos;16<address><addrLine>New York, NY, USA</addrLine></address></meeting>
+		<imprint>
+			<publisher>Association for Computing Machinery</publisher>
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">p-multigrid solution of high-order discontinuous Galerkin discretizations of the compressible navier-stokes equations</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">J</forename><surname>Fidkowski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">A</forename><surname>Oliver</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">L</forename></persName>
+		</author>
+		<idno type="DOI">10.1016/j.jcp.2005.01.005</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">207</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="92" to="113" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Analysis of&quot;p&quot;-multigrid for continuous and discontinuous finite element discretizations</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Helenbrook</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Mavriplis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Atkins</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">16th AIAA Computational Fluid Dynamics Conference</title>
+		<imprint>
+			<date type="published" when="2003">2003</date>
+			<biblScope unit="page">3989</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title/>
+		<author>
+			<persName><forename type="first">T</forename><surname>Roy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Andrej</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Beck</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Ehlinger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Govindarajan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Lin</surname></persName>
+		</author>
+		<idno type="DOI">10.5281/zenodo.7384450</idno>
+	</analytic>
+	<monogr>
+		<title level="j">LLNL/echemfem: EchemFEM</title>
+		<imprint>
+			<date type="published" when="2022-12">Dec. 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Firedrake: automating the finite element method by composing abstractions</title>
+		<author>
+			<persName><forename type="first">F</forename><surname>Rathgeber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">A</forename><surname>Ham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Mitchell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Lange</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Luporini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">T T</forename><surname>Mcrae</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G.-T</forename><surname>Bercea</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">R</forename><surname>Markall</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">H J</forename><surname>Kelly</surname></persName>
+		</author>
+		<idno type="DOI">10.1145/2998441</idno>
+	</analytic>
+	<monogr>
+		<title level="j">ACM Trans. Math. Softw</title>
+		<imprint>
+			<biblScope unit="volume">43</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1" to="24" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">A parallel edge orientation algorithm for quadrilateral meshes</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Homolya</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">A</forename><surname>Ham</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/15M1021325</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">38</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="48" to="S61" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">A structure-exploiting numbering algorithm for finite elements on extruded meshes, and its performance evaluation in Firedrake</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Bercea</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">T T</forename><surname>Mcrae</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">A</forename><surname>Ham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Mitchell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Rathgeber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Nardi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Luporini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">H J</forename><surname>Kelly</surname></persName>
+		</author>
+		<idno type="DOI">10.5194/gmd-9-3803-2016</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Geoscientific Model Development</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">10</biblScope>
+			<biblScope unit="page" from="3803" to="3815" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<analytic>
+		<title level="a" type="main">High level implementation of geometric multigrid solvers for finite element problems: applications in atmospheric modelling</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Mitchell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">H</forename><surname>Müller</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/j.jcp.2016.09.037</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">327</biblScope>
+			<biblScope unit="page" from="1" to="18" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">Efficient management of parallelism in object oriented numerical software libraries</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Balay</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><forename type="middle">D</forename><surname>Gropp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">C</forename><surname>Mcinnes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">F</forename><surname>Smith</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Modern Software Tools in Scientific Computing</title>
+		<editor>
+			<persName><forename type="first">E</forename><surname>Arge</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">A</forename><forename type="middle">M</forename><surname>Bruaset</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">H</forename><forename type="middle">P</forename><surname>Langtangen</surname></persName>
+		</editor>
+		<imprint>
+			<publisher>Birkhäuser Press</publisher>
+			<date type="published" when="1997">1997</date>
+			<biblScope unit="page" from="163" to="202" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">BoomerAMG: A parallel algebraic multigrid solver and preconditioner</title>
+		<author>
+			<persName><forename type="first">V</forename><forename type="middle">E</forename><surname>Henson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">U</forename><forename type="middle">M</forename><surname>Yang</surname></persName>
+		</author>
+		<idno type="DOI">10.1016/S0168-9274(01)00115-5</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Appl. Numer. Math</title>
+		<imprint>
+			<biblScope unit="volume">41</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="155" to="177" />
+			<date type="published" when="2002">2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<monogr>
+		<ptr target="https://computation.llnl.gov/projects/hypre-scalable-linear-solvers-multigrid-methods" />
+		<title level="m">hypre: High performance preconditioners</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Solver composition across the PDE/linear algebra barrier</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">C</forename><surname>Kirby</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Mitchell</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/17M1133208</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">40</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="76" to="C98" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">A flexible inner-outer preconditioned GMRES algorithm</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Saad</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/0914028</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Scientific Computing</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="461" to="469" />
+			<date type="published" when="1993">1993</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<analytic>
+		<title level="a" type="main">Discontinuous Galerkin methods for advectiondiffusion-reaction problems</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Ayuso</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">D</forename><surname>Marini</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/080719583</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Numerical Analysis</title>
+		<imprint>
+			<biblScope unit="volume">47</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="1391" to="1420" />
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<analytic>
+		<title level="a" type="main">Optimal convergence of the original DG method for the transport-reaction equation on special meshes</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Cockburn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Dong</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Guzmán</surname></persName>
+		</author>
+		<idno type="DOI">10.1137/060677215</idno>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Numerical Analysis</title>
+		<imprint>
+			<biblScope unit="volume">46</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1250" to="1265" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<analytic>
+		<title level="a" type="main">An optimal-order error estimate for the discontinuous Galerkin method</title>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">R</forename><surname>Richter</surname></persName>
+		</author>
+		<idno type="DOI">10.1090/s0025-5718-1988-0917819-3</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of Computation</title>
+		<imprint>
+			<biblScope unit="volume">50</biblScope>
+			<biblScope unit="issue">181</biblScope>
+			<biblScope unit="page" from="75" to="88" />
+			<date type="published" when="1988">1988</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

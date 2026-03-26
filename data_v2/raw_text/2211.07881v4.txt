@@ -1,0 +1,1653 @@
+ 
+ 
+
+ET-AL: entropy-targeted active learning for bias mitigation in 
+materials data 
+
+Hengrui Zhang 张恒睿,1 Wei (Wayne) Chen 陈伟,1 James M. Rondinelli,2,* Wei Chen1,* 
+
+1Department of Mechanical Engineering, Northwestern University, Evanston, IL 60208, USA 
+
+2Department of Materials Science and Engineering, Northwestern University, Evanston, IL 
+
+60208, USA 
+
+ 
+
+*Correspondence: jrondinelli@northwestern.edu and weichen@northwestern.edu 
+
+ 
+
+ABSTRACT 
+
+Growing materials data and data-driven informatics drastically promote the discovery and design 
+
+of materials. While there are significant advancements in data-driven models, the quality of data 
+
+resources is less studied despite its huge impact on model performance. In this work, we focus on 
+
+data bias arising from uneven coverage of materials families in existing knowledge. Observing 
+
+different diversities among crystal systems in common materials databases, we propose an 
+
+information entropy-based metric for measuring this bias. To mitigate the bias, we develop an 
+
+entropy-targeted active learning (ET-AL) framework, which guides the acquisition of new data to 
+
+improve the diversity of underrepresented crystal systems. We demonstrate the capability of ET-
+
+AL for bias mitigation and the resulting improvement in downstream machine learning models. 
+
+This approach is broadly applicable to data-driven materials discovery, including autonomous data 
+
+acquisition and dataset trimming to reduce bias, as well as data-driven informatics in other 
+
+scientific domains. 
+
+ 
+ 
+
+
+2/35 
+ 
+
+INTRODUCTION 
+
+Data-driven autonomous materials design has recently emerged as a new paradigm for materials 
+
+discovery1-3. With large materials data and powerful informatics tools, this paradigm significantly 
+
+accelerates the understanding of physical and chemical mechanisms in materials science4-6, 
+
+accurate prediction of materials structures and properties7-10, as well as the design of materials with 
+
+desired properties11-14. While the informatics tools, such as machine learning (ML) and design 
+
+optimization models, hold a conspicuous position in these works, the data resources are as 
+
+important15,16. The performances that the models can attain highly depend on the quality of data 
+
+they are built upon. Data veracity entails a description of where and how data were collected, but 
+
+less frequently is why (or why not) using certain data clearly articulated.  
+
+Following the Materials Genome Initiative17, multiple materials data resources have 
+
+emerged. The Materials Project18, Open Quantum Materials Database (OQMD)19,20, the Automatic 
+
+Flow for Materials Discovery (AFLOW)21, and the Joint Automated Repository for Various 
+
+Integrated Simulations (JARVIS)22 are prominent examples. These platforms use high-throughput 
+
+first-principles calculations to evaluate various properties for a wide range of materials 
+
+(stoichiometric and defect-free) and make the data publicly available. Besides these centralized 
+
+data resources, a growing portion of materials data is generated in various research projects, 
+
+available from published papers (including their associated repositories) and platforms such as the 
+
+Materials Data Facility23. These distributed data are increasingly utilized owing to data/text mining 
+
+tools. However, it is common that materials data do not have uniform coverage for multiple reasons: 
+
+(1) The candidate materials for database construction are selected among known structures or 
+
+based on known structural prototypes, and lower symmetry structures are less explored than higher 
+
+symmetry ones. (2) Most literature only reports compounds perceived to exhibit “good” properties 
+
+based on the aspect of interest24, while the “unsatisfactory” results can also be valuable25. (3) 
+
+
+3/35 
+ 
+
+Property simulation is easier for compounds that are structurally simple, and property 
+
+measurement is simpler for compounds that are readily synthesizable and stable at ambient 
+
+pressures and temperatures. These, among other factors, lead to bias in the materials data platforms. 
+
+Data bias, a ubiquitous issue in data science, has been more recognized in the social science 
+
+domain26,27 but is often overlooked in physical sciences, including materials science. Just as it 
+
+causes social inequity in social policy built upon that data, bias in materials data is harmful to data-
+
+driven materials modeling and design. Belviso et al.28 demonstrated how bias in the chemistry 
+
+space prevents an ML model from accurately predicting electronic bandgaps. Bias in the structure 
+
+space is less explicit but also detrimental. An example is a bias in stability data among crystal 
+
+structures, which we refer to as “structure–stability bias”. Such bias hinders the modeling of phase 
+
+stabilities, thus affecting the accurate prediction of microstructure. As Molkeri et al.29 found, 
+
+microstructure information is important for the modeling of various materials properties, therefore, 
+
+the impact of structure–stability bias is not limited to stability itself but also on other properties. 
+
+Although some attempts have been pursued to characterize bias on trained models post 
+
+facto30 or reduce the impact of data bias on model training31,32, few have addressed bias intrinsic 
+
+to the data for which the models are trained and mitigated bias from the onset. The presence of 
+
+bias in materials data may be inevitable since the distributions of properties are unknown and can 
+
+be uneven in nature. Nonetheless, detecting the bias of datasets could alert users of their potential 
+
+impact. As bias originates from uneven coverage of different materials families, it can be captured 
+
+by examining the diversities of families in the data, which reflects the completeness of coverage. 
+
+Moreover, by adding well-selected new data points, bias in a dataset can be reduced. Towards this 
+
+end, the active learning (AL) method provides a way to sequentially select optimal data points 
+
+guided by sampling strategies considering uncertainty, diversity, or performance33-35. AL-based 
+
+
+4/35 
+ 
+
+methods have been applied to accelerate materials discovery targeting high performance36-39 and 
+
+chemical uniqueness40, as well as to assess the selection of design space41. With a specially 
+
+designed sampling strategy, AL can serve as a method for bias reduction. 
+
+ 
+In this work, we propose entropy-targeted active learning (ET-AL) as a systematic 
+
+approach to detecting and reducing materials data bias. We focus on the structure–stability bias in 
+
+DFT-generated databases as a use case for demonstrating the approach. With information entropy 
+
+as a diversity metric, we quantify the bias of stability by its diversity among structures. We then 
+
+develop an active learning method with a sampling strategy towards increasing the diversity of 
+
+stability of underrepresented structures, thus reducing the bias. We demonstrate the capability of 
+
+ET-AL through experiments performed on existing datasets. We show that ET-AL provides a 
+
+general method for mitigating bias in materials datasets and is also applicable in guiding the 
+
+construction of materials databases, thus granting materials researchers access to low-bias data for 
+
+machine learning. 
+
+  
+
+RESULTS AND DISCUSSION 
+
+Data Bias Characterization 
+
+For demonstration purposes, we retrieve two materials datasets: (1) structure and formation energy 
+
+per atom of all binary intermetallic compounds among the elements Al, Ti, Cr, Fe, Co, Ni, Cu, and 
+
+W from OQMD (denoted OQMD-8, size 2,953); and (2) all entries with elastic moduli available 
+
+from the JARVIS classical force-field inspired descriptors (CFID) dataset42, cleaned as described 
+
+in the Methods (denoted J-CFID, size 10,898). We show the distribution of formation energy per 
+
+atom Δ𝐸𝐸 of materials in the two datasets with respect to crystal system in Figure 1a–b. We consider 
+
+compounds in the cubic, hexagonal, trigonal, tetragonal, and orthorhombic systems to be higher in 
+
+symmetry than those of monoclinic or triclinic systems, because they possess one or more rotation 
+
+
+5/35 
+ 
+
+axes, and their unit cells have three or fewer free interaxial angles and lattice parameters. Among 
+
+the seven crystal systems, the lower symmetry monoclinic and triclinic systems display higher 
+
+distribution density in the more stable (lower Δ𝐸𝐸 ) region. This observation contradicts the 
+
+empirical rules that materials with higher symmetry (which are usually more close-packed and 
+
+have higher coordination numbers) generally have higher stability43,44. Such contradiction is due 
+
+to the imbalanced coverage of different crystal systems in the materials datasets, and we refer to 
+
+this problem as “structure–stability bias”. 
+
+Without assuming any prior knowledge such as the correlation between symmetry and 
+
+stability, are we still able to capture the bias? To that end, we first define the diversity of a dataset 
+
+by recognizing that for values of a continuous variable 𝑌𝑌, the diversity can be quantified by 
+
+information entropy45 
+
+ℎ(𝑌𝑌) = E[− log 𝑓𝑓(𝑦𝑦)] = − � 𝑓𝑓(𝑦𝑦) log 𝑓𝑓(𝑦𝑦) d𝑦𝑦 
+(1) 
+
+where 𝑓𝑓(𝑦𝑦) is the underlying probability density function of 𝑌𝑌. Note the difference between 
+
+diversity and uncertainty: whereas uncertainty describes the state of random variables with 
+
+incomplete or unknown information, diversity is an attribute of an already known dataset. In 
+
+general, we can group the data into clusters by any appropriate criterion and estimate ℎ(𝑌𝑌) for 
+
+every cluster from the 𝑌𝑌 values in the dataset, thus quantifying the diversity of 𝑌𝑌 in every cluster. 
+
+Based on the observation from Figure 1a–b, the OQMD-8 dataset has coverage of materials with 
+
+diverse Δ𝐸𝐸 values in the high symmetry crystal systems, while the Δ𝐸𝐸 values in the triclinic and 
+
+monoclinic systems are not diverse. The J-CFID dataset, on the other hand, lacks diversity in the 
+
+high-symmetry crystal systems. 
+
+
+6/35 
+ 
+
+ 
+
+Figure 1 Structure–stability bias in two datasets. a–b, Kernel density estimation of the distribution of 
+formation energy among different crystal systems in the OQMD-8 and J-CFID datasets. Without causing 
+ambiguity, only the first few letters are shown for each crystal system for conciseness. c–d, Information 
+entropy of formation energy among different crystal systems in OQMD-8 and J-CFID datasets. Colors 
+indicate the degrees of symmetry of crystal systems; the sizes of points reflect the number of datapoints in 
+each crystal system. Note that the OQMD-8 dataset contains only 5 triclinic materials, which causes 
+inaccuracy in the information entropy estimation for the triclinic system. 
+
+ 
+
+Next, we measure bias using a fairness criterion46, i.e., the difference in ℎ(𝑌𝑌) between 
+
+different clusters indicate the existence and level of bias. For our application, we will use crystal 
+
+systems as natural clusters, and quantify the structure–stability bias via fairness of ℎ(Δ𝐸𝐸). Figure 
+
+1c–d shows that ℎ(Δ𝐸𝐸)  captures the observed difference in diversities, thus reflecting the 
+
+structure–stability bias. The comparison also shows that J-CFID is overall more diverse than 
+
+OQMD-8, which is because it covers a much larger chemical space. But to measure biases of 
+
+datasets, the difference of ℎ(Δ𝐸𝐸) between different crystal systems within each dataset is the focus. 
+
+
+7/35 
+ 
+
+Active Learning for Bias Mitigation 
+
+With fairness in diversity as a measure, the data bias can be reduced systematically by adding data 
+
+to the least diverse crystal system in a manner that increases its diversity in Δ𝐸𝐸. We develop the 
+
+entropy-targeted active learning (ET-AL) algorithm (Figure 2) to attain this automatically. In the 
+
+active learning context, we refer to the materials with properties known and unknown as “labeled” 
+
+and “unlabeled”, respectively. The ET-AL algorithm iteratively picks a target crystal system 
+
+(usually the least diverse one), selects an optimal unlabeled material that may improve ℎ(Δ𝐸𝐸) of 
+
+the system and adds it to the labeled data. The iteration terminates when a pre-specified criterion 
+
+is satisfied, or all materials are labeled. Details of the algorithm and its implementation are 
+
+provided in Methods and Algorithm S1. 
+
+ 
+
+Figure 2 Schematic of the ET-AL algorithm for data bias mitigation. a, Overall procedure of ET-AL: 
+a target crystal system is selected, then an unlabeled material is selected and labeled. The steps repeat until 
+the stopping criteria are satisfied. b, The procedure of sample acquisition: a Gaussian Process (GP) model 
+is trained with the labeled data and makes predictions for the unlabeled data. The predictive mean and 
+variance of ℎ resulting from adding each material are inferred therefrom. Based on these, the optimal 
+material is selected according to the sampling strategy and added to the labeled data. 
+
+ 
+
+
+8/35 
+ 
+
+Experimentation and Demonstration 
+
+As a demonstration of the ET-AL method, we conduct experiments on the J-CFID dataset. The 
+
+overall procedure is illustrated in Figure 3a: we split the dataset into a test set, a labeled set with 
+
+artificial bias, and an unlabeled set. We use ET-AL to augment the labeled set into a low-bias 
+
+training set (marked ETAL) and create another training set (marked RAND) of the same size by 
+
+randomly sampling from the unlabeled set. In addition to demonstrating that ET-AL effectively 
+
+reduces the structure–stability bias, we show the impact such bias has by comparing supervised 
+
+ML models for bulk modulus 𝐵𝐵 and shear modulus 𝐺𝐺 derived from the two training sets. 
+
+ 
+
+Figure 3 Experiments on the J-CFID dataset. a, Split of the dataset: 𝑁𝑁T entries are left out as the test set. 
+From the remaining data, some entries are taken away to create an artificial bias and put into the unlabeled 
+set together with randomly selected entries, in total 𝑁𝑁U. The 𝑁𝑁L entries remaining form a labeled set with 
+significant bias. Two training sets are constructed by adding the same number of samples (𝑁𝑁+) from the 
+unlabeled set to the labeled set, guided by ET-AL and randomly, respectively. b, Change of information 
+entropy in every crystal system during ET-AL iterations. The initial information entropies are shown before 
+iteration 0. 
+
+ 
+ 
+In the experiment, we set 𝑁𝑁L = 1,000, 𝑁𝑁U = 4,898, and 𝑁𝑁T = 5,000. The artificial bias is 
+
+introduced by removing all tetragonal and trigonal materials with Δ𝐸𝐸 > 0 and all orthorhombic 
+
+materials with Δ𝐸𝐸 < 0. With materials represented by graph embeddings (presented in Methods), 
+
+ET-AL is applied to the dataset and runs for 985 iterations before termination. As Figure 3b shows, 
+
+the introduced bias is captured by the diversity metric (the three manipulated crystal systems have 
+
+
+9/35 
+ 
+
+relatively low initial ℎ), and mitigated by ET-AL. Moreover, through ET-AL, the dataset reaches 
+
+a state where diversities of crystal systems are closer to each other as compared to the initial state, 
+
+which is favored by the fairness criterion (also shown in Figure S1). A similar demonstration 
+
+performed on the OQMD-8 dataset is presented in Figure S2 and Figure S3. 
+
+ 
+Next, we investigate the effects of ET-AL on dataset distribution. We employ t-distributed 
+
+stochastic neighbor embedding (t-SNE)47 for dimension reduction of the graph embedding 
+
+representations of J-CFID data into a 2-dimensional space. The low-dimensional embeddings 
+
+acquired by t-SNE reflect the distribution of data in the structure space. In Figure 4a, we use these 
+
+embeddings to show the coverage of the labeled dataset (see also Figure S4) and the ET-AL-
+
+selected and randomly selected data (b–c). ET-AL guides sampling in the underrepresented regions 
+
+(lighter shades in Figure 4a), as opposed to a nearly uniform coverage by random sampling in 
+
+Figure 4c. 
+
+ 
+
+Figure 4 Visualization of dataset distributions. a, Kernel density estimation (KDE) plot of tSNE 
+embeddings of the labeled dataset. The shade shows the density of points, regions with lighter colors are 
+less covered. b–c, t-SNE plots of graph embeddings of the materials selected by ET-AL and random 
+sampling, respectively, with colors indicating crystal systems. Compared to random sampling, materials 
+selected by ET-AL better cover the region where labeled samples are sparse, as well as the crystal systems 
+where artificial bias is introduced. 
+
+ 
+
+
+10/35 
+ 
+
+ 
+To assess the impact of bias on property prediction, we train multiple supervised learning 
+
+models on the two training sets, both of size 1,954, for predicting 𝐵𝐵 and 𝐺𝐺 from a set of physical 
+
+descriptors (detailed in Methods). Each model is trained 30 times with different random states 
+
+(controlling the initialization, feature permutation, etc., but not affecting training data), and the 
+
+coefficient of determination (𝑅𝑅2) on the test set is recorded. Models include random forest (RF), 
+
+gradient boosting (GB), neural network (NN), and support vector regression (SVR), among which 
+
+RF and GB attain relatively better performances on the task. A potential reason for such 
+
+performance difference is that the descriptors form heterogeneous tabular data, for which tree 
+
+ensemble models have an advantage48. We summarize the performances of these ML models in 
+
+Figure 5, from which we find that models derived from the ETAL dataset with reduced bias display 
+
+systematically superior accuracies over those from the RAND dataset.  
+
+ 
+
+Figure 5 Comparison of supervised ML models trained on two J-CFID-derived datasets. The boxplots 
+show testing 𝑅𝑅2 of each model type and target property across 30 replicates, a, for bulk modulus and b, for 
+shear modulus. Models trained on the ETAL dataset display higher testing 𝑅𝑅2 than those trained on the RAND 
+dataset. 
+
+ 
+
+In Figure 6, we mark the “most improved samples”, i.e., testing samples for which the ML 
+
+models’ prediction accuracies using the ETAL training set show greater advantages compared to 
+
+using the RAND training set. As observed, most of these samples are in the underrepresented regions 
+
+
+11/35 
+ 
+
+of the labeled set (low-density regions in Figure 4a). ET-AL’s focus in these regions during sample 
+
+selection (triangles in Figure 6 overlap with sampling points in Figure 4b) leads to the better 
+
+accuracy of ML models trained on the ETAL dataset. These observations agree with the findings 
+
+of Li et al.49: ML models trained on a biased dataset lack generalizability to underrepresented test 
+
+samples. ET-AL provides a solution to the problem by reducing structure–stability bias, which 
+
+improves the coverage of the dataset in the structure space, and thus facilitates downstream tasks 
+
+such as ML modeling of mechanical properties 𝐵𝐵 and 𝐺𝐺. 
+
+ 
+
+Figure 6 Locations of the most improved samples. Blue dots show the tSNE mapping of the test samples’ 
+graph embeddings. The triangles mark the samples where ML models trained on the ETAL dataset show the 
+most advantages in accuracy over those trained on the RAND set, for a, bulk modulus and b, shear modulus. 
+20 samples are shown for each model–property combination. 
+
+ 
+Potential Applications 
+
+The data bias metric and ET-AL method proposed in this work have a wide range of applications 
+
+in materials discovery and beyond. First, researchers may examine and potentially reduce the bias 
+
+in their datasets before developing data-driven models thereon or publishing the data. Second, ET-
+
+AL allows steering autonomous data acquisition in an unbiased way. This includes high-
+
+
+12/35 
+ 
+
+throughput computation, as well as experiments such as self-driving laboratories50. Though we 
+
+presented the structure–stability bias as an example, the method applies to other forms of bias as 
+
+well. 
+
+ 
+An application of particular significance is dealing with bias in materials data resources. 
+
+Since new materials are continually added to the databases, ET-AL can fit in the pipeline to select 
+
+the materials to add. In practice, however, some databases are so large that an observable effect of 
+
+bias mitigation requires adding many new data points, and there are other considerations besides 
+
+bias in database construction. In remediation, the information entropy-based bias metric can also 
+
+guide trimming rather than expanding a database, i.e., selecting a less biased subset. The level of 
+
+bias can be tuned according to the need of usage. 
+
+Though originally proposed for materials data, ET-AL is generally applicable to other 
+
+fields where large data are generated and curated for future reuse51. Protein database52 for 
+
+biomedical studies, and geometry datasets53 for design and manufacturing studies are among a few 
+
+examples. Bias in these data may lead to inaccuracies in parameter calibration, predictive modeling, 
+
+or design optimization, and ET-AL enables detection and mitigation of the bias. 
+
+ 
+
+CONCLUSION  
+
+We highlighted the previously overlooked bias in materials data resources, which has an impact 
+
+on a broad range of data-driven materials modeling and design studies. We proposed a generic 
+
+metric for data bias based on diversity measured by information entropy, which successfully 
+
+captures the structure–stability bias in datasets retrieved from widely used materials data platforms 
+
+OQMD and JARVIS. We then formulated and implemented an entropy-target active learning (ET-
+
+AL) framework to automatically reduce bias in datasets by acquiring new samples. Through 
+
+ablation studies, we demonstrated that ET-AL can effectively reduce the structure–stability bias, 
+
+
+13/35 
+ 
+
+thus improving data coverage in the structure space and increasing the accuracy of data-driven 
+
+modeling of materials properties. 
+
+We also note that as a generic framework, ET-AL’s capability is not limited to materials 
+
+databases. As the data-driven research paradigm has been adopted by various domains, and data 
+
+bias is ubiquitous in almost every data system, we anticipate that the ET-AL method is applicable 
+
+to a variety of scientific and engineering domains, to facilitate the curation of high-quality data 
+
+and data-driven studies. 
+
+ 
+
+METHODS 
+
+Dataset Preparation 
+
+Data collection and cleaning. The OQMD-8 dataset is retrieved from OQMD using its API 
+
+implemented in the “qmpy-rester” package. The J-CFID dataset is downloaded from 
+
+figshare.com42. Out of the >50,000 entries, the ones reporting positive 𝐵𝐵 and 𝐺𝐺 values are kept. 
+
+Entries containing elements H, Tc, halogens (VIIA), noble gases (VIIIA), lanthanum family, and 
+
+those with atomic numbers ≥84 are excluded. Figure S5 and Figure S6 show some statistics of the 
+
+J-CFID dataset. 
+
+Graph embedding representation. We use the crystal graph convolutional neural network 
+
+(CGCNN) model54, which maps a graph encoding of crystal structure to a numerical vector before 
+
+predicting its properties. The numerical vector provides a representation of materials’ structures 
+
+regulated by the target property. We feed the crystallographic information framework (CIF) files 
+
+of all entries in the dataset to a pretrained CGCNN model and extract a 32-dimensional vector 
+
+representation for each material’s structure. Unless specified otherwise, we use the model 
+
+pretrained on formation energy per atom. The graph embeddings of materials are used as inputs 
+
+for model training and evaluation of unlabeled materials in ET-AL. 
+
+
+14/35 
+ 
+
+Besides graph embeddings, many other representations that can be derived from materials’ 
+
+crystal structures without knowing their properties are also compatible with ET-AL, examples 
+
+include fragment descriptors55 and tensor representations56. 
+
+Information Entropy 
+
+Information entropy of continuous-valued Δ𝐸𝐸 is estimated from a discrete set of Δ𝐸𝐸 values using 
+
+the “differential_entropy” function from the scipy.stats package57. The software automatically 
+
+selects a numerical method for entropy estimation58 based on data size; details of the numerical 
+
+estimation methods are described in Supplementary Materials. 
+
+Active Learning 
+
+Target system selection. In every iteration, all crystal systems with unlabeled sample(s) available 
+
+are candidates. Systems that are sampled but not improved five consecutive times are excluded. 
+
+Of the remaining candidates, the crystal system with the lowest ℎ(Δ𝐸𝐸) is selected as the target. 
+
+Gaussian process modeling.  Gaussian Process (GP) modeling59 builds upon the assumption that 
+
+the responses 𝒚𝒚 = {𝑦𝑦1, … , 𝑦𝑦𝑚𝑚}  are jointly Gaussian distributed given the predictors 𝑿𝑿 =
+
+{𝒙𝒙1, … , 𝒙𝒙𝑚𝑚}: 
+
+𝒚𝒚|𝑿𝑿 ∼ 𝒩𝒩(𝝁𝝁, 𝑲𝑲 + 𝜎𝜎2𝑰𝑰)
+(2)
+
+where the covariance matrix 𝑲𝑲 is inferred from the similarity between predictors using a kernel 
+
+function, and the 𝜎𝜎2𝑰𝑰 term accounts for noise. Once trained, inputting an unseen predictor 𝒙𝒙�, the 
+
+model outputs not a single value but a predicted Gaussian distribution of the response 𝑦𝑦�. Hence, 
+
+GP is an uncertainty-aware machine learning model. We train GP models using the 
+
+“ExactGPModel” module of the GPyTorch package60, with the graph embedding representation 
+
+as predictors and Δ𝐸𝐸 as response. 
+
+
+15/35 
+ 
+
+Monte Carlo inference. For each unlabeled material, the GP model provides a predicted 
+
+distribution of Δ𝐸𝐸, from which we use the Monte Carlo method61 to infer the resulting change in 
+
+ℎ(Δ𝐸𝐸) by adding the material, as illustrated in Figure 7. We thereby obtain the predictive mean 
+
+and variance of ℎ for every unlabeled material, which are later used in the evaluation of the 
+
+sampling criterion. 
+
+ 
+
+Figure 7 Schematic of the Monte Carlo Inference for mean and variance of ℎ. For simplicity, formation 
+energy or any property of interest is denoted as 𝑦𝑦 in the figure. For each unlabeled material, we obtain a 
+predicted distribution of 𝑦𝑦 via the GP model, and randomly draw 𝑛𝑛 samples therefrom. By trying to add 
+every sample into the 𝑦𝑦 values of labeled dataset, we get 𝑛𝑛 resulting ℎ values (𝑛𝑛 = 1,000 is used in 
+experiments), from which we can obtain the predictive mean and variance of the resulting ℎ if that material 
+is selected. 
+
+ 
+Sampling strategy. The selection of unlabeled materials is guided by the expected improvement 
+
+(EI) sampling criterion62. For every unlabeled material 𝒙𝒙, the expected improvement in ℎ 
+
+EI(𝒙𝒙) = E[max{0, Δ(𝒙𝒙)}] = 𝑠𝑠̂(𝒙𝒙)𝜙𝜙 �Δ(𝒙𝒙)
+
+𝑠𝑠̂(𝒙𝒙)� + Δ(𝒙𝒙)Φ �Δ(𝒙𝒙)
+
+𝑠𝑠̂(𝒙𝒙)� 
+(3) 
+
+is evaluated, where Δ(𝒙𝒙) = ℎ(𝒙𝒙) − ℎcur is the difference between the predicted mean ℎ and the 
+
+current ℎ; 𝑠𝑠̂(𝒙𝒙) is the predicted standard deviation of ℎ; 𝜙𝜙(⋅) and Φ(⋅) are the probability density 
+
+function (pdf) and cumulative distribution function (cdf) of standard Gaussian distribution, 
+
+respectively. The unlabeled material with the largest EI is selected, i.e., 𝒙𝒙∗ = arg max
+𝒙𝒙
+EI(𝒙𝒙). 
+
+
+16/35 
+ 
+
+More generally, the selection operates in batches, i.e., one or multiple unlabeled material(s) 
+
+with large EI are selected in every iteration. A batch size of 1 is used in the implementation of this 
+
+work, as the time for running an ET-AL iteration is negligible compared to the acquisition of a 
+
+new datapoint (e.g., first-principles calculation, experimental measurement). On the other hand, 
+
+data acquisition can be parallelized. In that case, ET-AL can be easily configured to use a larger 
+
+batch size, thus further improving computational efficiency. 
+
+Stopping criteria. In our experiments on the J-CFID dataset, the active learning process is 
+
+terminated when the target crystal system has the highest ℎ(Δ𝐸𝐸) of all systems. In that case, 
+
+improving its ℎ will worsen the fairness of diversity. However, when evaluation (e.g., first-
+
+principles calculation) of new materials is feasible, the existence of materials improving ℎ of the 
+
+least diverse system is almost guaranteed. In such application scenarios, stopping criteria may be 
+
+specified according to resources and budget, or may not be needed. 
+
+Supervised Machine Learning 
+
+Materials featurization. Compositional and structural descriptors are retrieved for every crystal 
+
+structure using an automatic workflow developed by Georgescu et al.63, built upon the pymatgen64 
+
+and Matminer65 toolkits. Descriptors that contain NaN values or have zero variance among the 
+
+dataset are removed, resulting in 117 descriptors for every material, which are then used as inputs 
+
+for supervised ML models. 
+
+Machine learning. The supervised ML models are trained and tested using implementations in 
+
+the scikit-learn package66. The hyperparameters are selected using a 5-fold cross-validated (CV) 
+
+grid search; unless otherwise specified, they are the same as the default settings of the package. 
+
+For SVM, the radial basis function (RBF) kernel is used. For neural networks, model architecture 
+
+and hyperparameters are tuned: 1 hidden layer with 128 neurons, 𝐿𝐿2 regularization strength 𝛼𝛼 =
+
+
+17/35 
+ 
+
+0.1, rectified linear unit (ReLU) activation for hidden layers, and Adam optimizer. For random 
+
+forests (RF), the number of trees is set to 300, and the maximum depth of individual trees is set to 
+
+30 for predicting 𝐺𝐺 and 100 for predicting 𝐵𝐵. For gradient boosting (GB), the maximum depth of 
+
+individual trees is 5. Detailed hyperparameters of the RF and GB models are listed in Table S1. 
+
+ 
+
+ACKNOWLEDGEMENTS 
+
+This work was supported by the Advanced Research Projects Agency-Energy (ARPA-E), U.S. 
+
+Department of Energy, under Award Number DE-AR0001209, and the Center for Hierarchical 
+
+Materials Design, under Award Number ChiMaD NIST 70NANB19H005. The views and 
+
+opinions of authors expressed herein do not necessarily state or reflect those of the United States 
+
+Government or any agency thereof. We also acknowledge Francesca M. Tavazza and Brian L. 
+
+DeCost for assistance with data collection. H.Z. acknowledges Kyle Miller, Dale Gaines II, 
+
+Adetoye H. Adekoya, Whitney Tso, and G. Jeffrey Snyder for insightful discussions, and Ke Sun 
+
+for valuable advice on visualization. 
+
+ 
+
+AUTHOR DECLARATIONS 
+
+Author Contributions 
+
+H.Z.: Conceptualization, Formal Analysis; Investigation; Methodology; Software; Visualization; 
+
+Writing – Original Draft; Writing – Review & Editing. W.W.C.: Formal Analysis; Methodology; 
+
+Software; Writing – Review & Editing. J.M.R. and W.C.: Formal Analysis; Writing – Review & 
+
+Editing; Supervision; Funding Acquisition. 
+
+Conflict of Interest 
+
+The authors have no conflicts of interest to disclose. 
+
+ 
+
+
+18/35 
+ 
+
+DATA AVAILABILITY 
+
+The datasets used in bias characterization and experimentation are openly available at oqmd.org 
+
+(OQMD-8 dataset) and reference number42 (J-CFID dataset). The code and data that support the 
+
+findings are openly available on the ET-AL GitHub repository at https://github.com/Henrium/ET-
+
+AL and Zenodo at https://doi.org/10.5281/zenodo.7406332 . 
+
+ 
+
+REFERENCES 
+
+1 
+W. Chen, A. Iyer, and R. Bostanabad, “Data Centric Design: A New Approach to 
+Design of Microstructural Material Systems,” Engineering 10, 89 (2022). 
+
+2 
+L. Himanen, A. Geurts, A. S. Foster, and P. Rinke, “Data‐Driven Materials Science: 
+Status, Challenges, and Perspectives,” Advanced Science 6, 1900808 (2019). 
+
+3 
+H. S. Stein and J. M. Gregoire, “Progress and prospects for accelerating materials 
+science with automated and autonomous workflows,” Chemical Science 10, 9640 
+(2019). 
+
+4 
+A. Agrawal and A. Choudhary, “Perspective: Materials informatics and big data: 
+Realization of the “fourth paradigm” of science in materials science,” APL Materials 
+4, 053208 (2016). 
+
+5 
+M. Umehara, H. S. Stein, D. Guevarra, P. F. Newhouse, D. A. Boyd, and J. M. 
+Gregoire, “Analyzing machine learning models to accelerate generation of 
+fundamental materials insights,” npj Computational Materials 5, 34 (2019). 
+
+6 
+S. Gong, S. Wang, T. Zhu, X. Chen, Z. Yang, M. J. Buehler, Y. Shao-Horn, and J. 
+C. Grossman, “Screening and Understanding Li Adsorption on Two-Dimensional 
+Metallic Materials by Learning Physics and Physics-Simplified Learning,” JACS Au 
+1, 1904 (2021). 
+
+7 
+A. R. Oganov, C. J. Pickard, Q. Zhu, and R. J. Needs, “Structure prediction drives 
+materials discovery,” Nature Reviews Materials 4, 331 (2019). 
+
+8 
+W. Ye, C. Chen, Z. Wang, I.-H. Chu, and S. P. Ong, “Deep neural networks for 
+accurate predictions of crystal stability,” Nature Communications 9, 3800 (2018). 
+
+9 
+K. Choudhary and B. Decost, “Atomistic Line Graph Neural Network for improved 
+materials property predictions,” npj Computational Materials 7, 185 (2021). 
+
+10 
+Y. Tian, D. Xue, R. Yuan, Y. Zhou, X. Ding, J. Sun, and T. Lookman, “Efficient 
+estimation of material property curves and surfaces via active learning,” Physical 
+Review Materials 5, 013802 (2021). 
+
+11 
+R. Arróyave and D. L. McDowell, “Systems Approaches to Materials Design: Past, 
+Present, and Future,” Annual Review of Materials Research 49, 103 (2019). 
+
+12 
+Y. Wang, A. Iyer, W. Chen, and J. M. Rondinelli, “Featureless adaptive 
+optimization accelerates functional electronic materials design,” Applied Physics 
+Reviews 7, 041403 (2020). 
+
+
+19/35 
+ 
+
+13 
+Z. Yao, B. Sánchez-Lengeling, N. S. Bobbitt, B. J. Bucior, S. G. H. Kumar, S. P. 
+Collins, T. Burns, T. K. Woo, O. K. Farha, R. Q. Snurr, and A. Aspuru-Guzik, 
+“Inverse design of nanoporous crystalline reticular materials with deep generative 
+models,” Nature Machine Intelligence 3, 76 (2021). 
+
+14 
+A. Mansouri Tehrani, A. O. Oliynyk, M. Parry, Z. Rizvi, S. Couper, F. Lin, L. Miyagi, 
+T. D. Sparks, and J. Brgoch, “Machine Learning Directed Search for 
+Ultraincompressible, Superhard Materials,” Journal of the American Chemical 
+Society 140, 9844 (2018). 
+
+15 
+N. Sambasivan, S. Kapania, H. Highfill, D. Akrong, P. Paritosh, and L. M. Aroyo, 
+““Everyone wants to do the model work, not the data work”: Data Cascades in 
+High-Stakes AI,” in Proceedings of the 2021 CHI Conference on Human Factors 
+in Computing Systems, 2021 (ACM). 
+
+16 
+W. Liang, G. A. Tadesse, D. Ho, F.-F. Li, M. Zaharia, C. Zhang, and J. Zou, 
+“Advances, challenges and opportunities in creating data for trustworthy AI,” 
+Nature Machine Intelligence (2022). 
+
+17 
+J. J. de Pablo, N. E. Jackson, M. A. Webb, L.-Q. Chen, J. E. Moore, D. Morgan, R. 
+Jacobs, T. Pollock, D. G. Schlom, E. S. Toberer, J. Analytis, I. Dabo, D. M. 
+DeLongchamp, G. A. Fiete, G. M. Grason, G. Hautier, Y. Mo, K. Rajan, E. J. Reed, 
+E. Rodriguez, V. Stevanovic, J. Suntivich, K. Thornton, and J.-C. Zhao, “New 
+frontiers for the materials genome initiative,” npj Computational Materials 5, 41 
+(2019). 
+
+18 
+A. Jain, S. P. Ong, G. Hautier, W. Chen, W. D. Richards, S. Dacek, S. Cholia, D. 
+Gunter, D. Skinner, G. Ceder, and K. A. Persson, “Commentary: The Materials 
+Project: A materials genome approach to accelerating materials innovation,” APL 
+Materials 1, 011002 (2013). 
+
+19 
+J. E. Saal, S. Kirklin, M. Aykol, B. Meredig, and C. Wolverton, “Materials Design 
+and Discovery with High-Throughput Density Functional Theory: The Open 
+Quantum Materials Database (OQMD),” JOM 65, 1501 (2013). 
+
+20 
+S. Kirklin, J. E. Saal, B. Meredig, A. Thompson, J. W. Doak, M. Aykol, S. Rühl, and 
+C. Wolverton, “The Open Quantum Materials Database (OQMD): assessing the 
+accuracy of DFT formation energies,” npj Computational Materials 1, 15010 (2015). 
+
+21 
+S. Curtarolo, W. Setyawan, S. Wang, J. Xue, K. Yang, R. H. Taylor, L. J. Nelson, 
+G. L. W. Hart, S. Sanvito, M. Buongiorno-Nardelli, N. Mingo, and O. Levy, 
+“AFLOWLIB.ORG: A distributed materials properties repository from high-
+throughput ab initio calculations,” Computational Materials Science 58, 227 (2012). 
+
+22 
+K. Choudhary, K. F. Garrity, A. C. E. Reid, B. Decost, A. J. Biacchi, A. R. Hight 
+Walker, Z. Trautt, J. Hattrick-Simpers, A. G. Kusne, A. Centrone, A. Davydov, J. 
+Jiang, R. Pachter, G. Cheon, E. Reed, A. Agrawal, X. Qian, V. Sharma, H. Zhuang, 
+S. V. Kalinin, B. G. Sumpter, G. Pilania, P. Acar, S. Mandal, K. Haule, D. Vanderbilt, 
+K. Rabe, and F. Tavazza, “The joint automated repository for various integrated 
+simulations (JARVIS) for data-driven materials design,” npj Computational 
+Materials 6, 173 (2020). 
+
+23 
+B. Blaiszik, K. Chard, J. Pruyne, R. Ananthakrishnan, S. Tuecke, and I. Foster, 
+“The Materials Data Facility: Data Services to Advance Materials Science 
+Research,” JOM 68, 2045 (2016). 
+
+
+20/35 
+ 
+
+24 
+X. Jia, A. Lynch, Y. Huang, M. Danielson, I. Lang’At, A. Milder, A. E. Ruby, H. 
+Wang, S. A. Friedler, A. J. Norquist, and J. Schrier, “Anthropogenic biases in 
+chemical reaction data hinder exploratory inorganic synthesis,” Nature 573, 251 
+(2019). 
+
+25 
+P. Raccuglia, K. C. Elbert, P. D. F. Adler, C. Falk, M. B. Wenny, A. Mollo, M. Zeller, 
+S. A. Friedler, J. Schrier, and A. J. Norquist, “Machine-learning-assisted materials 
+discovery using failed experiments,” Nature 533, 73 (2016). 
+
+26 
+L. E. Celis, V. Keswani, and N. Vishnoi, “Data preprocessing to mitigate bias: A 
+maximum entropy based approach,” in Proceedings of the 37th International 
+Conference on Machine Learning, 2020 (PMLR), p. 1349. 
+
+27 
+N. Mehrabi, F. Morstatter, N. Saxena, K. Lerman, and A. Galstyan, “A Survey on 
+Bias and Fairness in Machine Learning,” ACM Computing Surveys 54, 1 (2021). 
+
+28 
+F. Belviso, V. E. P. Claerbout, A. Comas-Vives, N. S. Dalal, F.-R. Fan, A. Filippetti, 
+V. Fiorentini, L. Foppa, C. Franchini, B. Geisler, L. M. Ghiringhelli, A. Groß, S. Hu, 
+J. Íñiguez, S. K. Kauwe, J. L. Musfeldt, P. Nicolini, R. Pentcheva, T. Polcar, W. 
+Ren, F. Ricci, F. Ricci, H. S. Sen, J. M. Skelton, T. D. Sparks, A. Stroppa, A. Urru, 
+M. Vandichel, P. Vavassori, H. Wu, K. Yang, H. J. Zhao, D. Puggioni, R. Cortese, 
+and A. Cammarata, “Viewpoint: Atomic-Scale Design Protocols toward Energy, 
+Electronic, Catalysis, and Sensing Applications,” Inorganic Chemistry 58, 14939 
+(2019). 
+
+29 
+A. Molkeri, D. Khatamsaz, R. Couperthwaite, J. James, R. Arróyave, D. Allaire, 
+and A. Srivastava, “On the importance of microstructure information in materials 
+design: PSP vs PP,” Acta Materialia 223, 117471 (2022). 
+
+30 
+D. McDuff, S. Ma, Y. Song, and A. Kapoor, “Characterizing bias in classifiers using 
+generative models,” in Advances in Neural Information Processing Systems, 2019 
+(Curran Associates, Inc.). 
+
+31 
+H. Jiang and O. Nachum, “Identifying and correcting label bias in machine learning,” 
+in Proceedings of the 23rd International Conference on Artificial Intelligence and 
+Statistics, 2020 (PMLR), p. 702. 
+
+32 
+K. Ryan, J. Lengyel, and M. Shatruk, “Crystal Structure Prediction via Deep 
+Learning,” Journal of the American Chemical Society 140, 10158 (2018). 
+
+33 
+J. P. Janet, C. Duan, T. Yang, A. Nandy, and H. J. Kulik, “A quantitative uncertainty 
+metric controls error in neural network-driven chemical discovery,” Chemical 
+Science 10, 7913 (2019). 
+
+34 
+B. Rohr, H. S. Stein, D. Guevarra, Y. Wang, J. A. Haber, M. Aykol, S. K. Suram, 
+and J. M. Gregoire, “Benchmarking the acceleration of materials discovery by 
+sequential learning,” Chemical Science 11, 2696 (2020). 
+
+35 
+C. K. Borg, E. S. Muckley, C. Nyby, J. E. Saal, L. Ward, A. Mehta, and B. Meredig, 
+“Quantifying the performance of machine learning models in materials discovery,” 
+arXiv preprint arXiv:2210.13587 (2022). 
+
+36 
+K. Tran and Z. W. Ulissi, “Active learning across intermetallics to guide discovery 
+of electrocatalysts for CO2 reduction and H2 evolution,” Nature Catalysis 1, 696 
+(2018). 
+
+37 
+R. Yuan, Z. Liu, P. V. Balachandran, D. Xue, Y. Zhou, X. Ding, J. Sun, D. Xue, and 
+T. Lookman, “Accelerated Discovery of Large Electrostrains in BaTiO3‐Based 
+Piezoelectrics Using Active Learning,” Advanced Materials 30, 1702884 (2018). 
+
+
+21/35 
+ 
+
+38 
+A. G. Kusne, H. Yu, C. Wu, H. Zhang, J. Hattrick-Simpers, B. Decost, S. Sarker, 
+C. Oses, C. Toher, S. Curtarolo, A. V. Davydov, R. Agarwal, L. A. Bendersky, M. 
+Li, A. Mehta, and I. Takeuchi, “On-the-fly closed-loop materials discovery via 
+Bayesian active learning,” Nature Communications 11, 5966 (2020). 
+
+39 
+S. Ament, M. Amsler, D. R. Sutherland, M.-C. Chang, D. Guevarra, A. B. Connolly, 
+J. M. Gregoire, M. O. Thompson, C. P. Gomes, and R. B. v. Dover, “Autonomous 
+materials synthesis via hierarchical active learning of nonequilibrium phase 
+diagrams,” Science Advances 7, eabg4930 (2021). 
+
+40 
+S. G. Baird, T. Q. Diep, and T. D. Sparks, “DiSCoVeR: a materials discovery 
+screening tool for high performance, unique chemical compositions,” Digital 
+Discovery 1, 226 (2022). 
+
+41 
+Y. Kim, E. Kim, E. Antono, B. Meredig, and J. Ling, “Machine-learned metrics for 
+predicting the likelihood of success in materials discovery,” npj Computational 
+Materials 6 (2020). 
+
+42 
+K. 
+Choudhary, 
+“JARVIS-DFT 
+3D 
+dataset 
+(cfid_33d-8-18-2021.json),” 
+
+https://figshare.com/articles/dataset/jdft_3d-7-7-2018_json/6815699 (2021). 
+
+43 
+L. Pauling, “The principles determining the structure of complex ionic crystals,” 
+Journal of the American Chemical Society 51, 1010 (1929). 
+
+44 
+R. E. Newnham, in Properties of Materials: Anisotropy, Symmetry, Structure 
+(Oxford University Press, 2004), p. 14. 
+
+45 
+M. Thomas and A. T. Joy, Elements of information theory (Wiley-Interscience, 
+2006). 
+
+46 
+C. Zhang and J. A. Shah, “Fairness in multi-agent sequential decision-making,” in 
+Advances in Neural Information Processing Systems, 2014 (Curran Associates, 
+Inc.). 
+
+47 
+L. v. d. Maaten and G. Hinton, “Visualizing Data using t-SNE,” Journal of Machine 
+Learning Research 9, 2579−2605 (2008). 
+
+48 
+L. Grinsztajn, E. Oyallon, and G. Varoquaux, “Why do tree-based models still 
+outperform deep learning on tabular data?,” in Thirty-sixth Conference on Neural 
+Information Processing Systems Datasets and Benchmarks Track, 2022. 
+
+49 
+K. Li, B. DeCost, K. Choudhary, M. Greenwood, and J. Hattrick-Simpers, “A critical 
+examination of robustness and generalizability of machine learning prediction of 
+materials properties,” arXiv preprint arXiv:2210.13597 (2022). 
+
+50 
+E. Stach, B. Decost, A. G. Kusne, J. Hattrick-Simpers, K. A. Brown, K. G. Reyes, 
+J. Schrier, S. Billinge, T. Buonassisi, I. Foster, C. P. Gomes, J. M. Gregoire, A. 
+Mehta, J. Montoya, E. Olivetti, C. Park, E. Rotenberg, S. K. Saikin, S. Smullin, V. 
+Stanev, and B. Maruyama, “Autonomous experimentation systems for materials 
+development: A community perspective,” Matter 4, 2702 (2021). 
+
+51 
+M. D. Wilkinson, M. Dumontier, I. J. Aalbersberg, G. Appleton, M. Axton, A. Baak, 
+N. Blomberg, J.-W. Boiten, L. B. Da Silva Santos, P. E. Bourne, J. Bouwman, A. J. 
+Brookes, T. Clark, M. Crosas, I. Dillo, O. Dumon, S. Edmunds, C. T. Evelo, R. 
+Finkers, A. Gonzalez-Beltran, A. J. G. Gray, P. Groth, C. Goble, J. S. Grethe, J. 
+Heringa, P. A. C. ’T Hoen, R. Hooft, T. Kuhn, R. Kok, J. Kok, S. J. Lusher, M. E. 
+Martone, A. Mons, A. L. Packer, B. Persson, P. Rocca-Serra, M. Roos, R. Van 
+Schaik, S.-A. Sansone, E. Schultes, T. Sengstag, T. Slater, G. Strawn, M. A. 
+Swertz, M. Thompson, J. Van Der Lei, E. Van Mulligen, J. Velterop, A. 
+
+
+22/35 
+ 
+
+Waagmeester, P. Wittenburg, K. Wolstencroft, J. Zhao, and B. Mons, “The FAIR 
+Guiding Principles for scientific data management and stewardship,” Scientific 
+Data 3, 160018 (2016). 
+
+52 
+H. M. Berman, J. Westbrook, Z. Feng, G. Gilliland, T. N. Bhat, H. Weissig, I. N. 
+Shindyalov, and P. E. Bourne, “The Protein Data Bank,” Nucleic Acids Research 
+28, 235 (2000). 
+
+53 
+A. X. Chang, T. Funkhouser, L. Guibas, P. Hanrahan, Q. Huang, Z. Li, S. Savarese, 
+M. Savva, S. Song, and H. Su, “Shapenet: An information-rich 3d model repository,” 
+arXiv preprint arXiv:1512.03012 (2015). 
+
+54 
+T. Xie and J. C. Grossman, “Crystal graph convolutional neural networks for an 
+accurate and interpretable prediction of material properties,” Physical Review 
+Letters 120, 145301 (2018). 
+
+55 
+O. Isayev, C. Oses, C. Toher, E. Gossett, S. Curtarolo, and A. Tropsha, “Universal 
+fragment descriptors for predicting properties of inorganic crystals,” Nature 
+Communications 8, 15679 (2017). 
+
+56 
+H. Huo and M. Rupp, “Unified representation of molecules and crystals for machine 
+learning,” Machine Learning: Science and Technology 3, 045017 (2022). 
+
+57 
+P. Virtanen, R. Gommers, T. E. Oliphant, M. Haberland, T. Reddy, D. Cournapeau, 
+E. Burovski, P. Peterson, W. Weckesser, J. Bright, S. J. van der Walt, M. Brett, J. 
+Wilson, K. J. Millman, N. Mayorov, A. R. J. Nelson, E. Jones, R. Kern, E. Larson, 
+C. J. Carey, İ. Polat, Y. Feng, E. W. Moore, J. VanderPlas, D. Laxalde, J. Perktold, 
+R. Cimrman, I. Henriksen, E. A. Quintero, C. R. Harris, A. M. Archibald, A. H. 
+Ribeiro, F. Pedregosa, P. van Mulbregt, A. Vijaykumar, A. P. Bardelli, A. Rothberg, 
+A. Hilboll, A. Kloeckner, A. Scopatz, A. Lee, A. Rokem, C. N. Woods, C. Fulton, C. 
+Masson, C. Häggström, C. Fitzgerald, D. A. Nicholson, D. R. Hagen, D. V. 
+Pasechnik, E. Olivetti, E. Martin, E. Wieser, F. Silva, F. Lenders, F. Wilhelm, G. 
+Young, G. A. Price, G.-L. Ingold, G. E. Allen, G. R. Lee, H. Audren, I. Probst, J. P. 
+Dietrich, J. Silterra, J. T. Webber, J. Slavič, J. Nothman, J. Buchner, J. Kulick, J. 
+L. Schönberger, J. V. de Miranda Cardoso, J. Reimer, J. Harrington, J. L. C. 
+Rodríguez, J. Nunez-Iglesias, J. Kuczynski, K. Tritz, M. Thoma, M. Newville, M. 
+Kümmerer, M. Bolingbroke, M. Tartre, M. Pak, N. J. Smith, N. Nowaczyk, N. 
+Shebanov, O. Pavlyk, P. A. Brodtkorb, P. Lee, R. T. McGibbon, R. Feldbauer, S. 
+Lewis, S. Tygier, S. Sievert, S. Vigna, S. Peterson, S. More, T. Pudlik, T. Oshima, 
+“SciPy 1.0: fundamental algorithms for scientific computing in Python,” Nature 
+Methods 17, 261 (2020). 
+
+58 
+H. Alizadeh Noughabi, “Entropy Estimation Using Numerical Methods,” Annals of 
+Data Science 2, 231 (2015). 
+
+59 
+C. E. Rasmussen and C. K. I. Williams, Gaussian Processes for Machine Learning 
+(MIT Press, Cambridge, Massachusetts, 2005). 
+
+60 
+J. Gardner, G. Pleiss, K. Q. Weinberger, D. Bindel, and A. G. Wilson, “GPyTorch: 
+Blackbox Matrix-Matrix Gaussian Process Inference with GPU Acceleration,” in 
+Advances in Neural Information Processing Systems, 2018 (Curran Associates, 
+Inc.). 
+
+61 
+N. Metropolis and S. Ulam, “The Monte Carlo Method,” Journal of the American 
+Statistical Association 44, 335 (1949). 
+
+
+23/35 
+ 
+
+62 
+D. R. Jones, M. Schonlau, and W. J. Welch, “Efficient Global Optimization of 
+Expensive Black-Box Functions,” Journal of Global Optimization 13, 455 (1998). 
+
+63 
+A. B. Georgescu, P. Ren, A. R. Toland, S. Zhang, K. D. Miller, D. W. Apley, E. A. 
+Olivetti, N. Wagner, and J. M. Rondinelli, “Database, Features, and Machine 
+Learning Model to Identify Thermally Driven Metal–Insulator Transition 
+Compounds,” Chemistry of Materials 33, 5591 (2021). 
+
+64 
+S. P. Ong, W. D. Richards, A. Jain, G. Hautier, M. Kocher, S. Cholia, D. Gunter, V. 
+L. Chevrier, K. A. Persson, and G. Ceder, “Python Materials Genomics (pymatgen): 
+A robust, open-source python library for materials analysis,” Computational 
+Materials Science 68, 314 (2013). 
+
+65 
+L. Ward, A. Dunn, A. Faghaninia, N. E. R. Zimmermann, S. Bajaj, Q. Wang, J. 
+Montoya, J. Chen, K. Bystrom, M. Dylla, K. Chard, M. Asta, K. A. Persson, G. J. 
+Snyder, I. Foster, and A. Jain, “Matminer: An open source toolkit for materials data 
+mining,” Computational Materials Science 152, 60 (2018). 
+
+66 
+F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. 
+Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos, D. 
+Cournapeau, M. Brucher, M. Perrot, and É. Duchesnay, “Scikit-learn: Machine 
+Learning in Python,” Journal of Machine Learning Research 12, 2825 (2011). 
+
+ 
+
+
+ 
+ 
+
+Supplementary Items 
+
+Algorithm S1 Pseudocode of the ET-AL algorithm. 
+
+Entropy-targeted active learning.
+
+Input: Labeled dataset 𝒟𝒟 = {𝒙𝒙𝑖𝑖, 𝑦𝑦𝑖𝑖} , unlabeled dataset 𝒰𝒰 = �𝒙𝒙𝑗𝑗
+
+′� ; 𝒟𝒟 = ⋃ 𝒟𝒟𝑐𝑐
+𝑐𝑐
+, 𝒰𝒰 = ⋃ 𝒰𝒰𝑐𝑐
+𝑐𝑐
+( 𝑐𝑐 ∈
+crystal systems); Monte Carlo sample size 𝑛𝑛; stopping criteria 
+ 
+while stopping criteria are not satisfied do 
+
+Calculate information entropies 𝐻𝐻(𝒟𝒟𝑐𝑐) = ℎ(𝑦𝑦 ∈ 𝒟𝒟𝑐𝑐), select 𝑐𝑐∗ = arg min
+
+𝑐𝑐
+𝐻𝐻(𝒟𝒟𝑐𝑐) 
+
+Fit a GP to 𝒟𝒟𝑐𝑐∗: 𝑌𝑌 ∼ 𝐺𝐺𝐺𝐺(𝑿𝑿) 
+for 𝒙𝒙𝑗𝑗
+′ ∈ 𝒰𝒰𝑐𝑐∗ do 
+
+Draw 𝑛𝑛 samples �𝑦𝑦𝑗𝑗
+(𝑘𝑘)�
+𝑘𝑘=1
+
+𝑛𝑛
+ from 𝐺𝐺𝐺𝐺�𝒙𝒙𝑗𝑗
+′� 
+
+Calculate ℎ𝑗𝑗
+(𝑘𝑘) = 𝐻𝐻 �𝒟𝒟 ∪ �𝑦𝑦𝑗𝑗
+(𝑘𝑘)�� for 𝑘𝑘 = 1 to 𝑛𝑛 
+
+Calculate the mean and variance of �ℎ𝑗𝑗
+(𝑘𝑘)�
+𝑘𝑘=1
+
+𝑛𝑛
+, EI�𝒙𝒙𝑗𝑗
+′� according to Equation (3) 
+
+end for 
+Select sample 𝒙𝒙∗ = arg max
+𝒙𝒙′∈𝒰𝒰𝑐𝑐∗
+EI(𝒙𝒙′) 
+
+Acquire 𝑦𝑦∗, remove 𝒙𝒙∗ from 𝒰𝒰𝑐𝑐∗, add 𝒙𝒙∗, 𝑦𝑦∗ to 𝒟𝒟𝑐𝑐∗ 
+
+end while 
+ 
+Returns: Updated dataset 𝒟𝒟
+
+ 
+ 
+ 
+
+
+25/35 
+ 
+
+ 
+
+Figure S1 t-SNE plot of graph embeddings of the labeled dataset. The histograms show distribution 
+densities in different regions. 
+
+ 
+
+
+26/35 
+ 
+
+ 
+
+Figure S2 Change of information entropy in every crystal system during ET-AL iteration on the OQMD-8 
+dataset. Artificial bias is introduced by leaving out all orthorhombic compounds with Δ𝐸𝐸 > 0, together 
+with randomly selected compounds, in total 1,000, as the unlabeled dataset. ℎ(Δ𝐸𝐸) for monoclinic is not 
+improved in later iterations because new materials are selected only in the unlabeled dataset, which is 
+limited by the diversity of OQMD-8 data. 
+
+ 
+ 
+
+
+27/35 
+ 
+
+ 
+
+ 
+
+Figure S3 Kernel density estimation of the distribution of Δ𝐸𝐸 among different crystal systems in the 
+OQMD-8 derived datasets: (top) before and (bottom) after ET-AL. 
+
+ 
+
+ 
+ 
+
+
+28/35 
+ 
+
+ 
+
+Figure S4 Kernel density estimation of the distribution of Δ𝐸𝐸 among different crystal systems in the J-
+CFID-derived (from top to bottom) labeled, RAND, and ETAL datasets. 
+
+ 
+ 
+
+
+29/35 
+ 
+
+ 
+
+(a) The population of the J-CFID dataset by categories. M: metal or intermetallic. Columns 2–5 are 
+compounds with metallic element(s) and a single type of anion: B/C: B/C/Si anion; N: N/P/As 
+anion; O: O anion; S: S/Se/Te anion. PA: polyanionic, i.e., compounds with more than one type of 
+anions above. NM: nonmetal, i.e., compounds without metallic elements. 
+
+ 
+
+ 
+
+(b) The population of the J-CFID dataset by the number of component elements. 
+
+Figure S5 Statistics of the J-CFID dataset by number and types of component elements. 
+
+ 
+ 
+
+
+30/35 
+ 
+
+ 
+
+Figure S6 Percentage of compounds containing each element in the J-CFID dataset. 
+
+ 
+ 
+
+
+31/35 
+ 
+
+Table S1. Tuned hyperparameters of random forest and gradient boosting models for predicting 𝐵𝐵 and 𝐺𝐺. 
+“^” denotes that the effect of a hyperparameter is found to be insignificant, hence, the default setting is used. 
+
+Hyperparameters 
+
+Random Forest
+Gradient Boosting
+
+𝐵𝐵
+𝐺𝐺
+𝐵𝐵
+𝐺𝐺
+
+bootstrap
+True
+True
+True
+True
+
+max_depth
+100
+30
+5
+5
+
+max_features
+n_features
+n_features
+n_features
+n_features
+
+min_samples_leaf
+1^
+1^
+1^
+1^
+
+min_samples_split
+2^
+2^
+2^
+2^
+
+n_estimators
+300
+300
+100
+100
+
+ 
+
+
+32/35 
+ 
+
+Supplementary Text 
+
+1. Bias metric 
+
+Metric selection 
+
+One definition of data bias is “unjustifiable concentration on a particular part”1. In the context of this work, 
+
+the “parts” can be regions in a space broadly defined by composition, (micro)structure, property, processing, 
+
+or energy-based descriptions. As an example, the structure–stability bias arises from concentration (uneven 
+
+coverage) in materials with certain structures (crystal systems) and stability (Δ𝐸𝐸). Such uneven coverage 
+
+can be captured by the different diversities of stability among different crystal systems. The information 
+
+entropy 
+
+ℎ(𝑌𝑌) = − � 𝑓𝑓(𝑦𝑦) log 𝑓𝑓(𝑦𝑦)d𝑦𝑦 
+
+has been widely adopted as a metric for diversity2. Its numerical nature and simplicity in the calculation are 
+
+desirable as a target in active learning. Also widely adopted as a numerical diversity measure is the 
+
+determinantal point processes (DPP)3. However, DPP is evaluated pairwise, thus lacking scalability to large 
+
+materials databases. 
+
+ 
+
+Another seemingly applicable metric is the conditional information entropy 
+
+ℎ(𝑌𝑌|𝐶𝐶𝐶𝐶) = − � 𝑓𝑓(𝑐𝑐𝑠𝑠, 𝑦𝑦) log 𝑓𝑓(𝑦𝑦|𝑐𝑐𝑠𝑠)d𝑐𝑐𝑠𝑠d𝑦𝑦 
+
+where 𝐶𝐶𝐶𝐶  denotes the crystal system. However, this metric has several problems. First, 𝑓𝑓(𝑐𝑐𝑠𝑠, 𝑦𝑦) =
+
+𝑓𝑓(𝑦𝑦|𝑐𝑐𝑠𝑠) ⋅ 𝑓𝑓(𝑐𝑐𝑠𝑠), where 𝑓𝑓(𝑐𝑐𝑠𝑠), the probability distribution of 𝐶𝐶𝐶𝐶, is related to the fractions of crystal 
+
+systems. The “true” fractions in nature are unknown; besides, in the examination of bias, we focus on the 
+
+coverage evenness rather than the populations of crystal systems. Second, ℎ(𝑌𝑌|𝐶𝐶𝐶𝐶) ≤ ℎ(𝑌𝑌), and equality 
+
+is reached (i.e., active learning is concluded) if and only if 𝑌𝑌 and 𝐶𝐶𝐶𝐶 are independent. Intuitively, with 𝑌𝑌 
+
+denoting Δ𝐸𝐸, this means symmetry does not provide information for stability. This is not true according to 
+
+theories discussed in the introduction of structure–stability bias. Third, ℎ(𝑌𝑌|𝐶𝐶𝐶𝐶) as a single scalar value 
+
+does not give a sense of the bias level, whereas the difference in ℎ(𝑌𝑌) of crystal systems indicates how 
+
+biased a dataset is. 
+
+ 
+Information entropy estimation 
+
+For a continuous random variable 𝑦𝑦, evaluation of its information entropy requires the probability density 
+
+function (pdf) 𝑓𝑓(𝑦𝑦). However, given a discrete set of values {𝑦𝑦𝑖𝑖}𝑖𝑖=1
+𝑛𝑛 , the underlying pdf is not obtainable. 
+
+We use the numerical estimations implemented in scipy.stats, with the “auto” setting. Specifically, for 11 <
+
+
+33/35 
+ 
+
+𝑛𝑛 ≤ 1000, the result is given by the 𝐻𝐻𝑒𝑒(𝑚𝑚, 𝑛𝑛) estimator presented by Ebrahimi et al.4; while for 𝑛𝑛 > 1000, 
+
+the Vasicek estimator5 
+
+ℎ(𝑌𝑌) ≅ 1
+𝑛𝑛 � log � 𝑛𝑛
+2𝑚𝑚 (𝑦𝑦𝑖𝑖+𝑚𝑚 − 𝑦𝑦𝑖𝑖−𝑚𝑚)�
+
+𝑛𝑛
+
+𝑖𝑖=1
+ 
+
+is used, where 𝑚𝑚, the window size, is defined by �√𝑛𝑛 + 0.5� in both cases. 
+
+ 
+2. Data preparation 
+
+Graph embedding 
+
+The crystal graph convolutional neural network (CGCNN)6 predicts materials properties from the graph 
+
+representation of the crystal structures. The input includes node feature vector(s) that encode atomic 
+
+properties, and edge feature vector(s) that encode connections between atoms, both can be obtained from 
+
+crystallographic information framework (CIF) files without knowing other properties. 
+
+ 
+
+We retrieve a CGCNN model pretrained to predict the formation energy per atom (Δ𝐸𝐸) on the Materials 
+
+Project dataset7. We feed the CIF files of materials in the J-CFID to the pretrained model and obtain the 
+
+activations of the last but one layer of neurons. These 32-dimensional vectors (graph embeddings) are used 
+
+as representations of J-CFID materials structures. Note that graph embeddings do not have direct physical 
+
+meanings, but they are generally obtainable for any given crystal structure. 
+
+ 
+Physical descriptors 
+
+In supervised machine learning (ML) of mechanical properties, we use physically meaningful descriptors 
+
+of materials as input. The descriptors include ones defined in the Magpie ML framework8, the Ewald energy 
+
+per atom, and volume per site. The Magpie descriptors set include the minimum, maximum, range, mean, 
+
+average deviation, and mode of features such as Mendeleev number, atomic weight, and covalent radius of 
+
+elements/atoms in a compound. A complete list can be found in the data files open-sourced along with the 
+
+code. 
+
+ 
+
+The Ewald energy per atom is obtained using the “analysis.ewald” module of the pymatgen package9; the 
+
+other descriptors are obtained using the “featurizers” module of the Matminer package10. 
+
+ 
+J-CFID data splitting 
+
+In preparation of the data for experiments, we first split the J-CFID dataset of size 10,898 to a test set of 
+
+4,898 datapoints and an “experiment” set of 6,000 datapoints. Due to the large size and randomness in 
+
+
+34/35 
+ 
+
+dataset splitting, the test set has a similar level of bias as the original J-CFID dataset. From the experiment 
+
+set, we take (1) all tetragonal and trigonal materials with Δ𝐸𝐸 > 0 and (2) all orthorhombic materials with 
+
+Δ𝐸𝐸 < 0, then randomly draw datapoints from the remaining data, to form an unlabeled set of size 5,000. 
+
+The other 1,000 datapoints make the labeled set. 
+
+ 
+
+3. Algorithm Analysis 
+
+The execution of ET-AL consists of three main parts: (1) Gaussian Process (GP) model fitting on the labeled 
+
+data, (2) selection of an unlabeled datapoint, and (3) label acquisition. The time part (3) takes depends on 
+
+the experimental/computational technique used, and it is usually the most time-consuming component, 
+
+compared to which the time of (1) and (2) are negligible. Quantities affecting the computational time of 
+
+parts (1) and (2) include the size of the labeled dataset 𝑁𝑁L, size of the unlabeled dataset 𝑁𝑁U, and the number 
+
+of Monte Carlo samples 𝑛𝑛MC. 
+
+ 
+
+For part (1), GP fitting, the time complexity is 𝒪𝒪�𝑁𝑁L
+3�. The scalable GP models11 provide a solution for 
+
+better scalability on large datasets. In particular, the sparse variational (SV) GP model12 reduces the time 
+
+complexity to 𝒪𝒪(𝑚𝑚3) (where 𝑚𝑚 ≪ 𝑁𝑁L is the number of inducing points whose distribution is representative 
+
+of the training data), with a slight loss of accuracy. 
+
+ 
+
+In part (2), for every unlabeled data, the GP model makes one prediction, costing computational time 𝒪𝒪(𝑁𝑁U); 
+
+then 𝑛𝑛MC Monte Carlo samples are drawn, and for each sample the information entropy and acquisition 
+
+function are calculated, costing computational time 𝒪𝒪(𝑁𝑁U ⋅ 𝑛𝑛MC). The total time complexity of part (2) is 
+
+𝒪𝒪�𝑁𝑁U(𝑘𝑘 + 𝑛𝑛MC)�, where 𝑘𝑘 is constant. 
+
+ 
+ 
+ 
+
+
+35/35 
+ 
+
+Supplementary References 
+
+1 
+E. Pitoura, “Social-minded Measures of Data Quality,” Journal of Data and 
+Information Quality 12, 1 (2020). 
+
+2 
+I. F. Spellerberg and P. J. Fedor, “A tribute to Claude Shannon (1916–2001) and 
+a plea for more rigorous use of species richness, species diversity and the 
+‘Shannon–Wiener’ Index,” Global Ecology and Biogeography 12, 177 (2003). 
+
+3 
+A. Kulesza and B. Taskar, “Determinantal Point Processes for Machine Learning,” 
+Foundations and Trends® in Machine Learning 5, 123 (2012). 
+
+4 
+N. Ebrahimi, K. Pflughoeft, and E. S. Soofi, “Two measures of sample entropy,” 
+Statistics & Probability Letters 20, 225 (1994). 
+
+5 
+O. Vasicek, “A Test for Normality Based on Sample Entropy,” Journal of the Royal 
+Statistical Society. Series B (Methodological) 38, 54 (1976). 
+
+6 
+T. Xie and J. C. Grossman, “Crystal graph convolutional neural networks for an 
+accurate and interpretable prediction of material properties,” Physical Review 
+Letters 120, 145301 (2018). 
+
+7 
+A. Jain, S. P. Ong, G. Hautier, W. Chen, W. D. Richards, S. Dacek, S. Cholia, D. 
+Gunter, D. Skinner, G. Ceder, and K. A. Persson, “Commentary: The Materials 
+Project: A materials genome approach to accelerating materials innovation,” APL 
+Materials 1, 011002 (2013). 
+
+8 
+L. Ward, A. Agrawal, A. Choudhary, and C. Wolverton, “A general-purpose 
+machine learning framework for predicting properties of inorganic materials,” npj 
+Computational Materials 2, 16028 (2016). 
+
+9 
+S. P. Ong, W. D. Richards, A. Jain, G. Hautier, M. Kocher, S. Cholia, D. Gunter, V. 
+L. Chevrier, K. A. Persson, and G. Ceder, “Python Materials Genomics (pymatgen): 
+A robust, open-source python library for materials analysis,” Computational 
+Materials Science 68, 314 (2013). 
+
+10 
+L. Ward, A. Dunn, A. Faghaninia, N. E. R. Zimmermann, S. Bajaj, Q. Wang, J. 
+Montoya, J. Chen, K. Bystrom, M. Dylla, K. Chard, M. Asta, K. A. Persson, G. J. 
+Snyder, I. Foster, and A. Jain, “Matminer: An open source toolkit for materials data 
+mining,” Computational Materials Science 152, 60 (2018). 
+
+11 
+H. Liu, Y.-S. Ong, X. Shen, and J. Cai, “When Gaussian Process Meets Big Data: 
+A Review of Scalable GPs,” IEEE Transactions on Neural Networks and Learning 
+Systems 31, 4405 (2020). 
+
+12 
+J. Hensman, N. Fusi, and N. D. Lawrence, “Gaussian processes for Big data,” in 
+Proceedings of the Twenty-Ninth Conference on Uncertainty in Artificial 
+Intelligence, Bellevue, WA, 2013 (AUAI Press), p. 282. 
+
+ 
+
+

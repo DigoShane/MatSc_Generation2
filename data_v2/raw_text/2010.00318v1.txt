@@ -1,0 +1,1405 @@
+McStas (i):
+Introduction, use, and basic principles for
+ray-tracing simulations
+
+P. K. Willendrup,
+Department of Physics, Technical University of Denmark, Denmark,
+Data Management and Software Center, European Spallation Source, Denmark,
+K. Lefmann,
+Niels Bohr Institute, University of Copenhagen, Denmark
+
+November 8, 2021
+
+Abstract
+
+We present an overview of, and an introduction to, the general-purpose
+neutron simulation package McStas. We present the basic principles be-
+hind Monte Carlo ray-tracing simulations of neutrons performed in the
+package and present a few simple examples. We present the implemen-
+tation of McStas, the status of the package and its use in the neutron
+community. Finally, we briefly discuss the planned development of the
+package.
+
+1
+Introduction
+
+Over the last decades, Monte Carlo ray-tracing simulation has become increas-
+ingly important for investigating the performance of neutron scattering instru-
+mentation. Few neutron instruments are being built before undergoing a thor-
+ough investigation by simulation. In particular, the powerful spallation neutron
+sources in North America (SNS) [1] and Japan (J-PARC MLF) [2], the upgrade
+of the UK source (ISIS TS-2) [3], and the coming European Spallation Source
+(ESS) [4] have heavily utilized neutron simulation software, thereby also pushing
+the development of the simulation methods.
+At the end of last century, neutron instrumentation ray-tracing simulations
+were performed using home-made monolithic codes. While fairly successful, this
+approach suffered from limited development ressources - with potential prob-
+lems of quality assurance - while still creating a vast amount of duplicated
+effort between different projects and facilities. One exception from the mono-
+lithic approach was the general-purpose neutron simulation package NISP [5, 13]
+released 1994/95, based on the earlier MCLIB subroutine library from 1978/1980
+[6]. However, NISP never reached a critical mass of user community worldwide.
+
+1
+
+arXiv:2010.00318v1  [physics.ins-det]  1 Oct 2020
+
+
+Almost simultanously, at the turn of the century, four general simulation
+packages were launched, following the NISP philosophy, but on more modern
+software platforms:
+
+• The HZB-based VITESS [7]
+
+• The Řež-based RESTRAX/SIMRES [8]
+
+• The SNS-based IDEAS [9]
+
+• The Risø- ILL based McStas [10]
+
+Most of these packages are still maintained (to a higher or lower degree) and the
+status of their projects can be found on their respective homepages [14, 15, 16].
+In the view of the authors of this paper, the state of the art of currently
+available neutron Monte Carlo ray-tracing packages are summarized in the ta-
+ble below, including points of view on differences and main advantages and
+disadvantages.
+
+2
+
+
+Package
+Plusses
+Minusses
+
+VITESS
+• Easy for beginners - no code to write.
+
+• Use of pipes gives automatically paral-
+lel execution.
+
+• Is on track to become hosted at FZJ.
+
+• Modules historically written without
+common structure requirement / stan-
+dard.
+
+• Hard to modify at the physics / module
+level as a user.
+
+• Open source, but without open soft-
+ware repository.
+
+• Key staff has at periods had limited
+backing from hosting institution.
+
+RESTRAX
+SIMRES
+• Has mode for "upstream" simulations
+from sample to source.
+Gives a clear
+speed boost for sparse phase-space sim-
+ulations.
+
+• Historically specialized for TAS.
+
+• Historically specialized for TAS.
+
+• Open source, but without open soft-
+ware repository.
+
+• Only few developers
+
+NISP
+• No assumption that instruments should
+be linear. Any volume can scatter to
+any volume.
+
+• Monte Carlo engine derived from early
+MCNP.
+
+• No assumption that instruments should
+be linear.
+(Intrinsically demanding /
+slow.)
+
+• Monte Carlo engine derived from early
+MCNP.
+
+• Legacy Fortran program with unspeci-
+fied license terms.
+
+• Only few developers
+
+McVine
+• Automatically enherits much function-
+ality from McStas.
+
+• Instrument description written in pure
+Python. (Industry standard.)
+
+• Interfaces with physics models written
+in Python/c++
+
+• Object-oriented
+with
+separated
+physics/geometry
+
+• Open source (BSD) with open reposi-
+tory.
+
+• Instrument description written in pure
+Python. (Not a dedicated solution for
+neutron scatterers.)
+
+• Interfaces with physics models written
+in Python/c++
+
+• Due to object-oriented nature, compo-
+nents only interact via the neutron
+
+• Not widely used outside US neutron
+scattering.
+
+• Only few developers.
+
+RAMP
+• New kid on the block.
+
+• Intrinsically GPU-capable.
+
+• Written in pure Python.
+
+• Open Source with open repository.
+
+• New kid on the block, i.e. short history
+so far.
+
+• Functionality so far limited.
+
+• Order of magnitude GPU speedup is
+not yet achieved.
+
+McStas
+• Flexible, users can interact at instru-
+ment, component and c-code level.
+
+• True Open Source from the beginning,
+has open repository, many user contri-
+butions.
+
+• New
+functionality
+can
+be
+added
+through short, modular c-code.
+
+• Several developers working in parallel
+for almost full duration of project his-
+tory.
+
+• Parallelised
+using
+industry-standard
+MPI solution. (GPU developments are
+under way.)
+
+• Interfaces with many other codes e.g.
+MCNP, Mantid, iFit,
+
+• Extremely flexible, users can interact
+at instrument, component and c-code
+level.
+(Which may be error prone if
+many advanced features are combined.)
+
+• True Open Source from the beginning,
+many user contributions.
+(There are
+however requirements for code inclu-
+sion.)
+
+3
+
+
+Based on the need for instrument developments, the early use of the software
+packages concentrated on simulating neutron optics, especially guide systems,
+and concepts for full instruments, including instrument resolutions.
+A huge effort was performed in the beginning of this century with systematic
+comparison between simulation results of guides and optics in different packages
+and to some extent with actual measured data [21]. This work served strongly
+to track down tricky numerical errors, to increase confidence in the packages
+themselves, and to establish the ray-tracing technique as such.
+With the aim of being able to simulate complete virtual experiments, the
+last decade has seen a growing demand for - and development of - a suite of
+scattering sample components.
+This is the first article in a series of short reviews of the McStas package -
+with the planned future articles described in section 6. For this reason, we will
+here review the general expressions used for Monte Carlo ray-tracing simulations
+of neutron scattering, In addition, we will discuss the implementation of the
+McStas system, its utilization and user community, and the planned future
+development of the package.
+We have aimed this article for neutron scatterers and software developers
+alike, and we thus begin with a few introductory paragraphs on the nature of
+neutrons and on the ray-tracing technique. Most material presented here, and
+other related information, can be found also in the user and component manual
+for McStas [17].
+
+2
+The mathematics of Monte Carlo ray-tracing
+simulations for slow neutrons
+
+Monte Carlo simulations are in general a way to perform approximate solutions
+to complex problems by use of random sampling, thereby performing numerical
+experiments. The first known example of such a method is that of the Buffon
+needle problem[18] first posed in the 18th century by Georges-Louis Leclerc,
+Comte de Buffon:
+
+"Suppose we have a floor made of parallel strips of wood, each the same width,
+and we drop a needle onto the floor. What is the probability that the needle will
+lie across a line between two strips?"
+
+As explained in a wikipedia article[19], the thinking behind that numerical
+experiment can in fact be used to construct a Monte Carlo algorithm for the
+estimation of π. In terms of an actual mathematical algorithm, and later code for
+computers, the first formulation was in fact to facilitate calculations of neutron
+physics for the Manhattan project [22].
+As with all stochastic methods, Monte Carlo methods are prone to statistical
+variances. To reduce the statistical errors, a number of variance reduction meth-
+ods have been designed, of which we here mention two. In Stratified sampling,
+one divides the parameter space up into mutually exclusive strata, and sample
+a given amount of each stratum. In Importance sampling, one will choose to
+sample more often in regions more important for the final result. As an analogy,
+to calculate the average height over sea level of a landscape, one would map the
+ragged mountain slopes more carefully than the still water in the mountain lake.
+
+4
+
+
+The method relevant for neutron simulations is known as Monte Carlo ray-
+tracing. This is used to study objects which travel along a path (a ray), and can
+be (partially) absorbed or scattered into another direction, but not converted
+into other types of radiation. The most known example of this is visible light,
+and this type of ray-tracing is frequently used to generate realistic illumination
+in 3D computer graphics, see e.g. Pov-Ray [20].
+
+2.1
+The semiclassical representation of neutron coordi-
+nates
+
+In neutron ray-tracing simulations a neutron is represented semiclassically by
+simultaneously well-defined position, r, velocity, v, time, t, and all three com-
+ponents of the neutron spin vector, s.
+Formally, this approach violates the laws of quantum mechanics, in par-
+ticular the Heisenberg uncertainty relations [23], given for pairs of conjugate
+position/momentum variables by
+
+δEδt ≥ ¯h
+
+2 ; δxδpx ≥ ¯h
+
+2 ,
+(1)
+
+and similarly for the conjugate variables in the y- and z-directions. However, the
+semiclassical approximation works really well for describing instruments that use
+“typical” neutrons with velocities of the order v ≈ 100−10000 m/s. For example
+we can imagine a neutron beam with the typical value λ = 4 Å (v = 1000 m/s)
+and a low divergence of 0.06◦ (0.001 radians) passing a tight slit of 0.1 mm width.
+Here we have δx = 10−4 m and δpx = mnδvx = 0.001 mnvx ≈ 1.7 · 10−26 kg
+m/s. Hence, the product of the two uncertainties is around 1.7 · 10−30 kg m2/s,
+or 16000 ¯h, so the uncertainty relation holds with a large margin. As another
+example, the best energy resolution of a backscattering instrument is around
+δE ≈ 0.5 µeV for neutrons of 6.6 Å, and the best time resolution is the time is
+takes one of these neutrons to transverse a small (2 mm) sample, δt ≈ 3 µs. The
+product of this is 1.5 · 10−12 eVs, or 400 ¯h. Hence, the uncertainty relation also
+here holds well.
+The validity of the semiclassical approach for neutron scattering is also dis-
+cussed in detail in Ref. [24]. The similar issues with the semiclassical approxi-
+mation of the neutron spin will be discussed in the future review on polarized
+scattering.
+
+2.2
+The weight factor
+
+The physical unit of a neutron ray is neutron rate, or neutron intensity (s−1).
+On a typical neutron source, the emission rate can amount to 1015/s; an order
+of magnitude larger than the number of rays that can typically be simulated on
+a laptop in one year. For this reason, to simulate realistic values for neutron
+count numbers, a neutron ray in general represents more than a single physical
+neutron (per second). To accommodate this, each ray contains an additional
+parameter, the weight factor, p, with a unit of neutrons per second. When the
+ray begins at the source, p is typically 103/s to 109/s. The intensity of the
+given neutron ray is updated on interaction with components of the neutron
+instrument, see Figure 1 for an illustration.
+As one example of importance sampling, the weight factor is manipulated
+through the simulation. For example, when some physical neutrons are “lost”
+
+5
+
+
+r
+Reflecting surface
+
+r ,v,p
+
+’,v’,p’
+
+’,v,p
+
+r
+
+Figure 1: Neutron ray interacting with a reflecting surface: 1) The neutron
+begins with parameters r,v,p (black) at a distance from the surface. 2. The
+neutron is propagated to the surface and now has parameters r’,v,p (blue). 3.
+The neutron is reflected and achieves updated parameters r’,v’,p’ (red).
+
+due to e.g. finite reflectivity or absorption, the simulated ray will in general
+continue in the simulations, while p is adjusted to reflect the correct average
+physical behaviour. When (if) the neutron ray reaches the detector, p may in
+practice be less than 1/s. Turning again to Figure 1, using importance sampling
+by describing the reflected beam only will not neglect the physical influence of
+absorption, since we ensure conservation of intensity, i.e. p = p′ + p′′, where
+p′′ is the intensity of the non-reflected beam (which we in this example do not
+transport).
+We proceed along this line of reasoning to calculate the neutron intensity in
+a beam. Consider a neutron component at a surface perpendicular to the beam.
+The neutron intensity is given by the sum of all simulated rays reaching this
+surface:
+
+Ij =
+
+N
+�
+
+i=1
+pi,j−1,
+(2)
+
+where i is the ray index, N is the total number of rays, and j is the index
+of the given component. The index j − 1 on p indicates that we consider the
+intensity being emitted by the previous component. If the ray does not reach
+this point, we have pi,j−1 = 0. The weight of the neutrons after interacting with
+component j, is expressed by
+
+pj = wjpj−1,
+(3)
+
+where the ray index, i, is omitted for simplicity. The weight multiplier of the
+j’th component, wj, is calculated by the important probability rule
+
+fMC,bwj = Pb ,
+(4)
+
+where Pb is the physical probability for event b, and fMC,b is the Monte Carlo
+sampling probability.
+Often, there is only one non-trivial event to consider. This may, e.g., be the
+case for a neutron beam being attenuated by absorption. Here, each neutron
+ray either survives or is lost. Absorbed neutrons are typically not simulated
+(fMC = 0), while for the other case (transmission) fMC = 1. The probability
+rule thus dictates that wj = Pb.
+When a Monte Carlo branch point is reached (selection between several
+events), we have fMC,b < 1 for each branch, b. However, since fMC is a proba-
+
+6
+
+
+bility function, we must have
+�
+
+b
+fMC,b = 1.
+(5)
+
+If a variance reduction scheme is used where some branches are simulated less
+frequently than the physical probability, we have wj = Pb/fMC,b, which may
+exceed unity. Hence, the weight factor may also increase during the simulation.
+
+2.3
+Neutron moderators and focusing
+
+Consider a component that may send neutrons out in all directions, e.g. the
+moderator or the sample. Often in McStas, we choose uniform sampling when
+simulating all neutron directions. The sampling probability per solid angle is
+then:
+fMC unfocusdΩ = dΩ
+
+4π .
+(6)
+
+However, this simulation scheme may cause huge inefficiencies. In many sim-
+ulations, only rays emitted in certain “interesting directions” have any chance
+of being detected. In such cases, one will employ the technique of focusing,
+where the simulated ray will be emitted only within a certain solid angle, ∆Ω
+- but with uniform probability within ∆Ω. Then the Monte Carlo sampling
+probability is:
+
+fMC focusdΩ = dΩ
+
+∆Ω.
+(7)
+
+To avoid systematic errors in the simulation results, ∆Ω should contain all the
+directions contributing to the neutron intensity to be simulated. When using
+(4) to obtain the weight factor transformations, we see that the focusing alone
+will bring the amount
+
+wfocus = wunfocus
+∆Ω
+4π ,
+(8)
+
+which is the general focusing contribution to the weight factor. Comparing to
+the uniform case, the focusing method gives smaller weight factors per ray, but
+a larger number of rays traveling towards the detector. This gives, on average,
+the same final result, but with a smaller statistical error. The focusing technique
+is a typical example of importance sampling.
+Imagine a McStas moderator component, simulating a moderator that emits
+R neutrons per second, divided into N rays. The total intensity in the simulation
+is found from
+
+R = I0 =
+
+N
+�
+
+i=1
+pi,0.
+(9)
+
+Assuming uniform distribution of ray weights, we find the initial weight to be
+p0 = R/N. If focusing of the emitted rays is taken into account, we reach the
+expression for the initial weight
+
+p0 = R
+
+N
+∆Ω
+4π .
+(10)
+
+Most moderators have wavelength-dependent emission rates, where R =
+�
+φ(λ)dλ.
+Imagine that we sample uniformly a wavelength band of width ∆λ. Then the
+sampling frequency would be fλ = 1/∆λ.
+With the same argument as the
+focusing, we reach the final expression for the moderator weight factors
+
+p0(λ) = φ(λ)
+
+N
+∆Ω
+4π ∆λ,
+(11)
+
+7
+
+
+which is the typical equation being used in McStas moderator components.
+
+2.4
+Estimates of simulation uncertainty
+
+In a simulation, like for real experiments, it is important to be able to esti-
+mate the statistical uncertainty.
+We here present a simple derivation of the
+uncertainty in simulations with weight factors.
+Imagine M rays, all with weight factor p. Each ray is imagined to have
+an overall probability, Pd, of reaching the detector. The number of observed
+rays will be binominally distributed with a mean value ¯N = MPd and variance
+σ2(N) = MPd(1−Pd) [25]. Very often, we will have Pd ≪ 1, but still sufficiently
+large values of M, so that ¯N = MPd ≫ 1. In this case, the distribution will be
+approximately Gaussian with a variance MPd - or a standard deviation
+
+σ(N) =
+�
+
+MPd ≈
+√
+
+N,
+(12)
+
+where the observed value, N, is used as the best estimate for the true mean
+value, ¯N. Recalling the constant weight factors of the rays, the total simulated
+intensity becomes
+I = Np,
+(13)
+
+with a variance
+σ2(I) = σ2(N)p2 = Np2.
+(14)
+
+We now allow the rays to have different, but discrete, weight factors, pi.
+The simulated number of rays with one particular weight factor is denoted ni
+(standard deviation √ni). The total simulated result is now
+
+I =
+�
+
+i
+nipi.
+(15)
+
+Using the property of uncorrelated events, σ2(a + b) = σ2(a) + σ2(b), we can
+rewrite the sum to reach the statistical variance of the simulated result:
+
+σ2(I) =
+�
+
+i
+nip2
+i .
+(16)
+
+Now, let the simulations occur with rays of arbitrary weight factors, pj,
+different for each ray, i.e. ni ≡ 1, in practice allowing a continuous distribution
+of pi. If the distribution of these weight factors is reasonably well behaved, we
+can generalize the equations above to reach
+
+I =
+�
+
+i
+pi ,
+(17)
+
+with a variance:
+σ2(I) =
+�
+
+i
+p2
+i ,
+(18)
+
+which is, in the proper limits, consistent with (14) and (16). This is the principle
+for calculating uncertainties of simulation results in the McStas package. In
+practice, the sum of both pi and p2
+i are being accumulated during the simulation
+to avoid having to store the full list of pi’s for rays reaching the detectors.
+
+8
+
+
+2.5
+Scaling to real-world statistics
+
+In order to compare with real experiments, in particular when using simulated
+data as input to data analysis programs, simulated intensities must be converted
+to average integer counts using an imagined counting time, T. However, this
+time cannot be chosen to be arbitrarily high, since the data analysis program will
+assume
+√
+
+N statistics, and for high values of T, the counting statistics will be
+better than that of the simulation, causing unreal errors in the data treatment.
+Let us now we quantify the effect of scaling with a counting time.
+The
+average count number is easily obtained by
+
+⟨N⟩ = IT,
+(19)
+
+with I being the simulated intensity. Now, care must be taken when evaluating
+the standard deviations. Counting statistics require that the variance is
+
+σ2(N) = ⟨N⟩,
+(20)
+
+while the simulated value will have the simulated variance σ2(IT) = σ2(I)T 2.
+We must require that the percieved counting statistics cannot be better than
+the simulated variance, or N ≥ σ2(I)T 2, leading to
+
+T 2 ≤ ⟨N⟩
+
+σ2(I).
+(21)
+
+For many virtual experiments, the value of T can be surprisingly low, of the
+order seconds, since in particular the highest counting rates tend to be under-
+represented in the simulations.
+If a series of simulated values need to be scaled by the same time, T, the
+maximum time is given by the smallest value of T that fulfills (21), or
+
+T 2
+max = Minj
+
+� ⟨Nj⟩
+
+σ2(Ij)
+
+�
+.
+(22)
+
+Now, when performing a scaling of this type, some data points will likely obtain
+actual errors smaller than counting statistics. To make sure that every point in
+the series has an errorbar that complies with
+√
+
+N, one will for all points, except
+the one with the smallest value of ⟨Nj⟩/(σ2(Ij)), need to add a random error,
+Σ2
+j:
+Σ2
+j = ⟨Nj⟩ − σ2(Ij)T 2
+max,
+(23)
+
+and then round up or down to an integer.
+In conclusion, the count-error-true simulation numbers are
+
+Nj = Round (IjTmax + Ej) ,
+(24)
+
+where Ej is a normally distributed stochastic variable with mean zero and vari-
+ance Σ2
+j.
+This transformation to integer count numbers is not used in McStas, but
+must be applied as a post processing of the data after the simulations. Further
+work is, however, needed on the sampling strategies for future more efficient
+transformation of errorbars.
+
+9
+
+
+3
+The concept and implementation of McStas
+
+As also outlined in the introduction, the philosophy and mindset behind starting
+the McStas project, as laid out by K. N. Clausen, was to a large extent to
+minimize duplication of code and efforts by allowing code to be shared [10].
+The main ideas that were implemented since the first version of McStas were:
+
+• Licensing should follow Open Source standards. Since version 1.8 McStas
+is released under the GNU General Public License v. 2.0. Earlier versions
+were licensed under a McStas- and RISØ specific license that was open,
+but did not allow redestribution.
+
+• The code should be modular to allowed sharing models of instrument parts
+between users.
+This evolved into the so-called components, explained
+below.
+
+• The syntax of the user-supplied instrument definition should be simple
+and powerful. For the development of the syntax details, K. Nielsen got
+input to the syntax, using pen and paper before writing any code, from
+the RISØ staff, in particular K. Lefmann and H. M. Rønnow wrote the
+first instrument and handful of components in this way.
+
+• The software concepts should first of all make sense to instrument scien-
+tists, allowing them to work in a way that felt almost like runnning an
+actual instrument
+
+• Documentation should as far as possible be embedded within the code
+
+• Simplicity and readability of the code should be preferred over perfor-
+mance.
+
+McStas is implemented in a three-layered structure. The core system and
+run-time libraries take care of the compiling and execution of the program,
+user interface, and visualization of the results. The core and run-time c-code
+libraries typically come in a set of header and c-code files, such as
+
+• mccode-r.h and mccode-r.c, common to both McStas and McXtrace
+and containing functions for generating random numbers, routines for in-
+tersecting particle ray and geometrical objects etc.
+
+• mcstas-r.h and mcstas-r.c, containing physical constants for neutron
+physics, propagation routines with / without gravitation etc. (McXtrace
+has a similar set of files implementing X-ray physics)
+
+• interoff-lib.h and interoff-lib.c for handling of surface-polygon
+based geometries in
+GeomView OFF file format[61]
+
+• interpolation-lib.h and interpolation-lib.c, routines for interpo-
+lating in gridded and sparse datasets
+
+• ref-lib.h and ref-lib.c, routines for describing the physics of reflective
+super-mirror surfaces
+
+• read_table-lib.h and read_table-lib.c, routines for reading tabu-
+lated data from files
+
+10
+
+
+• pol-lib.h and pol-lib.c, routines for handling polarized neutron trans-
+port
+
+• adapt_tree-lib.h and adapt_tree-lib.c, routines to define adaptive
+importance sampling schemes
+
+These levels of code are only modified by a handful of system specialists. The
+core system also manages the main Monte-Carlo loop that in turn produces a
+specified number of neutron rays for the simulation.
+
+Supplementing the core system run-time codes, a number of c-files are present
+to support individual McStas components, such as
+
+• monitor_nd-lib.h and monitor_nd-lib.c, supporting the very general
+Monitor_nD monitor component from Emmanuel Farhi, ILL
+
+• ESS_butterfly-lib.h, ESS_butterfly-geometry.c and ESS_butterfly-lib.c,
+supporting the ESS_butterfly source component
+
+• Geometry_functions.c, Union_functions.c and Union_initialization.c,
+supporting the Union component set by Mads Bertelsen, ESS DMSC
+
+• nxs.h and sginfo.h, supporting the Sample_nxs component from Mirko
+Boin, HZB
+
+• ess_source-lib.h and ess_source-lib.c, supporting the legacy ESS_moderator
+source component
+
+• chopper_fermi.h, chopper_fermi.c, general.h, general.c, intersection.h,
+intersection.c, vitess-lib.h and vitess-lib.h, supporting the Vitess_Chopperfermi
+component, ported from VitESS
+
+The components are modular pieces of code. The McStas components are
+written in a unique domain-specific language, which is augmented using ANSI-C.
+A McStas component will typically be equivalent to a beam-optical component,
+such as a chopper, a collimator, a particular sample, or a detector (often called
+“monitor” in McStas). Sources and moderator are in McStas implemented as one
+combined component. Components are typically parametrised, e.g. with respect
+to size, in order to be of general use. The components will use the matematical
+tools for e.g. weight transformation and focusing, presented in section 2.
+The instrument is a description of a particular neutron scattering set-up.
+McStas operates at one instrument at a time. The instrument file contains a se-
+lection of components and their spatial position and orientation. The instrument
+is written fully in the McStas domain specific language, although ANSI-C may
+be used to augment the functionality. Also the instruments can be parametrised,
+for example to allow the scanning of a triple-axis instrument by changing a num-
+ber of angles. Fig. 2 illustrates the roles of system, components, and instrument
+file for a very simple time-of-flight instrument, consisting of a pulsed source, a
+guide, a chopper, and a time-of-flight detector.
+When McStas is executed on an instrument file, the system compiles the
+information from the instrument file and the component library and produces an
+ANSI-C file. This is in turn compiled by a standard C-compiler to an executable
+code, which is called by the system. After the process has terminated, McStas
+collects the resulting data files, stores them in specified directories, and visualises
+the data upon request. Everything can be controlled from a user-friendly GUI
+interface, or by a scripting language.
+
+11
+
+
+Chopper
+
+Guide.comp � c�code
+
+Source.comp � c�code
+
+DiskChopper.comp � c�code
+
+TOF_monitor.comp � c�code
+
+mcgui, graphical user interface             mcplot, visualize histogram outp.         mcdisplay, visualize instrument
+
+mcgui is used to assemble an instrument file, which is taken over by the McStas system
+
+The "tool layer" consists of programs manipulated by the McStas user:
+
+COMPONENT A
+
+COMPONENT B
+
+COMPONENT C
+
+COMPONENT D
+
+Source
+Guide
+
+TOF_monitor
+
+INSTRUMENT
+
+DEFINE INSTRUMENT Example(Param1=1, string Param2="two", ...)
+
+COMPONENT A = Source(Parameters...)
+AT (0, 0, 0) ABSOLUTE
+
+COMPONENT B = Guide(Parameters...)
+AT (0, 0, 1) RELATIVE A
+
+COMPONENT C = DiskChopper(Parameters...)
+AT (0, 0, 1) RELATIVE B
+
+AT (0, 0, Param1) RELATIVE PREVIOUS
+COMPONENT D = TOF_monitor(Parameters, filename="Tof.dat")
+
+Random
+numbers
+
+I/O
+Physical
+consts.
+
+Component library
+
+"Kernel and runtime c�code"
+"Instrument file"
+
+The simulation executable produces data output which can be visualized using the mcplot and mcdisplay tools
+
+The McStas system generates an "ISO C file" and an executable from  instrument file and c�codes
+
+Figure 2: The figure illustrates how the McStas (and McXtrace) codes are
+layered, including how user, developers and code generation mechanism interact
+with the various layers of code.
+The geometrical lay-out of the instrument
+to simulate is shown at the top panel, while the bottom panes represent the
+different interacting layers of McStas. The instrument file is shown fully in the
+large panel to the left; the figure is not to scale. Reproduced from [11]
+
+12
+
+
+1995
+2000
+2005
+2010
+2015
+2020
+Year
+
+0
+
+10
+
+20
+
+30
+
+40
+
+Number of publications
+
+Figure 3: The annual number of articles citing McStas shown as a function of
+publication year.
+
+McStas has a users manual and a component manual [17], both of which are
+very comprehensive documents. A more readily accessible documentation may
+be found in the project home page. Documentation of component functionality
+is furthermore embedded in the header of the component code. This documen-
+tation is e.g. used for the generation of online component help at the McStas
+home page [16].
+
+4
+Use and users of McStas
+
+In its first two decades, McStas has seen a steady increase of users. We have
+chosen to illustrate this with a literature search. We have analyzed the 350
+articles citing one (or more) of the basic McStas release articles, and by far most
+of these articles in fact represent simulation work done by the use of McStas.
+In Fig. 3, we show the number of McStas-using articles as a function of
+publication year. We see that after a slow start (except for a spike in 2002), the
+publication rate reached 10/y in 2006 and 20/y in 2011. Since 2014, the number
+has been approx. 30/y, which is partly based on the large instrumentation work
+related to ESS.
+It is highly interesting to study what McStas has been used for, judging from
+this literature base. Fig. 4 shows the six main use categories of the packages,
+distributed on 5-year periods. Although the overall use of McStas has increased
+by a factor 4 over the years, the distribution between the categories has remained
+remarkably constant. Let us present the themes one by one (all will be described
+in much more detail in later issues of this article series):
+
+Components
+These papers describe the simulations of individual beam-optical
+components, such as choppers, monochromators [26], lenses [27], or mirrors [48].
+Around 5% of the articles fall in this category.
+
+Guides
+A particular application of McStas has been to study different guide
+systems, both generic guide geometries [41, 42], and guide constructions for
+actual instruments [43, 38].
+Recently, tools have become available for semi-
+automatic optimization of guide geometries [44] and guide coatings [45], strongly
+
+13
+
+
+1999-2003
+2004-08
+2009-13
+2014-18
+5-year period
+
+0
+
+10
+
+20
+
+30
+
+40
+
+50
+
+Number of publications
+
+Components
+Guides
+Instrument paper
+Instrument simulation
+Package
+Virtual Experiment
+
+Figure 4: The number of articles citing McStas, divided into use categories,
+shown as a function of 5-year intervals.
+
+enhancing the capabilities and speed of simulation-guided optimizations for
+guide designs. Around 20% of the McStas articles are in this category.
+
+Instrument papers
+This denotes the important papers describing the perfor-
+mance of an actual instrument. Such papers will typically obtain many citations,
+as they will be the standard reference for users of the instrument. Often, the
+use of McStas in these papers is related to prediction of flux on sample, and the
+calculation of resolution functions, both to be compared to the actual measured
+values. Approx. 10% of the McStas papers are instrument papers and represent
+instruments at the major facilities around the world, for example:
+
+• SNS (e.g. CNCS and ARCS) [28, 29]
+
+• NIST (MACS) [30],
+
+• J-PARC (e.g. AMATERAS and 4SEASONS [31, 32]
+
+• CARR (HIPD) [33]
+
+• ANSTO (TAIPAN) [34]
+
+• ILL (D7) [35]
+
+• ISIS (ENGIN-X) [36]
+
+• FRM-2 (KWS-2) [37]
+
+• HZB (FLEX) [38]
+
+• PSI (RITA-II) [39]
+
+Instrument simulations
+These articles represent the design work behind
+instruments, some of which are not yet built, and a few of which may never be
+built at all. This is a main category for McStas work, containing 35% of all
+articles. The simulations cover all facilities listed above, as well as:
+
+• the Algier reactor
+
+14
+
+
+• the Argentine reactor
+
+• CSNS
+
+• Dhruva
+
+• ESS
+
+• HANARO
+
+• Dubna
+
+• LLB
+
+• PIK
+
+Most of the instrument simulation publications are related to the newest sources:
+ESS (24 papers), J-PARC (20 papers), and FRM-2 (13 papers), but also much
+activity is related to ILL (12 papers) and SNS (7 papers). Examples are too
+plenty to be given at this stage, but we will elaborate on the topic later in this
+review series.
+As a separate task, McStas has been used in two demanding studies of the
+complete instrument suite for ESS, first to optimize the pulse structure [46],
+then to optimize the moderator geometry [47].
+
+Virtual experiments
+These articles represent the most advanced use of sim-
+ulations, namely the performance of a full virtual experiment on a simulated
+instrument [49, 53]. This has been used for the determination of accurate reso-
+lution functions [50, 51], tools for teaching practical neutron scattering without
+the investment of beam time [52], for correcting for multiple scattering events
+in samples [53, 54], and even for analysis of complete data sets [55, 56, 57, 58].
+Around 15% of the articles fall in this category.
+
+Packages
+These articles describe simulation packages, typically McStas, but
+also VITESS and RESTRAX have cited McStas, partially for the reason that
+these three packages have inspired and cross-fertilized each other over the last
+two decades. In addition, McStas has spawned an X-ray cousin (McXtrace) [59]
+and a He-scattering cousin [60]. Around 15% of the articles are in this category.
+
+In addition to this bibliometric study, we have performed a survey of the
+McStas user community during the autumn of 2018. Ten questions were posed
+via the SurveyMonkey platform [62] in the period from November 6th 2018 to
+December 3rd 2018. All questions were voluntary / optional and contained the
+possibility of free-form input via an ’other’ text field. In total 52 responses were
+received, out of which 47 filled demographic data. The full McStas user base is
+estimated to be approximately 400, based on the current 252 members of the
+McStas user mailinglist and knowing from experience that not all users register.
+
+The main findings of the survey are that:
+
+1. The McStas users are to a high degree running the most recent version of
+McStas, at the time of survey v. 2.4.1.
+
+15
+
+
+2. Linux is the dominant operating system, followed by Windows 10 and macOS.
+Some users are now running the Linux binaries under Windows 10 via the
+Windows Subsystem for Linux[64].
+
+3. McStas users are distributed over all of the continents that have access to
+neutron facilities.
+
+4. McStas users are mostly based at neutron facilities, but the package also
+finds use at universities and in industry.
+
+5. Most users are now routinely using our modernised Python based gui and
+command-line utitlites.
+
+6. The vast majority of McStas users are very happy about the McStas instal-
+lation process, daily use and the available user support.
+
+For those interested in the full details, a full report of the survey is published
+at the McStas website[63].
+
+5
+The future of McStas
+
+As our user survey demonstrates, McStas is as a project alive and healthy with
+a 20 year long history of development and a stable user community. What sep-
+arates McStas from the alternative simulation packages is mainly the applied
+code-generation technique, the quality of documentation and the strongly col-
+laborative nature of the package, allowing users to contribute. To stay alive and
+healthy however, a sustained effort is needed in terms of manpower, resources,
+support and development.
+
+The main focal points for the development in the coming years are:
+
+1. Lower the typical release cycle of 12-18 months to 3-6 months. Updating
+more often lowers ’time to market’ for new ideas, solutions and bug-fixes.
+McStas 2.5 was released in December 2018 and 2.5.1 will be released in the
+spring of 2019.
+
+2. Make our test/validation effort more stringent and use more of a ’continuous
+integration’ approach to testing. All components should have output test
+data that we can monitor against on a continuous basis. Today only a scalar
+numerical output defines a ’test’ - in the future we would like to compare at
+a more detailed level of data in individual bins of individual monitors.
+
+3. Enrich the sample library even further.
+A natural layer of growth is the
+Union [54] concept by Mads Bertelsen which allows to separate geometry and
+physical processes by defining an inner Monte Carlo loop (e.g. for describing
+complicated arrangements of matter in / around the sample area).
+The
+Union components should become complete in terms of describing all possible
+geometries and all possible physics, which is today not fully the case.
+
+4. A modernization of the code generation layer is under way, which will allow
+us to move to a C-function based grammar rather than today’s #define-based
+
+16
+
+
+approach1. This will break certain backward-compatibility and move us to
+McStas v. 3.0
+
+5. The modernized code-generation will ease the process of targeting modern
+GPU-based architectures.
+
+The reader is further encouraged to consult our standard references [11] and
+[12] for a relatively recent and complete description of McStas.
+
+6
+The McStas review series
+
+This article should be seen as an introduction to a series of McStas review
+papers. Planned themes in this series cover the main uses of McStas described
+above:
+
+• Components
+
+• Guide systems
+
+• Instrument simulations and virtual experiments
+
+In addition to a review of these important cases, we also will describe a few
+more technical matters that deserve a more thorough presentation than what
+has been given in literature so far:
+
+• Modeling of scattering from samples
+
+• Simulation of polarized neutrons, including spin precession
+
+Is is our aim that this article series on McStas will serve to share knowledge of
+the package and its utilization, as well as enhance the capabilities for designing
+and modeling neutron instrumentation worldwide.
+
+Acknowledgements
+
+It is a pleasure to thank everyone involved in the McStas project over the
+decades. In chronological order: K. N. Clausen, K. Nielsen, H. M. Rønnow,
+E. Farhi, P.-O. Åstrand, K. Lieutenant, P. Christiansen, E. B. Knudsen, U.
+Filges, J. Garde, and M. Bertelsen.
+
+References
+
+[1] See the SNS home page https://neutrons.ornl.gov/sns
+
+[2] See the J-PARC MFL home page https://j-parc.jp/researcher/
+MatLife/en/
+
+[3] See the ISIS home page https://www.isis.stfc.ac.uk/
+
+[4] See the ESS home page http://europeanspallationsource.se
+
+1The classical McStas code uses c-preprocessor[65] define instructions to locally change the
+meaning of a variable or parameter name. This means that e.g. a geometrical parameter
+symbol xwidth can be used by multiple components within the same instrument, but with a
+local meaning and without inconsistency.
+
+17
+
+
+[5] L. L. Daemen, P. A. Seeger, T. G. Thelliez, and R. P. Hjelm, A Monte
+Carlo tool for simulations of neutron scattering instruments, AIP Confer-
+ence Proceedings 479, 41-46 (1999); P. A. Seeger and L. L. Daemen, The
+neutron instrument simulation package, NISP, Proceedings of SPIE 5536,
+109-123 (2004)
+
+[6] M. W. Johnson and C. Stephanou, MCLIB: a library of Monte Carlo sub-
+routines for neutron scattering problems, Rutherford Laboratory report
+RL-78-090, 1978; M. W. Johnson, MCGUIDE: a thermal neutron guide
+simulation program, Rutherford and Appleton Laboratories report RL-80-
+065, 1980.
+
+[7] G. Zsigmond, K. Lieutenant and F. Mezei, Neutron News 13(4), 11 (2002)
+
+[8] J. Saroun and J. Kulda, Physica B 234-236, 1102 (1997); J. Saroun and
+J. Kulda, SPIE Proc. 5536, 124 (2004)
+
+[9] W.-T. Lee, X.-L. Wang, J.L. Robertson, F. Klose, and C. Rehm, Appl.
+Phys. A 74, S1502 (2002)
+
+[10] K. Lefmann and K. Nielsen, Neutron News 10(3), 20 (1999)
+
+[11] P. K. Willendrup, E. B. Knudsen, E. B. Klinkby, T. Nielsen, E. Farhi,
+U. Filges and K. Lefmann, Journal of Physics: Conference Series (Online)
+528, 012035 (2014), IOP Publishing
+
+[12] P. K. Willendrup, E. Farhi, E. B. Knudsen, U. Filges, K. Lefmann, Journal
+of Neutron Research, 17, (2014), IOS Press
+
+[13] See the NISP home page http://paseeger.com
+
+[14] See the VITESS home page at
+https://www.helmholtz-berlin.de/forschung/oe/em/
+transport-phenomena/neutronmethods/vitess/
+
+[15] See the RESTRAX/SIMRES home page at http://neutron.ujf.cas.cz/
+restrax/
+
+[16] See the McStas home page at http://www.mcstas.org
+
+[17] See the McStas User Manual and the Component Manual at http://www.
+mcstas.org/documentation/manual/
+
+[18] See de l’Acad. Roy. des. Sciences (1733), 43–45; naturelle, générale et par-
+ticulière Supplément 4 (1777), p. 46.
+
+[19] See the wikipedia article at https://en.wikipedia.org/wiki/Buffon%
+27s_needle
+
+[20] Pov-Ray - Persistence of Vision Pty. Ltd. (2004), http://www.povray.
+org/download/
+
+[21] P. A. Seeger, L.L. Daemen, E. Farhi, E.-T. Lee, L. Wang, L. Passel, J.
+Saroun, G. Zsigmond, Monte Carlo Code Comparisons for a Model In-
+strument, Neutron News 13, 24-29 (2002); G. Zsigmond, S. Manoshin, K.
+Lieutenant, P. A. Seeger, P. Christiansen, P. Willendrup, and K. Lefmann,
+Monte Carlo simulations for the development of polarized neutron instru-
+mentation - an overview, Physica B 397, 115 (2007)
+
+18
+
+
+[22] N. Metropolis, http://library.lanl.gov/la-pubs/00326866.pdf
+
+[23] E. Merzbacher, Quantum Mechanics, Wiley and Sons, 3rd ed. (1997)
+
+[24] F. Mezei, The Basic Physics of Neutron Scattering Experiments, Lecture
+Notes of the Introductory Course to the ECNS99, Report KFKI-1999-
+04/E", pp. 27-39 (1999)
+
+[25] R. J. Barlow: Statistics, Wiley (1999)
+
+[26] J. R. Santisteban, J. Appl. Cryst. 38, 934 (2005)
+
+[27] H. Frielinghaus, J. Appl. Cryst. 42, 681 (2009)
+
+[28] G. Ehlers A. A. Podlesnyak, J. L. Niedziela, E. B. Iverson, P. E. Sokol, The
+new cold neutron chopper spectrometer at the Spallation Neutron Source:
+Design and performance, Rev. Sci. Instr. 82, 085108 (2011)
+
+[29] D. L. Abernathy, M. B. Stone, M. J. Loguillo, M. S. Lucas, O. Delaire, X.
+Tang, J. Y. Y. Lin, B. Fultz, Rev. Sci. Instr. 83, 015114 (2012)
+
+[30] J. A. Rodriguez, D. M. Adler, P. C. Brand, C. Broholm, J. C. Cook, C.
+Brocker, R. Hammond, Z. Huang, P. Hundertmark, J. W. Lynn, N. C. Mal-
+iszewskyj, J. Moyer, J. Orndorff, D. Pierce, T. D. Pike, G. Scharfstein, S. A.
+Smee, R. Vilaseca, MACS - a new high intensity cold neutron spectrometer
+at NIST, Measurement Science and Technology 19, 034023 (2008)
+
+[31] K. Nakajima, S. Ohira-Kawamura, T. Ktxucm, M. Nakamura, R. Kajimoto,
+Y. Inamura, N. Takahashi, K. Atzawa, K. Suzuya, K. Shibata, T. Nakatani,
+K. Soyama, R. Maruyama, H. Tanaka, W. Kambara, T. Iwahasmi, Y. Itoh,
+T. Osakabe, S. Wakimoto, K. Kakurai, F. Maekawa, M. Harada, K. Oikawa,
+R. E. Lechner, F. Mezei, M. Arai, AMATERAS : A Cold-Neutron Disk
+Chopper Spectrometer, J. Phys. Soc. Japan, 80, SB028 (2011)
+
+[32] R. Kajimoto, M. Nakamura, Y. Inamura, F. Mizuno, K. Nakajima, S.
+Ohira-Kawamura, T. Yokoo, T. Nakjatani, R. Maruyama, K. Soyama, K.
+Shibata, K. Suzuya, S. Sato, K. Aizawa, M. Arai, S. Wakimoto, M. Ishikado,
+S. Shamoto, M. Fujita, H. Hiraka, K. Ohoyama, K. Yamada, C. H. Lee, J.
+Phys. Soc. Jpn. 80, SB025 (2011)
+
+[33] Yang et al., IEEE Transactions on Nuclear Science 65, pp. 1324-1330 (2018)
+
+[34] S. A. Danilkin, M. Yethiraj, T. Saerbeck, F. Klose, C. Ulrich, J. Fujioka, S.
+Miyasaka, Y. Tokura, B. Keimer, TAIPAN: First Results from the Thermal
+Triple-axis Spectrometer at OPAL Research Reactor, Journal of Physics
+Conference Series 340, 012003 (2012)
+
+[35] J. R. Stewart, J. Appl. Cryst. 42, 69 (2009)
+
+[36] J. R. Santisteban, M. R. Daymond, J. A. James, L. Edwards, J. Appl.
+Cryst. 39, 812 (2006)
+
+[37] A. Radulescu, V. Pipich, H. Freilinghaus, M. S. Appavou, J. Phys. Conf.
+Ser. 351 12026 (2012)
+
+[38] M. D. Le, D. Quinteros-Castro, R. Toft-Petersen, F. Groitl, M. Skoulatos,
+K. C. Rule, K. Habicht, Gains from the upgrade of the cold neutron triple-
+axis spectrometer FLEXX at the BER-II reactor, Nucl. Instr. Meth. A 729,
+220 (2013)
+
+19
+
+
+[39] K. Lefmann, Physica B 385-86, 1083 (2006)
+
+[40] M. Boehm, A. Hiess, J. Kulda, S. Roux, J. Saroun, ThALES - three axis
+low energy spectroscopy at the Institut Laue-Langevin, Meas. Sci. Techn.
+19, 034024 (2007)
+
+[41] C. Schanzer, P. Böni, U. Filges, T. Hils, Advanced geometries for ballistic
+neutron guides, Nucl. Instr. Meth. A, 529, 63 (2004)
+
+[42] K. H. Klenø, K. Lieutenant, K. H. Andersen, K. Lefmann, Systematic
+performance study of common guide geometries, Nucl. Instr. Meth. A 696,
+75 (2012)
+
+[43] R. M. Ibberson, Nucl. Instr. Meth. A 600, 47 (2009)
+
+[44] M. Bertelsen, Guide-Bot, Nucl. Instr. Meth. A (2017)
+
+[45] M. A. Olsen, M. Bertelsen, and K. Lefmann, Optimizing neutron guides:
+Coating Writer, Accepted for J. Neutr. Res. (2019)
+
+[46] K. Lefmann, K. H. Klenø, J. O. Birk, B. R. Hansen, S. L. Holm, E. Knudsen,
+K. Lieutenant, L. von Moos, M. Sales, P. K. Willendrup, K. H. Andersen,
+Simulation of a suite of generic long-pulse neutron instruments to optimize
+the time structure of the European Spallation Source, Rev. Sci. Instr. 84,
+055106 (2013)
+
+[47] K. H. Andersen, M. Bertelsen, L. Zanini, E. B. Klinkby, T. Schönfeldt, P.
+M. Bentley, J. Saroun, Optimization of moderators and beam extraction
+at the ESS, J. Appl. Cryst. 51, 264 (2018)
+
+[48] J. Stahn, U. Filges, T. Panzner, Focusing specular neutron reflectometry
+for small samples, Europ. Phys. J. - Appl. Phys. 58, 11001 (2012)
+
+[49] K. Lefmann, P. K. Willendrup, L. Udby, B. Lebech, K. Mortensen, J. O.
+Birk, K. Klenø, E. Knudsen, P. Christiansen, J. Saroun, J. Kulda, U. Filges,
+M. Konnecke, P. Tregenna-Piggott, J. Peters, K. Lieutenant, G. Zsigmond,
+P. Bentley, E. Farhi, Virtual experiments: the ultimate aim of neutron
+ray-tracing simulations, J. Neutr. Res. 16, 97 (2008)
+
+[50] L. Udby, P.K. Willendrup, E. Knudsen, Ch. Niedermayer, U. Filges, N.B.
+Christensen, E. Farhi, B.O. Wells, K. Lefmann, Analysing neutron scatter-
+ing data using McStas virtual experiments, Nucl. Instr. Meth. A 634 S138
+(2011)
+
+[51] G. Eckold, O. Sobolev, Analytical approach to the 4D-resolution function
+of three axes neutron spectrometers with focussing monochromators and
+analysers, Nucl. Instr. Meth. A 752, 54 (2014)
+
+[52] L. Udby et al., in preparation (2019)
+
+[53] E. Farhi, V. Hugouvieux, M. R. Johnson, W. Kob, Virtual experiments:
+Combining realistic neutron scattering instrument and sample simulations,
+J. Comp. Phys. 228, 5251 (2009)
+
+[54] M. Bertelsen, T. Guidi, and K. Lefmann, Expanding the McStas sample
+simulation logic with McStas Union components, in preparation (2019)
+
+20
+
+
+[55] M. Boin, R. C. Wimpory, A. Hilger, N. Kardjilov, S. Y. Zhang, M. Strobl,
+Monte Carlo simulations for the analysis of texture and strain measured
+with Bragg edge neutron transmission, Journal of Physics Conference Series
+340, 012022 (2012)
+
+[56] R. Woracek, D. Penumadu, N. Kardjilov, A. Hilger, M. Boin, J. Banhart, I.
+Manke, 3D Mapping of Crystallographic Phase Distribution using Energy-
+Selective Neutron Tomography, Adv. Mater. 26, 4069 (2014)
+
+[57] S. Taminato et al., Real-time observations of lithium battery reactions-
+operando neutron diffraction analysis during practical operation, Scientific
+Reports 6, 28843 (2016)
+
+[58] H. Jacobsen, S. L. Holm, M.-E. Lacatusu, A. T. Rømer, M. Bertelsen, M.
+Boehm, R. Toft-Petersen, J.-C. Grivel, S. B. Emery, L. Udby, B. O. Wells,
+and K. Lefmann, Distinct Nature of Static and Dynamic Magnetic Stripes
+in Cuprate Superconductors, Phys. Rev. Lett 120, 037003 (2018)
+
+[59] E. B. Knudsen, A. Prodi, J. Baltser, M. Thomsen, P. K. Willendrup, M.
+Sanchez del Rio, C. Ferrero, E. Farhi, K. Haldrup, A. Vickery, R. Feiden-
+hans’l, K. Mortensen, M. M. Nielsen, H. F. Poulsen, S. Schmidt and K.
+Lefmann, McXtrace : a Monte Carlo software package for simulating X-ray
+optics, beamlines and experiments, J. Appl. Cryst. 46, 679 (2013)
+
+[60] S. D. Eder, A. K. Ravn, B. Samelin, G. Bracco, A. Salvador Palau, T.
+Reisinger, E. B. Knudsen, K. Lefmann, B. Holst, Zero-order filter for
+diffractive focusing of de Broglie matter waves, Phys. Rev. A 95, 023618
+(2017)
+
+[61] See http://www.geomview.org and http://www.geomview.org/docs/
+html/OFF.html
+
+[62] See http://www.surveymonkey.com
+
+[63] See http://survey2018.mcstas.org for a complete, summarized survey
+report
+
+[64] see https://docs.microsoft.com/en-us/windows/wsl/faq
+
+[65] see https://en.wikipedia.org/wiki/C_preprocessor for an explana-
+tion
+
+21
+
+

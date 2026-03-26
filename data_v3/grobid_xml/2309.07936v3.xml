@@ -1,0 +1,1513 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Landscape-Sketch-Step: An AI/ML-Based Metaheuristic for Surrogate Optimization Problems</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2023-10-06">October 6, 2023</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Rafael</forename><surname>Monteiro</surname></persName>
+							<email>rafael.a.monteiro.math@gmail.com</email>
+						</author>
+						<author>
+							<persName><forename type="first">Kartik</forename><surname>Sau</surname></persName>
+							<email>kartik.sau@gmail.com</email>
+						</author>
+						<author>
+							<affiliation key="aff0">
+								<orgName type="laboratory">Mathematics for Advanced Materials Open Innovation Laboratory</orgName>
+								<orgName type="institution">AIST</orgName>
+							</affiliation>
+						</author>
+						<author>
+							<affiliation key="aff1">
+								<orgName type="department">Advanced Institute for Materials Research</orgName>
+								<orgName type="institution">Tohoku University</orgName>
+								<address>
+									<settlement>Sendai</settlement>
+									<country key="JP">Japan</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Landscape-Sketch-Step: An AI/ML-Based Metaheuristic for Surrogate Optimization Problems</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2023-10-06">October 6, 2023</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">AB91B7C0B61BB8CF229EE865A6F16457</idno>
+					<idno type="arXiv">arXiv:2309.07936v3[cs.LG]</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-04T02:47+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<textClass>
+				<keywords>
+					<term>Global Optimization</term>
+					<term>Reinforcement-Learning</term>
+					<term>Multi-Agent Exploration</term>
+					<term>Sampling Rare Events</term>
+					<term>Surrogate Optimization</term>
+				</keywords>
+			</textClass>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>In this paper, we introduce a new heuristics for global optimization in scenarios where extensive evaluations of the cost function are expensive, inaccessible, or even prohibitive. The method, which we call Landscape-Sketch-and-Step (LSS), combines Machine Learning, Stochastic Optimization, and Reinforcement Learning techniques, relying on historical information from previously sampled points to make judicious choices of parameter values where the cost function should be evaluated at. Unlike optimization by Replica Exchange Monte Carlo methods, the number of evaluations of the cost function required in this approach is comparable to that used by Simulated Annealing, quality that is especially important in contexts like high-throughput computing or high-performance computing tasks, where evaluations are either computationally expensive or take a long time to be performed. The method also differs from standard Surrogate Optimization techniques, for it does not construct a surrogate model that aims at approximating or reconstructing the objective function. We illustrate our method by applying it to low dimensional optimization problems (dimensions 1, 2, 4, and 8) that mimic known difficulties of minimization on rugged energy landscapes often seen in Condensed Matter Physics, where cost functions are rugged and plagued with local minima. When compared to classical Simulated Annealing, the LSS shows an effective acceleration of the optimization process.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">Introduction</head><p>Minimization problems are ubiquitous in applied sciences, appearing for example in the calibration of machines and power plants <ref type="bibr" target="#b12">[GU92]</ref>, in combinatorial optimization applications <ref type="bibr">[Č85]</ref>, the optimization of machine learning models <ref type="bibr" target="#b45">[SSBD14]</ref>, and the prediction of protein folding structures [SEJ + 20]. A relatedyet different -problem is that of sampling low probability events, also referred to as "rare" events [Tuc10, Chapter 8.5]. Such events are remarkably important in Condensed Matter Physics and Biopolymers, fields where rugged energy landscapes -energy potentials, free energies, or simply cost functions plagued with local minima -are abundant [MSO01, W + 03].</p><p>The problems we shall focus on can be formulated mathematically as minimize E(θ), for θ ∈ Ω ⊂ R N , (P) under a few hypotheses:</p><p>(H1) Ω is a closed and bounded box. Such a type of shape domain is commonly seen in practice by experimentalists performing local searches or adjustments around a given parameter value.</p><p>(H2) The cost function (or objective function) E(•) is continuous on its parameters. When allied to (H1), continuity provides sufficient conditions for the existence of a solution to (P). We remark that further smoothness properties or bounds on higher order derivatives indicate the cost function's sensitivity on inputs; in this paper such information will not be required, nor used.</p><p>(H3) The parameter space (or state space) Ω ⊂ R N is embedded in a N dimensional space. We shall assume that N is not very high to avoid well-known "curses" that happen during sampling in high-dimensional spaces, namely, high-dimensionality exacerbates the concentration of uniform measures close to Ω's boundary [HTF09, Chapter 2.5]; see also Section 2.2.</p><p>Hypotheses (H1)-(H3) are realistic and can be seen in many practical applications, as in the fitting of empirical potentials in Molecular Dynamics [SIK + 19] or cases where the cost function is not differentiable, rendering inapplicability of gradient-based optimization methods.</p><p>Several approaches have been used to solve (P) with varying degrees of success and efficiency. However, most -if not all -of them assume that an indiscriminate number of evaluations can be made. In contrast, the scenarios we are most interested in -common to many of these practical problems -are those where cost function's evaluation (denoted from now on as θ → E(θ)) is expensive, a situation where indiscriminate exploitation of the objective function E(•) becomes prohibitive.</p><p>The foundation of our study falls on the question of how to use previously sampled elements (ξ, E(ξ)) ξ∈∆⊂Ω in order to accelerate the minimization problem. This approach seems reasonable if we assume that the usage of previously sampled data is cheaper than expensive evaluations at any unseen values, or even an opportunity to save computational time and effort. We have in mind several different cases in which:</p><p>(i) Evaluations θ → E(θ) demands an extensive amount of computations, as required in high-performance computing tasks;<ref type="foot" target="#foot_0">1</ref> (ii) Evaluations θ → E(θ) take a long time to be completed, as in high-throughput computing tasks;</p><p>(iii) Evaluations θ → E(θ) can only be obtained after purchase or payment of a consulting fee, at a high cost, as of expert knowledge on a problem. It is clear that high evaluation costs play a crucial role in the architecture of the heuristics proposed in this paper, yet we have no pretension at quantifying -nor constraining -such costs (however, see discussion in Appendix A). We will instead guide the discussion to pursue strategies that reduce the objective function evaluations, an idea that we formalize in our last assumption: (H4) Let H := {(ξ, E(ξ)} ξ∈∆⊂Ω be a family of parameter-cost function evalution pairs. Then, whenever ∆ is finite, any evaluation θ → E(θ) on θ ̸ ∈ ∆ is more expensive than interpolations, or inference functions, constructed using the information in H .</p><p>Under the hypotheses (H1)-(H4), we shall refer to (P) simply as "Problem (P)".</p><p>In the literature, optimization methods that advocate for the substitution of a cost function by anotherusually simpler -one, are commonly known as "Surrogate Optimization Methods" and are widely employed in engineering design <ref type="bibr" target="#b10">[FSK08]</ref> and shape optimization <ref type="bibr" target="#b23">[KL13]</ref>. In this paper we shall not use the surrogate modeling approach in the usual way, the main reason being that we do not construct a surrogate function at all. We shall rather tackle the problem by borrowing several ideas from different fields, like Reinforcement Learning. Therefore, we shall call the pair (Ω, E(•)) an environment, a variable that we are optimizing for as an agent, and refer to parameter values in Ω as states.</p><p>1.1 A brief overview of some approaches to the minimization problem.</p><p>In principle, when no further assumptions on Problem (P) are at hand (for instance, like cost function's convexity), its resolution requires global optimization methods, most of which have a probabilistic nature. In this section, we explain and contrast a few of them, some of which will serve as stepping-stones to the construction of exploratory policies in the Landscape Sketch and Step approach.</p><p>Let's begin by discussing Genetic Algorithms (GA), which consist of several agents performing direct searches on parameter space in parallel. The outcome of these searches is gathered and ranked, whereby the best states are selected and subsequently perturbed. In this way, somewhat mimicking the biological processes of Natural Selection, a new set of states is generated, and the process starts over. <ref type="foot" target="#foot_1">2</ref> Although GA is particularly suitable for discrete low-dimensional parameter spaces, it still requires many states to be evaluated at each step, making it very expensive. <ref type="foot" target="#foot_2">3</ref>A different technique is that of Simulated Annealing (SA), which has remarkable statistical properties and has been used successfully in Physics, Combinatorial Optimization, among others applications <ref type="bibr" target="#b22">[KGV83,</ref><ref type="bibr" target="#b6">BT93]</ref>. Several objects described next are constructed iteratively, at discrete time steps i called epochs. For instance, in this notation, θ i indicates the value taken by a parameter θ at epoch i.</p><p>In SA's backdrop one needs to introduce a hyperparameter T &gt; 0, commonly referred to as temperature. The terminology holds with more intuition in models with Physical meaning and concerns the mobility of atoms, which is proportional to the temperature; this will be further discussed below, but for our purposes we only emphasize that T directly impacts how exploratory a policy is. In practice, one allows a per-epoch dependence T i usually known as cooling schedules, which are mostly realized as a monotonic decay over epochs towards a freezing temperature T = 0. For now, we keep the temperature fixed at T .</p><p>Exploration in Simulated Annealing goes as follows: at first, an initial state θ</p><p>(1.1b)</p><p>In the rest of the paper, we shall call this evolution as Simulated Annealing with potential E(•). This type of approach falls in the class of Markov Chain Monte-Carlo methods (MCMC), where one aims to draw samples from a target distribution by designing a Markov Chain that has the very same target distribution as an invariant measure. In our case, at a fixed temperature T , such invariant measure is given by a Gibbs distribution,</p><formula xml:id="formula_0">µ(θ (T ) i ) = e -1 T E(θ (T ) i ) Z , (1.2)</formula><p>where Z is a normalization factor rendering a probability distribution over the parameter states; cf. (ii) At high temperatures most transitions are accepted and the landscape E(•) is mostly ignored. In contrast, at low temperatures -close to a "freezing state" T ≈ 0 -only transitions to lower energy states (E(θ i+1 ) ≤ E(θ i )) are accepted. Thus, one can say that the policy becomes greedier as the temperature cools down, while more exploratory as the temperature is high.</p><p>(iii) Going back to the underlying perturbation (1.1a), if all states are connected (that is, if the underlying Markov chain is "irreducible") then the dynamics halts at the global minima as T ↓ 0, in what is known as freezing; cf. [LPW09, Chapter 3.1]. However, when the perturbation is "too small", freezing can result in agents getting trapped at local minima due to either insufficient agents' mobility or high-energy barriers; this phenomenon is also known as tunneling and is investigated in Section 3.1. In Condensed Matter Physics, such local optima are called metastable states (also referred to as "local optima").</p><p>(iv) The design of cooling schedules is very important, but almost an art in itself: from the theoretical point of view, they affect mixing properties of Markov Chains and the convergence towards its invariant measures <ref type="bibr" target="#b13">[Haj88]</ref>; from a practical point of view, if not carefully implemented they can yield defects in lattice structure and accumulation on metastable states <ref type="bibr" target="#b22">[KGV83]</ref>.</p><p>Remark (ii) allows us to borrow some terminology from Reinforcement Learning theory: from now on, we shall treat cooling schedules as policies and refer to both in an interchangeable way.</p><p>Computationally, Simulated Annealing relies on extensive evaluations θ → E(θ), requires multiple rounds of simulation using ad-hoc cooling schedules, besides trial-and-error initializations. One of the biggest challenges of minimization is the acceleration of the search for ground states, which usually requires the development of strategies to overcome metastability issues. Multi-agent exploration is one of the most effective techniques to overcome this difficulty: it consists of several agents simultaneously exploring the environment under different policies (that is, exploration at different temperatures); exploration happens in parallel for a certain number of iterations, after which parallelism is broken. Final states (or "best states") are "combined" while the information they carry is "shared", usually by reassigning states to different agents as initial states for a subsequent round of searches. These ideas have been successfully implemented by Replica Exchange Monte Carlo (REMC) methods. <ref type="foot" target="#foot_3">4</ref> They consist of setting several Simulated Annealing processes Θ</p><p>(1) i , . . . , Θ (m) i exploring the environment under different temperatures; from the point of view of Reinforcement Learning, these processes can be seen as agents exploring the environment under different policies. In its simplest setting, one defines a set with several states taken by multiple agents at step i,</p><formula xml:id="formula_1">A i = θ (T (1) i ) i , . . . , θ (T (m) i ) i , where T (1) i ≤ T (2) i ≤ . . . ≤ T (m) i</formula><p>and each element corresponds to a different initial condition that will be used in Simulated Annealing exploration, as explained in (1.1). After q iterations, a permutation Π(•) : {1, . . . , m} → {1, . . . , m} acts on A i+q , exchanging the states of individuals,</p><formula xml:id="formula_2">Π (A i+q ) := θ (T Π(1) i+q ) i+q , . . . , θ (T Π(m) i+q ) i+q</formula><p>, which are then reassigned as initial conditions for future exploration. In the end, exploration either halts or a new round of searches is carried out.</p><p>The ingenuity REMC method involves the construction of the permutation Π(•) in a probabilistic fashion, obeying a detailed balance condition [Iba01, Section 3]. In this way, it allows for faster mixing and faster convergence to the ground state. From a Reinforcement Learning perspective, the REMC method is more successful than SA for several reasons, constantly pushing agents into more exploratory policies at higher temperatures while, simultaneously, fostering the adoption of greedier policies at lower temperatures. In other words, the exploration-exploitation trade-off is balanced out by adopting exploratory strategies that help in circumventing metastability issues. The caveat is that the REMC requires many evaluations θ → E(θ), implying costs proportional to the number of agents and steps required throughout its Simulated Annealing computations.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1.2">The Landscape Sketch and Step approach</head><p>The heuristics suggested in this paper, which we call Landscape Sketch and Step (in short, LSS), is based on techniques of Reinforcement Learning, Stochastic Optimization, and Machine Learning (ML). Roughly speaking, the LSS approach is a metaheuristic for global optimization [BDGG09, Section 2] divided into two parts: (i) a "landscape sketch" phase, where we construct of a state-value function V i (•) (the constructed state-value function at epoch i) and (ii) the design of an exploratory policy that indicates which states shall be taken -or rather, evaluated -next (the "step" phase). Exploration is based on Simulated Annealing <ref type="bibr" target="#b51">[vLA87]</ref>, drawing similarities to Replica Exchange Monte Carlo methods <ref type="bibr" target="#b17">[Iba01]</ref> and Genetic Algorithms <ref type="bibr" target="#b30">[Mit98]</ref>. Both parts happen in tandem and are co-dependent, as is commonly the case in dynamic programming problems.</p><p>The function V i (•)'s role can be seen from multiple perspectives. From the point of view of Surrogate Optimization, it works as a "merit function", an auxiliary tool to indicate candidate points where evaluation should be performed. From the RL point of view, it allows for an informed search strategy, indicating the most promising states to be evaluated by θ → E(θ), without any assurance of whether or not the search's endstate goal has been reached [RN02, Section 3.5]. V i (•) also enhances sampling by biasing the dynamics towards "low probability regions", yielding accelerated minimization of the cost function;<ref type="foot" target="#foot_4">5</ref> this type of biased dynamics pervades the literature on rare events sampling, being present in methods like Hyperdynamics <ref type="bibr" target="#b52">[Vot97]</ref> and Umbrella Sampling, with which the LSS approach shares similarities; cf. <ref type="bibr" target="#b48">[TV77,</ref><ref type="bibr" target="#b24">Kä11]</ref>. In addition to that, V i (•) also plays a similar role to that of a "cornfield vector" in Particle Search Optimization: a vector field over parameter space aimed at making particles swarm toward θ * i , the best-known parameter at the epoch i [KE95, Section 3.2]. Last, we remark that when allied to (H4), this approach replaces expensive evaluations θ → E(θ) by cheaper -yet probably inacurate -ones, namely, θ → V i (θ).</p><p>The construction of V i (•) happens over time, using data gathered during exploration of the objective function E(•). Let's first define θ * := arg min θ∈Ω E(θ).<ref type="foot" target="#foot_5">6</ref> Ideally, we would like the construction of a state-value function to satisfy two properties,</p><formula xml:id="formula_3">E(θ) ≥ V i (θ), ∀ θ ∈ Ω, and θ * = arg min θ∈Ω V i (θ),<label>(1.3)</label></formula><p>where V i (•) is a "nice" function, possibly convex. However, θ * is the very (unknown) object we are searching for. Hence, we are forced to "relax" (1.3) by restricting the parameter θ to the set H i containing states previously sampled up to the epoch i, </p><formula xml:id="formula_4">H i := ξ ∈ Ω E(ξ)</formula><formula xml:id="formula_5">E(θ) ≥ M i , for all θ ∈ H i ;</formula><p>our goal is to ensure that the limit</p><formula xml:id="formula_6">lim i→∞ E(θ * i ) = lim i→∞ M i = E(θ *</formula><p>) is attained. Although (1.6) can be trivially satisfied (for instance, V i (•) := E(θ * i ) would do), or even assured with careful reweighing of parameters, it is convenient to adopt an even more relaxed condition. In fact, we shall use the set {(ξ, E(ξ)| ξ ∈ H i } for interpolation with weights W i (•), biasing values of E(•) Hi close to M i ; in this manner, we shall expect but accept some violations of both properties in (1.6). The trade-off is clear: by deliberately allowing violations in (1.6), we may compromise the dynamics but allow for automated reweighting, an evident advantage, especially when contrasted with ad-hoc weight construction (an issue that other methods, like hyperdynamics, suffer from [TV77, Section 4]).<ref type="foot" target="#foot_7">8</ref> All these properties are illustrated in Figure <ref type="figure" target="#fig_0">1</ref>.</p><p>There are several differences between the LSS and other Surrogate Optimization methods. The first and most important of them is the absence of a surrogate model: V (•) plays instead the role of a merit function, being used with the sole purpose of choosing from candidate points where further evaluations θ → E(θ) will be carried out. Second, the generation of candidate points by branching from previous points, a process driven by Simulated Annealing nature with respect to the V (•). The third idea is that of weighting elements not only by their relevance (when compared with M i ), but also with how recently it has been introduced to the queue of active states. This also allows exploration to follows a multi-agent nature, obeying different exploratory policies, which seems more suitable to address the multi-scale nature of many of the corrugated cost functions seem in practice. Although designs of weights that take into account distance to previously evaluated points are seem in the literature, as in <ref type="bibr" target="#b56">[WS14]</ref>, they do not account for th At each epoch i, exploration is carried out by using a subsample A i elements of elements in H i whose role will be further explained later. In a nutshell, the LSS approach at epoch i goes as follows: On the left, the conditions in (1.3) are fully satisfied but, in practice, unfeasible due to partial information about the environment. In the middle, the conditions in (1.3) are relaxed into new condition (1.6), which are fully verified on sampled points (black markers). On the right figure, weights are used to assign more relevance to states in Hi that take evaluated values θ → E(θ) closer to Mi; both conditions in (1.6) are violated.</p><p>Algorithm 1: The LSS approach, in algorithmic format.</p><p>Result: Find a candidate for minimizer of Problem (P). Data: Start with a set H 0 ⊂ Ω as in (1.4) and a halting condition.</p><p>while The halting condition has not been reached do . Each element not yet in H i will be evaluated through θ → E(θ); (iv) Aggregate new evaluations to the history set H i , now named as H i+1 ; (v) With the sampled elements in hands and following a pre-defined policy, evolve the set A i to A i+1 ; end Applications of the Algorithm 1 are broad and go beyond the heuristics suggested in this paper. For instance, if at step (v) one simply defines A i+1 as a permutation of A i realized by the action of a detailed balance law that enforces ergodicity, one obtains a variation of the REMC method; see discussion in Section 4.</p><formula xml:id="formula_7">(i) Use H i to construct V i (•)</formula><p>Several remarks are readily available. First, and above all, let's highlight that Simulated Annealing in step (ii) is carried out with potential V i (•), not E(•). In a certain way, we can think of V i (•) as an emulated environment, whereas E(•) is the real one. This replacement is key to reducing expensive evaluations θ → E(θ). Furthermore, thanks to (H4), we precede expensive evaluations θ → E(θ) by several cheaper evaluations θ → V i (θ) with the intention of accelerating minimization (that is, faster decay of E(θ * i )). As said above, the framework of the LSS approach is broad. Yet, to simplify our exposition, throughout the paper we use only two cooling schedules, represented as</p><formula xml:id="formula_8">T (low) i &lt; T (high) i</formula><p>. Thus, we represent the extended set</p><formula xml:id="formula_9">A (T (low) i ) i as A (low) i and A (T (high) i ) i as A (high) i</formula><p>. In this scenario, the LSS approach can be depicted by the diagram in Figure <ref type="figure" target="#fig_2">2</ref>.</p><p>As depicted in Figure <ref type="figure" target="#fig_2">2</ref>, the construction of V i (•) is followed by that of A (low) i and A</p><p>(high) i</p><p>. In between, an informed search takes place, where Simulated Annealing with potential V i (•) is carried out. During one epoch cycle the number of steps used to construct A (low) i and A (high) i is fixed, but can vary over different epochs or even follow its own schedule; for instance, the number of steps can be small in the initial epochs and grow towards the end. Furthermore, over epochs the parameter space Ω can be shrunk into smaller domains Ω i ⊂ Ω, an evolution that can be controlled by hyperparameters and is referred to as box-shrinking Active states A i and history H i . Construct V i (•) by nonlinear interpolation.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Create pool of candidates for evaluation:</head><formula xml:id="formula_10">A (low) i and A (high) i . Evaluation θ → E(θ).</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Interaction with the (emulated) environment</head><p>Informed search #1 Informed search #2 -Selection prior to interaction with the (real) environment schedules. Therefore, since parameter search happens inside Ω i , we shall call this informed search part of an epoch cycle a within-box search steps; for more details, see Section 2.2.2.</p><formula xml:id="formula_11">i → i + 1</formula><p>Finally, let's clarify the role of A i , which is a subsample of H i known to us as the queue of active states, or simply, as active states. These are states from which further exploration of the environment (Ω i , E(•)) will be carried out. As a queue, A i is endowed with a data structure property: it is a sequence that can grow in size while obeying a "First-In-First-Out" property, that is, the first element added to it is also the first that can be removed. Its elements are tagged by ordered indexes and two operations are allowed: an enqueueing operation, by which elements are inserted into A i with an indexed tag strictly greater than those already in the queue (if the queue is empty, the element takes the index zero), and (whenever non-empty) a dequeueing operation, by which the lowest indexed element is removed from it; cf. [CLRS09, Chapter 10]. In the context of the LSS, we observe that even though A i is not endowed with any thermodynamic interpretation, nor it is a "low dimensional" representation of H i , it plays an analogous role to collective variables in Metadynamics; cf. <ref type="bibr" target="#b25">[LG08,</ref><ref type="bibr" target="#b47">Tuc10]</ref>.</p><p>Through the lenses of Reinforcement Learning, one can say that the LSS approach has a multi-agent nature, where states assumed by agents are our main interest; in fact, active states A i aggregates the parameters we are optimizing for: under a given cooling schedule policy T i , each element in the queue A i is the starting point of an exploratory realization of a Simulated Annealing process with potential V i (•) which, after a predefined number of steps, yields a new sample</p><formula xml:id="formula_12">A (Ti) i of elements in Ω i . When several different exploratory policies T (1) i , . . . , T (m) i are given, an equivalent number of final samples A (T (1) i ) i , . . . , A (T (m) i ) i are obtained.</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>The process of selecting which among the elements in</head><formula xml:id="formula_13">A (T (1) i ) i ∪ . . . ∪ A (T (m) i ) i</formula><p>are "worth" to be evaluated θ → E(θ) is defined in a probabilistic fashion, with a strong bias toward values that are lower or close to M i = E(θ * i ); see Section 2.2. It should be mentioned that even though we are discussing an optimization problem, along the way, it will be more convenient to adopt terminology from Dynamical Systems and Reinforcement Learning (RL). There are several reasons for doing this.</p><p>First, because the search for a ground state (global minimum) takes place dynamically. Such search requires hyperparameter adjustment along the way, changes that must happen in an automatic fashion due to agents interacting with the environment, learning, finding out strategies to better explore it and, consequently, tuning some hyperparameters accordingly.</p><p>Second, the multi-agent nature of the LSS approach implies that A i is comprised of several active states that are used concomitantly. Throughout exploration, active states gather and share information about the environment, while consensus guides the selection of the best among them.</p><p>Last, consensus also drives the decision of where and how new evaluations θ → E(θ) are made; that is the main reason behind the construction of a state-value function. This will help us to carry out informed searches by assigning values to regions in the parameter space, allowing extrapolation -i.e., generalizationto states yet unseen. In this regard, we will borrow some ideas from Artificial Intelligence and Reinforcement Learning.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1.3">Related work</head><p>In recent years, there has been a steady growth in the computational capabilities and efficiency of Deep Learning toolboxes; nowadays, it is not uncommon to see industrial state-of-the-art models with millions -if not billions -of hyperparameters. Naturally, optimization of these models with respect to their hyperparameters has become the focus of extensive research <ref type="bibr" target="#b2">[BBBK11,</ref><ref type="bibr" target="#b55">WNS21]</ref>. Some of the outcomes of this fast development are spread across many scientific fields, especially those requiring rare events sampling, like protein folding in Biology [JEP + 21] and Molecular Dynamics in Physics <ref type="bibr" target="#b42">[SKH23,</ref><ref type="bibr" target="#b33">NDC20]</ref>. The intricate multiscale nature of these phenomena is quite salient and which approach is best or the most efficient to handle such difficulties is still the focus of research <ref type="bibr" target="#b5">[BPP21]</ref>; the LSS approach, using multiple agents, is one among them.</p><p>The topic of multi-agent systems is discussed extensively in <ref type="bibr" target="#b34">[PL05]</ref>, where the authors avoid a single definition of the term; due to that, we mean "multi-agent exploration" in a broad sense; one in which independent agents cooperate with respect to a joint reward, adapting their behavior based on information gathered by the group. We emphasize that in the LSS there is not a master-slave situation with respect to agents (that is, the behavior of one defines the behavior of others). However, it is clear that θ * i is treated asymmetrically, for new agents are more prone to branch out from it. We point out the exciting discussion about communication between agents carried out in [PL05, Section 4], arguing that some methods can be orthogonalized, and several agents substituted by a single one. We emphasize that this is not the case of the LSS, for the independence of exploration by Simulated Annealing is intercalated with information gathering and the construction of V (•).</p><p>As explained in Section 1.2, ML techniques are very suitable in Surrogate Optimization problems. Indeed, the sequential data gathering in contexts of high-cost objective functions has pushed the development of techniques where surrogate models quickly adjust to the available information, as for instance in Bayesian Optimization <ref type="bibr" target="#b9">[Fra18,</ref><ref type="bibr" target="#b43">SLA12]</ref> or, as in other contexts, through RL models that learn the environment through online data [SB18, Chapter 8]. Our use of a queue of active states is inspired by these ideas.</p><p>With concern to the applications of these techniques in combination, the paper [IAFS17] discusses interesting problems in hyperparameter optimization where, like in Problem P, a black box model has its parameters optimized on a constrained domain. After a thorough discussion of inefficiencies in classical surrogate optimization models, they propose a new hyperparameter optimization method that uses RBF to approximate error surrogates, refining and improving ideas in other papers by some of the authors <ref type="bibr" target="#b37">[RS07,</ref><ref type="bibr" target="#b56">WS14]</ref>. As in <ref type="bibr" target="#b56">[WS14]</ref>, the authors address the problem of exploration and exploitation through a weighted score W (•) that balances surrogate estimates in the vertical direction V ev (•) and in terms of the distance to previously sampled points V dm (•) in a convex combination fashion W (•) = wV ev (•) + (1w)V dm (•), cycling the variable w on a discrete subset of [0, 1]. Unlike in our study, they do not link the role of w to the idea of agents' spatial concentration, nor to any quantifier that captures global information about the system; cf. Section 2.2.3.</p><p>Outline of the paper. In Section 2 we describe the theoretical background of the model; in Section,3 we describe a few applications, mostly inspired by Material Sciences problems; finally, in Section 4, we summarize our results and indicate future directions of investigation.</p><p>Notation. The set R N denotes the real-valued, N dimensional Euclidean space. We say that f ( </p><formula xml:id="formula_14">•) : R → R is O(N ) if there exists a C &gt; 0 such that |f (N )| ≤ C|N |.</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">Mathematical, computational, and statistical background</head><p>In this section we describe in detail the construction and usage of V i (•), a function used as a state-value function. It is used not as a mean to approximate E(•), but rather to indicate regions in Ω i that are more promising for further searching, prior to evaluations θ → E(θ). This is in sharp contrast with the methods described in Section 1.1 (none of which have an inference step), being cheap thanks to (H4).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1">Information gathering and construction of a state-value type functionbiasing the dynamics towards low probability regions</head><p>As described in Section 1.2, the construction of V i (•) is deeply tied to the set H i and can be carried out using any nonlinear interpolation method that weighs data points, aiming at the satisfaction of the inequalities in (1.6) but possibly violating them. There are two auxiliary functions in the backdrop of this construction, weights W i (•) and a ranking-type function R i (•), both of which evolve through epochs, somehow in tandem with the insertion of new elements into H i . From the point of view of RL, R i (•) plays the role of a reward function.</p><p>Recalling the definition of θ * i in (1.5), we begin by explaining R i (•), a function used to rank elements in θ ∈ H i by assignning higher ratings to evaluations E(θ) closer to M i = E(θ * i ). It is defined as</p><formula xml:id="formula_15">R i (θ) = e -β(E(θ)-Mi) , (2.1)</formula><p>where β is a normalization factor that depends on hyperparameters. Clearly, R i (•) takes values in the range [0, 1] in such a way that R i (θ * i ) = 1. Next, we define a weight function W i (•) over H i by taking into account whether ξ has been evaluated before or not: if it has, we assing an initial weight W i (ξ) = 1, otherwise a value W i (ξ) already exists. Once this step has finished, W i (•) evolves according to a temporal-differencing scheme,</p><formula xml:id="formula_16">W i (θ) ← W i (θ) + α (R i (θ) -W i (θ)) , for θ ∈ H i , (2.2) where α ∈ [0, 1] is a hyperparameter. Observe that W i (θ) ∈ [0, 1] for all θ ∈ H i . Furthermore, W i (θ * i ) = 1 is an invariant of the above construction.</formula><p>Note that initially (2.2) assigns more weight to states that have been recently added to H i , inducing more exploration in the beginning, but adjusting this weight over time by the ranking function R i (•). Moreover, R i weights favorably lower values of E(•).</p><p>Once weights W i (•) are available, we construct the state-value-type function V i (•) by nonlinear interpolation using a ML model of Supervised Learning type on the set of triplets</p><formula xml:id="formula_17">θ, E( θ),W i ( θ) θ∈Hi .</formula><p>Finaly, the construction of V i (•) by interpolation takes place at the beginning of epoch cycles, every k-epochs, where k is a hyperparameter.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1.1">Computational effort to contruct H i -choosing among different ML model architectures.</head><p>Different ML models imply different qualities of the functional space used for interpolation. Prior to any computation, two issues need to be contemplated:</p><p>(i) The ML model should scale well on the size of the history. For instance, Support Vector Regression (SVR) with nonlinear kernels scales as O (K 2 ) or O (K 3 ) on an input with size K, which is prohibitive.</p><p>For that reason we applied the LSS approach with ML models that scale well on the input size: SVR with linear kernels and Artificial Neural Networks.</p><p>(ii) Despite the model chosen, the LSS approach is constantly collecting a growing history of measurements due to agents' interaction with the environment, a history that is fed to the ML model. Hence, the ML model evolves with a tendency to overfit, especially if a thorough sweep and evaluation over the domain Ω i is carried out. For that reason, it is important to find ways to avoid overfitting by pushing the model away from obsessively searching regions that have already been well explored. We achieved that by selecting ML models among many different architectures or hyperparameters using a multiarmed bandits method with an ε-policy [SB18, Chapter 2], forcing several models to be trained from time to time and keeping a score for each of them, which is updated by temporal differencing as to lower the importance of earlier fittings. Whenever a multi-armed bandits technique is not used, we select, evaluate, and compare different ML models at every k-epochs, selecting the best among them; the LSS approach sticks to the best one among them for the next k epochs.<ref type="foot" target="#foot_8">9</ref> </p><p>As more information is gathered through exploration, the history H i evolves and gets larger. Still, the question of how to find these points and enhance exploration is yet to be clarified and will be explained next.</p><p>2.2 Information sharing and construction of exploratory policies -reaching out the consensus of which states should be evaluated next</p><p>Extending H i involves choosing new elements in Ω i that will be used to improve exploration of the environment. This is done by selecting a subset A i -referred to as the queue of active states at epoch iwhose construction obeys the following invariants,</p><formula xml:id="formula_18">A i ⊂ H i , 9 and min θ∈Ai E (θ) = min θ∈Hi E (θ) .</formula><p>(2.3)</p><p>As explained in Algorithm 2 the dynamics of A i precedes and helps to explain that of H i , guaranteeing that the first property in (2.3) holds.</p><p>Algorithm 2: The dynamics of H i Result:</p><formula xml:id="formula_19">At epoch i + 1, construct the history set H i+1 Data: θ ∈ A i+1 , A i ⊂ H i ,<label>and</label></formula><formula xml:id="formula_20">H i . if θ ∈ A i then /* In this case, θ ∈ A i ⊂ H i */ H i+1 := H i ; else /* In this case, θ ∈ A i+1 \ A i */</formula><p>Evaluate θ → E(θ) and store E(θ);</p><formula xml:id="formula_21">H i+1 ← H i ∪ {(θ, E(θ))}. end</formula><p>Thus, it remains to explain how A i evolves, a process in great part controlled by a few hyperparameters,</p><formula xml:id="formula_22">K (low) i , K (high) i</formula><p>, e i , and a i+1 , each one of them explained in detail below. 11 The process essentially unfolding in three stages: selection, enlargement, and trimming.</p><p>(E1) (Selection) Initially, all the elements in A i evolve by Simulated Annealing with potential V i (•) for K (low) steps (resp., K (high) ), following a policy T (low) (resp., T (high) ), yielding a set</p><formula xml:id="formula_23">A (low) i (resp., A<label>(high) i</label></formula><p>). Then, a predefined hyperparameter e i ∈ {1, . . . , a i } is used to set the maximum number of evaluations θ → E(θ) that the model can make, which also sets the number of elements to be chosen from</p><formula xml:id="formula_24">A (low) i ⊕ A (high) i</formula><p>. In fact, we split e i in a random fashion in two parts e , whose construction we clarify in Section 2.2.3.</p><p>(E2) (Enlargement) The e i elements chosen above are enqueued to A i (which, for now, we represent as A i )</p><p>and evaluated by θ → E(θ) if they are not yet in H i . In the end, we compute θ * i+1 := argmin θ∈ Ai E(θ).</p><p>(E3) (Trimming) Elements of A i are dequeued until a i+1 elements are left. If θ * i+1 is among the dequeued elements and no copy of it is found in the remaining queue, then it is reinserted into the queue. Then, the process of extraction and dequeuing is repeated once more to keep | A i | = a i+1 ; we relabel this queue as A i+1 . Furthermore, it holds that θ * i+1 = argmin θ∈Ai+1 E(θ).</p><p>Finaly, once A i+1 has been defined, we apply Algorithm 2 to obtain H i+1 . This process is illustrated in Figure <ref type="figure" target="#fig_5">3</ref>. Several observations are worth making. The first goes back to assumption (H4), indicating that A (low) i and A</p><p>(high) i</p><p>are constructed through Simulated Annealing with potential V i (•), allowing for evaluations θ → E(θ) to be postponed, or rather "curated", before actually happening; in a nutshell and somewhat simplistic way, we can say that "acceleration" of convergence happens due to this step, where both the policies µ (low) (•) and µ (high) (•) play an important role. One can say that, the trade-off between the amount of imprecision (or "lack of knowledge") in the exploration that precedes evaluations θ → E(θ), and the efficiency in the usage of H i , is the core of the computational savings that we are looking for. Further, the invariant on the right of (2.3) holds, thanks to (E3). We must also remark that the constructions of both A i and H i have no parallel in SA or in REMC, described in Section 1.1, since the evolution in the LSS is driven by branching A i out as A (low) i and A (high) i rather than by simple iteration; see Figure <ref type="figure" target="#fig_5">3</ref>. In that regard, especially if we take into account the policies used in exploration, the sets A (low) i and A (high) i concern exploration at different spatial scales. Last, we observe that this multi-agent nature of the LSS adds flexibility to the model, allowing for a large number of agents to probe the environment for information gathering at different phases of the exploration.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.1">A concentration metric.</head><p>A crucial ingredient in the construction of A i concerns the quantification of how concentrated ("clustered") or well distributed inside Ω i its elements are. In fact, this quantity is used to parameterize several smaller pieces that make up the LSS, serving as a proxy for exploration's effectiveness. Indeed, if active states are clustered in the same local basin, better exploratory policies should be adopted. This matter gets even more pressing because A i evolves by branching, which may exacerbate the concentration of active states if left unchecked. On the other hand, whenever active states are not concentrated, greedier policies that push for minimizing E(•) should be pursued.</p><p>In the literature of Simulated Annealing, there are several alternative approaches to overcoming the concentration of active states, like restarting the search with different initial active states or redistributing active states over the parameter space if they get "too close to each other". Yet, this problem can certainly be avoided if, in the long run, a constant evaluation of the spatial concentration of parameters is carried out.</p><p>To avoid the above issues, we devote this section to the design of such a measure of concentration, which we denote as C i ∈ [0, 1] and indicates how well distributed within the box Ω i agents are: values of C i close to 1 indicate that particles are becoming clustered; by construction, C i = 1 indicates that concentration takes place in a vicinity of θ * i . For now, we explain the mathematics of the measure of concentration C i in 1D, generalizing it to higher dimensions later on. For the sake of convenience, we shall drop any reference to the epoch index i: we write the concentration as C and the best-known argument at epoch i simply as θ * .</p><p>At first, consider N agents exploring a box [a, b]. We first split the box in N disjoint equal-sized parts I j , where j ∈ {1, . . . N }. Afterward, we count the fraction of individuals in each of them, stored as µ({j}); clearly, µ(•) is a probability measure.</p><p>At first, we compare µ(•) with two other probabilities, ν(•) and δ θ * (•); we anticipate that ν(•) is an uniform measure over bins while δ θ * (•) is concentrated in a single bin. We aggregate these comparisons into a convex combination,</p><formula xml:id="formula_25">C = (1 -λ) • D (1) (µ∥ν) + λ • D (2) (µ∥δ θ * ),</formula><p>(2.4) of which each term is explained next. The quantity λ denotes the concentration of particles in the same bin as the best-known parameter θ * , and gets adjusted automatically over epochs.</p><p>The quantity D (1) (•∥•) is a Kullback-Leiber divergence that compares µ(•) against ν(•), an uniform probability measure over bins, namely, ν({i}) = 1 N . Explicitly, we first define</p><formula xml:id="formula_26">D (1) (µ∥ν) = N j=1 µ({j})log µ({j}) ν({j}) . (2.5)</formula><p>whose maximum is achieved only when all the agents are concentrated in a single bin. After normalization (so as the maximum value is 1), we obtain D (1) (µ∥ν).</p><p>The second term, D (2) (•∥•), works as a sparsity penalization. It compares µ(•) and the probability measure δ θ * (•), a delta measure concentrated at the bin where θ * is (the best explorer to this point). This is done by using</p><formula xml:id="formula_27">D (2) (µ∥δ θ * ) = 1 - D (2) (µ∥δ θ * ) 2 , where D (2) (µ∥δ θ * ) = N j=1 |µ({j}) -δ θ * ({j})| . (2.6)</formula><p>This finishes the derivation of the metric (2.4). We remark that C behaves as a free energy, since its first term is designed to keep µ(•) close to ν(•) -a uniform measure pushing µ(•) toward "thermalization" -in contrast to its second term, which instead pushes µ(•) "far away" from δ θ * (•) -a measure concentrated on the bin where θ * (the first coordinate of θ * i ) is. 12 We finally generalize this metric to high-dimensional domains through tensorization across each dimension. Indeed, recall that at the epoch i, the best known argument is refereed as θ * i and the domain is a box</p><formula xml:id="formula_28">Ω i = × N j=1 [a j , b j ]</formula><p>. Now, we define a concentration metric C i,j as in (2.4) by constructing reference measures ν j (•) along the interval [a j , b j ] and δ (θ * i )j (•), where, (θ * i ) j denotes the j-th coordinate of θ * i . Then, the multi-dimensional concentration metric is defined either as the maximum over the concentration at each dimension, C i = max 1≤j≤N C i,j , or as the average of these quantities,</p><formula xml:id="formula_29">C i := N j=1 C i,j N .</formula><p>It is known that high dimensional uniform sampling is biased toward high concentrations due to the "curse of dimensionality". In that case, it is expected that most active states cluster on the boundaries. For that reason, one needs to add a parameter that deflates such evaluations dynamically, which the LSS achieves by early stopping: a patience parameter p impr accounts for a minimum number of epochs required for the models to show any improvement, otherwise the search stops. If the number of iterations without improvement exceeds p impr , then C i gets deflated by a predefined factor, otherwise it gets inflated upwards by a predefined factor toward the value computed in (2.4). 13</p><p>12 According to Information theory, both quantities indicate the transportation cost to take one measure to the other. Although the Kullback-Leiber divergence D (1) (•, •) is not exactly a metric (due to lack of symmetry), it is useful to quantify the distance between two measures. The quantity D (2) (•, •) corresponds to the total variation norm (or "Hamming norm"). When the reference measures are the same, both quantities are related, for instance, by the Czizar-Kullback-Leiber inequality <ref type="bibr" target="#b54">[Wai19,</ref><ref type="bibr">Chapter 3</ref>]. Nevertheless, one should note that the first measure scales proportionally to the domains' embedded dimension, while the latter measure is always bounded; cf. <ref type="bibr" target="#b50">[Vil03,</ref><ref type="bibr">Chapter 9.3.3</ref>]. This fact, along with the possible variation in the number of active states over epochs, is the main reason why we normalize D 1 (•, •).</p><p>13 This strategy is acceptable in the field of ML, but lacks Physical motivation. In addition, it may fail in high-dimensional state spaces. A possibly better approach, which somehow generalizes our construction, is that of using a different reference measure, constructed as follows. Initially, consider a partition {I k } k∈B on Ω i , that is, I j ∩ I l = ∅, ∪ k∈B I k = Ω i . Now we construct a variation of the Gibbs distribution (1.2),</p><formula xml:id="formula_30">νvar(I k ) = e 1 T dist(I k ,∂Ω i ) Z , (2.7)</formula><p>that accounts for the distance between elements in the partition and the boundary ∂Ω i of Ω i . In the limit T → ∞ this measure converges (in an appropriate sense) to the uniform measure ν(•) used by D</p><p>(1)</p><p>i,1 (•∥•). We observe that in (2.7) the temperature T is a hyperparameter that would have to be adjusted over epochs, a requirement that is dropped by working in the limiting case T → ∞, namely, with the measure ν(•).</p><p>Remark 2.1 (Computational and Physical aspects of concentration) The spatial concentration of active agents can also be investigated by the introduction of an interaction potential; for instance, a potential of the Lennard-Jones type, displaying attraction and repulsion between particles (which, in our case, are agents). This yields an energy space formalism, where spatial concentration is summarized as a 1D measure; in contrast, C i quantifies concentration in the state space.</p><p>Computationally, assuming that |A i | = N , the LSS approach requires O(N ) computations to calculate the concentration of agents (because it only computes the position of active states relative to the best known minimum θ * i ), whereas the approach using potentials of interaction requires O(N 2 ) computations (because it computes every pairwise distance between elements in A i ). These differences are more significant for large values of N ; it would be interesting to consider and compare different approaches to quantify concentration.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.2">Varying the temperature dynamically -lowering energy barriers</head><p>As emphasized before, high energy barriers may prevent agents from moving by trapping them around metastable states. Dynamic temperature adjustment is useful to prevent such issues, a technique sometimes referred to as lowering energy barriers. To apply this idea, estimating the amplitude of the barriers seems important. This approach is well known in the literature and has been used in similar contexts <ref type="bibr" target="#b29">[MIOM12]</ref>; in some situations, this technique applies more effectively when combined with nonlinear scalings of the energy landscape [FMM + 15].</p><p>In the LSS approach, we estimate the size of the energy barriers as</p><formula xml:id="formula_31">α i = max θ,θ ′ ∈Hi (E(θ) -E(θ ′ )) = max θ∈Hi E(θ) -E(θ * i ).</formula><p>(2.8)</p><p>This estimator has the advantage of being history-dependent and easily computed, with the caveat that it may possibly overestimate the size of energy landscapes if the parameter space Ω i has been thoroughly swept. We use (2.8) to dynamically adjust policy T</p><formula xml:id="formula_32">(high) i from a cooling schedule T (high) i initially defined, adopting instead 1 T (high) i ← (1 -C i ) T (high) i + C i 4 max{α i , ε} ,<label>(2.9)</label></formula><p>where ε &gt; is a small term to avoid division by zero. The reasoning behind the construction is as follows: when active states are not clustered (C i ≈ 0), the first term in (2.9) is dominant, and the policy is not affected by α i . On the other hand, when the set active state is concentrated (C i ≈ 1), we make the second term in (2.9) dominant but proportional to α i . This step is motivated by the second step (1.1b) in Simulated Annealing, where we use the variation in the state-value function V i (•) adjusted by the inverse of the temperature: by taking a state θ ∈ A i and its branched state θ (high) ∈ A (high) i</p><p>, one expects to have at most</p><formula xml:id="formula_33">1 α i V i (θ i ) -V i (θ (high) i ) ≈ 1.</formula><p>(2.10) Thus, adopting (2.9) yields a higher probability of jumping between metastable states, which is exactly what we need to reduce active states clusterization.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>2.2.3</head><p>The selection problem -multi-armed bandits, gold rush, and sampling over the queue</p><formula xml:id="formula_34">A (low) i ⊕ A (high) i</formula><p>It is yet to be clarified how elements from the queue</p><formula xml:id="formula_35">A (low) i ⊕A (high) i</formula><p>are selected for evaluation θ → E(θ). In the sequel, we refer to this as the selection problem.</p><p>Throughout this session, we write the triplet (θ, </p><formula xml:id="formula_36">θ (low) , θ (high) ) ∈ A i , A (low) i , A<label>(</label></formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>E(ζ);</head><p>(2.11) subsequent elements can be chosen similarly, from the lowest to the largest. In principle, we can generalize and relax this "greedy" policy approach by using a "multi-armed bandits" technique with ε-policy, where we select elements in</p><formula xml:id="formula_37">A (low) i ⊕ A (high) i</formula><p>in a probabilistic fashion as to assign a higher probability to lowest values of E(θ). However, we readily rule out this possibility because (i) mobility of active states implies that agents can hop between local optimum basins and get clustered; in addition to that, (ii) branching exacerbates accumulation, resulting in redundancy or crowded exploitation, that is, if we always choose the same element θ in (2.11), in subsequent epochs the set of active states A i will be filled with elements in a neighborhood of θ. In summary: if adopted indiscriminately, any multi-armed strategy is doomed to failure. Therefore, a different idea, where each agent is stimulated to explore different regions of Ω i , should be pursued.</p><p>In a certain way, the strategy we embrace is akin to a gold rush, where the first to reach a mining site takes all, while others are left with nothing yet are free to explore and find gold elsewhere. By nature, this approach parallels the usual exploitation-exploration trade-off in RL, but is better summarized as a competition-cooperation trade-off. An analogous phenomenon can be seen in fish schooling due to limited food resources: individuals cooperate as a group while looking for food, but end up competing once finding it; cf. [KE95, Section 2]. Likewise, in the LSS active agents do not compete against each other, but rather share information. In fact, we are interested in agents' accumulated knowledge of the environment, not their individual values.</p><p>In order to evolve and accelerate minimization without resorting to evaluations θ → E(θ), we must develop a policy that alternates between selections from</p><formula xml:id="formula_38">A (low) i or A (high) i</formula><p>, sampling is carried out in two steps: as discussed in (E2), given that e i elements must be evaluated θ → E(θ), e (low) i ∈ N of them will follow policies T (low) , while e (high) i ∈ N of them will follow T (high) police, in such a way that e i = e (2.12) due to the constraints, we immediately obtain e (low) i</p><p>. In practice, once parameters e (high) i and e</p><p>(low) i are defined, we first sample elements from A (low) i , a fact that we will come back to later in this section. Parameterization by C i is justified by the fact that small values of C i indicate "well-distribution" of active states A i over Ω i , implying that more exploitation should be pursued and policy derived from simulated annealing at low temperatures should be adopted. Hence, more states from A (low) i should be selected. On the other hand, when C i is high (close to 1), active states A i are concentrated, and a policy to reduce clusterization should be pursued; in that case, as if raising the temperature T (high) i , more elements from the queue A (high) i should be selected. Once the number of elements to be drawn from each set is defined, policies µ (low) (•) and µ (high) (•) are used for selection without replacement from the queues A (low) i and A (high) i , respectively. We detail the construction of each one of these policies next. But before doing so, we need to define some auxiliary nonlinear maps based on a softmax function Softmax(x; η) := e ηxi N j e ηxj</p><p>, where x = (x 1 , . . . , x N ) ∈ R N .</p><p>They are N min (x; η 1 ) = Softmax(x; η 1 ), and</p><formula xml:id="formula_39">N max (x; η 2 ) = Softmax(x; η 2 ),<label>(2.13)</label></formula><p>where</p><formula xml:id="formula_40">x = |x -x max | x max -x min +ε , x = |x -x min | x max -x min + ε , x min = min 1≤i≤N (x i )</formula><p>, and x max = max 1≤i≤N (x i ); a small factor ε avoids division by zero. Both parameters η 1 and η 2 control the distribution of mass over different states, yielding probability measures from any given vector x ∈ R N . In this paper we shall always take η 1 &lt; 0 and η 2 &lt; 0, which imply that the following properties hold:</p><formula xml:id="formula_41">arg max 1≤i≤N N min (x; η 1 ) = arg min 1≤j≤N x j , and arg max 1≤i≤N N max (x; η 2 ) = arg max 1≤j≤N x j .</formula><p>We are ready to explain both policies. First recall that θ (low) "branches out" from θ through Simulated Annealing with potential V i (•). Then, the policy µ (low) (•) is given as</p><formula xml:id="formula_42">µ (low) (θ (low) ) = N min C i V i (θ (low) ) -E(θ) + (1 -C i )V i (θ (low) ); η 1 .</formula><p>Intuitively, whenever active states A i are clustered (C i ≈ 1), the policy µ (low) (•) is close to</p><formula xml:id="formula_43">µ (low) (θ (low) ) ≈ N min V i (θ (low) ) -E(θ); η 1 ,</formula><p>favoring elements that show substantial variation at state-value at V i (θ (low) ) when compared to E(θ) evaluated at θ, the state that it branched out from. On the other extreme, C i ≈ 0 indicates that the set of active states A i is not clustered, therefore a greedier selection seems more appropriate. In this case, we use V i (•) as a ranking proxy, favoring lower values of V i (θ (low) ). This establishes the construction of µ (low) (•). Now we focus on the policy µ (high) (•), used to sample elements from A (high) i</p><p>. Recall that this policy concerns exploration at high temperatures, so a lot of exploration in the active states should be fostered. Initially, one defines a measure of horizontal displacement</p><formula xml:id="formula_44">H i (b) = |b -θ * i | 2 between elements b ∈ A (high) i</formula><p>and θ * i (see Equation 1.6). Then, two quantities are defined: the first is defined as</p><formula xml:id="formula_45">P (high) horizontal (θ (high) ) ∝ H(θ (high) ),</formula><p>up to a normalization factor that yields a probability distribution that favors values away from θ * i . <ref type="foot" target="#foot_10">14</ref> The second of them is also a probability measure, P (high) vertical (•), parameterized by agents' vertical displacement,</p><formula xml:id="formula_46">P (high) vertical (θ (high) ) = N max |V i (θ (high) ) -V i (θ)|; η 2 . (2.14)</formula><p>This probability measure is used for sampling from the queue A (high) i in a biased fashion, favoring agents that display high exploration in amplitude, regardless of the direction it goes. At the end of the day, both probability measures are combined as</p><formula xml:id="formula_47">µ (high) (θ (high) ) = (1 -C i ) • P (high) vertical (θ (high) ) + C i • P (high) horizontal (θ (high) ),<label>(2.15)</label></formula><p>Before defining (and zero in the complement). This establishes the construction of µ (high) (•).</p><formula xml:id="formula_48">µ (high) (•) from µ (high) (•)</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">Applications</head><p>The applications we have in sight concern the minimization of functions plagued with local minima, serving as prototypes of rugged energy landscape commonly seen in Biophysical Systems and Material Sciences [W + 03].</p><p>We shall explore a particular example of a function</p><formula xml:id="formula_49">G (N ) (•) : R N → R, G (N ) (x 1 , . . . , x N ) = Π N j=1 F (x j ),<label>(3.1)</label></formula><p>where F (•) : R → R is a real-valued function as depicted in Figure <ref type="figure" target="#fig_7">4</ref> and whose main properties are discussed next; we shall study this problem in dimension N ∈ {1, 2, 4, 8}.</p><p>By design, the function F (•) has an abundance of local minima ("valleys") and local maxima ("peaks"),</p><formula xml:id="formula_50">v k := F (-0.1 + 0.2 • k) and p k := F (0.2 • k), for k ∈ {1, . . . , 5},<label>(3.2)</label></formula><p>in such a way that v i &gt; v i+1 , for i ∈ {1, .., 5}, (Better rewards)</p><formula xml:id="formula_51">v i -v i+1 &gt; v i+1 -v i+2</formula><p>, for i ∈ {1, .., 3}, (Diminishing motivation)</p><formula xml:id="formula_52">p i -v i &lt; p i+1 -v i+1 , for i ∈ {1, .., 5}.</formula><p>(Increasingly harder obstacles) As such, this example embodies some of the main difficulties in the field: the trapping of parameters on local minima and the issue of tunneling; the latter is commonly seen in Physics, where particles do not diffuse due to high energy barriers separating metastable states. Overall, the designs of F (•) and G (N ) (•) are such that particles have to overcome tunneling at higher costs, with progressively smaller "enthusiasm" as they Precisely,</p><formula xml:id="formula_53">F (x) = (1 + λ(x)) 2 • u(x) + (1 -λ(x)) 2 • l(x)</formula><p>, where λ(x) = sin 10πx + π 2 . By construction, the global minimum of this function takes place at x = 0.9. move from the initial position x init = (0.1, . . . , 0.1) towards the global minimizer at x end = (0.9, . . . , 0.9). We have picked an initial state at x init far away from the global minimizer because our goal is to compare different models rather than exploring any space-filling experimental design; cf. <ref type="bibr" target="#b10">[FSK08]</ref>.</p><p>Throughout the discussion we benchmark the results of the LSS with several simulated annealing cases with varying size of Brownian step. We have also split the analysis in two parts, first focusing on the 1D problem, then moving to its high-dimensional versions.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1">The toy problem in 1D</head><p>To begin with, we analyze the LSS in comparison with simulated annealing (SA) under different hyperparameters: SA has been considered with different stepsizes -Li 12.5 , Li 25 , and Li 50 -where L i is a vector with the length of the box Ω i in each direction. The ML models used for nonlinear interpolation of V i (•) varied to contemplate Support Vector Regression models (SVR) and Neural Networks. As explained in Section 2.1.1, we alternate between different hyperparameters formulations -and even among different ML models -using a multi-armed bandits technique.</p><p>In Figure <ref type="figure" target="#fig_8">5</ref> we compare simulations of different models. Denoting by M i the minimum value of E(θ) up to epoch i, we study the distribution of 100 simulations in relation to level sets of the cost function G (1) (•); observe that this notation is consistent with that introduced in (1.7) for the LSS. As we can see, simply adjusting the stepsize in Simulated annealing gives a striking improvement in the search. However, the LSS method achieves better results in a much faster way, having a high proportion of agents in the global minimum basin at the end of the experiment.</p><p>Curiously, it is interesting to see that ML models yield very different acceleration of the optimization, yet their computational cost differ substantially, an opportunity for choosing a ML model that is both efficient and computationally cheap. Due to this trade-off in model selection, we alternate between two approaches, as explained in Section 2.1.1. Among the LSS models studied, one can see that those not using multi-armed bandits seem to perform better.</p><p>Last, as pointed out in Section 2.2, we keep track of the concentration as the model evolves, as shown in Figure <ref type="figure" target="#fig_9">6</ref>. Initially, the model starts with three agents concentrated at x = 0.1, a state with extremely high concentration (according to the metrics we designed). Particles are then quickly spread out, as shown in the plot, and then concentration remains on average close to 0.5 across the search period; the qualitative behavior of the concentration metric in the higher dimensions is similar.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2">The toy problem in higher dimensions N ∈ {2, 4, 8}</head><p>In the second part of our applications we focus on studying the role that dimensionality plays in the LSS approach. There is a legitimate concern that agents A i concentration exacerbates as dimensionality increases, an issue we aim to curb by the mechanisms described in Section 2.2. Furthermore, by construction,    </p><formula xml:id="formula_54">G (N ) (x 1 , . . . , x N ) := 1/N G (N ) (x 1 , . . . , x N ),<label>(3.4)</label></formula><p>instead of G (N ) (•). The quantity G (N ) (•) has been plotted in Figure <ref type="figure" target="#fig_12">8</ref>, where one can notice the effect of dimensionality taking place at slowing down convergence towards the minimum. One can also observe that SA's size step plays an important role in how much progress the model makes. Yet, the LSS shows faster progress, for all the hyperparameter variants considered. None of the LSS models seem to be faster for all tested dimensions or over epochs. That raises the possibility of still another application of model selection techniques over time; although our code does not contemplate this, such an implementation should be straightforward.</p><p>Finally, it can be said that the techniques used to curb concentration are too rigid in low dimensions, making the model spend too much time exploring at high temperatures when it could instead spend more epochs and evaluations at low temperatures. While this approach is welcome in high dimensions, it seems to have a backlash in low-dimensional cases. Nevertheless, in all the cases studied, the LSS approach accelerates minimization.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">Discussion and conclusion</head><p>We have developed a new global optimization heuristics, the Landscape Sketch and Step approach (LSS), which has been applied in a toy problem plagued with local minima to mimic rugged energy landscapes. The investigation has been restricted box-shaped domains embedded in low-dimensional spaces with dimensions 1, 2, 4, and 8, focusing on cases where cost function evaluation θ → E(θ) is high, an aspect that has been key to the architecture of the LSS. To overcome the latter costs, we judiciously substitute information about E(•) by values of an interpolated function V (•).</p><p>As pointed out, among its many roles, V (•) works as a state-value function that points out regions in Ω to be probed for posterior measurements θ → E(θ). In that regard, it is worth highlighting the parallels and contrasting differences between our approach and that of the method of Particle Swarm Optimization (PSO) <ref type="bibr" target="#b4">[BM17]</ref>: PSO is a metaheuristics used for global optimization in which several parameters evolve simultaneously, interacting among themselves in order to minimize a cost function. It is a direct search over the parameter space inspired by phenomena seen in Nature, as fish schooling and bird flocking <ref type="bibr" target="#b21">[KE95]</ref>. Like all the methods described in Section 1.1, it also overlooks the cost of evaluation θ → E(θ) and, by performing searches directly on the parameters space, does not need to make inferences. In these last two aspects, it differs greatly from the LSS approach.</p><p>Several remarks are needed in regards to Surrogate Optimization methods. Although surrogate modeling using ML models is not new [FSK08, Chapt. 2], the LSS differs from classical approaches in a crucial way: we do not construct a surrogate model for E(•), focusing instead on designing V i (•), that plays the role of a merit function. Still, the latter is not used in a deterministic fashion, but rather to design a sampling mechanism for candidate points A (high) i ∪A (low) i generated by SA; the authors are not aware if this approach is new. The main reason we pursue this approach is the multi-agent nature of the exploratory dynamics, carried out by active states A i . Interestingly, we see similarities in our construction in (2.15) to that in [WS14, Equation 1], where a merit function is designed by the convex combination of a surrogate function and the distance to previously evaluated points (as to enforce exploration). Yet, there is a caveat: while their convex combination is performed by cycling weights over a predefined list of values in the interval [0, 1], the LSS allows for weights to adjust dynamically by taking the spatial distribution of active states over Ω into account.</p><p>It is clear that a history-based approach to construct V i (•) in an automated fashion has benefits, but it also drawbacks: using V i (•) to extrapolate or generalize to regions not yet seen can be problematic, especially when H i is "small"; moreover, the LSS approach does not aim at reconstruction of energy potential functions, which can be attained by methods like Metadynamics <ref type="bibr" target="#b25">[LG08]</ref> or Surrogate Optimization <ref type="bibr" target="#b10">[FSK08]</ref>. Nevertheless, it must be noted that at the end of the day one can use the sampled points history H i as a mean to reconstruct E(•) through interpolation, minding that the quality of reconstruction can be difficult to measure unless more information about E(•) is provided.</p><p>A few words about the motivation behind (H4) may illuminate this assumption, which is reasonable in many contexts, especially when ∆ is a finite set that is "not too large". It has been introduced to accommodate cases like ab initio calculations and Molecular Dynamics, where computations may take hours to be finalized, usually at a high computational cost (like MD simulations performed on multicore supercomputers). The problems we had in mind concern the optimization of parameters in ab initio calculation, where calculations are much more expensive than classical computations; comparatively, the former plays the role of θ → E(θ), while the latter plays the role of θ → V (θ). Iteratively until a halt, parameters could be optimized at a classical model and, every k-steps, evaluation of their fitness could be assessed by the ab initio model.</p><p>As seen in Section 2.2.2, by analyzing the dynamics of agents in the queue of active states one can adjust policy parameters. In the RL literature, this type of interaction is commonly seen in actor-critic methods; It would be interesting to investigate if the application of more advanced policy gradient methods would be more effective in overcoming issues with large energy barriers; cf. [SWD + 17].</p><p>A comparison between the LSS approach and the DYNA method in Reinforcement Learning should be made. The DYNA model [SB18, Chapter 8] was developed to adjust action-value functions dynamically in order to accommodate temporal changes in the environment that an agent explores. On the other hand, the LSS approach is applied in a context where the agent interacts with an environment that remains the same, yet the agent's partial knowledge about the environment grows over time. Nevertheless, the role played by A (low) i and A (high) i in the LSS approach are somehow comparable to that of sampling from a priority queue in the DYNA method and may be equivalent asymptotically as the number of epochs grows; it would be interesting to further investigate this assertion or implement the LSS approach using ideas of the DYNA method.</p><p>To the authors, it seems that the LSS is just an example of a larger class of models that can adopt a similar strategy, namely, that of using an auxiliary function V (•) modeled on gathered data prior to expensive evaluations θ → E(θ). For instance, one could apply the same technique to REMC. The authors also believe that the usage of a detailed balance condition to mix policies and enhance exploration seems more promising than using probabilistic sampling over queues for the selection of new active states.</p><p>Last, we must say that we have not explored any type of halting conditions besides early stopping or putting simply putting a cap on the number of evaluations θ → E(θ), fixed in advance as a "budget".</p><p>A When is it better to use the LSS approach?</p><p>Counting the number of evaluations using the target potential is tricky because the model starts up by sampling and using classical simulated annealing until a certain number of samples has been collected. <ref type="foot" target="#foot_11">15</ref>Even though assumption (H4) justifies our investigation, in practice there is an obvious trade-off in the usage of the LSS approach since we have to fit a Machine Learning model at every step, and perform even more interpolations whenever model selection is required.</p><p>Although the number of costly evaluations θ → E(θ) in each epoch i is at most e i , the number of simulated annealing steps required for acceleration is K (low) + K (high) ; cf. Step (E1). This necessity may slow down computations but allows the LSS to perform a better informed search. In the sequel we compare the LSS method with an "equivalent" classical Simulated Annealing, in the sense that all evaluations θ → E(θ) in the LSS are not replaced by fitted potential evaluations θ → V i (θ).l Recalling the hyperparameters defined in Section (2.2) -K (low) , K (high) , e i , a i , the number of evaluations is described below:</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Type of computation Classical Simulated Annealing LSS</head><p>θ → E(θ) , respectively; ei indicates the number of evaluations θ → E(θ), and finally ai denotes the length of the queue Ai.</p><formula xml:id="formula_55">N * i=1 (K (low) i + K (high) i )a i N * i=1 e i θ → V (θ) - N * i=1 (K (low) i + K (high) i )a i</formula><p>In a context where fitting costs are negligible, evaluations θ → E(θ) and θ → V (θ) have costs C E and C V , respectively, assumption (H4) can be quantified as</p><formula xml:id="formula_56">N * i=1 (K (low) i + K (high) i )a i • C E ≫ N * i=1 e i • C E + N * i=1 (K (low) i + K (high) i )a i • C V .</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B Protocols</head><p>Standards to be followed in order to integrate the different programs used in this paper.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.1 Toy model experiments</head><p>We compare two types of models:</p><p>• 100 simulated annealing experiments.</p><p>• 100 landscape sketch and step experiments with 3 agents each.</p><p>The number of box searches and within box searches is 10.</p><p>In both cases, the simulated annealing step is the same for deep evaluations. The LSS also has an exploratory phase that has a step size that varies according to the concentration of particles: under a high concentration of agents, the step size is the same as that of deep explorations, otherwise it is half of such a step size when agents are not concentrated.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>C Methodology and statistical analysis</head><p>Hyperparameter tuning of the fitting models. In the Neural Network model there are several network architecture constraints set in advance like the number of hidden layers, regularization rates etc; they are known as hyperparameters. Their values can be tuned in order to maximize the performance of the network during its training phase, mostly taking accuracy or loss metric in consideration. In this work hyperparameter tuning was carried out only for learning rates and dropout rates, using 3 fold cross-validation, where the train set was split in 3 parts of roughly the same size, followed by 3 evaluations, in each of which one of these sets is held out, while parameters are fitted in the other two. Once the training process is over, the accuracy of the model is measured, and the process is repeated with another piece of these 3 sets held aside. This is carried out until the 3 parts are exhausted, and the evaluation is reached as an average. Further investigation on other model architectures -number of hidden layers, larger grid search -are also possible but have not been carried out. The code available on GitHub readily allows such experiments; cf. <ref type="bibr" target="#b31">[Mon23]</ref>.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>D Computational methodology</head><p>The optimization of the empirical potential parameters involves multi-platform computations concerning different parts of the model. Machine Learning steps were carried out in Python 3.6.</p><p>All the Python code has been built using Tensorflow, a Python library well suited for Machine Learning problems [AAB + 15].</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>Figure 1 :</head><label>1</label><figDesc>Figure 1: The construction of the state-value function in different contexts, according to the inequality E(•) ≥ Vi(•).On the left, the conditions in (1.3) are fully satisfied but, in practice, unfeasible due to partial information about the environment. In the middle, the conditions in (1.3) are relaxed into new condition (1.6), which are fully verified on sampled points (black markers). On the right figure, weights are used to assign more relevance to states in Hi that take evaluated values θ → E(θ) closer to Mi; both conditions in (1.6) are violated.</figDesc><graphic coords="6,111.37,64.80,372.54,186.62" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head></head><label></label><figDesc>by weighted nonlinear interpolation; (ii) Judiciously select a subsample A i of H i with a pre-defined size. For each element in A i (an agent), perform Simulated Annealing with potential V i (•), under k different temperatures T (1) &lt; . . . &lt; T (k) (see Section 1.1). The final states in each of these simulations make up the sets A (T (1) ) i , . . . , A (T (k) ) i ; (iii) Following a predefined rule that defines the maximum number of costly evaluations per epoch, select a few states among A (T (1) ) i , . . . , A (T (k) ) i</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head>Figure 2 :</head><label>2</label><figDesc>Figure2: An overview or the exploration-exploitation approach in the Landscape-Sketch-Step heuristics. Observe that if we skip the two nodes on the right we are simply describing the Simulated Annealing method.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head></head><label></label><figDesc>When B is a set (respectively, a queue), |B| denotes its cardinality (respectively, its length). Last, for any two queues A = (a 1 , . . . , a n ) and B = (b 1 , . . . , b m ), we define A ⊕ B := (a 1 , . . . , a n , b 1 , . . . , b m ).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>=</head><label></label><figDesc>e i is satisfied, where e (low) i states are randomly selected from A (low) i with policy µ (low) (•), while e (high) i states are randomly selected from A (high) i using policy µ (high) (•); both policies are probability measures over A</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head>Figure 3 :.</head><label>3</label><figDesc>Figure 3: The evolution of Ai for ei = 2 and ai = ai+1 = 3. The hyperparameter K denotes the number of Simulated Annealing steps pre-defined for the generation of elements in A (low) i and A (high) i . We remark that evolution happens in three different seasons: selection (a), enlargement (b), and trimming (c and d).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>.</head><label></label><figDesc>Both quantities are parameterized by the concentration C i , where e (high) i ∼ Binomial (n = e i , p = C i ) ;</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_7"><head>Figure 4 :</head><label>4</label><figDesc>Figure 4: The tunneling toy problem in 1D, which shows an oscillatory behavior that is bounded by two curves, u(x) = 25 + 30(x -0.1) 2 25 (top) and l(x) = 5 + 25(x -0.9) 2 25 (bottom).Precisely,</figDesc><graphic coords="16,88.09,64.80,419.10,186.27" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Figure 5 :</head><label>5</label><figDesc>Figure 5: Hitting times for different models -SA and LSS. The LSS shows fast minimization, where acceleration varies across different ML models. SA shows a very slow convergence, suffering from the common issues of tunneling and slow diffusion.</figDesc><graphic coords="17,111.37,125.07,372.55,551.93" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head>Figure 6 :</head><label>6</label><figDesc>Figure6: Concentration over epochs in different dimensions. It is visible that the high concentration imposed by the initial conditions is quickly "resolved" by lowering the concentration. We remark that the figure shows an average behavior, which is smoother than realizations, but it is expected that realizations are much more oscillatory, since this quantity gets largely affected by the branching of new active agents.</figDesc><graphic coords="18,99.72,192.65,395.83,405.81" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: The tunneling toy problem in 2D.</figDesc><graphic coords="19,99.72,64.80,395.82,282.73" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_11"><head></head><label></label><figDesc>the cost function G (N ) (•) becomes more rugged in high dimensions, and the amount of local minima grows exponentially in N , as well as the number of paths toward the global optimum.Plotting decay rates over different dimensions side by side seems reasonable, with a caveat: since by nature the function G (N ) (•) in (3.1) is a N fold product of F (•) ∈ [0, 1], dimensionality makes values of the cost function closer to zero as N increases. Therefore, we need to correct for dimensionality factors, which we do by evaluating</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_12"><head>Figure 8 :</head><label>8</label><figDesc>Figure 8: The tunneling toy problem in different dimensions for different SA step sizes. Note that the smaller the step size, the more the dimensionality effect gets pronounced, with high-dimensional environments taking a longer time to decay.</figDesc><graphic coords="20,111.37,99.83,372.54,602.41" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_1"><head></head><label></label><figDesc>has been evaluated and stored up to time step i .</figDesc><table><row><cell></cell><cell></cell><cell></cell><cell>(1.4)</cell></row><row><cell>Thus, if we define 7</cell><cell></cell><cell></cell></row><row><cell></cell><cell cols="2">θ  *  i := arg min ξ∈Hi</cell><cell>E(ξ)</cell><cell>(1.5)</cell></row><row><cell>we now aim instead at satisfying</cell><cell></cell><cell></cell></row><row><cell cols="4">E(θ) ≥ V i (θ), ∀ θ ∈ H i , and arg min ξ∈Hi</cell><cell>V i (ξ) = θ  *  i .</cell><cell>(1.6)</cell></row><row><cell cols="3">These properties allow us to introduce the quantity</cell></row><row><cell></cell><cell cols="3">i → M i := E(θ  *  i ),</cell><cell>(1.7)</cell></row><row><cell cols="4">which refer to as the M-functional, a quantity that is monotonically decaying over time thanks to the second</cell></row><row><cell cols="4">property in (1.6) and to the fact that H i are nested sets over epochs. From a purely quantitative point of</cell></row><row><cell cols="4">view, we use the M -functional (1.7) instead of E(•) to avoid possible oscillatory behavior of the latter; indeed,</cell></row><row><cell>for any ∆ ⊂ H i , the quantity max θ∈∆</cell><cell>E(θ) -min θ∈∆</cell><cell cols="2">E(θ) tends to be highly oscillatory throughout exploration,</cell></row><row><cell cols="4">since the LSS approach fosters exploration by always stepping into non-optimal states. Evidently, by</cell></row><row><cell>definition, it holds that</cell><cell></cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_3"><head></head><label></label><figDesc>(and zero in the complement), otherwise µ (high) (•) is simply a uniform measure over A</figDesc><table><row><cell></cell><cell></cell><cell></cell><cell></cell><cell></cell><cell>a preprocessing step is required. Recall from (2.12) that elements</cell></row><row><cell cols="3">from A i (low)</cell><cell cols="3">are sampled first. Since elements in the triplet A i , A i (low)</cell><cell>, A</cell><cell>(high) i</cell><cell>are linked through branch-</cell></row><row><cell cols="6">ing, for each element θ (low) ∈ A i (low)</cell><cell>that we sample, we remove its corresponding pair in A</cell><cell>(high) i</cell><cell>; let's call</cell></row><row><cell cols="5">the remaining set A i (high)</cell><cell>for now. Once this step is performed, µ (high) (•) is defined in one of the two ways:</cell></row><row><cell>if µ (high)</cell><cell cols="3">i A (high)</cell><cell cols="2">(•) is a non-null measure, it is renormalized (so as to be a probability measure) and assigned</cell></row><row><cell cols="2">to µ (high) i A (high)</cell><cell cols="4">(•) (high) i</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_4"><head>Table 1 :</head><label>1</label><figDesc>Number of evaluations required in the LSS when compared to classical Simulated Annealing. Recall from Section (2.2) that N * denotes the number of epochs and, at epoch i; K</figDesc><table><row><cell>(low) i</cell><cell>and K i (high)</cell><cell>represent the number of SA</cell></row></table></figure>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="1" xml:id="foot_0"><p>First principles based molecular dynamics (MD) simulation based on electronic structure are computationally huge expensive, whereas predefined empirical force field based MD simulations are computationally faster<ref type="bibr" target="#b20">[KAB08]</ref>. In this situation, hybrid techniques, where First principles results are used to develop empirical force field, are highly demanding.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="2" xml:id="foot_1"><p>  2  In light of that, perturbations are seen as</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="3" xml:id="foot_2"><p>mutations.3 GA should not be dismissed as a valuable technique. In fact, several optimization methods have been designed based on it; cf.<ref type="bibr" target="#b14">[Hil90]</ref>.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="4" xml:id="foot_3"><p>There are several of them, referred to by different names, especially because they have been rediscovered and used in different contexts; cf.<ref type="bibr" target="#b17">[Iba01]</ref>. Examples are abundant, illustrated by interesting applications in many areas<ref type="bibr" target="#b58">[YT22,</ref><ref type="bibr" target="#b32">MSO01]</ref> </p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="5" xml:id="foot_4"><p>These regions are related to the probability distribution derived by the Gibbs distribution, constructed from the energy function whose ground state we are searching for.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="6" xml:id="foot_5"><p>θ * could be a set, but this detail is not relevant in the following discussion.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="7" xml:id="foot_6"><p>In the Surrogate Optimization literature, θ * i is called "the incumbent" point.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="8" xml:id="foot_7"><p>It must be said that the term bias has a dynamical system connotation rather than a statistical meaning. Indeed, we are not interested at constructing V i (•) as a biased estimator to E(•).</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="9" xml:id="foot_8"><p>In the code, we associate these k-epochs intervals with different boxes Ω i ⊂ Ω i , that can also shrink in size. We call these changes box shrinking schedules. This adds flexibility to the parameter search, for boxes may also be designed to shrink over time, reducing the size of the parameter space. For further details, see<ref type="bibr" target="#b31">[Mon23]</ref>.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="9" xml:id="foot_9"><p>By this we mean that the elements in the queue A i are in the set H i ; we shall adopt this abuse of notation unapologetically throughout the rest of the paper.11 In all the simulations performed, the sequences e i and a i satisfies e i ≤ a i (otherwise elements would be evaluated but not stored into H i ) and were non-increasing. We assume that |H 0 | ≥ a 0 . If not, we sample Ω i several times, until the selection process is possible.</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="14" xml:id="foot_10"><p>The idea has been used in other contexts, for instance, in the choice of initial points in k-means such that they are as distant from one another as possible; cf. [AV06, Section 2.2].</p></note>
+			<note xmlns="http://www.tei-c.org/ns/1.0" place="foot" n="15" xml:id="foot_11"><p>This number can be easily adjusted, but we set it as 3, the minimum required number for cross-validations with 3 sets to be performed.</p></note>
+		</body>
+		<back>
+
+			<div type="acknowledgement">
+<div><p>Acknowledgments R.M. would like to thank <rs type="person">T. Nakanishi</rs> (<rs type="affiliation">AIST / MathAM-OIL</rs>) for several discussions about Statistical Physics. He is also grateful to <rs type="person">A. Kolchinsky</rs> (<rs type="affiliation">Universal Biology Institute/The University of Tokyo</rs>) for interesting discussions about Information Theory. He is also grateful to <rs type="person">T. Morishita</rs> (<rs type="affiliation">AIST / Tsukuba</rs>), who explained to him some of the underpinnings of Molecular Dynamics simulations and well-established ideas in the literature, besides listening to the description of a preliminary version of the LSS method. K.S. would like to thank <rs type="person">T. Ikeshoji</rs> (<rs type="affiliation">AIST/ MathAM-OIL</rs>) for his encouragement to encounter this problem.</p><p>Both authors are very grateful to <rs type="person">N. Yoshinaga</rs> (<rs type="affiliation">AIST / MathAM-OIL</rs>) for carefully reading and commenting on a draft version of this paper, besides a helpful and insightful explanation of the Replica Exchange Monte Carlo methods in Bayesian optimization.</p><p>A large community of developers has diligently maintained and improved several libraries -Tensorflow, Numpy, Scikit-learn -that have been used during this project; the authors thank all of them.</p></div>
+			</div>			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.1">Open problems</head><p>Several directions of investigation could not be contemplated in this paper and are left to future work. The biggest among them is proving almost sure convergence of the algorithm. Even though this seems straightforward if the queue of active states A i has no bounds on its size (that is, A i = H i , and classical SA arguments apply), the fact that A i chops off some of its elements may complicate the proof and, we suspect, in cases of very small length A i may prevent almost sure convergence from happening.</p><p>A few points of improvement seem clear: concentration should either be a vector (amounting for each dimension), or a tensor, containing even more information (average curvature along directions, etc.). One could also expand the number of policies beyond T (low) and T (high) , selecting a few among them over time in order to accelerate convergence. With regards to the exploratory behavior and the concentration of agents in Ω, one could explore other methods to construct concentrations C as in Section 2.2.1 by using ideas from optimal transportation, as those of used in Stein Variational Gradient Descent, where the transport of particles is aimed at finding regions of high probability whereas, at the same time, a repulsive term prevents them from clustering altogether; see <ref type="bibr" target="#b27">[LW16,</ref><ref type="bibr">Equation 8</ref>]. Their construction seems to be more general than ours, and could yield a way to drive active states without the need for computing active states concentration.</p><p>If further information about the cost function E(•) is provided, like its sensitivity to parameters (in the form of higher derivatives), a more careful box shrinking schedule could be devised. In fact, by sampling a few points one could prune subregions in Ω where the minimum cannot be. We consider such scenarios unrealistic in real applications, unless the cost function's complexity is very low, like that of linear functions. In such cases, more effective and well-studied techniques are available, like Branch and Bound methods. Still, similar techniques to the latter have been used in some proprietary software for better exploration of subproblems derived from branching; cf. <ref type="bibr">[Mat]</ref>. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.2">Notes and remarks</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Credit authorship contribution statement</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Supplementary Material, Data and Code availability</head><p>All the code for this paper has been written in Python and is available on GitHub <ref type="bibr" target="#b31">[Mon23]</ref>. Relevant data is also available on the same repository.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Declaration of competing interest</head><p>The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Tensor-Flow: Large-scale machine learning on heterogeneous systems</title>
+		<author>
+			<persName><forename type="first">Martín</forename><surname>Abadi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ashish</forename><surname>Agarwal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Paul</forename><surname>Barham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eugene</forename><surname>Brevdo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zhifeng</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Craig</forename><surname>Citro</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Greg</forename><forename type="middle">S</forename><surname>Corrado</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andy</forename><surname>Davis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jeffrey</forename><surname>Dean</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthieu</forename><surname>Devin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sanjay</forename><surname>Ghemawat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ian</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andrew</forename><surname>Harp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Geoffrey</forename><surname>Irving</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Isard</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yangqing</forename><surname>Jia</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rafal</forename><surname>Jozefowicz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lukasz</forename><surname>Kaiser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Manjunath</forename><surname>Kudlur</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Josh</forename><surname>Levenberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dandelion</forename><surname>Mané</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rajat</forename><surname>Monga</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sherry</forename><surname>Moore</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Derek</forename><surname>Murray</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Chris</forename><surname>Olah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mike</forename><surname>Schuster</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jonathon</forename><surname>Shlens</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Benoit</forename><surname>Steiner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ilya</forename><surname>Sutskever</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kunal</forename><surname>Talwar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Paul</forename><surname>Tucker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vincent</forename><surname>Vanhoucke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vijay</forename><surname>Vasudevan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fernanda</forename><surname>Viégas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Oriol</forename><surname>Vinyals</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Pete</forename><surname>Warden</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Wattenberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Wicke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yuan</forename><surname>Yu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xiaoqiang</forename><surname>Zheng</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Software available from tensorflow</title>
+		<imprint>
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<monogr>
+		<title level="m" type="main">k-means++: The advantages of careful seeding</title>
+		<author>
+			<persName><forename type="first">David</forename><surname>Arthur</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sergei</forename><surname>Vassilvitskii</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2006">2006</date>
+		</imprint>
+		<respStmt>
+			<orgName>Stanford</orgName>
+		</respStmt>
+	</monogr>
+	<note type="report_type">Technical report</note>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Algorithms for hyperparameter optimization</title>
+		<author>
+			<persName><forename type="first">James</forename><surname>Bergstra</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rémi</forename><surname>Bardenet</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yoshua</forename><surname>Bengio</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Balázs</forename><surname>Kégl</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Advances in neural information processing systems</title>
+		<imprint>
+			<biblScope unit="volume">24</biblScope>
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">A survey on metaheuristics for stochastic combinatorial optimization</title>
+		<author>
+			<persName><forename type="first">Leonora</forename><surname>Bianchi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Marco</forename><surname>Dorigo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Luca</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Maria</forename><surname>Gambardella</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Walter</forename><forename type="middle">J</forename><surname>Gutjahr</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Natural Computing</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="239" to="287" />
+			<date type="published" when="2009-06">Jun 2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Particle Swarm Optimization for Single Objective Continuous Space Problems: A Review</title>
+		<author>
+			<persName><forename type="first">Reza</forename><surname>Mohammad</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zbigniew</forename><surname>Bonyadi</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Michalewicz</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Evolutionary Computation</title>
+		<imprint>
+			<biblScope unit="volume">25</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1" to="54" />
+			<date type="published" when="2017">03 2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Deep learning the slow modes for rare events sampling</title>
+		<author>
+			<persName><forename type="first">Luigi</forename><surname>Bonati</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Giovannimaria</forename><surname>Piccini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michele</forename><surname>Parrinello</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">118</biblScope>
+			<biblScope unit="issue">44</biblScope>
+			<biblScope unit="page">2113533118</biblScope>
+			<date type="published" when="2021">2021</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Simulated annealing</title>
+		<author>
+			<persName><forename type="first">Dimitris</forename><surname>Bertsimas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Tsitsiklis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Statistical Science</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="10" to="15" />
+			<date type="published" when="1993">1993</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<monogr>
+		<title level="m" type="main">Introduction to algorithms</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Thomas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Charles</forename><forename type="middle">E</forename><surname>Cormen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ronald</forename><forename type="middle">L</forename><surname>Leiserson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Clifford</forename><surname>Rivest</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Stein</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2009">2009</date>
+			<publisher>MIT Press</publisher>
+			<pubPlace>Cambridge, MA</pubPlace>
+		</imprint>
+	</monogr>
+	<note>third edition</note>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Extended phase-space methods for enhanced sampling in molecular simulations: a review</title>
+		<author>
+			<persName><forename type="first">Hiroshi</forename><surname>Fujisaki</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kei</forename><surname>Moritsugu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yasuhiro</forename><surname>Matsunaga</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tetsuya</forename><surname>Morishita</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Luca</forename><surname>Maragliano</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Frontiers in bioengineering and biotechnology</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page">125</biblScope>
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<monogr>
+		<title level="m" type="main">A tutorial on bayesian optimization</title>
+		<author>
+			<persName><forename type="first">I</forename><surname>Peter</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Frazier</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<monogr>
+		<title level="m" type="main">Engineering design via surrogate modelling: a practical guide</title>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Forrester</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andras</forename><surname>Sobester</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andy</forename><surname>Keane</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2008">2008</date>
+			<publisher>John Wiley &amp; Sons</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<monogr>
+		<author>
+			<persName><forename type="first">Sacha</forename><surname>Friedli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yvan</forename><surname>Velenik</surname></persName>
+		</author>
+		<title level="m">Statistical Mechanics of Lattice Systems: A Concrete Mathematical Introduction</title>
+		<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Use of artificial neural networks to analyze nuclear power plant performance</title>
+		<author>
+			<persName><forename type="first">Zhichao</forename><surname>Guo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">E</forename><surname>Uhrig</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nuclear Technology</title>
+		<imprint>
+			<biblScope unit="volume">99</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="36" to="42" />
+			<date type="published" when="1992">1992</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Cooling schedules for optimal annealing</title>
+		<author>
+			<persName><forename type="first">Bruce</forename><surname>Hajek</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics of operations research</title>
+		<imprint>
+			<biblScope unit="volume">13</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="311" to="329" />
+			<date type="published" when="1988">1988</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Co-evolving parasites improve simulated evolution as an optimization procedure</title>
+		<author>
+			<persName><forename type="first">Hillis</forename><surname>Daniel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physica D: Nonlinear Phenomena</title>
+		<imprint>
+			<biblScope unit="volume">42</biblScope>
+			<biblScope unit="issue">1-3</biblScope>
+			<biblScope unit="page" from="228" to="234" />
+			<date type="published" when="1990">1990</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">The elements of statistical learning</title>
+		<author>
+			<persName><forename type="first">Trevor</forename><surname>Hastie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><surname>Tibshirani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jerome</forename><surname>Friedman</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Springer Series in Statistics</title>
+		<meeting><address><addrLine>New York</addrLine></address></meeting>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+	<note>second edition. Data mining, inference, and prediction</note>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Efficient hyperparameter optimization for deep learning algorithms using deterministic rbf surrogates</title>
+		<author>
+			<persName><forename type="first">Ilija</forename><surname>Ilievski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Taimoor</forename><surname>Akhtar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jiashi</forename><surname>Feng</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christine</forename><surname>Shoemaker</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the AAAI Conference on Artificial Intelligence</title>
+		<meeting>the AAAI Conference on Artificial Intelligence</meeting>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+			<biblScope unit="volume">31</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Extended ensemble monte carlo</title>
+		<author>
+			<persName><forename type="first">Yukito</forename><surname>Iba</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">International Journal of Modern Physics C</title>
+		<imprint>
+			<biblScope unit="volume">12</biblScope>
+			<biblScope unit="issue">05</biblScope>
+			<biblScope unit="page" from="623" to="656" />
+			<date type="published" when="2001">2001</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title/>
+	</analytic>
+	<monogr>
+		<title level="j">JEP</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">Highly accurate protein structure prediction with alphafold</title>
+		<author>
+			<persName><forename type="first">John</forename><surname>Jumper</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Richard</forename><surname>Evans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alexander</forename><surname>Pritzel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tim</forename><surname>Green</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Figurnov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Olaf</forename><surname>Ronneberger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kathryn</forename><surname>Tunyasuvunakool</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Russ</forename><surname>Bates</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Augustin</forename><surname>Žídek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Anna</forename><surname>Potapenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<imprint>
+			<biblScope unit="volume">596</biblScope>
+			<biblScope unit="issue">7873</biblScope>
+			<biblScope unit="page" from="583" to="589" />
+			<date type="published" when="2021">2021</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Ab initio and classical molecular dynamics calculations of the high-pressure melting of ne</title>
+		<author>
+			<persName><surname>Koči</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A B</forename><surname>Ahuja</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Belonoshko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Physics: Conference Series</title>
+		<imprint>
+			<biblScope unit="volume">121</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page">12005</biblScope>
+			<date type="published" when="2008-07">jul 2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Particle swarm optimization</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kennedy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Eberhart</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of ICNN&apos;95 -International Conference on Neural Networks</title>
+		<meeting>ICNN&apos;95 -International Conference on Neural Networks</meeting>
+		<imprint>
+			<date type="published" when="1995">1995</date>
+			<biblScope unit="volume">4</biblScope>
+			<biblScope unit="page" from="1942" to="1948" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Optimization by simulated annealing</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Kirkpatrick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">D</forename><surname>Gelatt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">P</forename><surname>Vecchi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">220</biblScope>
+			<biblScope unit="issue">4598</biblScope>
+			<biblScope unit="page" from="671" to="680" />
+			<date type="published" when="1983">1983</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<monogr>
+		<title level="m" type="main">Surrogate-based modeling and optimization</title>
+		<author>
+			<persName><forename type="first">Slawomir</forename><surname>Koziel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Leifur</forename><surname>Leifsson</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2013">2013</date>
+			<publisher>Springer</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Umbrella sampling</title>
+		<author>
+			<persName><forename type="first">Johannes</forename><surname>Kästner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">WIREs Computational Molecular Science</title>
+		<imprint>
+			<biblScope unit="volume">1</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="932" to="942" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Metadynamics: a method to simulate rare events and reconstruct the free energy in biophysics, chemistry and material science</title>
+		<author>
+			<persName><forename type="first">Alessandro</forename><surname>Laio</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Francesco</forename><forename type="middle">L</forename><surname>Gervasio</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Reports on Progress in Physics</title>
+		<imprint>
+			<biblScope unit="volume">71</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page">126601</biblScope>
+			<date type="published" when="2008-11">nov 2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<monogr>
+		<title level="m" type="main">Markov chains and mixing times</title>
+		<author>
+			<persName><forename type="first">David</forename><forename type="middle">A</forename><surname>Levin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yuval</forename><surname>Peres</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Elizabeth</forename><forename type="middle">L</forename><surname>Wilmer</surname></persName>
+		</author>
+		<editor>James G. Propp and David B. Wilson</editor>
+		<imprint>
+			<date type="published" when="2009">2009</date>
+			<publisher>American Mathematical Society</publisher>
+			<pubPlace>Providence, RI</pubPlace>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Stein variational gradient descent: A general purpose bayesian inference algorithm</title>
+		<author>
+			<persName><forename type="first">Qiang</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dilin</forename><surname>Wang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Advances in neural information processing systems</title>
+		<imprint>
+			<biblScope unit="volume">29</biblScope>
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<monogr>
+		<ptr target="https://www.mathworks.com/help/gads/surrogate-optimization-algorithm.html" />
+		<title level="m">Surrogate Optimization Algorithm -MATLAB</title>
+		<imprint>
+			<date type="published" when="2023-08-15">August 15th, 2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Free-energy calculation via mean-force dynamics using a logarithmic energy landscape</title>
+		<author>
+			<persName><forename type="first">Tetsuya</forename><surname>Morishita</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Satoru</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hisashi</forename><surname>Itoh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Masuhiro</forename><surname>Okumura</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Mikami</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review E</title>
+		<imprint>
+			<biblScope unit="volume">85</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page">66702</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<monogr>
+		<title level="m" type="main">An introduction to genetic algorithms</title>
+		<author>
+			<persName><forename type="first">Melanie</forename><surname>Mitchell</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="1998">1998</date>
+			<publisher>MIT press</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<monogr>
+		<author>
+			<persName><forename type="first">Rafael</forename><surname>Monteiro</surname></persName>
+		</author>
+		<ptr target="https://github.com/rafael-a-monteiro-math/landscape_sketch_and_step.git" />
+		<title level="m">Source code for the paper &quot;landscape-sketch-step: An ai/ml-based metaheuristic for high-cost optimization problems</title>
+		<imprint>
+			<date type="published" when="2023-09">September 2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">Generalized-ensemble algorithms for molecular simulations of biopolymers</title>
+		<author>
+			<persName><forename type="first">Ayori</forename><surname>Mitsutake</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yuji</forename><surname>Sugita</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yuko</forename><surname>Okamoto</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Biopolymers</title>
+		<imprint>
+			<biblScope unit="volume">60</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="96" to="123" />
+			<date type="published" when="2001">2001</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">Machine learning for protein folding and dynamics</title>
+		<author>
+			<persName><forename type="first">Frank</forename><surname>Noé</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gianni</forename><surname>De Fabritiis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Cecilia</forename><surname>Clementi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Current Opinion in Structural Biology</title>
+		<imprint>
+			<biblScope unit="volume">60</biblScope>
+			<biblScope unit="page" from="77" to="84" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+	<note>Folding and Binding Proteins</note>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Cooperative multi-agent learning: The state of the art</title>
+		<author>
+			<persName><forename type="first">Liviu</forename><surname>Panait</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sean</forename><surname>Luke</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Autonomous agents and multi-agent systems</title>
+		<imprint>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="page" from="387" to="434" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">Monte Carlo statistical methods</title>
+		<author>
+			<persName><forename type="first">Christian</forename><forename type="middle">P</forename><surname>Robert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">George</forename><surname>Casella</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Springer Texts in Statistics</title>
+		<meeting><address><addrLine>New York</addrLine></address></meeting>
+		<imprint>
+			<publisher>Springer-Verlag</publisher>
+			<date type="published" when="2004">2004</date>
+		</imprint>
+	</monogr>
+	<note>second edition</note>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<monogr>
+		<title level="m" type="main">Artificial intelligence: a modern approach</title>
+		<author>
+			<persName><forename type="first">Stuart</forename><surname>Russell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Peter</forename><surname>Norvig</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2002">2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<analytic>
+		<title level="a" type="main">A stochastic radial basis function method for the global optimization of expensive functions</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Rommel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christine</forename><forename type="middle">A</forename><surname>Regis</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Shoemaker</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">INFORMS Journal on Computing</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="497" to="509" />
+			<date type="published" when="2007">2007</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<analytic>
+		<title level="a" type="main">Reinforcement learning: an introduction</title>
+		<author>
+			<persName><forename type="first">Richard</forename><forename type="middle">S</forename><surname>Sutton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andrew</forename><forename type="middle">G</forename><surname>Barto</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Adaptive Computation and Machine Learning</title>
+		<meeting><address><addrLine>Cambridge, MA</addrLine></address></meeting>
+		<imprint>
+			<publisher>MIT Press</publisher>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+	<note>second edition</note>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<analytic>
+		<title level="a" type="main">Improved protein structure prediction using potentials from deep learning</title>
+		<author>
+			<persName><forename type="first">Richard</forename><surname>Andrew W Senior</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">John</forename><surname>Evans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">James</forename><surname>Jumper</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Laurent</forename><surname>Kirkpatrick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tim</forename><surname>Sifre</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Chongli</forename><surname>Green</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Augustin</forename><surname>Qin</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Žídek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Alexander Wr Nelson</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Bridgland</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nature</title>
+		<imprint>
+			<biblScope unit="volume">577</biblScope>
+			<biblScope unit="issue">7792</biblScope>
+			<biblScope unit="page" from="706" to="710" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b40">
+	<monogr>
+		<title/>
+		<author>
+			<persName><surname>Sik +</surname></persName>
+		</author>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b41">
+	<analytic>
+		<title level="a" type="main">Reorientational motion and li + -ion transport in li 2 b 12 h 12 system: Molecular dynamics study</title>
+		<author>
+			<persName><forename type="first">Kartik</forename><surname>Sau</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tamio</forename><surname>Ikeshoji</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sangryun</forename><surname>Kim</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shigeyuki</forename><surname>Takagi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Kazuto</forename><surname>Akagi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shin-Ichi</forename><surname>Orimo</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Phys. Rev. Materials</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page">75402</biblScope>
+			<date type="published" when="2019-07">Jul 2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b42">
+	<analytic>
+		<title level="a" type="main">Overcoming the timescale barrier in molecular dynamics: Transfer operators, variational principles and machine learning</title>
+		<author>
+			<persName><forename type="first">Christof</forename><surname>Schütte</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Stefan</forename><surname>Klus</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Carsten</forename><surname>Hartmann</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Numerica</title>
+		<imprint>
+			<biblScope unit="volume">32</biblScope>
+			<biblScope unit="page" from="517" to="673" />
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b43">
+	<analytic>
+		<title level="a" type="main">Practical bayesian optimization of machine learning algorithms</title>
+		<author>
+			<persName><forename type="first">Jasper</forename><surname>Snoek</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hugo</forename><surname>Larochelle</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ryan</forename><forename type="middle">P</forename><surname>Adams</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+		<editor>
+			<persName><forename type="first">F</forename><surname>Pereira</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">C</forename><forename type="middle">J</forename><surname>Burges</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">L</forename><surname>Bottou</surname></persName>
+		</editor>
+		<editor>
+			<persName><forename type="first">K</forename><forename type="middle">Q</forename><surname>Weinberger</surname></persName>
+		</editor>
+		<imprint>
+			<biblScope unit="volume">25</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b44">
+	<monogr>
+		<title/>
+		<author>
+			<persName><surname>Curran Associates</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Inc</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b45">
+	<monogr>
+		<title level="m" type="main">Understanding machine learning: From theory to algorithms</title>
+		<author>
+			<persName><forename type="first">Shai</forename><surname>Shalev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-Shwartz</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shai</forename><surname>Ben-David</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2014">2014</date>
+			<publisher>Cambridge university press</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b46">
+	<monogr>
+		<title level="m" type="main">Proximal policy optimization algorithms</title>
+		<author>
+			<persName><forename type="first">John</forename><surname>Schulman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Filip</forename><surname>Wolski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Prafulla</forename><surname>Dhariwal</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alec</forename><surname>Radford</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Oleg</forename><surname>Klimov</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b47">
+	<monogr>
+		<author>
+			<persName><forename type="first">Mark</forename><surname>Tuckerman</surname></persName>
+		</author>
+		<title level="m">Statistical mechanics: theory and molecular simulation</title>
+		<imprint>
+			<publisher>Oxford university press</publisher>
+			<date type="published" when="2010">2010</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b48">
+	<analytic>
+		<title level="a" type="main">Nonphysical sampling distributions in monte carlo free-energy estimation: Umbrella sampling</title>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">M</forename><surname>Torrie</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">P</forename><surname>Valleau</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">23</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="187" to="199" />
+			<date type="published" when="1977">1977</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b49">
+	<analytic>
+		<title level="a" type="main">Thermodynamical approach to the traveling salesman problem: an efficient simulation algorithm</title>
+		<author>
+			<persName><forename type="first">V</forename><surname>Černý</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">J. Optim. Theory Appl</title>
+		<imprint>
+			<biblScope unit="volume">45</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="41" to="51" />
+			<date type="published" when="1985">1985</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b50">
+	<analytic>
+		<title level="a" type="main">Topics in optimal transportation</title>
+		<author>
+			<persName><forename type="first">Cédric</forename><surname>Villani</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="s">Graduate Studies in Mathematics</title>
+		<imprint>
+			<biblScope unit="volume">58</biblScope>
+			<date type="published" when="2003">2003</date>
+			<publisher>American Mathematical Society</publisher>
+			<pubPlace>Providence, RI</pubPlace>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b51">
+	<analytic>
+		<title level="a" type="main">Simulated annealing: theory and applications</title>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">J M</forename><surname>Van Laarhoven</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">H L</forename><surname>Aarts</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="s">Mathematics and its Applications</title>
+		<imprint>
+			<biblScope unit="volume">37</biblScope>
+			<date type="published" when="1987">1987</date>
+			<publisher>D. Reidel Publishing Co</publisher>
+			<pubPlace>Dordrecht</pubPlace>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b52">
+	<analytic>
+		<title level="a" type="main">Hyperdynamics: Accelerated molecular dynamics of infrequent events</title>
+		<author>
+			<persName><forename type="first">Arthur</forename><forename type="middle">F</forename><surname>Voter</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Phys. Rev. Lett</title>
+		<imprint>
+			<biblScope unit="volume">78</biblScope>
+			<biblScope unit="page" from="3908" to="3911" />
+			<date type="published" when="1997-05">May 1997</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b53">
+	<monogr>
+		<author>
+			<persName><forename type="first">David</forename><surname>Wales</surname></persName>
+		</author>
+		<title level="m">Energy landscapes: Applications to clusters, biomolecules and glasses</title>
+		<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date type="published" when="2003">2003</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b54">
+	<analytic>
+		<title level="a" type="main">High-dimensional statistics</title>
+		<author>
+			<persName><forename type="first">Martin</forename><forename type="middle">J</forename><surname>Wainwright</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Cambridge Series in Statistical and Probabilistic Mathematics</title>
+		<meeting><address><addrLine>Cambridge</addrLine></address></meeting>
+		<imprint>
+			<publisher>Cambridge University Press</publisher>
+			<date type="published" when="2019">2019</date>
+			<biblScope unit="volume">48</biblScope>
+		</imprint>
+	</monogr>
+	<note>A nonasymptotic viewpoint</note>
+</biblStruct>
+
+<biblStruct xml:id="b55">
+	<analytic>
+		<title level="a" type="main">Bananas: Bayesian optimization with neural architectures for neural architecture search</title>
+		<author>
+			<persName><forename type="first">Colin</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Willie</forename><surname>Neiswanger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yash</forename><surname>Savani</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the AAAI Conference on Artificial Intelligence</title>
+		<meeting>the AAAI Conference on Artificial Intelligence</meeting>
+		<imprint>
+			<date type="published" when="2021-05">May 2021</date>
+			<biblScope unit="volume">35</biblScope>
+			<biblScope unit="page" from="10293" to="10301" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b56">
+	<monogr>
+		<title level="m" type="main">A general stochastic algorithmic framework for minimizing expensive black box objective functions based on surrogate models and sensitivity analysis</title>
+		<author>
+			<persName><forename type="first">Yilun</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christine</forename><forename type="middle">A</forename><surname>Shoemaker</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b57">
+	<analytic>
+		<title level="a" type="main">Two-stage transfer surrogate model for automatic hyperparameter optimization</title>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Wistuba</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nicolas</forename><surname>Schilling</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lars</forename><surname>Schmidt-Thieme</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Machine Learning and Knowledge Discovery in Databases: European Conference, ECML PKDD 2016</title>
+		<meeting><address><addrLine>Riva del Garda, Italy</addrLine></address></meeting>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2016">September 19-23, 2016. 2016</date>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="page" from="199" to="214" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b58">
+	<analytic>
+		<title level="a" type="main">Bayesian modeling of pattern formation from one snapshot of pattern</title>
+		<author>
+			<persName><forename type="first">Natsuhiko</forename><surname>Yoshinaga</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Satoru</forename><surname>Tokuda</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Phys. Rev. E</title>
+		<imprint>
+			<biblScope unit="volume">106</biblScope>
+			<biblScope unit="page">65301</biblScope>
+			<date type="published" when="2022-12">Dec 2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

@@ -1,0 +1,586 @@
+Digital Twin of a DC Brushless Electric Motor-Propeller
+System with Application to Drone Dynamics
+
+Daniel J. Gauthier∗, Nicholas Biederman†, and Brian Gyovai‡
+
+ResCon Technologies, LLC, Columbus, OH 43212, USA
+
+Jay P. Wilhelm§
+
+Ohio University, Athens, OH 45701, USA
+
+A digital twin of a direct current brushless (BLDC) electric motor and propeller is developed
+for predicting the generated thrust when there is no motion of the system (static conditions).
+The model accounts for the back electromotive force, the propeller drag force, and the finite
+response time arising from the electromagnet winding inductance and DC resistance. The
+model is compared to a textbook model of BLCD dynamics and to experimental measurements
+on a KDE Direct KDE2315XF-885/885 Kv motor with a 945 propeller and a Holybro electronic
+speed controller (ESC) driving an AIR 2216/880 Kv motor with a 1045 propeller. These systems
+are typically found on Group 1 uncrewed quadcopters (drones). Both the steady-state and
+transient dynamics depart substantially from linearized models found in the literature. This
+study is a starting point for disentangling the dynamics of the motor and the change in propeller
+dynamics due to complex airflow conditions.
+
+I. Introduction
+A digital twin provides an accurate computer model of a system that can be used to predict its behavior over a range
+of conditions [1]. It is used, for example, to shorten the design cycle, as a tool for predictive maintenance in a deployed
+system, or to integrate the system into a larger system. Here, we focus on developing a digital twin of a direct current
+(DC) brushless (BLDC) motor and propeller combination driven by a typical electronic speed controller (ESC) found in
+a small (Group 1 or 2) Uncrewed Aerial System (UAS). We develop a dynamic model of the thrust produced by the
+system as a function of the pulse-width modulation (PWM) signal input to the ESC under static conditions when the
+motor/propeller system is held at a fixed position.
+The purpose of this study is to develop a digital twin of the motor/propeller system without the complication of the
+changing propeller efficiency with incident airflow. Previous studies combine both effects (see, for example, Ref. [2], or
+only focus on the propeller characteristics in different airflows (see, for example, Refs. [3–5]). Our contribution is to
+clearly identify effects of the coupled electro-mechanical system. Our future work will generalize this model to the
+motor-propeller system moving in air, which is important for multi-copters flying in high wind [5, 6], in the presence of
+ground-effect [7], or during aggressive maneuvers [8]
+For the class of sensorless ESCs found on typical multi-copters, we find that the thrust is a nonlinear function of the
+PWM signal, which is especially pronounced at lower PWM signals (slower motor rotation rate) and approximately
+linear for higher PWM signal. We also find that the response to a step-change in the PWM signal is non-exponential and
+that is is important to include the electrical properties of the BLDC. These characteristics are largely ignored in the
+drone control literature, but they are important for understanding UAS flight dynamics.
+In the next section, we discuss the basic operation of a DC brushless electric motor (BLDC) and a motor-propeller
+model described in a popular aircraft control and simulation textbook [9] and one used in the PX4 open-source
+multi-copter flight control system [10]. We then introduce a electro-mechanical digital twin of the static motor-propeller
+model in Sec. III, compare the model predictions to experimental observations in Sec. IV, and conclude with implications
+of our results.
+
+∗Developer and Co-Founder, ResCon Technologies, LLC, 1275 Kinnear Road Suite 239, Columbus, Ohio, 43212
+†Software Engineer, ResCon Technologies, LLC, 1275 Kinnear Road Suite 239, Columbus, Ohio, 43212
+‡Founder/CEO, ResCon Technologies, LLC, 1275 Kinnear Road Suite 239, Columbus, Ohio, 43212
+§Associate Professor, Mechanical Engineering, Ohio University, Athens, Ohio, 45701, Senior Member
+
+1
+
+arXiv:2312.09981v1  [physics.app-ph]  15 Dec 2023
+
+
+II. Background
+A BLDC-propeller combination is found in a wide variety of electrified aircraft technologies because of their
+high thrust-to-weight ratio, the recent availability of high energy density batteries, and the development of solid-state
+electronics used for fast switching of the voltage applied to the motor electromagnet windings [11].
+Torque is generated from BLDC’s by keeping the magnetic fields of the rotating part of the motor (rotor) and the
+stationary part (stator) misaligned. Rotors on BLDC’s typically include 2𝑁 high-energy-density permanent magnets
+around an outer ring, which is connected to the shaft in the center of the motor. The stator is in between the outer
+ring of magnets and the shaft and contains 2𝑀 electromagnets. The misalignment between the electromagnet and
+permanent magnet fields generates a torque that attempts to align the fields; as they approach alignment, the neighboring
+electromagnet is energized and the near-aligned one is de-energized, thus maintaining misalignment of the fields and the
+magnets [11] and producing a continuous torque. A typical BLDC has 𝑁, 𝑀 ≥ 3.
+The ESC uses solid-state switches to energize/de-energize the electromagnet windings based on two approaches:
+sensored ESCs use real-time direct measurement of the shaft angle, typically Hall probes; or sensorless ESCs that
+estimate the angle by measuring the so-called back electromotive force (EMF) [11]. Sensored ESCs are available using
+modern DShot-protocol ESCs operating in angular rate control mode, for example, but they are rarely used because
+of the increased cost of the motor sensor and the ESC. Inexpensive ESCs used in small UASs tend to measure the
+back-EMF. The vast majority of small UAS motor controllers use sensorless ESC’s because of cost, availability, and
+functionality.
+The ESC is often controlled using a PWM signal: a square-wave voltage signal with a frequency in the 10’s of kHz
+range with the duty cycle of the waveform controlled by the user, typically in the range between 50% (0% throttle)
+and 100% (100% throttle). This signal should not be confused with the modulated signal applied to electromagnet
+windings whose frequency is locked to the propeller rotation rate but whose duty cycle is related to the duty cycle of the
+user-input signal to the ESC.
+
+A. Thrust Characteristics of BLDC-propeller Systems
+The force (thrust) generated by a BLDC-propeller system in the direction along the motor shaft is typically modeled
+as [6]
+𝐹 = 𝑘𝑡𝜔2,
+(1)
+
+where 𝑘𝑡 is the thrust coefficient in N s2/rad2 and 𝜔 is the angular velocity of the motor-propeller in rad/s. The thrust
+coefficient is a nonlinear function of 𝜔 and the linear velocity of the center of the propeller in the air, which we take as
+having a component parallel 𝜐∥ and perpendicular 𝜐⊥ to the motor shaft. The velocity includes the free-stream and
+wind velocities [6].
+Most studies of the variation of 𝑘𝑡 with velocity are for fixed-wing aircraft where 𝜐⊥ ∼ 0; the effects of the
+perpendicular velocity are usually treated as a separate force. Following this approach, 𝑘𝑡 is a function of the advance
+ratio 𝐽 = 2𝜋𝜐∥/𝜔𝐷, where 𝐷 is the propeller diameter. For multi-copter hover conditions with no wind or ground
+effect, 𝐽 ∼ 0 and 𝑘𝑡 is equal to its static value 𝑘𝑡0.
+For inexpensive plastic propellers with diameters <12", 𝑘𝑡 decreases approximately linearly with 𝐽 up to values of
+𝐽 ∼ 0.4, beyond which the drop off is more rapid until attaining the zero-thrust condition [3, 4]. For larger propellers, 𝑘𝑡
+is relatively constant for 𝐽 <∼ 0.1, then drops off as for the smaller propellers [5]. As discussed above, we only consider
+the case when 𝐽 = 0 for which 𝑘𝑡 = 𝑘𝑡0 is a constant to isolate the dynamics of the electro-mechanical system in static
+flight conditions.
+
+B. PX4 Motor Model
+The motor model used in the open-source PX4 flight stack for a multi-copter has no time dependence and is described
+in the Thrust Curve section of the controller guide [12]. Here, the dimensionless throttle command 𝑇 = 2(PWM − 0.5)
+(0-1) is related to the relative thrust through the relation
+
+𝐹
+
+𝐹𝑚𝑎𝑥
+= THR_MDL_FAC 𝑇2 + (1 − THR_MDL_FAC) 𝑇,
+(2)
+
+where 𝐹𝑚𝑎𝑥 is the maximum force produced by the system at the maximum rotation rate, and THR_MDL_FAC is
+a dimensionless parameter in the range 0-1. When THR_MDL_FAC = 0 (the default value), the thrust is linearly
+proportional to the throttle command. When THR_MDL_FAC = 1, the thrust depends on the square of the throttle
+
+2
+
+
+command, which is appropriate for an ESC that controls the angular velocity of the motor with the speed proportional to
+the throttle command. For ESCs that do not control the angular velocity, the guide suggests taking THR_MDL_FAC in
+the range of 0.3 to 1.
+As we show in Secs. III.A and IV.A below, this model does not agree with the steady-state predictions of the
+physics-based model of the motor-propeller system and our experimental observations using a force stand. It also
+ignores the finite response time of the motor, although an effective exponential time constant can be included using a
+low-pass filter in the flight stack control loop.
+
+C. Simple BLCD motor model
+Stevens et al. [12] present a medium-fidelity model of a quadcopter that proposes a model of the ESC that controls
+𝜔 to achieve a desired angular velocity 𝜔𝑑 and a first-order lag for the tracking of the ESC control loop. In this case, the
+dynamics of the ESC-BLDC-propeller system are described by
+
+𝑑𝜔
+𝑑𝑡 =
+1
+
+𝜏𝐸𝑆𝐶
+(𝜔𝑑 − 𝜔),
+(3)
+
+where 𝜏𝐸𝑆𝐶 is the response time of the ESC control loop.
+
+III. Physics-Based Static BLDC-Propeller Model
+Our model follows that presented in Ref. [6] generalized to account for the operation of the ESC. Here, we focus
+only on sensorless ESCs, where the duty cycle of the user-input signal is related to the duty cycle of the signals driving
+the electromagnet coils. This results in an effective voltage of [11]
+
+𝑉 = 𝑉𝑏𝑎𝑡𝑡𝑇 = 2𝑉𝑏𝑎𝑡𝑡 (PWM − 0.5)
+(4)
+
+applied to the electromagnet windings, where 𝑉𝑏𝑎𝑡𝑡 is the battery voltage. This relation breaks down at low voltages
+(small 𝑇) because the back EMF is too small to measure at low 𝜔.
+The presence of multiple electromagnet windings makes the BLCD electrical circuit somewhat complicated, but it
+is known [11] that the simpler equivalent circuit shown in Fig. 1 gives accurate results. It consists of the ESC, which
+reduces the battery voltage 𝑉𝑏𝑎𝑡𝑡 according to Eq. 4, a series inductor of inductance 𝐿, a resistor of resistance 𝑅, and a
+voltage source representing the back EMF, which reduces the voltage applied to the BLCD terminals. Here, the back
+EMF has magnitude 𝑘𝑒𝜔, where 𝑘𝑒 is the counter EMF constant in units of V s/rad. It can be estimated, through
+appropriate unit conversion, to the inverse of motor "Kv" constant typically specified by the vendor; that is, 𝑘𝑒 ∼ 1/Kv.
+In the next section, we give an expression for 𝑘𝑒 that can be obtained from the motor/propeller steady-state thrust data.
+
+Fig. 1
+Equivalent model of the motor system.
+
+The coupled electro-mechanical model is found by applying Kirchhoff’s Laws to the circuit and Newton’s Laws of
+rotational motion to the propeller-motor combination [6]. They are coupled because the back EMF depends on 𝜔 and
+the torque applied to the motor shaft is proportional to the current 𝑖 flowing through the circuit. This analysis results in a
+coupled electro-mechancial model given by
+
+𝐿 𝑑𝑖
+
+𝑑𝑡 = 𝑉 − 𝑘𝑒𝜔 − 𝑅𝑖,
+(5)
+
+𝐽𝑚
+𝑑𝜔
+𝑑𝑡 = 𝑘𝑚𝑖 − 𝑏𝑚𝜔 − 𝑘𝑞𝜔2,
+(6)
+
+where 𝐽𝑚 is the propeller-motor moment of inertia, 𝑘𝑚 = 𝑘𝑒 is the motor torque constant, 𝑏𝑚 is the viscous friction
+constant, and 𝑘𝑞 is the propeller drag constant. In most studies, the propeller drag moment exceeds the viscous drag
+
+3
+
+
+moment and hence it is typical to take 𝑏𝑚=0, which we do so here. However, it is straightforward to generalize our
+results to include the viscous drag moment. Table 1 gathers these constants for easy reference.
+
+Table 1
+Model Parameters
+
+Symbol
+Parameter
+Units
+Symbol
+Parameter
+Units
+
+𝑘𝑡
+thrust coefficient
+N s2/rad2
+𝑘𝑡0
+static thrust coefficient
+N s2/rad2
+
+𝑘𝑞
+propeller drag coefficient
+N m s2/rad2
+𝐽𝑚
+moment of inertia
+kg m2
+
+𝐽
+propeller advance ratio
+dimensionless
+𝑘𝑚
+torque constant
+N m/A
+
+𝑏𝑚
+viscous friction constant
+N m s/rad
+𝑘𝑒 = 𝑘𝑚
+counter EMF constant
+V s/rad
+
+𝐿
+inductance
+H
+𝑅
+resistance
+Ω
+
+𝜏 = 𝐿/𝑅
+motor time constant
+s
+𝑉𝑏𝑎𝑡𝑡
+battery voltage
+V
+
+𝑇
+throttle command
+dimensionless
+PWM
+pulse width mod. signal
+dimensionless
+
+𝜔𝑑
+desired angular velocity
+rad/s
+𝜏𝐸𝑆𝐶
+ESC response time
+s
+
+𝛼
+physics motor parameter
+rad/s
+𝛽
+physics motor parameter
+rad2/s𝑠
+
+𝜔𝑚𝑎𝑥
+max. angular velocity
+rad/s
+
+The model is noteworthy in that the dynamics of the angular velocity (Eq. 5) has a quadratic dependence on 𝜔 due
+to the propeller drag and it is not described as a first-order equation given by Eq. 3 due to its coupling to the motor
+current. These characteristics have an impact on both the steady-state and time response of the motor to changes in the
+input PWM signal.
+
+A. Steady-state thrust
+The steady-state behavior of the BLDC is found by setting the derivatives in Eqs. 5 and 6 to zero and solving for the
+steady-state (mnemonic 𝑠𝑠) current and angular velocity using Eq. 4 for the thrust. We find that
+
+𝜔𝑠𝑠
+=
+−𝛼 +
+√︃
+
+𝛼2 + 𝛽𝑇,
+(7)
+
+𝑖𝑠𝑠
+=
+𝑉𝑏𝑎𝑡𝑡𝑇 − 𝑘𝑒𝜔𝑠𝑠
+
+𝑅
+,
+(8)
+
+𝛼
+=
+𝑘𝑚𝑘𝑒
+2𝑘𝑞𝑅 ,
+(9)
+
+𝛽
+=
+𝑘𝑚𝑉𝑏𝑎𝑡𝑡
+
+𝑘𝑞𝑅
+.
+(10)
+
+The parameters 𝛼 and 𝛽 are not independent because 𝜔𝑠𝑠 = 𝜔𝑚𝑎𝑥 for 𝑇 = 1, where 𝜔𝑚𝑎𝑥 is the maximum BLDC
+angular velocity. Using this fact, we find that
+
+𝛽 = (𝜔𝑚𝑎𝑥 + 𝛼)2 − 𝛼2 = 𝜔2
+𝑚𝑎𝑥 + 2𝛼𝜔𝑚𝑎𝑥.
+(11)
+
+Thus,
+
+𝜔𝑠𝑠 = −𝛼 +
+√︃
+
+𝛼2 + (𝜔2𝑚𝑎𝑥 + 2𝛼𝜔𝑚𝑎𝑥)𝑇.
+(12)
+
+This observation is important because it implies that there is only a single parameter (𝛼) that specifies the steady-state
+motor dynamics once 𝜔𝑚𝑎𝑥 is known.
+Once 𝛼 is obtained from a fit to Eq. 12 combined with Eq. 1 to predict thrust as a function of 𝑇, we can obtain 𝛽
+using Eq. 11. Then, other model parameters can be obtained by considering the steady-state solutions with 𝑇 = 1. We
+find the counter EMF constant and torque constant through the relation
+
+𝑘𝑒 = 𝑘𝑚 = 2𝑉𝑏𝑎𝑡𝑡
+𝛼
+𝛽 .
+(13)
+
+4
+
+
+From the steady-state solution to the current equation, we find the motor resistance
+
+𝑅 = 𝑉𝑏𝑎𝑡𝑡 − 𝑘𝑒𝜔𝑚𝑎𝑥
+
+𝑖𝑚𝑎𝑥
+,
+(14)
+
+and from the angular velocity equation we obtain the propeller drag coefficient
+
+𝑘𝑞 = 𝑘𝑚𝑖𝑚𝑎𝑥
+
+𝜔2𝑚𝑎𝑥
+.
+(15)
+
+1. Limiting behaviors
+For low enough angular velocities, we have that 𝛽𝑇/𝛼2 ≪ 1 so that a Taylor series expansion of the square root in
+Eq. 7 is possible. In this limit, we find that
+
+𝜔𝑠𝑠
+≈
+𝛽
+2𝛼𝑇,
+(16)
+
+𝐹𝑠𝑠
+≈
+𝑘𝑡
+𝛽2
+
+4𝛼2𝑇2 (𝑇 ≪ 1),
+(17)
+
+and hence the thrust scales quadratically with the throttle for low throttle. For larger values of 𝑇, 𝜔𝑠𝑠 depends on the the
+size of 𝛼 relative to 𝜔𝑚𝑎𝑥. For 𝛼/𝜔𝑚𝑎𝑥 ≪ 1,
+
+𝜔𝑠𝑠
+≈
+𝜔𝑚𝑎𝑥
+√
+
+𝑇,
+(18)
+
+𝐹𝑠𝑠
+≈
+𝑘𝑡𝜔2
+𝑚𝑎𝑥𝑇,
+(19)
+
+demonstrating that the BLDC thrust is linear with the throttle.
+For 𝛼 ∼ 𝜔𝑚𝑎𝑥, which we hypothesize is the case for a typical BLDC-propeller system, the dependence of 𝐹 on 𝑇 is
+more complex and smoothly connects these two limiting behaviors. As seen in Fig. 2, the dimensionless force scales
+quadratically for small 𝑇 as expected based on Eq. 17 and going over to linear scaling for 𝑇 → 1 as expected based on
+Eq. 19.
+
+Fig. 2
+Scaling of the force. Physics-based ESC-BLDC-propeller model (blue line) compared to a quadratic
+scaling (green line) and linear scaling (orange line) with 𝛼 = 800 and 𝜔𝑚𝑎𝑥 = 1144 rad/s.
+
+B. Dimensionless Dynamic Model of the BLDC-Propeller System
+The steady-state quantities identified in the previous section can be used to put the differential equations of the model
+(Eqs. 5 and 6) in dimensionless form, which will allow us to identify the remaining unknown parameters of the model.
+To this end, we define dimensionless quantities ˜𝑖 = 𝑖/𝑖𝑚𝑎𝑥, ˜𝜔 = 𝜔/𝜔𝑚𝑎𝑥, ˜𝑡 = 𝑡/𝜏, ˜𝛼 = 𝛼/𝜔𝑚𝑎𝑥, and ˜𝛽 = 𝛽/𝜔2
+𝑚𝑎𝑥,
+substitute these definitions into the differential equations, and use the parameters defined in the previous section to find
+
+𝑑˜𝑖
+𝑑˜𝑡
+=
+˜𝛽 𝑇 − ˜𝛼 ˜𝜔 − ˜𝑖,
+(20)
+
+𝑑 ˜𝜔
+𝑑˜𝑡
+=
+� 𝐿𝑘𝑚𝑖𝑚𝑎𝑥
+
+𝐽𝑚𝜔𝑚𝑎𝑥
+
+�
+(˜𝑖 − ˜𝜔2),
+(21)
+
+5
+
+
+with 𝑏𝑚 = 0. We see that the two remaining unknown model parameters, 𝐿 and 𝐽𝑚, do not appear independently but as
+the ratio 𝐿/𝐽𝑚. Thus, to fit dynamic data as we do in Sec. IV.B below, only a single ratio needs to be adjusted.
+
+C. Dynamic thrust
+The coupled electro-mechanics dynamical model given by Eqs. 5 and 6 can be cast as a Riccati equation and then
+transformed to a linear second-order differential equation. However, the form of the solution is algebraically complicated
+and we do not obtain substantial insight from this approach. On the other hand, we observe that the BLDC current has
+a first-order decay with time constant 𝜏 = 𝐿/𝑅. But, due to coupling to 𝜔, the time course of the coupled system is
+non-exponential due to the propeller drag moment, which depends quadratically on 𝜔.
+Figure 3 compares the physics-based model and the model proposed by Stevens et al. (Eq. 3, where we have adjusted
+𝜏𝐸𝑆𝐶 = 35 ms so that the predictions agree at the half-height location. The parameters used to generate Fig. 6 are
+typical for a small UAS motor system discussed in Sec. IV below. We see that the physics model reaches the equilibrium
+value more quickly than expected for a first-order lag system. The disagreement between the models is substantial on
+the approach to equilibrium.
+
+Fig. 3
+Motor dynamics. Temporal evolution of the ESC-BLDC-propeller dimensionless angular rate in response
+to a step change of 𝑇 for the physics based model (blue line) compared to the Eq. 3 (orange line). Here, 𝛼=800
+rad/s, 𝜔𝑚𝑎𝑥=1144 rad/s, 𝑉𝑏𝑎𝑡𝑡 = 16 V, 𝑅 = 0.33 Ω, 𝐿/𝐽𝑚 = 300 H/kg m2, 𝑘𝑞 = 1.94 × 10−7 N m s2/rad2, and
+𝑘𝑒 = 1.08 × 10−2 V s/rad.
+
+Another observation is that 𝜏𝐸𝑆𝐶 is substantially longer than the time constant of the electrical circuit alone, which
+is given by 𝜏 = 𝐿/𝑅 = 9.0 ms for this example. The motor angular velocity has no linear damping (we assume the
+viscous drag is zero in this simulation), so one might have guessed that 𝜔 just follows the change in 𝑖 and hence the time
+scale should be much faster. This is not the case and points out the importance of analyzing the coupled dynamics of the
+electro-mechanical system.
+
+IV. Experimental measurements and model comparison
+Many commercial BLDC vendors provide datasheets of the steady-state ESC-BLDC-propeller characteristics for
+different voltages and static flight conditions. We use data provided by KDE Direct for the KDE2315XF-885 (885 Kv)
+motor with a 9’ × 4.5" pitch propeller at 16 V (slightly higher than a 4S). They do not specify the protocol used by the
+ESC, but the data shown below clearly demonstrates that the angular velocity is not controlled and hence we assume
+that a sensorless ESC of the type considered here was used in the measurements.
+Less data is available on the dynamical response of ESC-BLDC-propeller systems from the manufacturer. We used
+a force cell to measure the thrust of a Holybro ESC driving a AIR 2216/880 KV motor with a 1045 (10" diameter,
+4.5" pitch) propeller. The parameters of this system are similar to the KDE Direct system considered for the static
+measurement.
+The thrust measurements allow us to quantify the non-linear thrust and time response to commanded inputs. The
+test stand used, a Tyto series 1585, contains a load cell, measurement electronics, and sensorless ESC outputs. Their
+software allows for automatic generation of the thrust as a function of the angular velocity and precise control over
+
+6
+
+
+commands for the ESC to collect time response curves. We collect several thrust curves and commanded angular
+velocity changes from stopped to full speed with the motor and propeller mounted horizontally.
+
+A. Steady-state results
+The first step in fitting the physics model parameters to experimental observations is to study the thrust as a
+function of angular velocity, shown in Fig. 4 for the KDE Directo system. The solid line is a fit Eq. 1, which identifies
+𝑘𝑡0 = 1.08 × 10−5. The fit is good over the entire range, indicating that the propeller is well matched to the motor.
+
+Fig. 4
+Steady-state thrust characteristics. Dependence of the thrust on angular velocity for the KDE Direct
+system from which we determine 𝑘𝑡0 = 1.08 × 10−5.
+
+The next step is to fit the physics model parameter for the thrust as a function of throttle, shown in Fig. 5. We find
+the best fit is for 𝛼 = 800 rad/s, where it is seen that the fit is good over the entire throttle range. We then use the fit 𝛼 to
+obtain several other model parameters as mentioned above.
+
+Fig. 5
+Transformed steady-state thrust characteristics. Dependence of the thrust on dimensionless throttle for
+the KDE Direct system from which we determine 𝛼 = 800.
+
+We also fit the data to the PX4 motor model (Eq. 2, with the best fit obtained for THR_MDL_FAC = 0.6. While the
+error between the fit of the PX4 model and the data is not large, the incorrect scaling with 𝑇 at small values and values
+near 1, discussed in Sec. III.A above, is evident.
+
+B. Dynamic results
+For the Holybro system, we observe the dynamics shown in Fig. 6 for a step change in the throttle from 𝑇 = 0.34 to
+𝑇 = 0.45. We see that the time to attain steady state is many 10’s of milliseconds.
+We follow a similar procedure described above to find the model parameters for the Holybro system and adjust
+for the different battery voltage (the Holybro-provided data used 𝑉𝑏𝑎𝑡𝑡 = 16 V, whereas we use 𝑉𝑏𝑎𝑡𝑡 = 14.8 V in the
+
+7
+
+
+Fig. 6
+Observed transient motor dynamics. The Holybro model parameters are: 𝛼=800 rad/s, 𝜔𝑚𝑎𝑥=1144 rad/s
+at 𝑉𝑏𝑎𝑡𝑡 = 16 V used in the Holybro steady-state thrust measurements, 𝑉𝑏𝑎𝑡𝑡 = 14.8 V in the experiment recording
+the transient behavior, 𝑅 = 0.35 Ω, 𝐿/𝐽𝑚 = 172 H/kg m2, 𝑘𝑞 = 1.2 × 10−7 N m s2/rad2, and 𝑘𝑒 = 8.16 × 10−3 V
+s/rad.
+
+experiment). We then adjust 𝐿/𝐽𝑚 to fit the temporal evolution of the observed and predicted behaviors, where we see
+the agreement is good.
+
+V. Determining Model Parameters for a New BLDC-Propesser System
+The following procedure describes how to find the parameters for our model for a new BLDC-propeller system:
+1) From the manufacturer datasheet of the motor/propeller system, which usually gives steady-state behaviors,
+identify 𝑉𝑏𝑎𝑡𝑡, 𝜔𝑚𝑎𝑥, 𝐹𝑚𝑎𝑥, and 𝑖𝑚𝑎𝑥.
+
+2) Plot thrust as a function of angular velocity as done in Fig. 4 and fit to Eq. 1 to find 𝑘𝑡.
+3) Plot the steady-state thrust as a function of the throttle command (Fig. 5) and fit to Eq. 12 to find 𝛼.
+4) Use Eq. 11 to find 𝛽.
+5) Use Eqs. 13-15 to find 𝑘𝑒, 𝑘𝑚, 𝑅, and 𝑘𝑞.
+6) To use this model to predict the steady-state behavior for a different battery voltage, use Eq. 10 to find the new
+value of 𝛽.
+
+7) Collect dynamic data of the thrust for a step change in the throttle, preferably for a step change in the region
+where the thrust is a nonlinear function of the throttle (e.g., 𝑇 ∼ 0.5). Fit the data to model prediction by adjusting
+the ratio 𝐿/𝐽𝑚.
+
+VI. Discussion
+We present a physics-based model of an ESC-BLDC-propeller model consisting of coupled differential equations
+for the motor current and propeller angular velocity. The coupling gives rise to a nonlinear thrust as a function of the
+throttle, which has the opposite scaling of the motor model currently used in the PX4 flight-control system. Also, the
+dynamics are described by a double-lag solution as opposed to a single-lag solution often found in the literature. The
+controller used in the flight stack can likely be improved using our model for systems that use an ESC that senses the
+back-EMF.
+These results will give new insights for tuning flight control systems and will inform the design of artificial neural
+network - based controllers. In the future, we will generalize the model to account for the system moving in air, which
+will be important for understanding how to design flight controllers for windy situations or aggressive flight maneuvers.
+
+Acknowledgements
+Experimental results for this project were funded in-part by the United States Air Force AFRL/SBRK under Contract
+No. FA864921P0087 and the State of Ohio through the Ohio Third Frontier Technology Validation and Startup Fund
+(TVSF) grant program.
+
+8
+
+
+References
+
+[1] Grieves, M., and Vickers, J., “Digital Twin: Mitigating Unpredictable, Undesirable Emergent Behavior in Complex Systems,”
+Transdisciplinary Perspectives on Complex Systems, edited by F.-J. Kahlen, S. Flumerfelt, and A. Alves, Springer International
+Publishing, Cham, 2017, pp. 85–113. https://doi.org/10.1007/978-3-319-38756-7_4, URL http://link.springer.com/10.1007/978-
+3-319-38756-7_4.
+
+[2] Khan, W., and Nahon, M., “Toward an Accurate Physics-Based UAV Thruster Model,” IEEE/ASME Transactions on
+Mechatronics, Vol. 18, No. 4, 2013, pp. 1269–1279. https://doi.org/10.1109/TMECH.2013.2264105.
+
+[3] Brandt, J., and Selig, M., “Propeller Performance Data at Low Reynolds Numbers,” 49th AIAA Aerospace Sciences Meeting,
+AIAA Paper 2011-1255, Orlando, FL, January 2011, 2011. https://doi.org/10.2514/6.2011-1255.
+
+[4] McCrink, M. H., and Gregory, J. W., “Blade Element Momentum Modeling of Low-Reynolds Electric Propulsion Systems,”
+Journal of Aircraft, Vol. 54, No. 1, 2017, pp. 163–176. https://doi.org/10.2514/1.C033622.
+
+[5] Dantsker, O., Caccamo, C., Deters, R., and Selig, M., “Performance Testing of APC Electric Fixed-Blade UAV Propellers,”
+AIAA Aviation and Aeronautics Forum and Exposition (Aviation 2022), AIAA Paper 2022-4020, Chicago, IL, June 2022, 2022.
+https://doi.org/10.2514/6.2022-4020.
+
+[6] Massé, C., Gougeon, O., Nguyen, D.-T., and Saussié, D., “Modeling and control of a quadcopter flying in a wind field: A
+comparison between LQR and structured H∞ control techniques,” 2018 International Conference on Unmanned Aircraft
+Systems (ICUAS), Dallas, TX, USA, June 12-15, 2018, 2018, pp. 1408–1417. https://doi.org/10.1109/ICUAS.2018.8453402.
+
+[7] Wilhelm, J., and Eberhart, G. M., “Development of a Ground Effect BEMT Analysis Method for Multirotor sUAS,”
+2018 AIAA Information Systems-AIAA Infotech @ Aerospace, Kissimmee, FL, USA, January 8-12, 2018, 2018, pp. 1–11.
+https://doi.org/10.2514/6.2018-0747.
+
+[8] Kaufmann, E., Loquercio, A., Ranftl, R., Müller, M., Koltun, V., and Scaramuzza, D., “Deep Drone Acrobatics,” https:
+//arxiv.org/abs/2006.05768, 2020.
+
+[9] Stevens, B., Lewis, F., and Johnson, E., Aircraft control and simulation, 3rd ed., John Wiley & Sons, Hoboken, NJ, 2016, Ch. 8.
+
+[10] “PX4 Autopilot User Guide,” https://docs.px4.io/main/en/, 2023. [Online; accessed 24-May-2023].
+
+[11] Brown, W., “Microchip AN857: Brushless DC Motor Control Made Easy,” https://ww1.microchip.com/downloads/en/Appnotes/
+AN857-Brushless-DC-Motor-Control-00000857C.pdf, 2002. [Online; accessed 29-May-2023].
+
+[12] “Multicopter PID Tuning Guide,” https://docs.px4.io/v1.12/en/config_mc/pid_tuning_guide_multicopter.html, 2023. [Online;
+accessed 24-May-2023].
+
+9
+
+

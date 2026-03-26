@@ -1,0 +1,1104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Prediction of Atomization Energy Using Graph Kernel and Active Learning</title>
+				<funder>
+					<orgName type="full">Luis W. Alvarez Postdoctoral Fellowship</orgName>
+				</funder>
+				<funder>
+					<orgName type="full">Lawrence Berkeley National Laboratory</orgName>
+				</funder>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Yu-Hang</forename><surname>Tang</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="institution">Lawrence Berkeley National Laboratory</orgName>
+								<address>
+									<postCode>94720</postCode>
+									<settlement>Berkeley</settlement>
+									<region>California</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Wibe</forename><forename type="middle">A</forename><surname>De Jong</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="institution">Lawrence Berkeley National Laboratory</orgName>
+								<address>
+									<postCode>94720</postCode>
+									<settlement>Berkeley</settlement>
+									<region>California</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Prediction of Atomization Energy Using Graph Kernel and Active Learning</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+					<idno type="MD5">B32CEC7ED5E065F9AC02DFDB210C03FD</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-03T22:08+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<textClass>
+				<keywords>
+					<term>data-driven modeling</term>
+					<term>structured data</term>
+					<term>labeled graph</term>
+					<term>kernel method</term>
+					<term>quantum mechanics</term>
+					<term>computational chemistry</term>
+				</keywords>
+			</textClass>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Data-driven prediction of molecular properties presents unique challenges to the design of machine learning methods concerning data structure/dimensionality, symmetry adaption, and confidence management. In this paper, we present a kernel-based pipeline that can learn and predict the atomization energy of molecules with high accuracy. The framework employs Gaussian process regression to perform predictions based on the similarity between molecules, which is computed using the marginalized graph kernel. To apply the marginalized graph kernel, a spatial adjacency rule is first applied to convert molecules into graphs whose vertices and edges are labeled by elements and interatomic distances, respectively. We then derive formulas for the efficient evaluation of the kernel. Specific functional components for the marginalized graph kernel are proposed, while the effect of the associated hyperparameters on accuracy and predictive confidence are examined. We show that the graph kernel is particularly suitable for predicting extensive properties because its convolutional structure coincides with that of the covariance formula between sums of random variables.</p><p>Using an active learning procedure, we demonstrate that the proposed method can achieve a mean absolute error of 0.62 ± 0.01 kcal/mol using as few as 2000 training samples on the QM7 data set.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">Introduction</head><p>The chemistry and materials communities have embraced data science and machine learning to bring about revolutionizing solutions to long-standing challenges in molecular modeling, optimal experiment design, and high-throughput structure screening <ref type="bibr" target="#b0">[1]</ref><ref type="bibr" target="#b1">[2]</ref><ref type="bibr" target="#b2">[3]</ref><ref type="bibr" target="#b3">[4]</ref><ref type="bibr" target="#b4">[5]</ref>. One particularly promising application of machine learning techniques is to train predictive models for molecular properties that are otherwise only available through expensive dynamics simulations and quantum mechanical calculations. This type of regression tasks typically entail quality requirements concerning:</p><p>1. accuracy: While the atomization energy of drug-like ligands are on or above the order of 10 3 kcal/mol, it is the binding energy, i.e. the difference between the energy of two ligand-protein complexes, that is sought for applications such as drug screening. It is therefore expected that a good predictive model should carry less than 1 kcal/mol absolute error, or 10 -3 relative error; 2. smoothness: The prediction must be at least twice differentiable with regard to the molecular geometry for a model to be usable as a force field for dynamics simulations; Gaussian process regression (GPR) <ref type="bibr" target="#b5">[6]</ref> is a robust regression method that features high accuracy, strong smoothness guarantee, and built-in uncertainty estimation. It is a Bayesian inference method that models the similarity among the sample points as covariance between random variables indexed by the input space. The probabilistic model generated by GPR can make not only a point estimate about an unknown sample, but also the associated posterior variance. Since the predictive variance vanishes around training samples and grows in regions that are not supported by the sample data, it can be conveniently used as a measure of predictive uncertainty for outlier detection. As shown in fig. <ref type="figure">1</ref>, the GPR predictive uncertainty can be readily used to implement an active-learning protocol where test samples with large uncertainties are sought and added to the training set in an iterative process.</p><p>A critical component in a GPR model is a function that estimates the covariance of target values between pairs of data samples. In the context of molecular property prediction, a covariance function translates structural similarity into correlations between the target properties using the similar property principle <ref type="bibr" target="#b6">[7]</ref>. In fact, covariance functions belong to the family of similarity kernels, which are bivariate functions that compute the closeness of two vectors in some normed vector space. A kernel is also a convenient place for encapsulating symmetry adaption mechanisms that are transparent to subsequent GPR computations. The two most wellknown kernels on Euclidean spaces are probably the dot product kernel and the square exponential kernel, which defines similarity based on angle and distance, respectively.</p><p>Meanwhile, designing valid kernels on non-Euclidean spaces as those spanned by molecular configurations and conformations is an inherently challenging task, because the kernel must satisfy certain properties such as symmetry and positive-definiteness to ensure convexness of the resulting machine learning model <ref type="bibr" target="#b5">[6]</ref>. An approach that is commonly used in existing implementations <ref type="bibr" target="#b7">[8,</ref><ref type="bibr" target="#b8">9]</ref> is to apply an Euclidean kernel to fixedlength feature vectors that are computed using a molecular fingerprinting algorithm. Examples of this approach include the atom-centered symmetry function fingerprints <ref type="bibr" target="#b9">[10]</ref>, the Coulomb matrix <ref type="bibr" target="#b10">[11]</ref>, the densityencoded canonically-aligned fingerprint <ref type="bibr" target="#b11">[12]</ref>, the encoded bonds descriptor <ref type="bibr" target="#b12">[13]</ref> and so on. The smooth overlap of atomic positions kernel <ref type="bibr" target="#b13">[14]</ref> used in practice also effectively computes the inner product using a fixed-length vector representation of the spherical power spectra of atomic mass density.</p><p>Despite the success of the feature vector approach, it is important to point out that squashing a molecule, which is intrinsically a non-linear structure with a variable number of degrees of freedom, into a fixed-length feature vector could be a detour that compromises the generalizability of machine learning models across the diverse chemical space. This is likely the reason why fingerprints are prevalently used to describe local atomistic neighborhoods that possess bounded complexities. In contrast, an intrinsically non-linear data structure, such as a graph, could be a powerful and intuitive representation to capture all the geometric and topological information of whole molecules <ref type="bibr" target="#b14">[15,</ref><ref type="bibr" target="#b15">16]</ref>. Moreover, there has been extensive work on the design of graph kernels, which compute the similarity between graphs without resorting to a fixed length intermediate presentation <ref type="bibr" target="#b16">[17]</ref><ref type="bibr" target="#b17">[18]</ref><ref type="bibr" target="#b18">[19]</ref><ref type="bibr" target="#b19">[20]</ref><ref type="bibr" target="#b20">[21]</ref><ref type="bibr" target="#b21">[22]</ref><ref type="bibr" target="#b22">[23]</ref>. A particularly attractive feature of the graph kernels is their ability to adapt to graphs with arbitrary numbers of vertices and edges.</p><p>In this work, we present how a particular type of graph kernel, i.e. the marginalized graph kernel <ref type="bibr" target="#b23">[24]</ref>,</p><p>can be integrated into a Gaussian process regression-based active learning pipeline for molecular atomization energy prediction. In section 2, we introduce the mathematical formulations for the techniques used in this study, including the marginalized graph kernel, Gaussian process regression, and active learning. In section 3, we present computational setup and results. We conclude the work in section 4.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">Method</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1">Overview</head><p>In fig. <ref type="figure" target="#fig_1">2</ref>, we present an overview of the machine learning pipeline proposed in this work. Given a set of training molecules, a GPR model can be constructed using the pairwise similarity matrix among the molecules to fit for the assocaited target values. To compute the similarity, the molecules are converted into graphs with vertices labeled by the atoms and edges encoding interatomic distances. The marginalized graph kernel is then applied to average over the similarities of all paths generated from simultaneous random walks on each pair of graphs.</p><p>Predictions for the energy of new molecules can be made using the pairwise similarity matrix among the new molecules and the cross-similarity matrix between the new molecule and the training molecules. In the subsections below, we will explain in detail each component of the procedure.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2">Preliminaries</head><p>We use lower case letters, e.g. a, in bold font to denote vectors, and upper case letters in bold font, e.g. A,</p><p>for matrices. By default, we assume vectors are column vectors. We use diag(a) to denote a diagonal matrix whose diagonal elements are specified by a, and use I to refer to the identity matrix.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 1 Kronecker product</head><p>Given matrices A ∈ R m1×n1 and B ∈ R m2×n2 , the Kronecker product A ⊗ B ∈ R m1m2×n1n2 is defined as:</p><formula xml:id="formula_0">A ⊗ B :=            A 1,1 B A 1,2 B . . . A 1,n1 B A 2,1 B A 2,2 B . . . A 2,n1 B . . . . . . . . . . . . A m1,1 B A m1,2 B . . . A m1,n1 B            , e.g.     1 -1 2 10     ⊗     1 2 3 4     =            1 2 -1 -2 3 4 -3 -4 2 4 10 20 6 8 30 40           </formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 2 Hadamard (element-wise) product</head><p>The element-wise product, also known as the Hadamard product, between two matrices of the same size A, B ∈</p><formula xml:id="formula_1">R m×n is another matrix A ⊙ B ∈ R m×n with (A ⊙ B) ij := A ij B ij .</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 3 Undirected graph</head><p>An undirected graph G is a discrete structure consisting of a set of uniquely-indexed vertices</p><formula xml:id="formula_2">V = {v 1 , v 2 , . . . , v n }</formula><p>and a set of undirected edges E ⊂ V × V . The vertices and edges may be labeled using elements from label sets Σ v and Σ e , respectively.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 4 Weighted graph</head><p>In a weighted graph, each edge (v i , v j ) is associated with a non-negative weight w ij . In undirected graphs w ij = w ji . w ij = 0 if v i and v j are not connected by an edge. An unweighted graph can be regarded as a specialized weighted graph where w ij = 1 between each pair of (v i , v j ) connected by an edge and 0 elsewhere.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 5 Walk on graph</head><p>Two vertices are neighbors if they are connected by an edge. A walk on a graph is a sequence of vertices such that all pairs of adjacent vertices are neighbors.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Definition 6 Adjacency matrix</head><p>The adjacency matrix of a graph of n vertices is a matrix A ∈ R n×n with A ij = w ij . The adjacency matrices of undirected graphs are symmetric since w ij ≡ w ji .</p><p>The row-normalized adjacency matrix P := diag(d) -1 A, where d i := ∑ j A ij is the vertex degree vector, can be used as the transition matrix of a Markovian random walk process. In other words, P ij could be interpreted as the conditional probability for a random walker at vertex v i to jump to v j during a single step.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.3">Graph Kernel for Molecules</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.3.1">Graph Representations for Molecules</head><p>The practice of using labeled graphs, with the exemplary ball-and-stick model, to represent molecules has gained popularity well before the era of machine learning. In this work, we represent a molecule of n atoms as an undirected graph Graph kernel and active learning for molecular energy labeled by the distance between the atoms, while its weight w ij is set by a spatial adjacency rule A(r i , r j ), whose specific form will be discussed in section 3.1. The adjacency matrix of a molecular graph is thus</p><formula xml:id="formula_3">G = { V = {v i }, E = {e ij } } , i, j ∈ {1 . . . n},</formula><formula xml:id="formula_4">A ij = A(r i , r j ).</formula><p>Note that the edges are often supersets of the collection of covalent bonds in a molecule.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.3.2">Marginalized Graph Kernel</head><p>The marginalized graph kernel K(G, G ′ ) <ref type="bibr" target="#b23">[24]</ref> defines the overall similarity between two graphs as the expectation of the path similarity between all pairs of paths that can be obtained by performing simultaneous random walks on two graphs G and G ′ . The explicit formula for the path similarity expectation takes the form:</p><formula xml:id="formula_5">K(G, G ′ ) = ∞ ∑ ℓ=1 ∑ h ∑ h ′ [ p s (h 1 ) p ′ s (h ′ 1 ) K v (v h1 , v ′ h ′ 1 ) p q (h ℓ ) p ′ q (h ′ ℓ ) × ( ℓ ∏ i=2 p t (h i |h i-1 ) ) ×   ℓ ∏ j=2 p ′ t (h ′ j |h ′ j-1 )   × ( ℓ ∏ k=2 K v (v h k , v ′ h ′ k )K e (e h k-1 h k , e ′ h ′ k-1 h ′ k ) ) ]</formula><p>.</p><p>(</p><p>Here, ℓ is the length of the path, h and h ′ are paths on the graphs represented by length-ℓ vectors of vertex labels, p s (•) is the starting probability of the random walk on each vertex, p q (•) is the stopping probability of the random walk on each vertex at any given step, p t (•, •) is the transition probability between a pair of vertices, K v (•, •) is an elementary kernel that computes the similarity between two vertices, K e (•, •) is another elementary kernel that computes the similarity between pairs of bonds.</p><p>Despite the overwhelming appearance of the infinite summation, eq. ( <ref type="formula" target="#formula_6">1</ref>) can be reformulated under the spirit of dynamic programming as:</p><formula xml:id="formula_7">K(G, G ′ ) = ∑ h1∈V,h ′ 1 ∈V ′ p s (h 1 ) p ′ s (h ′ 1 ) K v (h 1 , h ′ 1 ) R ∞ (h 1 , h ′ 1 ),<label>(2)</label></formula><p>where R ∞ is the solution to the linear system:</p><formula xml:id="formula_8">R ∞ (h 1 , h ′ 1 ) = p q (h 1 ) p ′ q (h ′ 1 ) + ∑ i∈V,j∈V ′ t(i, j, h 1 , h ′ 1 ) R ∞ (i, j),<label>(3)</label></formula><p>with</p><formula xml:id="formula_9">t(i, j, h 1 , h ′ 1 ) := p t (i|h 1 ) p ′ t (j|h ′ 1 ) K v (v i , v j ) K e (e i h1 , e j h ′ 1 ).<label>(4)</label></formula><p>Equations ( <ref type="formula" target="#formula_7">2</ref>) to (4) in fact exhibit a Kronecker product structure, which can be readily recognized in matrix</p><p>Tang et al.</p><p>Graph kernel and active learning for molecular energy form:</p><formula xml:id="formula_10">K(G, G ′ ) = ( p ⊗ p ′ ) T • diag ( v Kv ⊗ v ′ ) • r ∞ ,<label>(5)</label></formula><p>with r ∞ being the solution to the linear system</p><formula xml:id="formula_11">r ∞ = q ⊗ q ′ + [( P ⊗ P ′ ) ⊙ ( E Ke ⊗ E ′ )] • diag ( v Kv ⊗ v ′ ) • r ∞ , (<label>6</label></formula><formula xml:id="formula_12">)</formula><p>where</p><formula xml:id="formula_13">v is the vertex label vector of G with v i = v i ;</formula><p>p is the starting probability vector of G with</p><formula xml:id="formula_14">p i = p s (v i );</formula><p>q is the stopping probability vector of G with q i = p q (v i );</p><p>P is the transition probability matrix as defined in definition 6, where the augmented degree di = ∑ j A ij /(1 -q i ) ensure that the transition and stopping probabilities on each node sum to 1;</p><formula xml:id="formula_15">E is the edge label matrix of G with E ij = e ij ;</formula><p>v ′ , p ′ , q ′ , P ′ , E ′ are the corresponding vectors and matrices for G ′ ; Kv ⊗ is the kernelized Kronecker product between v and v ′ where K v (•, •) replaces the product operation between the vertex labels;</p><p>Ke ⊗ is the kernelized Kronecker product between E and E ′ where K e (•, •) replaces the product operation between the edge labels.</p><p>For clarity of the discussion below, we denote</p><formula xml:id="formula_16">V × := diag ( v Kv ⊗ v ′</formula><p>) ,</p><formula xml:id="formula_17">D × := diag( d) ⊗ diag( d′ ), A × := A ⊗ A ′ , P × := P ⊗ P ′ = D -1 × A × , E × := E Ke ⊗ E ′ , p × := p ⊗ p ′ , q × := q ⊗ q ′ .</formula><p>To solve eq. ( <ref type="formula" target="#formula_11">6</ref>), first observe that only the product V × r ∞ as a whole is needed to compute K(G, G ′ ). We can thus rearrange eq. ( <ref type="formula" target="#formula_11">6</ref>) to form a symmetric linear system.</p><formula xml:id="formula_18">r ∞ -(P × ⊙ E × ) V × r ∞ = q × (7) ( V -1 × -P × ⊙ E × ) V × r ∞ = q × (8) V × r ∞ = ( V -1 × -P × ⊙ E × ) -1 q × (9) = [ V -1 × - ( D -1 × A × ) ⊙ E × ] -1 q × (10) = ( D × V -1 × -A × ⊙ E × ) -1 D × q × (11)</formula><p>Tang et al.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Graph kernel and active learning for molecular energy</head><p>The linear system D × V -1 × -A × ⊙E × in eq. ( <ref type="formula">11</ref>) is symmetric and positive-definite, as long as q &gt; 0, K v (•, •) &lt;= 1, and K e (•, •) &lt;= 1. It can be solved efficiently using an iterative method such as conjugate gradient <ref type="bibr" target="#b24">[25,</ref><ref type="bibr" target="#b25">26]</ref>. The full expression for the marginalized graph kernel in matrix form is then</p><formula xml:id="formula_19">K(G, G ′ ) = p T × ( D × V -1 × -A × ⊙ E × ) -1 D × q × (<label>12</label></formula><formula xml:id="formula_20">)</formula><p>'Stray' atoms, i.e. atoms that are not neighbors to any other atoms, have d i = 0. This pathological situation can render the linear system singular, and is resolved by setting the corresponding d i = q i = 1. This is equivalent to immediately terminating any random walk path originating from the stray atoms. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.4">Gaussian</head><formula xml:id="formula_21">E * := [E * 1 , . . . , E * n ] T = K T D * K -1 DD y D ,<label>(13)</label></formula><p>which is identical to that in kernel ridge regression <ref type="bibr" target="#b26">[27]</ref>. The predictive uncertainty is given by the posterior covariance matrix</p><formula xml:id="formula_22">Σ * = K * * -K T D * K -1 DD K D * . (<label>14</label></formula><formula xml:id="formula_23">)</formula><p>Here,</p><formula xml:id="formula_24">K n×n DD (i, j) = K(M i , M j ),<label>(15)</label></formula><formula xml:id="formula_25">K n×m D * (i, j) = K(M i , M * j ),<label>(16)</label></formula><formula xml:id="formula_26">K m×m * * (i, j) = K(M * i , M * j )<label>(17)</label></formula><p>are the training set covariance matrix, training-test cross-covariance matrix, and test set covariance matrix, respectively, that are obtained by iterating the graph kernel over all pairs of molecules from the corresponding datasets.</p><p>The marginalized graph kernel is particularly suitable for predicting extensive properties such as molecular energy. To see why, first recall that the kernel possesses a vertex-wise summation structure ∑ h,h ′ • • • as manifested in eq. ( <ref type="formula" target="#formula_7">2</ref>), and that R ∞ (h 1 , h ′ 1 ) can be alternatively expressed as</p><formula xml:id="formula_27">R ∞ (h 1 , h ′ 1 ) = ∞ ∑ ℓ=1 r ℓ (h 1 , h ′ 1 )<label>(18)</label></formula><p>Tang et al.</p><p>Graph kernel and active learning for molecular energy with</p><formula xml:id="formula_28">r 1 (h 1 , h ′ 1 ) = p q (h 1 ) p ′ q (h ′ 1 ),<label>(19)</label></formula><formula xml:id="formula_29">r ℓ (h 1 , h ′ 1 ) = ∑ h2,h ′ 2   t(h 2 , h ′ 2 , h 1 , h ′ 1 ) ∑ h3,h ′ 3 [ t(h 3 , h ′ 3 , h 2 , h ′ 2 ) ∑ ... [ . . . ∑ h ℓ ,h ′ ℓ t(h ℓ , h ′ ℓ , h ℓ-1 , h ′ ℓ-1 ) p q (h ℓ ) p ′ q (h ′ ℓ ) ] ]   . (<label>20</label></formula><formula xml:id="formula_30">)</formula><p>Equation ( <ref type="formula" target="#formula_7">2</ref>), eq. ( <ref type="formula" target="#formula_27">18</ref>), and eq. ( <ref type="formula" target="#formula_29">20</ref>) together indicate that each of the p s (h</p><formula xml:id="formula_31">1 ) p ′ s (h ′ 1 ) K v (h 1 , h ′ 1 ) R ∞ (h 1 , h ′ 1 )</formula><p>terms effectively computes the expectation of the similarity between all random walk paths originating from the pair of vertices (h 1 , h ′ 1 ). We could thus regard it as a vertex-wise atomistic neighborhood similarity kernel, denoted as κ(•, •):</p><formula xml:id="formula_32">κ(h 1 , h ′ 1 ) . = p s (h 1 ) p ′ s (h ′ 1 ) K v (h 1 , h ′ 1 ) R ∞ (h 1 , h ′ 1 ).<label>(21)</label></formula><p>The overall similarity between two graphs as computed by the marginalized graph kernel is thus merely a summation over the similarity between all pairs of vertices, i.e.</p><formula xml:id="formula_33">K(G, G ′ ) = ∑ v,v ′ κ(v, v ′ ).<label>(22)</label></formula><p>From this perspective, the graph kernel can also be viewed as a global structural kernel, as mentioned in <ref type="bibr" target="#b27">[28]</ref>,</p><p>that sums over the environment covariance matrix computed between atomistic neighborhoods.</p><p>To ensure extensiveness of the energy prediction, we can hypothetically predict the individual contributions of each atom to the total energy of an unknown molecule, and then sum up the contributions. We assume that there exists some energy decomposition algorithm (EDA) <ref type="bibr" target="#b28">[29]</ref> that could localize the energy of a molecule among its atoms as {e 1 , e 2 , . . .} = EDA(E; M ) subject to ∑ i e i = E. Note that the EDA scheme is purely formal and is never explicitly used, as will be shown shortly. Using κ(•, •) as a covariance function, we obtain the following GPR formulation: </p><formula xml:id="formula_34">           e * 1 e * 2 . . . e * n            =                        κ(v * 1 , v 1 1 ) κ(v * 2 , v 1 1 ) . . . κ(v * 1 , v 1 2 ) κ(v * 2 , v 1 2 ) . . . . . . . . . . . . κ(v * 1 , v 2 1 ) κ(v * 2 , v 2 1 ) . . . κ(v * 1 , v 2 2 ) κ(v * 2 , v 2 2 ) . . . . . . . . . . . . . . . . . . . . .                        T                        κ(v 1 1 , v 1 1 ) κ(v 1 1 , v 1 2 ) . . . κ(v 1 1 , v 2 1 ) κ(v 1 1 , v 2 2 ) . . . . . . κ(v 1 2 , v 1 1 ) κ(v 1 2 , v 1 2 ) . . . κ(v 1 2 , v 2 1 ) κ(v 1 2 , v 2 2 ) . . . . . . . . . . . . . . . . . . . . . . . . . . . κ(v 2 1 , v 1 1 ) κ(v 2 1 , v 1 2 ) . . . κ(v 2 1 , v 2 1 ) κ(v 2 1 , v 2 2 ) . . . . . . κ(v 2 2 , v 1 1 ) κ(v 2 2 , v 1 2 ) . . . κ(v 2 2 , v 2 1 ) κ(v 2 2 , v</formula><formula xml:id="formula_35">                       -1                        e 1 1 e 1 2 . . . e 2 1 e 2 2 . . . . . .                        , (<label>23</label></formula><formula xml:id="formula_36">)</formula><p>where the superscripts correspond to molecule ids.</p><p>Tang et al.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Graph kernel and active learning for molecular energy</head><p>Under the multivariate normality condition, the total energy E, being the sum of individual random variables representing atomic energies, is itself a normally distributed random variable, The variance of E is</p><formula xml:id="formula_37">var[E] = var[ ∑ i e i ] = ∑ ij cov(e i , e j ), while the covariance between E and E ′ is cov[E, E ′ ] = cov[ ∑ i e i , ∑ j e ′ j ] = ∑ ij cov[e i , e ′ j ]</formula><p>. Note that this exhibits exactly the same pairwise summation structure as that of the marginalized graph kernel. Thus, by summing up the cross-covariance submatrices between pairs of molecules in eq. ( <ref type="formula" target="#formula_35">23</ref>) and substituting K(•, •) for</p><formula xml:id="formula_38">∑ ij κ(v i , v ′ j )</formula><p>, we could define an alternative GPR model that bypasses energy decomposition:</p><formula xml:id="formula_39">E * =        K[M * , M 1 ] K[M * , M 2 ] . . .        T        K[M 1 , M 1 ] K[M 1 , M 2 ] . . . K[M 2 , M 1 ] K[M 2 , M 2 ] . . . . . . . . . . . .        -1        E 1 E 2 . . .        . (<label>24</label></formula><formula xml:id="formula_40">)</formula><p>This leads exactly back to eq. ( <ref type="formula" target="#formula_21">13</ref>). Thus, we have shown that when only the total energy is of interest, a GPR prediction for the energy of an entire molecule using the marginalized graph kernel is equivalent to a summation of the GPR predictions for the localized atomic contributions using an atomistic neighborhood kernel.</p><p>The former approach, however, avoids the potentially costly and controversial explicit energy decomposition, while still enjoying automatic scaling of the predicted energy with respect to molecule size. This approach can also speed up GPR computation by creating covariance matrices whose size is proportional to the number of molecules, rather than the number of total atoms, in the data set.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.4.2">Active Learning Protocol</head><p>Given a training set S, a test set T , an acquisition function Q(•, •) that measures the learning value of a sample given a GPR model, active learning can be performed using the following protocol:</p><formula xml:id="formula_41">1: repeat 2:</formula><p>G ← TrainGPR(S), 3:</p><formula xml:id="formula_42">α ← argmax i∈T Q(G, i), 4:</formula><p>S ← S ∪ {α},</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>5:</head><p>T ← T \ {α}, 6: until stop criteria met.</p><p>A natural choice of the acquisition function would be prediction error, which is the absolute difference between the GPR prediction and the truth value of the target function at the sample points. However, since the ground truth may not be known or is too difficult to obtain for every point in practice, the GPR predictive uncertainty could be used as an alternative acquisition function. In this case, the 'unsupervised' learning procedure can proceed even without any target function value due to the fact that the GPR posterior variance does not depend on the target value.</p><p>3 Computation and Results</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1">Kernel Specification and Data Set</head><p>The vertex elementary kernel that we use for the marginalized graph kernel is an elevated Kronecker delta function on element symbols:</p><formula xml:id="formula_43">K v (v, v ′ ) =      1, if v = v ′ , ν ∈ (0, 1), otherwise.<label>(25)</label></formula><p>The edge elementary kernel is a square exponential function on edge lengths, which evaluates to 1 if two edges are of the same length and smoothly transitions to 0 as the difference in lengths grows:</p><formula xml:id="formula_44">K e (e, e ′ ) = exp [ - 1 2 (e -e ′ ) 2 λ 2 ] . (<label>26</label></formula><formula xml:id="formula_45">)</formula><p>The adjacency rule that computes the weights for each edge also assumes a square exponential form:</p><formula xml:id="formula_46">A(r i , r j ) = exp [ - 1<label>2</label></formula><formula xml:id="formula_47">∥r i -r j ∥ 2 (ζ σ ij ) 2 ] ,<label>(27)</label></formula><p>where σ ij , as given in the appendix, are element-wise length scale parameters derived from typical bonding lengths. A uniform starting probability p s (•) ≡ s and a uniform stopping probability p q (•) ≡ q are used across all vertices.</p><p>In fig. <ref type="figure" target="#fig_4">3</ref>, we visualize in matrix form the atomistic neighborhood similarities V × r ∞ between a methoxyethane The QM7 dataset, which contains 7165 molecules with up to 7 heavy atoms and 23 total atoms along with their atomization energies, is used as the data set for benchmarking purposes <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b29">30]</ref>.</p><formula xml:id="formula_48">(</formula></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2">Hyperparameter Selection</head><p>The complete marginalized graph kernel as specified in section 3.1 is controlled by 5 hyperparameters ν, ζ, λ, s, and q, each of which possesses a unique physical interpretation:</p><p>• ν is the baseline, or 'prior' , similarity that we assign between atoms of difference elements. ν must be within (0, 1) to ensure that the linear system in eq. ( <ref type="formula">11</ref>) is positive-definite.</p><p>• ζ controls how quickly the weight of an edge decays with regard to increasing interatomic distance.</p><p>It affects the edge density of the molecular graph and is one of the two factors that determines the neighborhood range of each atom.</p><p>• λ control the sensitivity of the kernel with respect to differences in edge length. Since the order of a covalent bond is strongly correlated with its length, λ can be effectively used to discriminate different Tang et al.</p><p>Graph kernel and active learning for molecular energy Each square tile corresponds to an element of the V×R∞ vector, which is a weighted average (marginalization) of the similarity between all paths generated by simultaneous random walks originating from the two atoms. The matrices effectively visualizes the atomistic neighborhood similarities with darker colors indicate higher similarity. Note for example the difference in similarity between the oxygen atoms in the ether bond to itself and to the oxygen atom in the alcohol group.</p><formula xml:id="formula_49">C O H H 6 H 4 H 8 C 3 H 2 O 1 C 2 H 7 C 1 H 1 H 5 H 3 H 6 H 4 H 8 C 3 H 2 O 1 C 2 H 7 C 1 H 1 H 5 H 3 H 3 H 5 H 1 C 1 H 7 C 2 H 9 O 1 H 2 C 3 H 4 C 4 O 2 H 10 H 6 H 8 C 1 C 2 C 3 O 1 H 1-3 H 4-5 H 6-8 C 1 C 2 C 3 O 1 H 1-3 H 4-5 H 6-8 C 1 C 2 C 3 C 4 O 1 O 2 H 1-3 H 4-5 H 6-7 H 8-9 H 10</formula><p>types of bonds.</p><p>• s affects the sampling preference of the simultaneous random walk among pairs of vertices, and could thus be thought as a factor of significance. From the perspective of GPR modeling, the magnitude of s is the a priori standard deviation of atomic contributions to molecular energy. In practice, we may abandon the probabilistic interpretation of s and allow it to assume values that do not sum up to unity.</p><p>• q determines the average length of the random walk paths being sampled, and together with ζ determines the range of the atomistic neighborhoods that are effectively compared between atoms. Graph kernel and active learning for molecular energy MAE and error-uncertainty correlation. These hyperparameters lead to GPR models with both high predictive accuracy and uncertainty-error correlation, the latter of which is crucial for unsupervised active learning. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Maximum likelihood estimation (MLE</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>MAE (kcal/mol)</head><p>Figure <ref type="figure">4</ref>: Upper: The extended vertical tail of the error-likelihood joint distribution indicate that GPR models with high log-likelihood could still possess good predictive power. Lower: Despite that the correlation between the predictive uncertainty and error generally decrease as the accuracy of the GPR models improve, it is still always possible to find sets of hyperparameters that lie close to the upper left corner of the plots, which are the regions corresponding to relatively low errors and high uncertainty-error correlation. The latter property is crucial for effective unsupervised active learning. The densities are estimated using a grid of 5400 hyperparameters sets.</p><p>A further examination on the conditional distribution of the mean absolute error, log-log-likelihood, and error-uncertainty correlation provides additional insights into the effect of the hyperparameters. As shown by fig. <ref type="figure">5</ref>, the edge kernel length scale parameter λ appears to be the single most sensitive hyperparameter, followed by ζ, ν, and q, that affects both predictive accuracy and error-uncertainty correlation. A uniform starting probability s seems to only affect the model likelihood. However, s actually scales the magnitude of the predictive uncertainty, which in turn controls the width of the GPR predictive confidence interval. As shown in fig. <ref type="figure" target="#fig_8">6</ref>, we examine how s affects the quality of the predictive uncertainty as an alternative to the Tang et al.</p><p>Graph kernel and active learning for molecular energy true error, which may not be known in practice, by checking if the predictive confidence intervals contain a proportional percentage of the true value of the test samples. For example, an interval surrounding the predictive mean that corresponds to a 50% confidence level should roughly contain the true value of 50% of the test samples. Overall, we found that a proper choice of s can lead to a coverage curve that lies very close to the diagonal. Meanwhile, the GPR model has a general tendency to be overfident with large training sets, most likely due to the existence of molecules that consistently cause large errors as demonstrated later in the lower panel of fig. <ref type="figure" target="#fig_11">7</ref>. In the subsequent section, we use ζ = 1, ν = 0.3, λ = 0.05, s = 250, and q = 0.05 for all GPR modeling tasks.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>MAE (kcal/mol)</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Log-log-likelihood</head><p>Error-uncertainty correlation Figure <ref type="figure">5</ref>: Shown here is the distribution of the mean absolute error, log-log-likelihood, and error-uncertainty correlation of GPR models conditioned on each specific value of the hyperparameters. 300 molecules are randomly selected from the QM7 dataset as the training set, while the remaining 6865 molecules form the test set. The accuracy and error-uncertainty correlation of the resulting GPR model are influenced mostly by ζ, ν, λ, and q, while the log-likelihood function is most strongly affected by s and q. The choice of the optimal hyperparameter apparently becomes a subtle problem due to the non-trial dependency between accuracy and error-uncertainty correlation.  </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3">Energy Prediction</head><p>As a first benchmark of prediction accuracy, we use a random selection of N molecules from the QM7 dataset to train GPR models and measure the MAE and root-mean square error (RMSE) on energy prediction for the rest of the molecules. As shown in the upper left panel of fig. <ref type="figure" target="#fig_11">7</ref> and in Table <ref type="table" target="#tab_4">1</ref>, using 15 randomly selected training sets, the presented method delivers an MAE of 1.01 ± 0.04 kcal/mol when N = 5000. This is comparable to the best of existing methods <ref type="bibr" target="#b12">[13,</ref><ref type="bibr" target="#b27">28,</ref><ref type="bibr" target="#b30">[31]</ref><ref type="bibr" target="#b31">[32]</ref><ref type="bibr" target="#b32">[33]</ref><ref type="bibr" target="#b33">[34]</ref><ref type="bibr" target="#b34">[35]</ref>. We further examined the performance of the method for carrying out the active learning protocol as described in section 2.4. In the lower panel of fig. <ref type="figure" target="#fig_11">7</ref>, we visualize some of the molecules that consistently cause large prediction errors even with the various GPR models trained with up to 5000 molecules. It is easy to recognize that a common feature present in molecule A-D is the three-membered ring, which is a highly distorted structure.</p><p>Molecule E and F contain a conjugated triple bond system and an unsaturated bicyclic ring with an oxygen bridge, respectively, which are rare in the benchmark dataset. The lack of explicit angular information in our current implementation could have weakened the performance of the graph kernel in such situations.</p><p>Nonetheless, the GPR model is potentially able to use high predictive uncertainties as a form of alert to trigger fall-back mechanisms such as alternative calculations.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">Conclusion</head><p>In this paper, we presented a new machine learning pipeline, which integrates the marginalized graph kernel, the Gaussian process regression method, and an active learning protocol, for predicting molecular atomization energies. The method achieves excellent accuracy while using significantly smaller training sets as compared with previous methods. We show that the marginalized graph kernel defines a molecular similarity metric that is computed using both topological and geometric information, and that the kernel can naturally adapt to molecules containing diverse topology, number of atoms, and element species. GPR models created using the marginalized graph kernel can produce energy predictions that scale properly with molecule size while bypassing any explicit energy decomposition procedure. We demonstrate that the convolutional -or pairwise summation -structure of the kernel is crucial in enabling the prediction of extensive properties that automatically scales with molecule size. It is worth noting that the work is inspired by the localized random walk graph kernel for molecules proposed by Ferré et al <ref type="bibr" target="#b34">[35]</ref>, which is essentially a localized marginalized graph kernel equipped with constant vertex and edge kernels.</p><p>We expect that the presented method could benefit from a more thorough design and selection of the  Reference designation: FHB <ref type="bibr" target="#b34">[35]</ref>, HMB <ref type="bibr" target="#b30">[31]</ref>, HBR <ref type="bibr" target="#b31">[32]</ref>. Upper right: Comparison of the performance between GPR models built from random training sets and those built from an active learning process. Lower: Even with models trained on 5000 randomly chosen samples, some molecules can consistently cause large prediction error. This behavior is attributed to highly strained geometric features such as 3-rings and conjugated triple bonds. Fortunately, the GPR model is able to use high predictive uncertainties to inform users of such situations , and to prioritize the inclusion of those molecules during active learning. hyperparameters involving, for example, pairwise priors that are tailored between each type of atoms and bonds. Incorporation of explicit angular information into the vertices should greatly improve the ability of the kernel to recognize and differentiate molecules with highly strained geometry. A wider adoption of the graph kernel entail a more efficient computer implementations that can work around the quartic asymptotic computational cost for solving the Kronecker product system induced by large molecules such as polymers, proteins, and polynucleotides. </p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>3 .Figure 1 :</head><label>31</label><figDesc>Figure1: An active learning procedure is carried out to learn the Lennard-Jones potential between two atoms. By iteratively adding the point with the largest predictive uncertainty into the training set, the GPR model quickly converges to the ground truth using a relative small amount of samples.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 2 :</head><label>2</label><figDesc>Figure2: An overview of the proposed machine learning pipeline. Upper: molecules are first converted into labeled graphs with edges weighted by interatomic distances. The marginalized graph kernel defines the similarity between two graphs as the expectation of the similarity between all possible simultaneous random walk paths generated on the product graph. Lower: given the training molecules and unknown molecules, the pairwise similarity matrices between and within each data set are computed using the marginalized graph kernel. The training set self-similarity matrix and target values are used to construct a GPR model, which makes predictions for the unknown samples using the training-unknown cross-similarity matrix.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head></head><label></label><figDesc>where atoms are represented by vertices v i ∈ {H, C, N, O, . . .} that are labeled by chemical elements. Each edge e ij ∈ R between vertices i and j is Tang et al.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head></head><label></label><figDesc>CH 3 CH 2 OCH 3 ) molecule and a 2-ethoxyethanol (CH 3 CH 2 OCH 2 CH 2 OH) molecule, computed with ν = 0.25, ζ = 1, λ = 0.02, s = 1, q = 0.01. Note that the marginalized graph kernel can, for example, differentiate between atoms of the same element yet are embedded in different local chemical environments.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Figure 3 :</head><label>3</label><figDesc>Figure3: An illustration of the marginalized graph kernel computation result among two molecules: methoxyethane CH3CH2OCH3 and 2-ethoxyethanol CH3CH2OCH2CH2OH. Each square tile corresponds to an element of the V×R∞ vector, which is a weighted average (marginalization) of the similarity between all paths generated by simultaneous random walks originating from the two atoms. The matrices effectively visualizes the atomistic neighborhood similarities with darker colors indicate higher similarity. Note for example the difference in similarity between the oxygen atoms in the ether bond to itself and to the oxygen atom in the alcohol group.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head></head><label></label><figDesc>) is commonly regarded as the 'default' method for selecting hyperparameters in Bayesian inference. However, this should be exercised with caution because certain choices of the hyperparameters could arbitrarily maximize the log-likelihood function without actually improving the predictive power of the GPR model. To obtain an insight into the influence of the hyperparameters on model performance, we performed an exhaustive scan of the hyperparameters within the range ν ∈ [0.1, 0.9], ζ ∈ [0.5, 1.5], λ ∈ [0.01, 0.4], s ∈ [10, 500], q ∈ [0.01, 0.5]. The mean absolute error (MAE)-likelihood joint distributions, as shown in the upper panels of fig.4, reveal the fact that likelihood alone does not necessarily indicate high prediction accuracy. This is manifested by the noticeable amount of hyperparameter sets that lies on the upper left parts of the joint distribution density. Aside from that, as shown by the lower panels of fig.4, there are fortunately many hyperparameter sets that exists in the upper left parts of the joint distributions between Tang et al.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Figure 6 :</head><label>6</label><figDesc>Figure6: The generalized starting probability parameter s determines the width of the predictive confidence interval, which should contain a proportional percentage of the ground truth energy of the test samples. Smaller s values lead to aggressive confidence interval estimations, yielding coverage curves below the diagonal. Larger s values, in contrast, lead to conservative estimations and wide confidence intervals, yielding curves that lie above the diagonal.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head></head><label></label><figDesc>It also achieves an MAE of 1.48 ± 0.05 kcal/mol on a significantly smaller N = 2000. The training time ranges between ∼ 0.3 s for N = 100 to ∼ 380 s for N = 5000 on an in-house GPU-accelerated implementation, while the prediction time ranges between 0.005 s/sample with 100 training samples to 0.086 s/sample with 5000 training samples.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>∆</head><label></label><figDesc>5000 = 8.17 kcal/mol ∆ 5000 = 20.53 kcal/mol ∆ 5000 = 31.54 kcal/mol ∆ 5000 = 68.25 kcal/mol ∆ 5000 = 10.97 kcal/mol ∆ 5000 = 27.07 kcal/mol</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_11"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: Upper left: Saturation curves for the mean absolute error and root-mean square error of the presented method and previous methods on predicting the atomization energy of molecules in the QM7 dataset. The data points for the graph kernel are averaged over 15 random training sets and 7 active learning realizations, respectively. Vertical bars indicate standard deviation.Reference designation: FHB<ref type="bibr" target="#b34">[35]</ref>, HMB<ref type="bibr" target="#b30">[31]</ref>, HBR<ref type="bibr" target="#b31">[32]</ref>. Upper right: Comparison of the performance between GPR models built from random training sets and those built from an active learning process. Lower: Even with models trained on 5000 randomly chosen samples, some molecules can consistently cause large prediction error. This behavior is attributed to highly strained geometric features such as 3-rings and conjugated triple bonds. Fortunately, the GPR model is able to use high predictive uncertainties to inform users of such situations , and to prioritize the inclusion of those molecules during active learning.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head></head><label></label><figDesc>Process Regression and Active Learning</figDesc><table /><note><p><p><p><p>2.4.1 Energy Regression</p>Given a training set D of m molecules and their associated energy</p>{(M 1 , . . . , M m ), (E 1 , . . . , E m )},</p>as well as a marginalized graph kernel K, the GPR prediction for the energy {E * 1 , . . ., E * n } of a test set of n unknown molecules {M * 1 , . . . , M * n } can be derived analytically as</p></note></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_3"><head></head><label></label><figDesc>2. In each parallel test, the process starts with a seeding set of 50 training samples and iteratively adds the test sample with the highest acquisition score into the training sets until the N reaches 2000. As shown in the upper right panel of fig. 7 and in Table1, supervised active learning, which uses the true predictive error as the acquisition function, leads to GPR models with significantly lower MAE and RMSE than those trained on a randomly selected training set. Averaging over 7 parallel runs, we obtain MAE and RMSE of 0.62 ± 0.01 kcal/mol and 0.76 ± 0.01 kcal/mol, respectively. Meanwhile, unsupervised active learning, which uses the predictive uncertainty as the acquisition function, seems to perform only slightly better than those trained on random training sets with an MAE of 1.28 ± 0.03 kcal/mol , but does achieve a significantly lower RMSE of 1.81 ± 0.06 kcal/mol.</figDesc><table /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_4"><head>Table 1 :</head><label>1</label><figDesc>Energy prediction accuracy of the present and previously published methods.</figDesc><table><row><cell>Training set</cell><cell>Representation</cell><cell>Kernel</cell><cell cols="4">Regression MAE (kcal/mol) RMSE (kcal/mol) Source</cell></row><row><cell>2000, random</cell><cell>molecular graph</cell><cell cols="2">graph kernel GPR</cell><cell>1.4 ±0.05</cell><cell>3.57±0.4</cell><cell>present</cell></row><row><cell>2000, supervised</cell><cell>molecular graph</cell><cell cols="2">graph kernel GPR</cell><cell>0. 2±0.01</cell><cell>0.7 ±0.01</cell><cell>present</cell></row><row><cell cols="2">2000, unsupervised molecular graph</cell><cell cols="2">graph kernel GPR</cell><cell>1.2 ±0.03</cell><cell>1. 1±0.0</cell><cell>present</cell></row><row><cell>2000</cell><cell>CM</cell><cell>Laplacian</cell><cell>KRR</cell><cell>4.32</cell><cell>-</cell><cell>[31]</cell></row><row><cell>5000, random</cell><cell>molecular graph</cell><cell cols="2">graph kernel GPR</cell><cell>1.01±0.04</cell><cell>2.29±0.57</cell><cell>present</cell></row><row><cell>5000</cell><cell>MBTR</cell><cell>Gaussian</cell><cell>KRR</cell><cell>0. 0</cell><cell>0.97</cell><cell>[33]</cell></row><row><cell>5000</cell><cell>SOAP</cell><cell>REMatch</cell><cell>KRR</cell><cell>0.92</cell><cell>1. 1</cell><cell>[2 ]</cell></row><row><cell>5000</cell><cell>BAML</cell><cell>Laplacian</cell><cell>KRR</cell><cell>1.15</cell><cell>2.54</cell><cell>[3 ]</cell></row><row><cell>5732</cell><cell>CM</cell><cell>Laplacian</cell><cell>KRR</cell><cell>3.07±0.07</cell><cell>4. 4±0.40</cell><cell>[31]</cell></row><row><cell>5732</cell><cell>BoB</cell><cell>Laplacian</cell><cell>KRR</cell><cell>1.50</cell><cell>-</cell><cell>[32]</cell></row><row><cell>5732</cell><cell>BoB</cell><cell>Gaussian</cell><cell>KRR</cell><cell>2.40</cell><cell>-</cell><cell>[13]</cell></row><row><cell>5732</cell><cell>CM</cell><cell>Laplacian</cell><cell>KRR</cell><cell>3.37</cell><cell>-</cell><cell>[13]</cell></row><row><cell>5732</cell><cell>EB</cell><cell>Gaussian</cell><cell>KRR</cell><cell>1.19</cell><cell>-</cell><cell>[13]</cell></row><row><cell>57</cell><cell>nuclear charge &amp;</cell><cell>-</cell><cell>DTNN</cell><cell>1.04</cell><cell>1.43</cell><cell>[34]</cell></row><row><cell></cell><cell>interatomic distance</cell><cell></cell><cell></cell><cell></cell><cell></cell><cell></cell></row></table><note><p>CM: Coulomb Matrix; MBTR: many-body tensor representation; SOAP: smooth overlap of atomic positions; BoB: bag of bonds; EB: encoded bond.</p></note></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_5"><head>Table 2 :</head><label>2</label><figDesc>Common bond lengths averaged over multiple sources<ref type="bibr" target="#b36">[37]</ref><ref type="bibr" target="#b37">[38]</ref><ref type="bibr" target="#b38">[39]</ref><ref type="bibr" target="#b39">[40]</ref>.</figDesc><table><row><cell>H</cell><cell>C</cell><cell>O</cell><cell>N</cell><cell>F</cell><cell>S</cell></row><row><cell cols="3">H 0.74 1.09 0.9</cell><cell cols="3">1.01 0.92 1.34</cell></row><row><cell cols="6">C 1.09 1.39 1.27 1.34 1.35 1. 2</cell></row><row><cell>O 0.9</cell><cell cols="2">1.27 1.4</cell><cell cols="3">1.23 1.42 1.44</cell></row><row><cell cols="4">N 1.01 1.34 1.23 1.2</cell><cell>1.3</cell><cell>1.</cell></row><row><cell cols="4">F 0.92 1.35 1.42 1.3</cell><cell cols="2">1.42 1.57</cell></row><row><cell cols="4">S 1.34 1. 2 1.44 1.</cell><cell cols="2">1.57 2.05</cell></row></table></figure>
+		</body>
+		<back>
+
+			<div type="acknowledgement">
+<div><head>Acknowledgment</head><p>This work was supported by the <rs type="funder">Luis W. Alvarez Postdoctoral Fellowship</rs> at <rs type="funder">Lawrence Berkeley National Laboratory</rs>. YHT appreciates advice from <rs type="person">Timur Takhtaganov</rs> regarding predictive confidence interval analysis.</p></div>
+			</div>
+			<listOrg type="funding">
+			</listOrg>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix</head><p>Length scale parameters in the square exponential adjacency rule</p><p>The length scale parameter σ ij , which are used in the square exponential adjacency rule to weight the edges, are given in table 2.</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Accelerating materials property predictions using machine learning</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Pilania</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Jiang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Rajasekaran</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Ramprasad</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page">2810</biblScope>
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Prediction Errors of Molecular Machine Learning Models Lower than Hybrid DFT Error</title>
+		<author>
+			<persName><forename type="first">F</forename><forename type="middle">A</forename><surname>Faber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Hutchison</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Huang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Gilmer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">S</forename><surname>Schoenholz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Dahl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Vinyals</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Kearnes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">F</forename><surname>Riley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Lilienfeld</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">13</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="5255" to="5264" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Machine learning of molecular properties: Locality and active learning</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Gubaev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">V</forename><surname>Podryabinkin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">V</forename><surname>Shapeev</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">148</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page">241727</biblScope>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">The potential for machine learning in hybrid QM/MM calculations</title>
+		<author>
+			<persName><forename type="first">Y.-J</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Khorshidi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Kastlunger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Peterson</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">148</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page">241740</biblScope>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Active learning of constitutive relation from mesoscopic dynamics for macroscopic modeling of non-Newtonian flows</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Zhao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Caswell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Ouyang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Karniadakis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">363</biblScope>
+			<biblScope unit="page" from="116" to="127" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<monogr>
+		<title level="m" type="main">Gaussian Processes for Machine Learning</title>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">E</forename><surname>Rasmussen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">K I</forename><surname>Williams</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2006">2006</date>
+			<publisher>MIT Press</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<monogr>
+		<title level="m" type="main">Concepts and Applications of Molecular Similarity</title>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">A</forename><surname>Johnson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">M</forename><surname>Maggiora</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="1991">1991</date>
+			<publisher>Wiley-Interscience</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">ANI-1: An extensible neural network potential with DFT accuracy at force field computational cost</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Smith</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Isayev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">E</forename><surname>Roitberg</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Chemical Science</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="3192" to="3203" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Amp: A modular approach to machine learning in atomistic simulations</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Khorshidi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Peterson</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Physics Communications</title>
+		<imprint>
+			<biblScope unit="volume">207</biblScope>
+			<biblScope unit="page" from="310" to="324" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Atom-centered symmetry functions for constructing high-dimensional neural network potentials</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Behler</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">134</biblScope>
+			<biblScope unit="issue">134</biblScope>
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Fast and Accurate Modeling of Molecular Atomization Energies with Machine Learning</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Rupp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tkatchenko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K.-R</forename><surname>Müller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Lilienfeld</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review Letters</title>
+		<imprint>
+			<biblScope unit="volume">108</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page">58301</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">An atomistic fingerprint algorithm for learning ab initio molecular force fields</title>
+		<author>
+			<persName><forename type="first">Y.-H</forename><surname>Tang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Karniadakis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">148</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page">34101</biblScope>
+			<date type="published" when="2018">2018. 00000</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Constant size descriptors for accurate machine learning models of molecular properties</title>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">R</forename><surname>Collins</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">J</forename><surname>Gordon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Von Lilienfeld</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">J</forename><surname>Yaron</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">148</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page">241718</biblScope>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">On representing chemical environments</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">P</forename><surname>Bartók</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Kondor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Csányi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review B</title>
+		<imprint>
+			<biblScope unit="volume">87</biblScope>
+			<biblScope unit="issue">18</biblScope>
+			<biblScope unit="page">184115</biblScope>
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Graph Kernels for Molecular Structure-Activity Relationship Analysis with Support Vector Machines</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Mahé</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Ueda</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Akutsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-L</forename><surname>Perret</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-P</forename><surname>Vert</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Information and Modeling</title>
+		<imprint>
+			<biblScope unit="volume">45</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="939" to="951" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">Graph Kernels for Molecular Similarity</title>
+		<author>
+			<persName><forename type="first">Rupp</forename><surname>Matthias</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Schneider</forename><surname>Gisbert</surname></persName>
+		</author>
+		<idno>. 00000</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Molecular Informatics</title>
+		<imprint>
+			<biblScope unit="volume">29</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="266" to="273" />
+			<date type="published" when="2010">2010</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<monogr>
+		<title level="m" type="main">Convolution kernels on discrete structures</title>
+		<author>
+			<persName><forename type="first">D</forename><surname>Haussler</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="1999">1999</date>
+			<biblScope unit="page">0</biblScope>
+		</imprint>
+		<respStmt>
+			<orgName>Department of Computer Science, University of California at Santa Cruz</orgName>
+		</respStmt>
+	</monogr>
+	<note type="report_type">Technical report</note>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Extensions of Marginalized Graph Kernels</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Mahé</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Ueda</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Akutsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-L</forename><surname>Perret</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-P</forename><surname>Vert</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Twenty-First International Conference on Machine Learning, ICML &apos;04</title>
+		<meeting>the Twenty-First International Conference on Machine Learning, ICML &apos;04<address><addrLine>New York, NY, USA</addrLine></address></meeting>
+		<imprint>
+			<publisher>ACM</publisher>
+			<date type="published" when="2004">2004</date>
+			<biblScope unit="page">70</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Shortest-path kernels on graphs</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">M</forename><surname>Borgwardt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">P</forename><surname>Kriegel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Fifth IEEE International Conference on Data Mining (ICDM&apos;05)</title>
+		<imprint>
+			<date type="published" when="2005">2005</date>
+			<biblScope unit="page">8</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">A Linear-Time Graph Kernel</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Hido</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Kashima</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Ninth IEEE International Conference on Data Mining</title>
+		<imprint>
+			<date type="published" when="2009">2009. 2009</date>
+			<biblScope unit="page" from="179" to="188" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Graph kernels</title>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">V N</forename><surname>Vishwanathan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><forename type="middle">N</forename><surname>Schraudolph</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Kondor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">M</forename><surname>Borgwardt</surname></persName>
+		</author>
+		<idno>2010. 00000</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="page" from="1201" to="1242" />
+			<date>Apr</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Weisfeiler-Lehman Graph Kernels</title>
+		<author>
+			<persName><forename type="first">N</forename><surname>Shervashidze</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Schweitzer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">J</forename><surname>Van Leeuwen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Mehlhorn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">M</forename><surname>Borgwardt</surname></persName>
+		</author>
+		<idno>2011. 00000</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">12</biblScope>
+			<biblScope unit="page" from="2539" to="2561" />
+			<date>Sep</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">The journey of graph kernels through two decades</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ghosh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Das</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Gonçalves</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Quaresma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Kundu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Science Review</title>
+		<imprint>
+			<biblScope unit="volume">27</biblScope>
+			<biblScope unit="page" from="88" to="111" />
+			<date type="published" when="2018">2018. 00001</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Marginalized kernels between labeled graphs</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Kashima</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Tsuda</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Inokuchi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 20th International Conference on Machine Learning (ICML-03)</title>
+		<meeting>the 20th International Conference on Machine Learning (ICML-03)</meeting>
+		<imprint>
+			<date type="published" when="2003">2003. 00000</date>
+			<biblScope unit="page" from="321" to="328" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">The Conjugate Gradient Method and Trust Regions in Large Scale Optimization</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Steihaug</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on Numerical Analysis</title>
+		<imprint>
+			<biblScope unit="volume">20</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="626" to="637" />
+			<date type="published" when="1983">1983</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">A projected preconditioned conjugate gradient algorithm for computing many extreme eigenpairs of a Hermitian matrix</title>
+		<author>
+			<persName><forename type="first">E</forename><surname>Vecharynski</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Yang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">E</forename><surname>Pask</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">290</biblScope>
+			<biblScope unit="page" from="73" to="89" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Ridge regression learning algorithm in dual variables</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Saunders</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Gammerman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Vovk</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Fifteenth International Conference on Machine Learning</title>
+		<meeting>the Fifteenth International Conference on Machine Learning<address><addrLine>San Francisco, CA, USA</addrLine></address></meeting>
+		<imprint>
+			<publisher>Morgan Kaufmann Publishers Inc</publisher>
+			<date type="published" when="1998">1998</date>
+			<biblScope unit="page" from="515" to="521" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Comparing molecules and solids across structural and alchemical space</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>De</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">P</forename><surname>Bartók</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Csányi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Ceriotti</surname></persName>
+		</author>
+		<idno>. 00000</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Chemistry Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">18</biblScope>
+			<biblScope unit="issue">20</biblScope>
+			<biblScope unit="page" from="13754" to="13769" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">An energy decomposition analysis for intermolecular interactions from an absolutely localized molecular orbital reference at the coupled-cluster singles and doubles level</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">J</forename><surname>Azar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">136</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page">24103</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Million Druglike Small Molecules for Virtual Screening in the Chemical Universe Database GDB-13</title>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">C</forename><surname>Blum</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-L</forename><surname>Reymond</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of the American Chemical Society</title>
+		<imprint>
+			<biblScope unit="volume">131</biblScope>
+			<biblScope unit="issue">25</biblScope>
+			<biblScope unit="page" from="8732" to="8733" />
+			<date type="published" when="2009">970. 2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<analytic>
+		<title level="a" type="main">Assessment and Validation of Machine Learning Methods for Predicting Molecular Atomization Energies</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Hansen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Montavon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Biegler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Fazli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Rupp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Scheffler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Von Lilienfeld</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tkatchenko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K.-R</forename><surname>Müller</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="3404" to="3419" />
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">Machine Learning Predictions of Molecular Properties: Accurate Many-Body Potentials and Nonlocality in Chemical Space</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Hansen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Biegler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Ramakrishnan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Pronobis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Von Lilienfeld</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K.-R</forename><surname>Müller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tkatchenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Physical Chemistry Letters</title>
+		<imprint>
+			<biblScope unit="volume">6</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page" from="2326" to="2331" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<monogr>
+		<title level="m" type="main">Unified Representation of Molecules and Crystals for Machine Learning</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Huo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Rupp</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1704.06439</idno>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+	<note>cond-mat, physics:physics</note>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">Quantum-chemical insights from deep tensor neural networks</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">T</forename><surname>Schütt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Arbabzadah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Chmiela</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">R</forename><surname>Müller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tkatchenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nature Communications</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="page">13890</biblScope>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Learning molecular energies using localized graph kernels</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Ferré</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Haut</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Barros</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">146</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page">114107</biblScope>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">Communication: Understanding molecular representations in machine learning: The role of uniqueness and target similarity</title>
+		<author>
+			<persName><forename type="first">B</forename><surname>Huang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">A</forename><surname>Lilienfeld</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">145</biblScope>
+			<biblScope unit="issue">16</biblScope>
+			<biblScope unit="page">161102</biblScope>
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<monogr>
+		<title level="m" type="main">Basic Molecular Modelling</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Cross</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Salter-Duke</surname></persName>
+		</author>
+		<ptr target="http://hydra.vcp.monash.edu.au/modules/mod2/index.html" />
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<monogr>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">R</forename><surname>Lide</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Baysinger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Chemistry</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">I</forename><surname>Berger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">N</forename><surname>Goldberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">V</forename><surname>Kehiaian</surname></persName>
+		</author>
+		<title level="m">CRC Handbook of Chemistry and Physics</title>
+		<imprint>
+			<publisher>CRC press</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<monogr>
+		<author>
+			<persName><forename type="first">C</forename><surname>Chieh</surname></persName>
+		</author>
+		<ptr target="http://www.science.uwaterloo.ca/~cchieh/cact/c120/bondel.html" />
+		<title level="m">Bond Lengths and Energies</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<monogr>
+		<author>
+			<persName><forename type="first">A</forename><surname>Linden</surname></persName>
+		</author>
+		<ptr target="http://www.chem.uzh.ch/linden/internal/bond_lengths.html" />
+		<title level="m">Common Bond Lengths for Organic Functional Groups</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

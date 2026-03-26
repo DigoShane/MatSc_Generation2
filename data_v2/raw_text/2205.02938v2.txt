@@ -1,0 +1,2843 @@
+Immiscible Color Flows in Optimal Transport Networks for Image Classification
+
+Alessandro Lonardi,1, ∗ Diego Baptista,1, † and Caterina De Bacco1, ‡
+
+1Max Planck Institute for Intelligent Systems, Cyber Valley, Tübingen 72076, Germany
+
+In classification tasks, it is crucial to meaningfully exploit the information contained in data. While
+much of the work in addressing these tasks is devoted to building complex algorithmic infrastructures
+to process inputs in a black-box fashion, less is known about how to exploit the various facets of
+the data, before inputting this into an algorithm. Here, we focus on this latter perspective, by
+proposing a physics-inspired dynamical system that adapts Optimal Transport principles to effectively
+leverage color distributions of images. Our dynamics regulates immiscible fluxes of colors traveling
+on a network built from images. Instead of aggregating colors together, it treats them as different
+commodities that interact with a shared capacity on edges. The resulting optimal flows can then be
+fed into standard classifiers to distinguish images in different classes. We show how our method can
+outperform competing approaches on image classification tasks in datasets where color information
+matters.
+
+I.
+INTRODUCTION
+
+Optimal Transport (OT) is a powerful method for computing the distance between two data distributions. This
+problem has a cross-disciplinary domain of applications, ranging from logistic and route optimization [1–3], to biology
+[4, 5] and computer vision [6–10], among others. Within this broad variety of problems, OT is largely utilized in
+machine learning [11], and deployed for solving classification tasks, where the goal is to optimally match discrete
+distributions that are typically learned from data. Relevant usage examples are also found in multiple fields of
+physics, as in protein fold recognition [12], stochastic thermodynamics [13], designing transportation networks [14, 15],
+routing in multilayer networks [16] or general relativity [17]. A prominent application is image classification [18–23],
+where the goal is to measure the similarity between two images. OT solves this problem by interpreting image pairs
+as two discrete distributions and then assesses their similarity via the Wasserstein (W1) distance ([24], Definition
+6.1) a measure obtained by minimizing the cost needed to transform one distribution into the other. Using W1 for
+image classification carries many advantages over other similarity measures between histograms. For example, W1
+preserves all properties of a metric [9, 24], it is robust over domain shift for train and test data [22], and it provides
+meaningful gradients to learn data distributions on non-overlapping domains [25]. Because of these, and several others
+desirable properties, much research effort has been put in speeding up algorithms to calculate W1 [12, 19, 20, 26, 27].
+However, all these methods overlook the potential of using effectively image colors directly in the OT formulation. As
+a result, practitioners have access to increasingly efficient algorithms, but that do not necessarily improve accuracy in
+predictions, as we lack a framework that fully exploits the richness of the input information.
+
+Colored images, originally encoded into three-dimensional histograms—with one dimension per color channel—are
+often compressed into lower dimensional data using feature extraction algorithms [9, 23]. Here, we propose a different
+approach that maps the three distinct color histograms to multicommodity flows transported in a network built
+using images’ pixels. We combine recent developments of OT with physics insights of capacitated network models
+[1, 5, 28–31] to treat colors as mass of different types that flows through the edges of a network. Different flows are
+coupled together with a shared conductivity, and minimize a unique cost function. This setup is reminiscent of the
+distinction between modeling the flow of one substance, e.g. water, and modeling flows of multiple substances that
+do not mix, e.g. immiscible fluids, that share the same network infrastructure. By virtue of this multicommodity
+treatment we achieve stronger classification performance than state-of-the-art OT-based algorithms in real datasets
+where color information matters.
+
+∗ Equal contribution; alessandro.lonardi@tuebingen.mpg.de
+† Equal contribution; diego.theuerkauf@tuebingen.mpg.de
+‡ caterina.debacco@tuebingen.mpg.de
+
+arXiv:2205.02938v2  [cs.CV]  27 Feb 2023
+
+
+2
+
+II.
+PROBLEM FORMULATION
+
+A.
+Unicommodity Optimal Transport
+
+Given two m, n-dimensional probability vectors g, h, and a positive-valued ground cost matrix C, the goal of a
+standard—unicommodity—OT problem is to find an Optimal Transport path P ⋆ satisfying the conservation constraints
+�
+
+j Pij = gi ∀i and �
+
+i Pij = hj ∀j, while minimizing J(g, h) = �
+
+ij PijCij.
+Entries P ⋆
+ij can be interpreted as the mass transported from gi to hj when paying a cost Cij, while J⋆, i.e. J
+evaluated at P ⋆, encodes the minimum effort needed to transport g to h. Notably, if all entries Cij are distances
+between i and j, then J⋆ is the W1 distance between g and h (see [24] for a standard proof and [9] for derivations
+focusing on the discrete case).
+
+B.
+Physics-inspired Multicommodity Optimal Transport
+
+Interpreting colors as mass traveling along a network built from images’ pixels (as we define in details below),
+unicommodity OT could be used to capture the similarity between grayscale images. However, it may not be ideal
+for colored images, when color information matters. The limitation of unicommodity OT in Section II A is that it
+does not fully capture the variety of information contained in different color channels, as it is not able to distinguish
+them. Motivated by this, we tackle this challenge and move beyond this standard setting by incorporating insights
+from the dynamics of immiscible flows in physics. Specifically, we treat the different pixels’ color channels as mass of
+different types that do not mix, but rather travel and interact on the same network infrastructure, while optimizing a
+unique cost function. By assuming capacitated edges with conductivities that are proportional to the amount of mass
+traveling through an edge, we can define a set of ODEs that regulate fluxes and conductivities. These are optimally
+distributed along a network to better account for color information, while satisfying physical conservation laws. Similar
+ideas have been successfully used to route different types of passengers in transportation networks [2, 16, 32].
+Formally, we couple together histograms of M = 3 color channels, the commodities, indexed with a = 1, . . . , M. We
+define ga, ha as m, n-dimensional probability vectors of mass of type a. More compactly, we define the matrix G with
+entries Gia = ga
+i (resp. H for h), each containing the intensity of color channel a in pixel i of the first (resp. second)
+image. These regulate the sources and sinks of mass in our setting. We then enforce conservation of mass for each
+commodity index a: �
+i ga
+i = �
+j ha
+j . This ensures that all the color mass in the first image should be accounted for in
+the second one, and viceversa, and this should be valid for each mass type.
+Moreover, we define the set Π(G, H), containing (m×n×M)-dimensional tensors P with entries P a
+ij, being transport
+paths between ga and ha. These regulate how fluxes of colors of different types travel along a network. We enforce
+interaction between transport paths for different commodities by introducing a shared cost:
+
+JΓ(G, H) =
+�
+
+ij
+||Pij||Γ
+2Cij,
+(1)
+
+where ||Pij||2 = (�
+
+a P a
+ij
+2)1/2 is the 2-norm of the vector Pij =
+�
+P 1
+ij, . . . , P M
+ij
+�
+and 0 < Γ < 4/3 is a regularization
+parameter. We take Γ > 0 since a negative exponent would favor the proliferation of loops with infinite mass [28].
+Instead, we conventionally consider Γ < 4/3 (see Section III B) since the cost JΓ exhibits the same convexity properties
+for any Γ > 1, i.e., it is strictly convex, and OT paths do not substantially change with Γ in this regime [2]. We can
+thus formulate its corresponding multicommodity OT problem as that of finding a tensor P ⋆ solution of:
+
+J⋆
+Γ(G, H) =
+min
+P ∈Π(G,H) JΓ(G, H).
+(2)
+
+Notice that for M = 1 and Γ = 1, we recover the standard unicommodity OT setup.
+The problem in Eq. (2) admits a precise physical interpretation. In fact, it can be recasted into a constrained
+minimization problem with objective function being the energy dissipated by the multicommodity flows (Joule’s law),
+and with constant total conductivity. Furthermore, transport paths follow Kirchhoff’s law enforcing conservation of
+mass [2, 32, 33] (see Supplementary Material for a detailed discussion).
+Noticeably, JΓ is a quantity that takes into account all the different mass types, and the OT paths P ⋆ are found
+through a unique optimization problem. We emphasize that this is fundamentally different from solving M independent
+unicommodity problems, where different types of mass are not coupled together as in our setting, and then combining
+their optimal costs to estimate images’ similarity. Estimating J⋆
+Γ(G, H) gives directly a quantitative and principled
+measure of the similarity between two images G and H. The lower this cost, the higher the similarity of the two
+images. While this is valid also for the unicommodity cost in Section II A, the difference here is that we account
+
+
+3
+
+differently for the color information as we distinguish different colors via the M-dimensional vector Pij. The cost in
+Eq. (2) then properly couples colors by following physical laws regulating immiscible flows. The idea is that, if this
+information matters for the given classification task, incorporating it into the minimization problem would output a
+cost that helps to distinguish images better, e.g. with higher accuracy.
+
+III.
+METHODS
+
+A.
+Optimal Transport network on images
+
+Having introduced the main ideas and intuitions, we now explain in details how to adapt the OT formalism to
+images. Specifically, we introduce an auxiliary bipartite network Km,n(V1, V2, E12), being the first building block of
+the network where the OT problem is solved. A visual representation of this is shown in Fig. 1. The Images 1 and
+2 are represented as matrices (G and H) of size m × M, and n × M respectively, where M is the number of color
+channels of the images (M = 3 in our examples). The sets of nodes V1, V2 of the network Km,n are the pixels of Image
+1 and Image 2, respectively. The set of edges E12 contains a subset of all pixels’ pairs between the two images, as
+detailed below. We consider the cost of an edge (i, j) as
+
+Cij(θ, τ) = min{(1 − θ) ||vi − vj||2 + θ ||Gi − Hj||1, τ},
+(3)
+
+where the vector vi = (xi, yi) contains the horizontal and vertical coordinates of pixel i of Image 1 (similarly vj for
+Image 2). The quantity θ ∈ [0, 1] is an hyperparameter that is given in input and can be chosen with cross-validation.
+It acts as a weight for a convex combination between the Euclidean distance between pixels and the difference in
+their color intensities, following the intuition in [9, 23]. When θ = 0, the OT path P ⋆ is that minimizing only the
+geometrical distance between pixels. Instead, when θ = 1, pixels’ locations are no longer considered, and transport
+paths are only weighted by color distributions. The parameter τ is introduced following [22, 23] with the scope of
+removing all edges with cost Cij(θ, τ) = τ, i.e. those for which (1 − θ) ||vi − vj||2 + θ ||Gi − Hj||1 > τ. These are
+substituted by m + n transshipment edges e ∈ E′, each of cost τ/2, connected to one unique auxiliary vertex u1.
+Thresholding the cost decreases significantly the computational complexity of OT, making it linear with the number of
+nodes |V1| + |V2| + 2 = m + n + 2 (see Supplementary Material).
+Furthermore, we relax conservation of mass by allowing �
+
+i Gia ̸= �
+
+j Hja. The excess of mass ma = �
+
+j Hja − �
+
+i Gia
+is assigned to a second auxiliary node, u2. We connect it to the network with n additional transshipment edges e ∈ E′,
+each penalizing the total cost by c = maxij Cij/2. This construction improves classification when the histograms’ total
+mass largely differs [22]. Intuitively, this can happen when comparing “darker” images against “brighter” ones. More
+precisely, when entries of ga and ha are further apart in the RGB color space.
+Overall we obtain a network K with nodes V = V1 ∪ V2 ∪ {u1, u2} and edges E = E12 ∪ E′, i.e. the original bipartite
+graph Km,n, together with the auxiliary transshipment links and nodes. Note that in its entirety the system is isolated,
+i.e. the total mass is conserved. See Supplementary Material for a detailed description of the OT setup.
+Given this auxiliary graph, the OT problem is then solved by injecting in nodes i ∈ V1 the color mass contained
+in Image 1, as specified by G, and extracting it in nodes j ∈ V2 of Image 2, as specified by H. This is done by
+transporting mass using either (i) an edge in E12, or (ii) a transshipment one in E′. In the following Section we
+describe how this problem is solved mathematically.
+
+B.
+Optimizing immiscible color flows: the dynamics
+
+We solve the OT problem by proposing the following ODEs controlling mass transportation:
+�
+
+j∈∂i
+Lij[x]φa
+j = Sa
+i
+∀i ∈ V, a = 1, . . . , M
+(4)
+
+dxe
+dt = xβ
+e
+||φi − φj||2
+2
+
+C2e
+− xe
+∀e = (i, j) ∈ E,
+(5)
+
+which constitute the pivotal equations of our model. Here we introduce the shared conductivities xe ≥ 0, and define
+Sa
+i = Gia − Hia, taking values Sa
+u1 = 0 and Sa
+u2 = ma on the auxiliary nodes. With Lij[x] = �
+
+e(xe/Ce)BieBje
+we denote the weighted Laplacian of K, where B is its signed incidence matrix; ∂i is the neighborhood of node i.
+Lastly, φa
+i are scalar potentials acting on nodes, for a given commodity a. Least-square solutions of Eq. (4) are
+
+
+4
+
+FIG. 1. Bipartite network representation for multicommodity OT. The two images (shown in the leftmost and rightmost sides
+of the panel) are encoded in the RGB matrices G and H, that regulate the flow traveling on network K. The graph is made of
+m + n + 2 nodes, i.e. the total number of pixels plus the two auxiliary vertices introduced in Section III A. Grey edges (belonging
+to the set E12) connect nodes in Image 1 to nodes in Image 2; these edges are trimmed according to a threshold τ. We highlight
+the entries of the matrix C in red if these are larger than τ. Transshipment and auxiliary edges used to relax mass conservation
+(which belong to E′) are in brown and magenta.
+
+φa
+i [x] = �
+
+j L†
+ij[x]Sa
+i , where † denotes the Moore-Penrose inverse. The critical exponent 0 < β < 2 [Γ = 2(2−β)/(3−β)]
+is an hyperparameter that needs to be chosen before solving Eqs. (4)-(5). Depending on the modelling task, its value
+can be fixed a priori (e.g. β = 1 for the shortest path problem [34], β ≃ 5/3 for river networks [35], and β → 2− for
+the Steiner Tree problem [36]), or cross-validated as we do here for image classification. The exponent aggregates
+paths with a principle of economy of scale if 1 < β < 2. It dilutes them along the network otherwise, with the goal
+of reducing traffic congestion. This behavior is a direct consequence of the subadditivity of JΓ in Eq. (2) for β > 1
+(Γ < 1), and respectively of its superadditivity for β < 1 (Γ > 1). It has been theoretically discussed and empirically
+observed, for example, in [32, 37, 38].
+
+The feedback mechanism of Eq. (5) defines multicommodity fluxes (P a
+e ) that are admissible for the minimization
+problem introduced in Eq. (2). Particularly, for color of type a on edges e = (i, j), we couple potentials (φa
+i ) which are
+solutions of Eq. (4), and shared conductivities (xe) to define:
+
+P a
+e (t) = xe(t)φa
+i [x(t)] − φa
+j [x(t)]
+
+Ce
+∀e ∈ E, a = 1, . . . , M.
+(6)
+
+This also highlights another physical interpretation: by interpreting the φa
+i as pressure potentials, the fluxes are seen to
+arise from a difference in pressure between two nodes, as in hydraulic or electrical networks. Crucially, this allocation is
+governed by one unique conductivity for all commodities, whose dynamics depends on the 2-norm over a of differences
+of potentials, as in Eq. (5). In analogy with immiscible flows, this ensures that flows of different types share the same
+infrastructure, and in practice it couples them into a unique optimization problem.
+
+In the case of only one commodity (M = 1), variants of this dynamics have been used to model transport optimization
+in various physical systems [1, 5, 29–31].
+
+The salient result of our construction is that asymptotic trajectories of Eqs. (4)-(5) are equivalent to minimizers of
+Eq. (2), i.e. limt→+∞ P(t) = P ⋆ (see Supplementary Material for derivations following [32, 33]). Therefore, numerically
+integrating our dynamics solves the multicommodity OT problem. In other words, this allows us to estimate the
+optimal cost in Eq. (2), and to use that to compute similarities between images. A pseudo-code of the algorithmic
+implementation is shown in Algorithm 1.
+
+
+5
+
+Algorithm 1 Multicommodity dynamics
+
+1: Input: Image 1 (G ∈ Rm×M), Image 2 (H ∈ Rn×M), 0 ≤ θ ≤ 1, τ ≥ 0, 0 ≤ β ≤ 2
+2: Initialize: x(0) = x > 0
+▷ e.g. xe ∼ U(0, 1)
+
+3: Construct a bipartite network Km,n between G and H
+▷ complexity O(m · n)
+
+4: Assign Cij(θ, τ) = min{(1 − θ) ||vi − vj||2 + θ ||Gi − Hj||1, τ} to every edge (i, j) in Km,n, as in Eq. (3)
+5: Remove from Km,n all edges s.t. Cij > τ
+▷ complexity O(m + n)
+
+6: Add u1 to Km,n and it m + n auxiliary links, each costing τ/2
+7: Balance mass: add u2, with inflowing mass ma = �
+
+i Hia − �
+
+j Gja
+
+8: while convergence is False do
+9:
+Solve Kirchhoff’s law, Eq. (4) → φ ∈ R|V |×M
+
+10:
+Update x with discretization of Eq. (5)
+
+11: end while
+12: Compute P as in Eq. (6)
+13: Return: J⋆
+Γ(G, H) as in Eq. (2)
+
+C.
+Computational complexity
+
+In principle, our multicommodity method has a computational complexity of order O(M|V |2) for complete transport
+network topologies, i.e., when edges in the transport network K are assigned to all pixels’ pairs. Nonetheless, we
+decrease substantially this complexity by sparsifying the graph with the trimming procedure of [22, 23], reducing
+the complexity to O(M|V |). More details are given in the Supplementary Material. Empirically, we observe that
+running Eqs. (4)-(5), most of the entries of x decay to zero after a few steps, producing a progressively sparser
+weighted Laplacian L[x]. This allows for faster computation of the Moore-Penrose inverse L†[x], and of the least-square
+potentials φa
+i = �
+
+j L†
+ij[x]Sa
+j thereon. An experimental thorough analysis of convergence properties of the OT dynamics
+has been done in [39].
+
+IV.
+RESULTS AND DISCUSSION
+
+A.
+Classification task
+
+We provide empirical evidence that our multicommodity dynamics outperforms competing OT algorithms on
+classification tasks. As anticipated above, we use the OT optimal cost J⋆
+Γ as a measure of similarity between two images,
+and perform supervised classification with a k-nearest neighbor (k-NN) classifier as in [20]. Alternative methods (e.g.
+SVM as in [19]) could also be employed for this task. However, these may require the cost J⋆
+Γ to satisfy the distance
+axioms to properly induce a kernel. While it is not straightforward to verify these conditions for the OT cost in Eq. (2),
+this is not necessary for the k-NN classifier, which requires instead looser conditions on J⋆
+Γ.
+We compare classification accuracy of our model against: (i) Sinkhorn algorithm [19, 40] (utilizing the more stable
+Sinkhorn scheme proposed in [41]); (ii) a unicommodity dynamics executed on grayscale images, i.e., with color
+information compressed in one single commodity (M = 1); (iii) Sinkhorn algorithm on grayscale images. All methods
+
+Algorithm
+Hyperparameters
+Class. accuracy
+θ
+τ
+β
+ε
+k
+[%] (↑)
+
+JF30
+
+Multicommodity 0.25 0.125
+1
+— 1
+62.2
+Sinkhorn RGB
+0.25 0.05
+—
+100 1
+58.4
+Sinkhorn GS
+0.25 0.05
+—
+500 1
+54.3
+Unicommodity
+0.25 0.125 1.25 — 1
+53.6
+
+FD
+
+Multicommodity
+0
+0.04
+1.5
+— 2
+75.0
+Sinkhorn RGB
+0.5
+0.06
+—
+750 1
+69.6
+Unicommodity
+0
+0.06
+1.5
+— 5
+64.3
+Sinkhorn GS
+0.25 0.06
+—
+500 4
+60.7
+
+TABLE I. Classification task results. With Multicommodity, Sinkhorn RGB, Unicommodity and Sinkhorn GS we label methods
+on colored images (first two), and grayscale ones (second two). Optimal parameters in the central columns are selected with a
+4-fold cross-validation; k is the number of nearest neighbors used in the classifier. The rightmost column shows the fraction (in
+percentage) of correctly classified images. Results are ordered by performance, in bold we highlight the best ones.
+
+
+6
+
+are tested on two datasets: the Jena Flowers 30 Dataset (JF30) [42], and the Fruit Dataset (FD) of [43]. The first
+consists of 1,479 images of 30 wild-flowering angiosperms (flowers). Flowers are labelled with their species, inferring
+them is the goal of the classification task. The second dataset contains 15 fruit types and 163 images, here we want to
+classify fruit types. Parameters of the OT problem setup (θ and τ), as well as regularization ones (β and ε, which
+enforces the entropic barrier in Sinkhorn algorithm [19]), have been cross-validated for both datasets (see Section
+III and Section IV in Supplementary Material). All methods are then tested in their optimal configurations (see
+Supplementary Material for implementation details).
+Classification results are shown in Table I. In all cases, leveraging colors leads to higher accuracy (about 8% increase)
+with respect to classification performed using grayscale images. This signals that, in the datasets under consideration,
+color information is a relevant feature for differentiating image samples. Remarkably, we get a similar increase in
+performance (about 7-8%) on both colored datasets, when comparing our multicommodity dynamics against Sinkhorn.
+As the two algorithms use the same (colored) input, we can attribute this increment to an effective usage of the color
+that our approach is capable of.
+In addition, analyzing results in more detail, we first observe that on JF30 all methods perform best when θ = 0.25,
+i.e., 25% percent of the information used to build C comes from colors. This trend does not recur on FD, where both
+dynamics favor θ = 0 (Euclidean C). Hence, our model is able to leverage color information via the multicommodity
+OT dynamical formulation.
+Second, on JF30 both dynamics perform best with τ = 0.125, contrarily to Sinkhorn-based methods that prefer
+τ = 0.05. Thus, Sinkhorn’s classification accuracy is negatively affected both by low τ—many edges of the transport
+network are cut, and by τ large—noisy color information is used to build C. We do not observe this behavior in our
+model, where trimming less edges is advantageous. All optimal values of τ are lower on FD, since color distributions of
+this dataset are naturally light-tailed (See Supplementary Material).
+Lastly, we investigate the interplay between θ and β. We notice that θ = 0 (FD) corresponds to higher β = 1.5.
+Instead, for larger θ = 0.25 (JF30), the model prefers lower β (β = 1, 1.25 for the multicommodity and the unicommodity
+dynamics, respectively). In the former case (θ = 0, Cij is the Euclidean distance), the cost is equal to zero for pixels
+with the same locations. Thus, consolidation of transport paths—large β—is favored on cheap links. Instead, increasing
+θ leads to more edges with comparable costs as colors distribute smoothly over images. In this second scenario, better
+performance is achieved with distributed transport paths, i.e. lower β (See Supplementary Material).
+
+B.
+Performance in terms of sensitivity
+
+We assess the effectiveness of our method against benchmarks by comparing the sensitivity of our multicommodity
+dynamics and that of Sinkhorn algorithm on the colored JF30 dataset. Specifically, we set all algorithms’ parameters
+to their best configurations, as shown in Table I. Then, for each of the 30 class in JF30 we compute its one-vs-all
+sensitivity, i.e. the true positive rate. This is defined for any class c as
+
+S(c) =
+TP(c)
+
+TP(c) + FN(c) ,
+(7)
+
+where TP(c) is the true positives rate, i.e. the number of images in c that are correctly classified; FN(c) is the false
+negative rate, i.e. the number of c-samples that are assigned a label different than c. Hence, Eq. (7) returns the
+probability that a sample is assigned label c, given that it belongs to c.
+We find that our method robustly outperforms Sinkhorn. Specifically, the multicommodity dynamics has the highest
+sensitivity 50% of the times—15 classes out of the total 30, as shown in Fig. 2. In 9 cases Sinkhorn has higher
+sensitivity, and for 6 classes both methods give the same values of S.
+Furthermore we find that in 2/3 (20 out of 30) of the classes, the multicommodity dynamics returns S(c) ≥ 1/2. This
+means that our model predicts the correct label more than 50% of the times. In only 3 out of these 20 cases Sinkhorn
+attains higher values of S, while in most instances where Sinkhorn outperforms our method it has lower sensitivity
+S < 1/2. Hence, this is the case of classes where both methods have difficulties in distinguishing images.
+
+C.
+The impact of colors
+
+To further assess the importance of leveraging color information we conduct three different experiments where we
+highlight, both qualitatively and quantitatively, various performance differences between the unicommodity and the
+multicommodity approaches. As the two share the same principled dynamics based on OT, with the main difference
+being that multicommodity does not compress the color information, we can use this analysis to better understand
+how fully exploiting the color information drives better classification.
+
+
+7
+
+FIG. 2. Sensitivity on the JF30 dataset. Sensitivity values are shown for the multicommodity dynamics (blue circles) and for
+Sinkhorn RGB (red triangles). Markers are sorted in descending order of S, regardless the method. Background colors are blue,
+red, and gray, when S is higher for the multicommodity method, Sinkhorn, or none of them, respectively. In green we plot
+frequency bars for all classes in the test set.
+
+Experiment 1: landscape of optimal cost. Here we focus on a qualitative comparison between the cost landscapes
+obtained with the two approaches. We consider the example of an individual image taken from the test set of FD and
+we plot the landscape of optimal costs J⋆
+Γ when comparing it against the train set. Results for the multicommodity
+dynamics (M = 3), and for the unicommodity dynamics (M = 1) on grayscale images are in Fig. 3. Here, we highlight
+the 5 lowest values of the cost and mark them in green if they correspond to correctly classified train samples, and in
+red otherwise. While at a first glance one may conclude that their performance is identical (as both dynamics classify
+correctly 3 samples out of 5), we notice how the multicommodity dynamics consistently clusters them at the bottom of
+the cost landscape, thus ranking them in a better order. This may be explain why the cross-validated best value of k
+(the number of nearest-neighbors in the k-NN classifier) is higher for unicommodity methods in this dataset. On a
+larger sample of data, this results in better overall classification performance, as show in Table I.
+Experiment 2: controlling for shape. We further mark this tendency with a second experiment where we select a
+subset of FD composed of images belonging to three classes of fruits that have similar shapes but different colors: red
+apples, orange apricots, yellow melons. As we expect shape to be less informative than colors in this custom set, we
+can assess the extent to which color plays a crucial role in the classification process. Specifically, the test set is made
+of three random samples each drawn from one of these classes (top row of the rightmost panel) in Fig. 3, while the
+train set contains the remaining instances of the classes. We plot the cost landscape J⋆
+Γ for the train set and draw in
+red, orange, and yellow values of J⋆
+Γ correspondent to samples which are compared against the test apple, apricot,
+and melon, respectively. We also sort the train samples so that they are grouped in three regions (highlighted by
+the background color in Fig. 3), correspondent to train melons, apricots, and apples. With this construction, if the
+minimum cost among the yellow markers falls in the yellow region, it will correspond to a correctly-classified sample
+(resp. for orange and red). We further mark the yellow, orange, and red minima in green if test and train labels
+correspond, i.e. markers’ and background’s colors are the same, and in red otherwise. Train and test samples are also
+in Fig. 3. The multicommodity dynamics correctly labels each test image. In contrast, the unicommodity dynamics
+fails at this task, labeling a melon as an apricot. This suggests that the multicommodity approach is able to use the
+color information in datasets where this feature is more informative than others, e.g. shape.
+Experiment 3: when shape matters. Having shown results on a custom dataset where shape was controlled to matter
+less, we now do the opposite and select a dataset where this feature should be more informative. The goal is to assess
+whether a multicommodity approach helps in this case as well, as its main input information may not be as relevant
+anymore. Specifically, we select as a test sample a cherry, whose form is arguably distinguishable from that of many
+other fruits in the dataset. One can expect that comparing it against the train set of FD will result in having both
+unicommodity and multicommodity dynamics able to assign low J⋆
+Γ to train cherries, and higher costs to other fruits.
+This intuition is confirmed by results in Fig. 4. Here train cherries (in green) strongly cluster in the lower portion of
+the cost landscape, whereas all the other fruits have higher costs. In Fig. 4 we also plot some of the correctly classified
+train samples. These results suggest that when color information is negligible compared to another type of information
+(e.g. shape), unicommodity and multicommodity formulations perform similarly. In light of this, we reinforce the
+claim that our multicommodity formulation can boost classification in contexts where color information does matter,
+but may not give any advantage when other types of information is more informative. We encourage practitioners to
+evaluate when this is the case based on domain-knowledge when available.
+
+
+8
+
+FIG. 3. Evaluating the effect of colors. Experiment 1: Top black framed image is that to be classified. Predictions given by
+the multicommodity and the unicommodity dynamics (those with lower J⋆
+Γ) are shown in the right side of the panel, and are
+displayed in sorted fashion from worst to best (from bottom to top). Experiment 2: Top right samples are the three test images
+to be classified. Middle and bottom rows are predictions given by the two dynamics. Markers, backgrounds and test images
+shared color code: red for apples, orange for apricots, yellow for melons. In both panels: green circles and red crosses are used
+to highlight classified and misclassified images, respectively. All algorithms are executed with their optimal configurations in
+Table I.
+
+V.
+CONCLUSION
+
+We propose a physics-informed multicommodity OT formulation for effectively using color information to improve
+image classification. We model colors as immiscible flows traveling on a capacitated network, and propose equations for
+its dynamics, with the goal of optimizing flow distribution on edges. Color flows are regulated by a shared conductivity,
+and minimize a unique cost function. Thresholding the ground cost as in [22, 23] makes our model computationally
+efficient.
+We outperform other OT-based approaches as the Sinkhorn algorithm on two datasets where color matters. Our
+model also assigns lower cost to correctly classified images than its unicommodity counterpart, and it is more robust
+on datasets where items have similar shape, and thus color information is distinctly relevant. We note that, for
+some datasets, color information may not matter, as when another type of information (e.g. shape) has stronger
+discriminative power. However, while we focused here on different color channels as the different commodities in our
+formulation, the ideas of this paper can be extended to scenarios where other relevant information can be distinguished
+into different types. For instance, one could combine several features together, e.g. colors, contours and objects’
+orientations, when available.
+Our model can be further improved. While it uses the thresholding of [22, 23] to speed-up convergence (as mentioned
+in Section III A), it is still slower than Sinkhorn-based methods. Hence, investigating approaches aiming at improving
+
+
+9
+
+FIG. 4. Evaluating the importance of colors: when shapes matter most. Experiment 3: Top black framed image is that to be
+classified. The best 3 (out of 10) predictions returned by the two dynamics are shown on the right. We mark with green circles
+training samples belonging to the same class of the test image. All algorithms are executed with their optimal configurations in
+Table I.
+
+its computational performance is an important direction for future work. Speed-up can be achieved, for example, with
+the implementation of [39], where the unicommodity OT problem on sparse topologies is solved in O(|E|0.36) time
+steps. This bound has been found using a backward Euler scheme combined with the inexact Newton-Raphson method
+for the update of x, and solving Kirchhoff’s law using an algebraic multigrid method [44].
+Our main goal is to frame an image classification task into that of finding optimal flows of mass of different types in
+networks built from images. We follow physics principles to assess whether using colors as immiscible flows can give
+an advantage compared to other standard OT-based methods that do not incorporate such insights. The increased
+classification performance observed in our experiments stimulates the integration of similar ideas into deep network
+architectures [45] as a relevant avenue for future work. Combining their prediction capabilities with our insights on
+how to better exploit the various facets of the input data has the potential to push even further the performance
+of deep classifiers. For example, one could extend the state-of-the-art architecture of Eisenberger et al. [45], which
+efficiently computes implicit gradients for generic Sinkhorn layers within a neural network, by including edge, shape,
+and contour information for Wassertein barycenters computation or image clustering.
+
+CODE AND DATA AVAILABILITY STATEMENT
+
+To facilitate practitioners using our algorithms, we make our Python code publicly available [46]. The datasets Jena
+Flowers 30 Dataset (JF30) and the Fruit Dataset (FD) used for this study can be found in [42] and [43], respectively.
+
+ACKNOWLEDGMENTS
+
+The authors thank the International Max Planck Research School for Intelligent Systems (IMPRS-IS) for supporting
+Alessandro Lonardi and Diego Baptista.
+
+[1] F. Kaiser, H. Ronellenfitsch, and D. Witthaut, Discontinuous transition to loop formation in optimal supply networks,
+
+Nature communications 11, 1 (2020).
+
+[2] A. Lonardi, M. Putti, and C. De Bacco, Multicommodity routing optimization for engineering networks, Scientific Reports
+12, 7474 (2022).
+
+[3] A. Lonardi, E. Facca, M. Putti, and C. De Bacco, Infrastructure adaptation and emergence of loops in network routing
+with time-dependent loads, Phys. Rev. E 107, 024302 (2023).
+
+
+10
+
+[4] P. Demetci, R. Santorella, B. Sandstede, W. S. Noble, and R. Singh, Gromov-Wasserstein optimal transport to align
+single-cell multi-omics data, bioRxiv 10.1101/2020.04.28.066787 (2020).
+
+[5] E. Katifori, G. J. Szöllősi, and M. O. Magnasco, Damage and Fluctuations Induce Loops in Optimal Transport Networks,
+
+Phys. Rev. Lett. 104, 048704 (2010).
+
+[6] M. Werman, S. Peleg, and A. Rosenfeld, A Distance Metric for Multidimensional Histograms, Computer Vision, Graphics,
+and Image Processing 32, 328 (1985).
+
+[7] S. Peleg, M. Werman, and H. Rom, A unified approach to the change of resolution: space and gray-level, IEEE Transactions
+on Pattern Analysis and Machine Intelligence 11, 739 (1989).
+
+[8] Y. Rubner, C. Tomasi, and L. J. Guibas, A metric for distributions with applications to image databases, in Sixth
+International Conference on Computer Vision (IEEE Cat. No.98CH36271) (1998) pp. 59–66.
+
+[9] Y. Rubner, C. Tomasi, and L. J. Guibas, The Earth Mover’s Distance as a Metric for Image Retrieval, International Journal
+of Computer Vision 40, 99 (2000).
+
+[10] D. Baptista and C. De Bacco, Principled network extraction from images, R. Soc. open sci. 8, 210025 (2021).
+[11] G. Peyré and M. Cuturi, Computational Optimal Transport: With Applications to Data Science, Foundations and Trends®
+in Machine Learning 11, 355 (2019).
+
+[12] P. Koehl, M. Delarue, and H. Orland, Optimal transport at finite temperature, Phys. Rev. E 100, 013310 (2019).
+[13] E. Aurell, C. Mejía-Monasterio, and P. Muratore-Ginanneschi, Optimal Protocols and Optimal Transport in Stochastic
+Thermodynamics, Phys. Rev. Lett. 106, 250601 (2011).
+
+[14] D. Leite and C. De Bacco, Revealing the similarity between urban transportation networks and optimal transport-based
+infrastructures, arXiv preprint arXiv:2209.06751 (2022).
+
+[15] D. Baptista, D. Leite, E. Facca, M. Putti, and C. De Bacco, Network extraction by routing optimization, Scientific Reports
+10, 10.1038/s41598-020-77064-4 (2020).
+
+[16] A. A. Ibrahim, A. Lonardi, and C. D. Bacco, Optimal Transport in Multilayer Networks for Traffic Flow Optimization,
+Algorithms 14, 10.3390/a14070189 (2021).
+
+[17] A. Mondino and S. Suhr, An optimal transport formulation of the Einstein equations of general relativity, Journal of the
+European Mathematical Society 10.4171/JEMS/1188 (2022).
+
+[18] K. Grauman and T. Darrell, Fast contour matching using approximate earth mover’s distance, in Proceedings of the 2004
+IEEE Computer Society Conference on Computer Vision and Pattern Recognition, 2004. CVPR 2004, Vol. 1 (2004) pp. I–I.
+
+[19] M. Cuturi, Sinkhorn distances: Lightspeed computation of optimal transport, in Advances in Neural Information Processing
+Systems, Vol. 26 (Curran Associates, Inc., 2013) pp. 2292–2300.
+
+[20] P. Koehl, M. Delarue, and H. Orland, Statistical Physics Approach to the Optimal Transport Problem, Phys. Rev. Lett.
+123, 040603 (2019).
+
+[21] M. Thorpe, S. Park, S. Kolouri, G. K. Rohde, and D. Slepčev, A transportation Lp Distance for Signal Analysis, Journal of
+mathematical imaging and vision 59, 187 (2017).
+
+[22] O. Pele and M. Werman, A Linear Time Histogram Metric for Improved SIFT Matching, in Computer Vision – ECCV
+2008 (Springer Berlin Heidelberg, Berlin, Heidelberg, 2008) pp. 495–508.
+
+[23] O. Pele and M. Werman, Fast and robust Earth Mover’s Distances, in 2009 IEEE 12th International Conference on
+Computer Vision (2009) pp. 460–467.
+
+[24] C. Villani, Optimal transport: Old and New, Vol. 338 (Springer, 2009).
+[25] M. Arjovsky, S. Chintala, and L. Bottou, Wasserstein Generative Adversarial Networks, in Proceedings of the 34th
+International Conference on Machine Learning, Proceedings of Machine Learning Research, Vol. 70, edited by D. Precup
+and Y. W. Teh (PMLR, 2017) pp. 214–223.
+
+[26] T. Lin, N. Ho, and M. Jordan, On Efficient Optimal Transport: An Analysis of Greedy and Accelerated Mirror Descent
+Algorithms, in Proceedings of the 36th International Conference on Machine Learning, Proceedings of Machine Learning
+Research, Vol. 97 (PMLR, 2019) pp. 3982–3991.
+
+[27] P. Dvurechensky, A. Gasnikov, and A. Kroshnin, Computational Optimal Transport: Complexity by Accelerated Gradient
+Descent Is Better Than by Sinkhorn’s Algorithm, in Proceedings of the 35th International Conference on Machine Learning,
+Proceedings of Machine Learning Research, Vol. 80 (PMLR, 2018) pp. 1367–1376.
+
+[28] J. R. Banavar, F. Colaiori, A. Flammini, A. Maritan, and A. Rinaldo, Topology of the Fittest Transportation Network,
+
+Phys. Rev. Lett. 84, 4745 (2000).
+
+[29] H. Ronellenfitsch and E. Katifori, Global Optimization, Local Adaptation, and the Role of Growth in Distribution Networks,
+
+Phys. Rev. Lett. 117, 138301 (2016).
+
+[30] D. Hu and D. Cai, Adaptation and Optimization of Biological Transport Networks, Phys. Rev. Lett. 111, 138701 (2013).
+[31] F. Corson, Fluctuations and Redundancy in Optimal Transport Networks, Phys. Rev. Lett. 104, 048703 (2010).
+[32] A. Lonardi, E. Facca, M. Putti, and C. De Bacco, Designing optimal networks for multicommodity transport problem,
+
+Phys. Rev. Research 3, 043010 (2021).
+
+[33] V. Bonifaci, E. Facca, F. Folz, A. Karrenbauer, P. Kolev, K. Mehlhorn, G. Morigi, G. Shahkarami, and Q. Vermande,
+Physarum-inspired multi-commodity flow dynamics, Theoretical Computer Science 10.1016/j.tcs.2022.02.001 (2022).
+
+[34] V. Bonifaci, K. Mehlhorn, and G. Varma, Physarum can compute shortest paths, Journal of Theoretical Biology 309, 121
+(2012).
+
+[35] A. Rinaldo, I. Rodriguez-Iturbe, R. Rigon, E. Ijjasz-Vasquez, and R. L. Bras, Self-organized fractal river networks, Phys.
+Rev. Lett. 70, 822 (1993).
+
+[36] A.-L. Barabási, Invasion Percolation and Global Optimization, Phys. Rev. Lett. 76, 3750 (1996).
+
+
+11
+
+[37] F. Santambrogio, Optimal channel networks, landscape function and branched transport, Interfaces and Free Boundaries 9,
+149 (2007).
+
+[38] A. A. Ibrahim, D. Leite, and C. De Bacco, Sustainable optimal transport in multilayer networks, Physical Review E 105,
+064302 (2022).
+
+[39] E. Facca and M. Benzi, Fast Iterative Solution of the Optimal Transport Problem on Graphs, SIAM Journal on Scientific
+Computing 43, A2295 (2021).
+
+[40] R. Flamary, N. Courty, A. Gramfort, M. Z. Alaya, A. Boisbunon, S. Chambon, L. Chapel, A. Corenflos, K. Fatras,
+N. Fournier, L. Gautheron, N. T. Gayraud, H. Janati, A. Rakotomamonjy, I. Redko, A. Rolet, A. Schutz, V. Seguy, D. J.
+Sutherland, R. Tavenard, A. Tong, and T. Vayer, POT: Python Optimal Transport, Journal of Machine Learning Research
+22, 1 (2021).
+
+[41] B. Schmitzer, Stabilized Sparse Scaling Algorithms for Entropy Regularized Transport Problems, SIAM Journal on Scientific
+Computing 41, A1443 (2019).
+
+[42] M. Seeland, M. Rzanny, N. Alaqraa, J. Wäldchen, and P. Mäder, Jena Flowers 30 Dataset (2017).
+[43] P. A. Macanhã, D. M. Eler, R. E. Garcia, and W. E. M. Junior, Handwritten feature descriptor methods applied to fruit
+classification, in Information Technology - New Generations (Springer International Publishing, Cham, 2018) pp. 699–705.
+
+[44] U. Trottenberg, C. W. Oosterlee, and A. Schuller, Multigrid (Elsevier, 2000).
+[45] M. Eisenberger, A. Toker, L. Leal-Taixé, F. Bernard, and D. Cremers, A unified framework for implicit sinkhorn differentiation,
+in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2022) pp. 509–518.
+
+[46] MODI (Open Source code implementation) (2022), https://github.com/aleable/MODI.
+[47] R. N. Shepard, Toward a Universal Law of Generalization for Psychological Science, Science 237, 1317 (1987).
+[48] C. Poynton, Frequently Asked Questions about Color., (1997).
+[49] R. Sinkhorn, A relationship between arbitrary positive matrices and doubly stochastic matrices, The annals of mathematical
+statistics 35, 876 (1964).
+
+[50] P. Knopp and R. Sinkhorn, Concerning nonnegative matrices and doubly stochastic matrices, Pacific Journal of Mathematics
+21, 343 (1967).
+
+[51] A. Genevay, M. Cuturi, G. Peyré, and F. Bach, Stochastic optimization for large-scale optimal transport, in Advances in
+Neural Information Processing Systems, Vol. 29, edited by D. Lee, M. Sugiyama, U. Luxburg, I. Guyon, and R. Garnett
+(Curran Associates, Inc., 2016).
+
+[52] J. Altschuler, J. Niles-Weed, and P. Rigollet, Near-linear time approximation algorithms for optimal transport via sinkhorn
+iteration, in Advances in Neural Information Processing Systems, Vol. 30, edited by I. Guyon, U. V. Luxburg, S. Bengio,
+H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (Curran Associates, Inc., 2017).
+
+[53] L. Chizat, G. Peyré, B. Schmitzer, and F.-X. Vialard, Scaling algorithms for unbalanced optimal transport problems,
+
+Mathematics of Computation 87, 2563 (2018).
+
+
+Immiscible Color Flows in Optimal Transport Networks for Image Classification:
+Supplemental Material (SM)
+
+Alessandro Lonardi,1, ∗ Diego Baptista,1, † and Caterina De Bacco1, ‡
+
+1Max Planck Institute for Intelligent Systems, Cyber Valley, Tübingen 72076, Germany
+
+I.
+CONSTRUCTION OF THE NETWORK
+
+Here, we extensively explain the procedure used for constructing the transport network K. All the essential steps
+are schematically drawn in Fig. S1, and are as follows.
+
+Step 1. Initially, a pair of images (Image 1, Image 2), is given as a couple of multidimensional arrays of dimensions
+(wi, hi, M = 3), with i = 1, 2. We denote with w images’ widths and with h their heights. The third dimension
+has size M = 3, and corresponds to the three RGB color channels. The color channels are flattened to obtain the
+tensors G and H, the first for Image 1, and the second for Image 2. In detail, each channel is vectorized to have
+dimension m × 1, with m = w1 · h1, for ga (resp. n × 1, with n = w2 · h2, for ha), which are inflows and outflows
+of our multicommodity dynamics. In this way, the tensors G and H, which are obtained stacking ga and ha,
+have size m × M and n × M. Entries of G and H are in standard RGB encoding, hence they are integers ranging
+from 0 to 255.
+To obtain the transport network K, we first generate a complete bipartite graph between m + n = |V1| + |V2|
+nodes, the first m = |V1| are the pixels of Image 1, and the other n = |V2| are those of Image 2. We then assign
+a cost to each edge of this graph using both information given by pixels’ locations, and by images’ colors. In
+particular, we define:
+
+Ce(θ) = (1 − θ)Ye + θXe
+∀e = (i, j)
+(S1)
+
+Ye=(i,j) = ||vi − vj||2 =
+�
+
+(xi − xj)2 + (yi − yj)2
+(S2)
+
+Xe=(i,j) = ||Gi − Hj||1 =
+
+M=3
+�
+
+a=1
+|Gia − Hja|
+(S3)
+
+for each i pixel of Image 1, and j pixel of Image 2. Terms Ye in Eq. (S2) contain the Euclidean distance between
+any pair of pixels, whose horizontal and vertical coordinates are stored in vectors v = (x, y). Instead, Xe
+
+FIG. S1. Detailed construction of transport networks. Step 1: conversion of colored images to tensors and construction of the
+first complete bipartite graph. Step 2: trimming of expensive edges and addition of the transshipment node, u1, with its links
+(in brown). Step 3: relaxation of mass balance with the addition of the second auxiliary node, u2, together with its links (in
+magenta).
+
+∗ Equal contribution; alessandro.lonardi@tuebingen.mpg.de
+† Equal contribution; diego.theuerkauf@tuebingen.mpg.de
+‡ caterina.debacco@tuebingen.mpg.de
+
+
+2
+
+contributes with colors to edges’ costs. We model the effect of colors taking, in Eq. (S3), the 1-norm between
+arrays Gi, Hj, containing the RGB intensities in i (pixel of Image 1) and j (pixel of Image 2). Both Xe and Ye
+have been opportunely rescaled in the range [0, 1]. Lastly, we use the scalar parameter 0 ≤ θ ≤ 1 to weigh Ye
+and Xe in a convex combination, in Eq. (S1).
+
+Step 2. Once Step 1 is complete, and a cost Ce is assigned to each edge of the complete bipartite graph between the
+two images, we implement a trimming procedure similar to that of [22, 23] to cut highly expensive links. In
+particular, we trim all edges e that have cost Ce > τ, where τ > 0 is a threshold fixed a priori. The links between
+V1 and V2 that do not get cut make up the set E12. We then add a first transshipment node, u1, to the network,
+and connect it with m + n links to the sets V1 and V2. Each transshipment link is assigned a fixed cost Ce = τ/2.
+This implies that one needs to pay a total cost of τ to transport mass from a node of Image 1 (in V1) to one of
+Image 2 (in V2), when traversing transshipment links.
+
+There are several benefits in thresholding for the cost: (i) from a purely intuitive standpoint, humans perceive
+distances as saturated distances [47]; (ii) many natural color distributions are noisy and heavy-tailed, thus
+thresholding permits to assign a fixed cost to outliars; (iii) thresholded distances induce a W1 distance between
+distributions in standard unicommodity OT problems [23]. More practically, thresholding improves accuracy and
+speed of OT [23] (see also the Computational Cost Section in this SM).
+
+Step 3. The last step required to obtain K is the introduction of a second auxiliary node, u2, together with its edges,
+to relax mass balance. In detail, in a standard OT setting �
+
+i Gia = �
+
+j Hja = Λa > 0 holds ∀a = 1, . . . , M,
+i.e., two histograms to be transported belong to the same simplex of mass Λa > 0. We relax this constraint
+permitting �
+
+i Gia ̸= �
+
+j Hja and penalizing Eq. (1) (main text). Particularly, we use a similar relaxation of
+that in [23], which we generalize to the multicommodity setup:
+
+J⋆
+Γ(G, H) =
+min
+P ∈Π(G,H) JΓ(G, H)
+Relaxation
+−→
+min
+P
+
+�
+JΓ(G, H) + α �
+
+a
+����
+
+j Hja − �
+
+i Gia
+��� maxe∈E12 Ce
+�
+.
+(S4)
+
+The intuition of Eq. (S4) is that the OT problem is penalized proportionally to the net difference between the
+inflowing and the outflowing mass. Hence, two images whose colors strongly differ return a higher cost and, in a
+supervised classification task, are less likely to be assigned the same label. We fix α = 1/2 as in [22].
+
+This penalization can be translated to the transport network with the addition of n links, costing c =
+α maxe∈E12 Ce = maxe∈E12 Ce/2, connected to u2.
+The excess of mass ma = �
+
+j Hja − �
+
+i Gia given by
+each commodity is injected u2 to guarantee that the whole system is isolated. With this expedient one recovers
+exactly the relaxed OT formulation in Eq. (S4). In fact, all the transport paths that not flow into one of the
+n nodes of Image 2 penalize the cost by traversing the edges connected to u2. From conservation of mass one
+can see that these transport paths satisfy P a
+ju2 = Hja − (1/n) �
+
+i Gia, ∀j ∈ V2. Thus, summing over a and j
+returns exactly �
+
+aj P a
+ju2 = || �
+
+j Hj − �
+
+i Gi||1, with the 1-norm taken over the commodities. This is precisely
+the penalization we introduced in Eq. (S4).
+
+II.
+EQUIVALENCE BETWEEN MULTICOMMODITY DYNAMICS AND OT SETUP
+
+With the following derivations (similar to [32, 33]), we show that asymptotic solutions of Eqs. (3)-(4) (main text)
+are equivalent to minimizers of Eq. (1) (main text). This implies that by solving the multicommodity dynamics we
+find a solution of the multicommodity OT minimization problem. More practically, for a given pair of images, running
+a numerical scheme on Eqs. (3)-(4) (main text) allows us to compute limt→∞ P(t) = P ⋆, hence J⋆
+Γ = JΓ|P =P ⋆, and
+use the latter as a measure of similarity between them.
+More in detail, we first demonstrate the equivalence between stationary solutions of the multicommodity dynamics
+and minimizers of the multicommodity OT problem introducing a second accessory minimization problem. Stationary
+solutions are proven to be asymptotes of Eq. (4) (main text) only afterwards, with the introduction of a Lyapunov
+functional for the multicommodity dynamics.
+
+A.
+Stationary solutions of the multicomodity dynamics and OT minimizers
+
+Initially, we observe that stationary solutions of the multicommodity dynamics satisfy the relation
+
+xe = ||Pe||2/(1+γ)
+2
+∀e ∈ E,
+(S5)
+
+
+3
+
+that one can derive setting the left hand side of Eq. (4) (main text) to zero, defining P a
+e = xe(φa
+i −φa
+j )/Ce for e = (i, j),
+and γ = 2 − β. We recover an scaling identical to Eq. (S5) introducing the following auxiliary constrained minimization
+problem:
+
+min
+x,P
+
+�
+1
+2
+
+�
+
+e
+
+Ce
+xe
+||Pe||2
+2 + 1
+
+2γ
+
+�
+
+e
+Cexγ
+e
+
+�
+
+(S6)
+
+s.t.
+�
+
+e
+BieP a
+e = Sa
+i
+∀i ∈ V, a = 1, . . . , M.
+(S7)
+
+In fact, differentiating with respect to xe the objective function in Eq. (S6), and setting the derivatives to zero, yields
+
+− Ce
+
+x2e
+||Pe||2
+2 + Cexγ−1
+e
+!= 0
+−→
+xe = ||Pe||2/(1+γ)
+2
+∀e ∈ E.
+(S8)
+
+Noticeably, Eq. (S6) admits a straightforward physical interpretation. In fact, the first term J = (1/2) �
+
+e Ce||Pe||2
+2/xe
+is Joule’s first law. Particularly, transport paths can be thought of as fluxes of mass transported through the edges of
+a capacitated network with resistances re = Ce/xe. While the second term, Wγ = (1/2γ) �
+
+e Cexγ
+e, is the cost needed
+to build the network infrastructure. The constraints in Eq. (S7)—identical to Eq. (3) (main text)—are equivalent to
+Kirchhoff’s law, enforcing conservation of mass.
+Most remarkably, the scaling of Eq. (S8) can be also recasted in Eq. (S6) to find that JΓ = J + Wγ (neglecting
+multiplicative constants). This connects the multicommodity dynamics with the objective function of Eq. (1) (main
+text). In detail,
+
+J + Wγ = 1
+
+2
+
+�
+
+e
+
+Ce
+xe
+||Pe||2
+2 + 1
+
+2γ
+
+�
+
+e
+Cexγ
+e
+(S9)
+
+Eq. (S8)
+=
+1
+2
+
+�
+
+e
+Ce||Pe||2γ/(1+γ)
+2
++ 1
+
+2γ
+
+�
+
+e
+Ce||Pe||2γ/(1+γ)
+2
+(S10)
+
+Γ=2γ/(1+γ)
+=
+1
+Γ
+
+�
+
+e
+Ce||Pe||Γ
+2
+(S11)
+
+= 1
+
+ΓJΓ(G, H).
+(S12)
+
+To complete the mapping between the multicommodity dynamics and the minization setup, we show that the space
+of transport tensors Π(G, H) is exactly the same space defined by Eq. (S7). This can be seen with the following chain
+of equalities:
+�
+
+k
+P a
+ik −
+�
+
+j
+P a
+ji = Ga
+i − Ha
+i
+∀i ∈ V, a = 1, . . . , M
+(S13)
+
+�
+
+k
+P a
+e=(i,k) −
+�
+
+j
+P a
+e=(j,i) = Sa
+i
+∀i ∈ V, a = 1, . . . , M
+(S14)
+
+�
+
+e
+BieP a
+e = Sa
+i
+∀i ∈ V, a = 1, . . . , M.
+(S15)
+
+Here we take the difference between the OT constraints of Π(G, H) in Eq. (S13), we then use the definition of S in
+Eq. (S14), and compact the plus and minus signs using the signed incidence matrix B in Eq. (S15). This allows us to
+recover Kirchhoff’s law as formulated in Eq. (S7) and Eq. (3) (main text).
+
+B.
+Multicommodity dynamics asymptotes: Lyapunov functional
+
+We complete our discussion introducing the Lyapunov functional for Eq. (4) (main text) proposed in [32, 33]. The
+functional reads:
+
+Lγ[x] = 1
+
+2
+
+�
+
+ai
+φa
+i [x]Sa
+i + 1
+
+2γ
+
+�
+
+e
+Cexγ
+e,
+(S16)
+
+
+4
+
+and it is a multicommodity generalization of that originally introduced in [34]. This is a well-defined Lyapunov
+functional for the multicommodity dynamics, in fact, along a curve x(t) solution of Eq. (4) (main text),
+
+dLγ[x(t)]
+
+dt
+≤ 0.
+(S17)
+
+With the equality satisfied if and only if x(t) is a stationary point of Eq. (4) (main text). This can be shown as follows.
+We claim that
+∂Lγ
+∂xe
+= Ce
+
+2
+
+�
+xγ−1
+e
+− ||φi − φj||2
+2
+
+C2e
+
+�
+∀e = (i, j) ∈ E.
+(S18)
+
+This equality can be retrieved differentiating both sides of Eq. (3) (main text) by xe, thus obtaining
+�
+
+j
+
+∂Lij
+∂xe
+φa
+j +
+�
+
+j
+Lij
+∂φa
+j
+
+∂xe
+= 0
+∀i ∈ V, e ∈ E, a = 1, . . . , M,
+(S19)
+
+�
+
+j
+Lij
+∂φa
+j
+
+∂xe
+= −
+�
+
+j
+Bje(1/Ce)Bieφa
+j
+∀i ∈ V, e ∈ E, a = 1, . . . , M.
+(S20)
+
+Then, multiplying Eq. (S20) by φa
+i and summing over i one gets
+�
+
+ij
+φa
+i Lij
+∂φa
+j
+
+∂xe
+= −
+�
+
+ij
+φa
+i Bie(1/Ce)Bjeφa
+j
+∀e ∈ E, a = 1, . . . , M,
+(S21)
+
+further summing over a yields
+
+∂
+
+∂xe
+
+
+
+�
+
+aj
+Sa
+j φa
+j
+
+
+
+ = −Ce
+||φi − φj||2
+2
+
+C2e
+∀e = (i, j) ∈ E,
+(S22)
+
+where in the left hand side of Eq. (S22) we used Eq. (3) (main text). From Eq. (S22) the equality in Eq. (S18) follows
+immediately. Now, thanks to Eq. (S18) we can prove that the Lie derivative of the functional is less than or equal to
+zero. In fact,
+
+dLγ
+dt
+=
+�
+
+e
+
+∂Lγ
+∂xe
+
+dxe
+dt
+(S23)
+
+Eq. (S18)
+=
+�
+
+e
+
+Ce
+2
+
+�
+xγ−1
+e
+− ||φi − φj||2
+2
+
+C2e
+
+� dxe
+
+dt
+(S24)
+
+Eq. (4),γ=2−β
+=
+−
+�
+
+e
+
+Ce
+2 x2−γ
+e
+
+�
+xγ−1
+e
+− ||φi − φj||2
+2
+
+C2e
+
+�2
+≤ 0.
+(S25)
+
+With the equality in Eq. (S25) that is recovered if and only if (i) xe = 0, or (ii) the scaling in Eq. (S8) holds.
+Finally, we show that the Lyapunov is identical to the total sum of dissipation and transport cost, i.e., Lγ = J + Wγ.
+This can be done multiplying both sides of Eq. (3) (main text) by φa
+i and then summing over i and a, namely
+�
+
+aiej
+φa
+i Bie(xe/Ce)Bjeφa
+j =
+�
+
+ai
+φa
+i Sa
+i
+(S26)
+
+�
+
+e
+
+Ce
+xe
+||Pe||2
+2 =
+�
+
+ai
+φa
+i Sa
+i
+(S27)
+
+where we used P a
+e = xe(φa
+i − φa
+j )/Ce, for e = (i, j). This allows us to conclude.
+In summary, we showed that the multicommodity dynamics admits a well-defined Lyapunov functional, which is
+equivalent to the sum of a dissipation and an infrastructure cost. These two contributions, which are jointly minimized
+by Eq. (4) (main text), when evaluated along their minimizers correspond to the multicommodity OT cost JΓ of Eq.
+(1) (main text). Introducing the Lyapunov functional is crucial to formally show that asymptotics of the dynamics are
+equivalent to minimizers of the cost, namely limt→∞ P(t) = P ⋆.
+Lastly, we remark the effect of γ (resp. β) on the minimization problem. In the setting where γ > 1 (β < 1) the
+functional Lγ is convex, with one unique minimizer. For γ < 1 (β > 1) the functional landscape becomes rugged and
+strongly non-convex, with multiple minimizers each correspondent to a local minima of the cost. Hence, in this second
+scenario, running Eq. (4) (main text) permits to converge in a stationary point, which however may not be its global
+minimum.
+
+
+5
+
+III.
+CROSS-VALIDATION: FLOWERS DATASET
+
+We perform a 4-fold cross validation on both parameters used for the construction of the ground cost, θ and τ, and
+on algorithms’ regularization parameters, β and ε. We briefly summarize it in this section.
+The JF30 Dataset [42] is made of 1,479 elements, divided in 30 classes. First, we separate it into two subsets:
+train and test, with classes’ frequencies being the same in these subsets as in the entire dataset. To cross-validate
+our methods, we further separate the train set into 4 folds of equal size, each to be used in turn as a validation
+set. More in detail, each experiment is executed fixing the validation fold and an image belonging to it, then, the
+Optimal Transport costs J⋆
+Γ between such image all the other images in the train set—made of the other three folds—is
+calculated. This procedure is repeated for all images in the validation set, and swapping each of the 4 train folds as
+validation set. We use a k-nearest neighbors classifier over J⋆
+Γ to assign to an image in the validation set its label, that
+is, for each validation image we consider the k train samples with lowest J⋆
+Γ, and label the validation sample with the
+most frequent class among these k. This allows us to calculate the classification accuracy of a given fold, and then to
+average the accuracy over the 4 permutations of the validation and train set. The total amount of experiments we ran
+in order to cross-validate the model is approximately 50,000.
+Results are shown in Fig. S2 and Fig. S3.
+These depict the average accuracy of: (A) the multicommodity
+(M = 3) dynamics; (B) the unicommodity (M = 1) dynamics, both for β ∈ {0.5, 0.75, 1, 1.25, 1.5}; (C) Sinkhorn
+algorithm on colored images (Sinkhorn RGB); and (D) Sinkhorn algorithm on grayscale images (Sinkhorn GS), for
+ε ∈ {100, 250, 500, 750, 1000, 2500}. Letters in parentheses refer to those of Fig. S2 and Fig. S3. The regularization
+parameters are validated together with τ ∈ {0.1, 0.125} and θ ∈ {0, 0.25, 0.5, 0.75}. Both multicommodity and
+unicommodity dynamics are have initial conditions xe(0) = 1, ∀e ∈ E.
+All figures displayed in Fig. S2 and Fig. S3 correspond to highest accuracies returned by the k-NN classifier, with
+k = 1, 2, . . . , 20. Observing the results, one can see that best performances are attained at (τ, θ, β) = (0.125, 0.25, 1)
+for the multicommodity dynamics, and at (τ, θ, β) = (0.125, 0.25, 1.25) for the unicommodity dynamics.
+Noticeably, the accuracy monotonically increases (resp. decreases) with β for a fixed value of θ, namely θ = 0 (resp.
+θ = 0.25). This can be addressed to the fact that, when no color information is taken into account in the construction
+of the ground metric (θ = 0), it is more advantageous to consolidate transport paths on cheap edges correspondent to
+pixels whose positions are close, thus choosing a larger β. On the other hand, introducing colors in C (θ > 0), and
+thus creating a more disordered ground cost matrix, favors distributing transport paths on the network (See Model
+Interpretability Section in this SM).
+Remarkably, τ also has an impact on the classification accuracy of our algorithms: the larger we set its value to
+be—thus trimming less edges from the transport network—the more accurate the classification becomes. This behavior
+is evidently different for Sinkhorn algorithm, as explained here below.
+Cross-validation of Sinkhorn algorithm is taken a step further. Motivated by the classification accuracy drop observed
+in Fig. S2, Fig. S3 [(C), (D)] when enlarging the trimming threshold from τ = 0.1 to τ = 0.125, we fix θ and ε to
+the best values in Fig. S2 [(C), (D)], and progressively reduce τ. Results are shown in Fig. S4 (A) for Sinkhorn on
+grayscale images, and in Fig. S4 (B) for Sinkhorn on colored images.
+Notice that both Sinkhorn GS and Sinkhorn RGB returns bell-shaped curves when changing τ. In particular,
+low classification accuracy is attained when strongly reducing τ, as well as when the trimming threshold is high
+(approximately τ ≥ 0.5). In the first case, many elements of the ground cost matrix are cut, and not enough information
+
+0.0
+0.25
+0.5
+0.75
+
+0.5
+
+0.75
+
+1.0
+
+1.25
+
+1.5
+
+Multicommodity
+
+0.0
+0.25
+0.5
+0.75
+
+0.5
+
+0.75
+
+1.0
+
+1.25
+
+1.5
+
+Unicommodity
+
+100
+
+250
+
+500
+
+750
+
+1000
+
+2500
+
+0.0
+
+0.25
+
+0.5
+
+0.75
+
+Sinkhorn RGB
+
+100
+
+250
+
+500
+
+750
+
+1000
+
+2500
+
+0.0
+
+0.25
+
+0.5
+
+0.75
+
+Sinkhorn GS
+
+= 0.1
+
+(A)
+(B)
+(C)
+(D)
+
+FIG. S2. Cross-validation results for τ = 0.1. Figures are accuracy values obtained with the 4-fold cross validation on JF30.
+Cells are colored with a darkest-to-brightest palette based on the accuracies. Subplots correspond to: (A) the multicommodity
+dynamics, (B) the unicommodity dynamics, (C) Sinkhorn on colored images, and (D) Sinkhorn on grayscale images.
+
+
+6
+
+0.0
+0.25
+0.5
+0.75
+
+0.5
+
+0.75
+
+1.0
+
+1.25
+
+1.5
+
+Multicommodity
+
+0.0
+0.25
+0.5
+0.75
+
+0.5
+
+0.75
+
+1.0
+
+1.25
+
+1.5
+
+Unicommodity
+
+100
+
+250
+
+500
+
+750
+
+1000
+
+2500
+
+0.0
+
+0.25
+
+0.5
+
+0.75
+
+Sinkhorn RGB
+
+100
+
+250
+
+500
+
+750
+
+1000
+
+2500
+
+0.0
+
+0.25
+
+0.5
+
+0.75
+
+Sinkhorn GS
+
+= 0.125
+
+(A)
+(B)
+(C)
+(D)
+
+FIG. S3. Cross-validation results for τ = 0.125. Figures are accuracy values obtained with the 4-fold cross validation on JF30.
+Cells are colored with a darkest-to-brightest palette based on the accuracies. Subplots correspond to: (A) the multicommodity
+dynamics, (B) the unicommodity dynamics, (C) Sinkhorn on colored images, and (D) Sinkhorn on grayscale images.
+
+is taken into account into the OT setup to properly perform classification. In the second, too much noise is included
+in into C, which also negatively affects classification. More in detail, we observe in Fig. S4 (a, inset), that Sinkhorn
+GS performs best when τ = 0.05. For Sinkhorn RGB, i.e. Fig. S4 (b, inset), there is a plateau for all values of the
+threshold within the interval [0.05, 0.1].
+These observations lead us to the choice of τ = 0.05 for Sinkhorn GS, that we re-cross-validate ranging θ ∈ {0.25, 0.5}
+and ε ∈ {100, 250, 500, 750, 1000, 2500}. Looking at the results in Fig. S5, we note that optimal parameters for Sinkhorn
+GS are (θ, ε) = (0.25, 500) and (θ, ε) = (0.5, 500), which return identical classification accuracy.
+As for Sinkhorn RGB, we fix the trimming threshold at the two ends of the plateau in Fig. S4 (b, inset), τ = 0.05
+and τ = 0.1, and re-cross-validate them with (θ, ε) = (0.25, 100) and (θ, ε) = (0.5, 1000). Here, we choose two disparate
+values of θ and ε not being able to observe a clear relation between these two variables in Fig. S2 (C) and Fig. S3
+(C). Namely, ε = 100 (low) and θ = 0.25 perform better for τ = 0.125, in contrast to ε = 1000 (high) and θ = 0.5 for
+τ = 0.1. Results are in Table S1, optimal parameters are (θ, τ, ε) = (0.25, 0.05, 100).
+
+IV.
+EXPERIMENTAL DETAILS: FRUITS DATASET
+
+Here, we describe in detail the experimental setup designed for the Fruit Dataset (FD) [43]. FD consists of 163
+images of 15 fruit types. We split the whole dataset into train and test sets, each with 70% and 30% of the available
+images, respectively. As for the other dataset, classes’ frequencies are the same in these subsets as in the entire
+dataset. Given the rather small size of this dataset, we directly perform classification comparing train and test. All
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+
+5
+
+10
+
+15
+
+20
+
+25
+
+30
+
+35
+
+40
+
+Class. accuracy [%]
+
+Sinkhorn GS 
+= 0.5,
+= 500
+
+Single fold
+Average
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+
+0
+
+5
+
+10
+
+15
+
+20
+
+25
+
+30
+
+35
+
+40
+
+Class. accuracy [%]
+
+Sinkhorn RGB 
+= 0.5,
+= 1000
+
+Single fold
+Average
+
+0.05
+0.10
+0.15
+0.20
+
+20
+
+25
+
+30
+
+35
+
+40
+
+Class. accuracy [%]
+
+(A)
+
+0.02
+0.04
+0.06
+0.08
+0.10
+
+(B)
+
+20
+
+25
+
+30
+
+35
+
+40
+
+Class. accuracy [%]
+
+FIG. S4. Sinkohrn’s cross-validation results varying τ. Subplots correspond to: (A) Sinkhorn GS, (B) Sinhorn RGB. In each
+subplot, circular markers correspond to the accuracy values of each fold, instead squares and bars represent their average and
+standard deviations. In the insets, we refined the grid of τ in an interval of interest, where classification accuracy is peaked.
+
+
+7
+
+Algorithm
+Hyperparameters Class. accuracy
+θ
+τ
+ε
+k
+[%] (↑)
+
+Sinkhorn RGB
+
+0.25 0.05 100 1
+58.4
+0.5 0.05 1000 1
+53.6
+0.25 0.1
+100 1
+53.2
+0.5
+0.1 1000 1
+49.0
+
+TABLE S1. Refined cross-validation results for Sinkhorn RGB. Rows are sorted (from bottom to top) using the average
+percent accuracy obtained with the 4-fold validation (from worst to to best).
+
+the experiments have been executed with the two best performing parameter configurations of ε and θ, cross-validated
+on JF30, for Sinkhorn-based methods. These are: (θ, ε) = (0.25, 500), (θ, ε) = (0.5, 500) for Sinkhorn GS [see Fig. S2
+(D)], and (θ, ε) = (0.5, 1000), (θ, ε) = (0.5, 750) for Sinkhorn RGB [see Fig. S2 (C)]. For our dynamics, we selected
+the two best performing values of β, for θ = 0 and θ = 0.25. Namely, (θ, β) = (0.25, 1), (θ, β) = (0.25, 1.5) for the
+multicommodity dynamics [see Fig. S3 (A)], and (θ, β) = (0.25, 1.25), (θ, β) = (0, 1.5) for the unicommodity dynamics
+[see Fig. S3 (B)]. The trimming threshold is ranged in τ ∈ {0.04, 0.05, 0.06, 0.07}.
+
+V.
+IMAGE PREPROCESSING
+
+The elements of both datasets are processed in the following way. First, each image is coarsened with an average
+pooling, the only input needed for this step is the size of the square mask, ms. Its stride is in fact set to stride = ms,
+and the padding to pad = 0. All images were conveniently trimmed so that both their widths and heights are divisible
+by the pooling mask size. We set ms = 40 for JF30, and ms = 30 for FD. Furthermore, we smooth the images using a
+Gaussian filter on each color channel, with standard deviation σ = 0.5.
+Moreover, to convert colored images into grayscale ones, which are given as input to Sinkhorn GS and to our
+unicommodity dynamics (M = 1), we preproces them as follows. Let (R, G, B), be the three color channels composing
+each pixel of a colored image, these are converted into a unique channel (its grayscale counterpart), whose intensity
+I is calculated with the weighted sum I = 0.2125R + 0.7154G + 0.0721B. The weights correspond to those used by
+cathode-ray tube (CRT) phosphors as they are more suitable to represent human perception of red, green and blue
+than equally valued weights [48].
+
+A.
+Color distributions of images
+
+As shown in Table I (main text), for the multicommodity and the unicommodity dynamics, optimal values of the
+trimming threshold τ are much lower in the Fruit Dataset [43] than in the Jena Flowers 30 Dataset [42]. This can
+
+100
+
+250
+
+500
+
+750
+
+1000
+
+2500
+
+0.25
+
+0.5
+
+Sinkhorn GS
+
+= 0.05
+
+FIG. S5. Refined cross-validation results Sinkhorn GS and τ = 0.05. Figures are accuracy values obtained with the 4-fold cross
+validation on JF30. Cells are colored with a darkest-to-brightest palette based on the accuracies.
+
+
+8
+
+FIG. S6. Color distributions in the two datasets. Subplots (A), (B) are relative to FD, subplots (C), (D) to JF30. In (A), (C)
+we plot four random images drawn from the two datasets. In (B), (D) the average color intensities (properly normalized to sum
+to one) of 100 random samples extracted from the two datasets. The plots correspond to red = R, green = G, and blue = B.
+
+be addressed to the fact that color distributions of fruits, belonging to the first dataset, are drastically light-tailed
+compared to those of flowers in the second dataset. Thus, the cost C is naturally noisier in the latter case, and a larger
+trimming is necessary to remove such noise from classification.
+Most of the noise in pictures of flowers comes from the background. In fact, while all flowers are photographed in
+nature, fruits are depicted on a white background. This can be seen in Fig. S6 (A)-(D). In subplot (A) we show four
+images randomly sampled from the Fruit Dataset, in (C) four random samples of the Jena Flowers 30 Dataset. In
+(B) and (D) we plot the average color intensity of the RGB channels for 100 random samples belonging to the two
+datasets. Here, the histograms in (B) are relative to the fruits, those in (D) to the flowers. From the plots it can be
+clearly seen that the color distributions of Fig. S6 (B) are starkly peaked around (R, G, B) = (255, 255, 255) = white
+in standard RGB encoding.
+
+VI.
+SINKHORN BENCHMARKS
+
+In our experiments, we compare the multicommodity and unicommodity dynamics against Sinkhorn algorithm,
+popularized by the seminal work of [19]. The idea of Sinkhorn is to regularize the standard OT problem by adding
+an entropic barrier to the cost function. More in detail, and following the notation adopted in our manuscript, the
+minimization problem proposed in [19] is:
+
+min
+P s.t. �
+
+j Pij=gi
+�
+
+i Pij=hj
+
+
+
+
+
+
+�
+
+ij
+PijCij − εh(P)
+
+
+
+
+ ,
+h(P) = −
+�
+
+ij
+Pij log Pij.
+(S28)
+
+Here transport paths P, which generally lie in the polyhedral set described by the constraints �
+
+j Pij = gi ∀i and
+�
+i Pij = hj ∀j, are smoothed by the entropy h(P). This trick makes the optimization problem strictly convex, and
+permits to solve it with a very efficient matrix scaling algorithm—Sinkhorn’s fixed point iteration.
+We generalize the problem in Eq. (S28) in order to take in account transport tensors, G and H, which carry
+information of multiple color channels, and transport paths P. In detail, we propose the following minimization
+problem for each commodity—color channel—a,
+
+min
+P a s.t. �
+
+j P a
+ij=Ga
+i
+�
+
+i P a
+ij=Ha
+j
+
+
+
+
+Ja
+sink =
+�
+
+ij
+P a
+ijCij − εh(P a)
+
+
+
+
+ ,
+h(P a) = −
+�
+
+ij
+P a
+ij log P a
+ij.
+(S29)
+
+
+9
+
+This allows to efficiently compute, using Sinkhorn’s scaling, an Optimal Transport path P a
+opt for each commodity,
+together with its correspondent optimal cost Ja
+sink,opt = Ja
+sink|P a=P a
+opt. Finally, the Optimal Transport cost for colored
+
+images is calculated as JRGB
+sink,opt = (1/3) �M=3
+a=1 Ja
+sink.
+
+VII.
+MODEL INTERPRETABILITY
+
+In this section we discuss the effect that the parameters θ, τ, and β have one the OT setup.
+First, we explain the experiment in Fig. S7. We start by sampling two images of the FD dataset belonging to
+the same class. These images have identical shape, i.e. width w and height h equal to 20. They are displayed on
+the leftmost part of Fig. S7. From these two images, we obtain the tensors G and H, that are transported in the
+OT problem. The first, G, is constructed using all the pixels on the 11th row of Image 1, thus its dimension is
+m × M = 20 × 3. The same row of Image 2 is used to build H, also in this case its size is n × M = 20 × 3.
+The two tensors enter in Eq. (1) (main text) together with a (20 × 20)-dimensional cost C, which is built with pixels’
+locations and color information using Eqs. (S1)-(S3). The scope of this discussion is to refine the intuition on these
+formulas, and on the effect that θ and τ have on C. In Fig. S7 we plot the ground cost C for the two tensors G and H,
+for θ = {0, 0.25, 0.5, 0.75} and τ = {0.1, 0.25, 0.5, 1}. All entries Cij > τ—which correspond to those edges that are
+trimmed from the transport network—are colored in white.
+Notice that for θ = 0 all costs are symmetric. Indeed in this case Cij = min{Yij, τ}, with Y that is containing
+the Euclidean distances between pixels’ coordinates, i.e.
+Eq. (S2).
+Here, decreasing the trimming threshold τ
+progressively sparsifies the banded matrices drawn in the first column of Fig. S7, with limit cases being C =
+diag[C0,0, C1,1, . . . , C19,19]—for τ sufficiently small, and C = Y —for τ ≥ maxij Yij. On the other hand, the symmetry
+is gradually broken as θ is increased, namely, when colors of the images are are used to build into C. This is clearly
+depicted in Fig. S7, where the heatmaps get progressively disordered for larger values of θ (from left to right).
+To further expand this discussion, we design a second experiment, schematically represented in Fig. S8. Here, we
+solve the OT problem between two tensors, G and H, built similarly to those of Fig. S7. Particularly, we consider
+three central pixels of the 11th rows of Image 1 and Image 2, as drawn in the leftmost part of the Figure, so that both
+ga and ha are 3-dimensional arrays for all a = 1, . . . , 3, and C is a (3 × 3)-dimensional matrix.
+Depending on the values of θ, the ground cost C is either symmetric (θ = 0), and computed only using pixels’
+coordinates, or strongly irregular (θ = 0.75), since colors of images are taken into account. In the first case, the
+transport network connecting the images has also a symmetric structure. Here, elements along the diagonal of the
+cost—correspondent to horizontal edges connecting orange and blue nodes with the same index—are much cheaper
+than all the other entries. This is due to the fact that the Euclidean distance between two pixels with the same position
+is zero (practically set to a safety default value ϵ = 10−5). Conversely, in the second case, introducing colors in the
+ground cost translates into having higher values along the diagonal elements of C. Here, colors—which distribute more
+smoothly on images—smooth out the cost as well, whose entries are more homogeneous.
+As shown in Fig. S2 and Fig. S3, taking a purely Euclidean ground cost C, i.e., θ = 0, returns higher classification
+accuracy when β = 1.5. Instead, building C mostly with color information, thus setting θ = 0.75, favors β = 0.5. We
+address this tendency to the effect that β has on transport paths’ consolidation, and we represent it on the rightmost
+portion of Fig. S8, where we plot the Optimal Transport paths {P 1, P 2, P 3} obtained running Eqs. (3)-(4) (main
+text) on the OT setup just discussed. In detail, for θ = 0, horizontal edges in the transport network are much cheaper
+than the others, therefore strong consolidation of transport paths (β = 1.5) benefits classification. Conversely, since
+for θ = 0.75 the entries of C are more homogeneous, distributing transport paths (β = 0.75) naturally reflects the
+topology of the transport network and allows to achieve better classification performances.
+Lastly, we remark that transport paths do not pass through any transshipment edge (colored in brown in Fig. S8)
+since τ is conveniently set to be sufficiently large. The auxiliary edges for Kirchhoff’s law relaxation (colored in
+magenta) are instead traversed by transport paths since G and H are not normalized.
+
+VIII.
+COMPUTATIONAL COST
+
+A.
+Analytical discussion
+
+Considerable effort has been spent to reduce the high complexity burden of OT problems. The O(|V |2/ε3) baseline
+of Sinkhorn algorithm [19, 49, 50], where |V | is the size of the histograms transported and ε the parameter enforcing
+entropic regularization, is constantly improved.
+Notable recent results are the class of stochastic optimization
+algorithms proposed in [51], that have been ameliorated using greedy alternatives [52] to achieve ε-approximation of
+
+
+10
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+14
+
+15
+
+16
+
+17
+
+18
+
+19
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+
+Image 1
+
+vs.
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+0.25
+0.5
+0.75
+
+0.1
+
+0.25
+
+0.5
+
+1
+
+Cmin
+
+Cmax
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+5
+10
+15
+
+0
+
+5
+
+10
+
+15
+
+C
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+14
+
+15
+
+16
+
+17
+
+18
+
+19
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+
+Image 2
+
+FIG. S7. Effect of θ and τ on OT. On the left, we display the two samples used to build the ground costs C. Highlighted rows
+in blue and orange are those considered to extract G and H. On the right side of the panel we plot C for θ = {0, 0.25, 0.5, 0.75}
+and τ = {0.1, 0.25, 0.5, 1}. White regions correspond to trimmed values, i.e. entries of C that are larger than τ.
+
+the 1-Wasserstein distance between two probability distributions in O(|V |2/ε2) arithmetic operations [26]. Recently, an
+Adaptive Primal-Dual Accelerated Gradient Descent (APDAMD) scheme with complexity O(min{|V |9/4/ε, |V |2/ε2})
+for the same ε-perturbed problem has been presented in [27].
+
+In principle, our multicommodity method has a computational complexity of order O(M|V |2) for complete transport
+graph topologies, i.e., when edges in the transport network K are assigned to all pixels’ pairs. Nonetheless, we achieve
+a substantial decrease in complexity by sparsifying the graph with the trimming procedure of [22, 23]. Similarly to [22],
+the final complexity of our algorithm is O(M|V |). This improvement can be formally justified as follows, we start from
+a complete bipartite graph with |E| = |V |2/4 (for simplicity m = n = |V |/2 is assumed). First, we trim expensive
+links, and reduce the number of edges of the transport network to ⟨K⟩|V | + |V |, where ⟨K⟩ is the average number
+of edges connected to a node that are not trimmed by τ, and the second term |V | counts the number of inflowing
+and outflowing transshipment links. Second, we add |V |/2 links to the transport network to enforce Kirchhoff’s law
+penalization, so that the final number of links amounts to |E| = |V |(⟨K⟩ + 3/2), which is linear with respect to the
+number of nodes.
+
+Additionally, it is shown [39] that for β = 1, the Optimal Transport paths of the unicommodity OT problem on
+sparse topologies can be recovered with z time steps as in Eq. (3) (main text), with O(1) < z < O(|E|0.36). This
+bound has been found using a backward Euler scheme combined with the inexact Newton-Raphson method for the
+update of x, and solving Kirchhoff’s law using an algebraic multigrid method.
+
+
+11
+
+Cmin
+Cmax
+Image 1
+
+vs.
+
+1
+2
+3
+
+1
+2
+3
+
+OT setup
+Transport networks
+
+Image 2
+
+P
+P
+P
+
+P
+P
+P
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+14
+
+15
+
+16
+
+17
+
+18
+
+19
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+13
+
+14
+
+15
+
+16
+
+17
+
+18
+
+19
+
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+
+C
+
+C
+
+C
+
+C
+
+3
+
+2
+
+1
+
+3
+
+2
+
+1
+
+G
+
+H
+
+H
+
+G
+
+= 0.5, = 0.75
+
+3
+
+2
+
+1
+
+3
+
+2
+
+1
+
+= 1.5, = 0
+
+Cmin
+Cmax
+
+FIG. S8. Effect of β on OT. In the leftmost portion of the panel we plot Image 1 and Image 2, used in the OT problem. From
+these we extract the (3 × 3)-dimensional tensors G and H. These are drawn together with a heatmap of the cost C, and with
+the correspondent transport network. Color scales of edges and of entries of C are identical. We also use the same numbering
+and color scheme for tensors’ entries, indexes of C, and network nodes. Brown and magenta auxiliary nodes and edges are
+added after trimming, and after relaxing Kirchhoff’s law. On the right side of the panel we plot the transport network again,
+but with edge thickness proportional to the Optimal Transport paths retrieved from Eqs. (3)-(4) (main text), and with colors
+correspondent to those of the commodities a. Node sizes are proportional to the values of ga and ha, for a = 1, . . . , 3.
+
+B.
+Experimental runtimes benchmarking against Sinkhorn
+
+We compare the runtime performances of the multicommodity dynamics of Eqs. (3)-(4) (main text), against the
+regularized Sinkhorn algorithm of [41, 53], implemented in POT: Python Optimal Transport [40], and for which we set
+the convergence threshold to �εsink = 0.01. Our implementation uses a forward Euler scheme for the discretization
+of Eq. (4) (main text), and a sparse direct linear solver (UMFPACK) for Eq. (3) (main text). Our code was run
+until convergence, achieved if (JΓ(n + 1) − JΓ(n))/∆t < �εdyn, i.e. when the relative cost difference evaluated at two
+consecutive iteration is below �εdyn = 1. We set the discretization time step ∆t = 0.5.
+All codes are executed on 20 pairs of images, randomly sampled from the Jena Flowers 30 Dataset [42] and the Fruit
+Dataset [43]. We compare our multicommodity dynamics (M = 3) against Sinkhorn algorithm on colored images, and
+the unicommodity dynamics (M = 1) against Sinkhorn on grayscale images.
+Results are shown in Fig. S9. Here, we plot elapsed times for the experiments on JF30 and on FD in the panels
+(A)-(C) and (D)-(F), respectively. Subplots from left to right represent runtimes for the algorithms executed on
+grayscale images [(A), (D)], on colored images [(B), (E)], and for Sinkhorn executed in both setups [(C), (F)].
+Observing Fig. S9 [(A), (D)], we notice that runtimes for the multicommodity dynamics are larger than Sinkhorn’s.
+Our algorithm converges faster if β < 1, i.e., when the multicommodity transport cost is convex. Setting β > 1
+negatively affects convergence times. In general, for all values of β, increasing the trimming threshold τ, and thus
+the average number of edges in the transport networks, leads to slower convergence. Sinkhorn algorithm is not as
+dependent on |E|, e.g., in Fig. S9 (A), runtimes are approximately constant. Moreover, coherently to what expected
+[19], increasing the effect of the entropic barrier—enlarging ε—makes the algorithm faster. In Fig. S9 [(B), (E)] we
+observe a similar trend as in Fig. S9 [(A), (D)]. However, in this case Sinkorn algorithm with low regularization,
+ε = 100, has runtimes comparable to those of our method. Lastly, in Fig. S9 [(C), (F)], we explicitly plot runtimes for
+Sinkhorn on both colored and grayscale images, for different values of the regularization parameter ε. In general, the
+algorithm on colored images is slower, and increasing the trimming threshold leads to higher runtimes. Moreover, we
+observe again that larger value of ε makes the algorithms faster.
+
+
+12
+
+102
+103
+
+|E|
+
+10
+2
+
+10
+1
+
+100
+
+runtime [s]
+
+= 0.5
+= 1.0
+= 1.5
+
+= 100
+= 500
+= 1000
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+0.7
+0.8
+0.9
+1.0
+
+102
+103
+
+|E|
+
+10
+2
+
+10
+1
+
+100
+
+runtime [s]
+
+= 0.5
+= 1.0
+= 1.5
+
+= 100
+= 500
+= 1000
+
+Fruits Dataset
+
+Grayscale images
+
+Jena Flowers 30 Dataset
+
+Colored images
+
+(A)
+(B)
+(C)
+
+(D)
+(E)
+(F)
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+0.7
+0.8
+0.9
+1.0
+
+100
+101
+102
+103
+
+10
+2
+
+10
+1
+
+100
+
+runtime [s]
+
+RGB, = 0.1
+RGB, = 0.3
+RGB, = 0.5
+
+GS, = 0.1
+GS, = 0.3
+GS, = 0.5
+
+|E|
+
+103
+
+10
+1
+
+100
+
+runtime [s]
+
+= 0.5
+= 1.0
+= 1.5
+
+= 100
+= 500
+= 1000
+
+0.1
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+103
+
+|E|
+
+10
+1
+
+100
+
+runtime [s]
+
+= 0.5
+= 1.0
+= 1.5
+
+= 100
+= 500
+= 1000
+
+0.1
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+100
+101
+102
+103
+
+10
+2
+
+10
+1
+
+100
+
+runtime [s]
+
+RGB, = 0.1
+RGB, = 0.3
+RGB, = 0.5
+
+GS, = 0.1
+GS, = 0.3
+GS, = 0.5
+
+FIG. S9. Runtimes of algorithms. Subplots (A)-(C) are experiments on JF30, subplots (D)-(F) are those on FD. In (A), (B),
+(C), and (D) we plot with red diamonds runtimes of our dynamics, with M = 1 in (A), (D) and M = 3 in (B), (E). Blue triangles
+are denote runtimes of Sinkhorn. Color shades correspond to different values of the regularization paramters. In (C) and (F) we
+show runtimes of Sinkhorn against ε, with orange and green markers used for colored and grayscale images, respectively. Color
+shades here denote different values of the trimming threshold τ. Errorbars are standard deviations obtained over 20 random
+image pairs.
+
+

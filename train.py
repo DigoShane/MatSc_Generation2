@@ -64,7 +64,7 @@ grad_accum_steps = 2
 #   - ~105,000 possible sequences
 #   - Model will see each sequence ~60 times (60 epochs)
 # Training time estimate: ~2-3 days on RTX 3090
-max_steps = 200000
+max_steps = 20000
 
 # eval_interval: How often to run validation
 # Every 1000 steps = ~every 10-15 minutes
@@ -219,6 +219,14 @@ print("Loading model...")
 #   - Correct architecture (12 layers, 768 dimensions, etc.)
 #   - Random weights (not trained yet)
 #   - ~124M parameters
+# Resume from latest checkpoint if exists
+checkpoints = sorted(
+    CHECKPOINT_DIR.glob("step_*"),
+    key=lambda x: int(x.name.split("_")[1])
+)
+if checkpoints:
+    MODEL_DIR = checkpoints[-1]
+    print("Resuming from:", MODEL_DIR)
 model = GPT2LMHeadModel.from_pretrained(MODEL_DIR)
 
 # Move model to GPU (all parameters transferred to GPU memory)

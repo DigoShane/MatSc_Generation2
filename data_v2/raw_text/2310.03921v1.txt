@@ -1,0 +1,3225 @@
+Gaussian Approximation Potentials: theory, software implementation and application
+examples
+
+Sascha Klawohn, James P. Darby, and James R. Kermode
+Warwick Centre for Predictive Modelling, School of Engineering,
+University of Warwick, Coventry CV4 7AL, United Kingdom
+
+G´abor Cs´anyi
+Engineering Laboratory, University of Cambridge, Cambridge CB2 1PZ, UK
+
+Miguel A. Caro
+Department of Chemistry and Materials Science, Aalto University, 02150, Espoo, Finland
+
+Albert P. Bart´ok∗
+
+Department of Physics, University of Warwick, Coventry CV4 7AL, United Kingdom and
+Warwick Centre for Predictive Modelling, School of Engineering,
+University of Warwick, Coventry CV4 7AL, United Kingdom
+(Dated: October 9, 2023)
+
+Gaussian Approximation Potentials are a class of Machine Learned Interatomic Potentials rou-
+tinely used to model materials and molecular systems on the atomic scale. The software imple-
+mentation provides the means for both fitting models using ab initio data and using the resulting
+potentials in atomic simulations. Details of the GAP theory, algorithms and software are presented,
+together with detailed usage examples to help new and existing users. We review some recent devel-
+opments to the GAP framework, including MPI parallelisation of the fitting code enabling its use
+on thousands of CPU cores and compression of descriptors to eliminate the poor scaling with the
+number of different chemical elements.
+
+I.
+INTRODUCTION
+
+Machine Learned Interatomic Potentials (MLIPs) have
+revolutionised atomic simulations by offering predictive
+and computationally inexpensive force fields[1–4]. While
+their implementations differ, these models approximate
+the Potential Energy Surface (PES) of atomic systems
+based on a database of atomic configurations with cor-
+responding high-accuracy properties calculated with ab
+initio quantum mechanical methods.
+Among the numerous related methods and their soft-
+ware implementations[1, 2, 5–9], the Gaussian Approxi-
+mation Potential (GAP) approach follows a Bayesian ap-
+proach, which allows the formulation of prior knowledge
+about the atomic system and interactions as hyperparam-
+eters, as well as uncertainty estimation. A further advan-
+tage of using Gaussian Process Regression (GPR) is that
+fitting the model is a convex optimisation problem[10]
+equivalent to the solution of a linear system, therefore
+many problems associated with minimising the loss func-
+tion of neural networks[11] do not occur.
+The GAP framework, originally proposed by Bart´ok
+et al.[3], uses GPR to infer local atomic properties via
+a set of descriptors that map Cartesian atomic coordi-
+nates to invariant representations.
+GAP models have
+been used successfully to model silicon[3, 12], carbon[13],
+tungsten[14], phosphorus[15], water[16], iron[17], gold
+
+∗ apbartok@gmail.com
+
+and platinum[18, 19], hafnia[20] and gallia[21], among
+others.
+Similarly to other MLIP frameworks, the GAP pack-
+age can utilise reference atomic databases produced with
+arbitrary ab initio methods and software packages. To-
+tal energies and derivative quantities (forces and stresses)
+are used to fit the PES, although models for local atomic
+properties, such as nuclear magnetic resonance (NMR)
+shieldings or Hirshfeld volumes may also be generated
+using our software. Recently, GAP was used to acceler-
+ate ab initio molecular dynamics simulations within the
+CASTEP[22] package, utilising an adaptive scheme that
+produces an evolving and improving GAP model during
+the dynamics[23].
+In this paper, we present the current status of the
+GAP framework, discussing the particular adaptation of
+the sparse GPR that enables a performant implemen-
+tation suitable to fit energetic properties of atomic sys-
+tems. GAP, as implemented within the Quantum and
+Interatomic Potentials (QUIP)[24] software package, is
+introduced, emphasising the flexibility and extensibility
+of the code. We also discuss recent developments, such
+as parallelisation and compression of descriptors, mak-
+ing connections between the theory and practical usage.
+Finally, we present some examples, which are intended
+to illustrate a selection of features enabled by the GAP
+package.
+By documenting implementation details for the avail-
+able options, this paper is not only intended for practi-
+tioners fitting GAP models, but also for those developing
+other MLIP frameworks.
+
+arXiv:2310.03921v1  [cond-mat.mtrl-sci]  5 Oct 2023
+
+
+2
+
+II.
+THEORY
+
+The GAP framework utilises sparse GPR which is cus-
+tomised to fit PESs as well as local properties of atomic
+systems. A detailed introduction to GPR can be found
+elsewhere[10, 25] and background on the GAP framework
+is presented in the review article by Deringer et al.[26].
+Here we revise only the formulae necessary for discussing
+the software implementation.
+A central assumption in fitting the PES of atomic sys-
+tems is that the total quantum mechanical energy may
+be decomposed into local contributions ε which depend
+on descriptors x:
+
+E =
+
+descriptors
+�
+
+d
+
+Nd
+�
+
+i=1
+εd(xi),
+(1)
+
+where Nd is the number of descriptors of type d. Descrip-
+tors may be the arguments to two-body energy terms,
+based on the interatomic distance, optionally augmented
+by the symmetrised atomic coordinations, or three-body
+terms, based on the bond angle and the symmetrised
+bond distances, optionally including the coordination of
+the central atom.
+The greatest advantage of the non-
+linear regression techniques enabled by machine learning
+methods is the ability to parameterise the highly com-
+plex many-body energy terms.
+The descriptors form-
+ing the arguments to these functions may be n-body
+terms, based on the interatomic distances within a clus-
+ter of n atoms, or flexible many-body terms, based on
+the Smooth Overlap of Atomic Positions (SOAP)[27] de-
+scriptor, the bispectrum[3, 28] or the Behler-Parrinello
+symmetry functions[1].
+Finally, GAP implements cus-
+tomised descriptors, to represent molecules, dimers and
+trimers.
+In GAP, each energy term εd is written as an indepen-
+dent sparse Gaussian Process, in the form
+
+εd(x) =
+
+Md
+�
+
+m=1
+cmkd(x, xm),
+(2)
+
+where Md is the number of sparse or representative points
+of descriptor d, kd is the kernel, covariance or similarity
+function and cm are the fitting coefficients.
+The coefficients in (2) are fitted using a database of
+atomic configurations, where corresponding total ener-
+gies and derivative quantities, such as forces and virial
+stresses, have been determined using ab initio quantum
+mechanical calculations. The target properties, denoted
+by y, of the fitting procedure are therefore the sum of
+local energy contributions in the form of total energies,
+or the sum of the partial derivatives of local energy terms
+in the form of forces or virial stresses. The differentia-
+tion operator with respect to a Cartesian coordinate riα
+is propagated through the kernel function, resulting in
+partial derivatives
+
+∂ε
+∂riα
+=
+
+Md
+�
+
+m=1
+cm∇xk(x, xm) ∂x
+
+∂riα
+.
+(3)
+
+The sparse GPR adapted to our case[26] becomes
+
+c = [KMM + (ˆLKNM)⊤Σ−1 ˆLKNM]−1(ˆLKNM)⊤Σ−1y.
+(4)
+The kernel or covariance matrices KMM and KNM con-
+tain the function values k(xm, xm′) and k(xn, xm) re-
+spectively, where m and m′ denote sparse points and n
+denote descriptors of the database configurations. In case
+of KNM, kernel functions may be the derivative values,
+−∇xk(xn, xm) ∂xn
+
+∂riα , if the corresponding target observa-
+tion in y is a force quantity.
+The diagonal Σ matrix
+contains the regularisation strength parameters (σenergy,
+σforce and σvirial, which may be specified individually),
+encoding the prior assumption regarding the accuracy of
+target values. Finally, the operator ˆL is a shorthand for
+the summation that accumulates the local terms compos-
+ing each target value in y.
+Foster et al. have shown[29] that solving equation (4)
+directly can lead to numerically unstable results, in which
+uncertainties in the input lead to disproportionate errors
+in the output. Instead, we first define
+
+A =
+�
+Σ−1/2 ˆLKNM
+UMM
+
+�
+,
+(5)
+
+where the Cholesky decomposition of KMM results in
+the upper triangular matrix UMM such that KMM =
+UT
+MMUMM. While KMM is positive semidefinite, de-
+pending on the database configurations and descriptor
+types, the sparse points may be highly correlated, lead-
+ing to an ill-conditioned KMM matrix, preventing the
+Cholesky decomposition we use to obtain UMM.
+To
+regularise the sparse covariance matrix KMM, we add a
+small constant to the diagonal, informally called the jit-
+ter, which is typically 8-10 orders of magnitude less than
+the elements of KMM.
+The jitter has a similar effect on
+the resulting sparse model as the noise hyperparameter
+in a full GPR. As both the aleatoric and epistemic un-
+certainty is controlled by Σ, the error in the local energy
+term introduced by the use of jitter is a small broaden-
+ing, which is expected to be on the order of the square
+root of the jitter.
+Padding the vector of target properties y by an M-long
+vector of zeros,
+
+b =
+�
+y
+0
+
+�
+,
+(6)
+
+we rewrite eq. (4) as the solution of the least-squares
+problem
+
+min
+c (Ac − b)T (Ac − b),
+(7)
+
+leading to the solution in the form of
+
+c = (AT A)−1AT b.
+(8)
+
+A numerically stable solution can be obtained by first
+carrying out a QR factorisation of A = QR where Q is
+
+
+3
+
+orthogonal, namely, it is formed by orthonormal column
+vectors, while R is an upper triangular matrix. Substi-
+tuting the factorised form of A into eq. (8) results in
+
+c = (RT QT QR)−1RT QT b = R−1QT b,
+(9)
+
+as QT Q = I.
+
+III.
+IMPLEMENTATION
+
+We develop and maintain a collection of software tools
+called QUIP[30] to carry out molecular dynamics sim-
+ulations.
+Part of this suite is an implementation of
+GAP, including the gap_fit program, implementing the
+sparse GPR. The majority of QUIP is written in mod-
+ern Fortran, utilising many object-oriented features, al-
+though not fully exploiting the most recent Fortran stan-
+dards due to lack of compiler support at the time of
+the original development of the code, which started in
+2005. QUIP features a Python interface, quippy[31], al-
+lowing access to various functionalities and casting all
+atomic potentials as Atomic Simulation Environment
+(ASE) calculators[32].
+There also exist generic C and
+LAMMPS-specific C++ interfaces, that allow GAP mod-
+els to be used in external simulation packages. The source
+code can be found on GitHub[24].
+
+A.
+The GAP submodule
+
+Similarly to other MLIPs, the main components of
+GAP are the calculation of descriptors, mapping Carte-
+sian coordinates into invariant representations, and a re-
+gression method, in this case GPR.
+
+1.
+Representations
+
+The descriptors.f95 file implements the mapping
+from the Cartesian coordinates of the atoms to invariant
+representations.
+In the package we provide a number of
+descriptors, but it is straightforward to implement new
+ones. While the user fitting GAP models does not have
+to interact with the source code, in the following we give
+an overview of what is necessary to implement or adapt
+a descriptor.
+A set of standardised interfaces are used for each de-
+scriptor, which are overloaded, therefore adding new de-
+scriptors is straightforward and does not require any fur-
+ther modifications elsewhere. The initialise interface
+interprets the parameters of the descriptor, which are
+provided by the user as key-value pairs, and stores these
+in a descriptor object. The query function cutoff re-
+turns the spatial cutoff of a descriptor, whereas finalise
+resets the descriptor object and deallocates all storage.
+The descriptor_sizes function takes an Atoms object
+
+and determines how many descriptors and partial deriva-
+tives will be calculated based on the cutoff and the con-
+nectivity of the particles. Finally, the calc function re-
+turns descriptors calculated based on an Atoms and a
+descriptor object, and optionally, their partial deriva-
+tives with respect to atomic coordinates in a generic
+container object. All of this functionality is exposed in
+quippy, ensuring interoperability with ASE.
+
+2.
+Regression
+
+GPR is implemented in the file gp_predict.f95, with
+some fitting-specific features in gap_fit_module.f95
+and sparse point selection in clustering.f95. For a pair
+of descriptors x and x′ of dimensions D, whose distance
+r is defined as
+
+r =
+
+�
+�
+�
+�
+
+D
+�
+
+i=1
+
+(xi − x′
+i)2
+
+2θ2
+i
+,
+(10)
+
+we have implemented the squared exponential kernel
+
+kSE(x, x′) ≡ kSE(r) = exp(−r2),
+(11)
+
+and the piece-wise polynomial kernel with compact sup-
+port
+
+kPP(x, x′) ≡ kPP(r) = (1−|x−x′|)j+1[(j+1)|x−x′|+1],
+(12)
+where j = ⌊ D
+
+2 ⌋ + 2. The SOAP descriptors should be
+used with the dot-product or, more generally, polynomial
+kernel
+
+kDP(x, x′) = (x · x′)ζ.
+(13)
+
+The hyperparameters, such as θ or ζ, and the coeffi-
+cients c are stored in a Fortran object which is used by
+the function gp_predict to evaluate (2) as well as the
+partial derivatives with respect to descriptor components
+and variances predicted from GPR.
+During the training procedure, all descriptors x and
+their partial derivatives are calculated and stored. Point-
+ers are used to denote which descriptors and deriva-
+tives contribute to target properties, thereby avoiding the
+need to store repetitive information. The kernel matrices
+KNM used in the fitting procedure in (4) are not calcu-
+lated explicitly, only the accumulated terms in ˆLKNM
+corresponding to quantum mechanical observable quan-
+tities.
+
+B.
+GPR using gap fit
+
+Finding the coefficients used in GAP models can be
+accomplished using the gap_fit command line program,
+where parameters are set as arguments or a configura-
+tion file. The input to the fitting procedure consists of
+
+
+4
+
+the fitting data, model definitions, and additional op-
+tions. The database of atomic configurations, together
+with the quantum mechanical properties are read in from
+an extended XYZ[33] file. The extended XYZ contains
+information of the lattice, atomic numbers and Cartesian
+coordinates, and may provide the total energy, forces and
+virial stress, or any combination of these for each indi-
+vidual configuration.
+Each individual atomic configuration may optionally
+have a type specification, given within the extended XYZ
+file using the config type keyword. The configuration
+type may be used for fine-grain control, such as selecting
+a specific number of sparse points from those configura-
+tions.
+The particulars of the model are provided using the gap
+argument as a form of colon-separated list of descriptor
+definitions. These include hyperparameters, such as the
+spatial cutoff or the desired number of sparse points per
+descriptor. Other hyperparameters, such as the regular-
+isation, can be provided either in the command line, or
+specifically for each individual frame within the extended
+XYZ file, allowing fine-grained control and the use of in-
+homogeneous accuracy of target quantities. Additional
+options can be used to adjust the processing, tune tech-
+nical parameters, or enable additional features like more
+verbose output.
+Details about the currently available
+arguments can be found later in section V, or running
+gap fit --help for up-to-date information.
+
+1.
+Program structure
+
+After initialisation and reading of the input, the ex-
+tended XYZ frames, where each frame consists of an
+atomic structure, are parsed for the number of target
+properties and descriptors. Storage for the descriptor ar-
+rays are allocated accordingly, and descriptors are calcu-
+lated during a second pass over the atomic configurations.
+For each set of N descriptors, M ≪ N points are
+chosen as a representative, or sparse, set.
+Options
+include random selection, k-means clustering, a uni-
+form grid spanning the range of descriptors and CUR
+decomposition[34].
+It is also possible to provide the
+sparse points via text files. As the sparse points need
+to form a linearly independent covariance matrix, du-
+plicates within a given tolerance are removed and only
+considered once. This may result in fewer sparse points
+used than specified by the user, particularly if the atomic
+environments in the database are highly correlated.
+With the specified sparse points, the covariance matri-
+ces KMN and KMM are calculated, and matrix A con-
+structed. The coefficients are determined via QR decom-
+position using (Sca)LAPACK[35, 36] routines.
+The memory requirement for the gap_fit program de-
+pends on the atomic structures, the number of target
+properties and sparse points, and descriptor definitions.
+In particular, the two main data components with sig-
+nificant memory requirements are the descriptors and
+
+FIG. 1: MPI gap fit workflow. If run in serial, the
+tasks are not distributed and n is used instead of n∗.
+
+their partial derivatives and the kernel matrix ˆLKNM.
+The memory associated with storing descriptor deriva-
+tives scales linearly with the number of atomic environ-
+ments and the dimensionality of the descriptor, as well
+as the number of neighbours within the spatial cutoff.
+Efforts directed at developing compact descriptors, using
+compression techniques, therefore significantly reduce the
+memory requirements of the fitting procedure, as well as
+the computational complexity of evaluating the descrip-
+tors. The size of the kernel matrix scales linearly with the
+number of target values and the total number of sparse
+points.
+Recently, we have implemented domain decomposition
+in gap_fit that aims to utilise massively parallel com-
+puter architectures[37].
+The implementation relies on
+Message Passing Interface (MPI) and is illustrated on
+Fig. 1.
+After determining the number of atoms and, conse-
+quently, the number of target data values in each con-
+figuration of the database, configurations are assigned
+to individual MPI tasks. Descriptors are computed lo-
+cally, and the covariance matrix KMN is constructed in
+a distributed fashion.
+This approach allows the mem-
+ory requirements of the program to be distributed over
+many computational nodes, therefore larger databases
+can be easily fitted without the need of specialised, high-
+memory servers. The linear algebra step makes use of
+the ScaLAPACK library, carrying out the QR decompo-
+sition and subsequent back-substitution steps in parallel,
+thereby reducing the computational time.
+We demon-
+strate the benefits of the parallel fitting approach by
+studying two fitting problems that would require signif-
+icant amounts of wall-time and memory using a single
+node. One of the training databases consists of the high-
+entropy alloy configurations by Byggmastar et al.[38],
+and the other is a data set of silicon carbide configu-
+
+
+5
+
+FIG. 2: Speedup (main panel) and memory (inset)
+requirements for fitting a high-entropy alloy (HEA) and
+silicon carbide (SiC) training set using a varying
+number of nodes.
+
+rations from Ref. [37]. The dependence of computational
+speedup and total memory use is presented on Fig. 2,
+showing that we have achieved excellent parallel perfor-
+mance, and we can utilise the aggregate memory of multi-
+ple computational nodes, thereby largely eliminating any
+limitations. We note that the dependence of the memory
+usage on the number of cores is due to overheads asso-
+ciated with repeated data allocations that are private to
+a process. Given the typical amount of memory, on the
+order of hundred GBs, available on commodity comput-
+ing nodes, this is not likely to be a significant barrier
+to large-scale parallel fitting calculations. For more in-
+formation, we refer the user to our prior work[37], where
+we explored hybrid OpenMP-MPI parallel strategies that
+optimise overall memory use and runtime.
+
+2.
+Sparse point selection
+
+The
+program
+gap fit
+implements
+several
+meth-
+ods for the sparse point selection, controlled by the
+sparse method command line argument.
+Within the
+definition of each descriptor, the n sparse argument
+controls the number of sparse points.
+Alternatively,
+config type n sparse allows the user to specify a given
+number of sparse points from labelled configurations, to
+ensure adequate representation. Given none, no sparsi-
+fication is applied, apart from the removal of duplicate
+descriptors, and all points are selected. The points may
+be chosen directly with either the file or index file
+option, in conjunction with the sparse file argument
+to specify the filename containing the descriptors or the
+indices of descriptors. The indices are 1-based and refer
+to descriptors as calculated in the database file.
+Recommended choices are uniform for a distance 2b
+
+descriptor and cur points for a soap descriptor.
+For
+completeness, we list all currently implemented options
+in the Appendix.
+
+C.
+Descriptors
+
+The choice of invariant representation of atomic en-
+vironments has a profound effect on the quality of the
+resulting interatomic potential. QUIP, being a test bed
+for methodological developments of MLIPs, implements
+numerous descriptors, of which some frequently used ones
+are presented in this section.
+In
+the
+gap fit
+program,
+descriptors
+are
+spec-
+ified
+in
+the
+gap
+command
+line
+argument,
+us-
+ing the syntax gap={descriptor1 key=value ...
+:
+descriptor2 key=value ...}.
+The descriptor defini-
+tions are, by default, treated as templates by gap fit,
+and after parsing the database configurations, each de-
+scriptor is expanded with element (chemical species) in-
+formation. If add species=F is added to the descriptor
+definition, the descriptor is not modified in this step.
+Most descriptors implement the cutoff keyword, spec-
+ifying the spatial cutoff within atomic connectivities
+are considered. The cutoff transition width keyword
+provides a smooth transition ensuring a numerically well
+behaved characteristic when the descriptor is used to
+build an interatomic potential.
+
+1.
+Descriptors based on interatomic distances
+
+Based on the idea of the cluster expansion of the total
+energy
+
+E =
+�
+
+i
+E(1)
+i
++
+�
+
+i<j
+E(2)
+ij +
+�
+
+i<j<k
+E(3)
+ijk + . . . + E(N), (14)
+
+the n-body terms may be fitted using GPR or other re-
+gression methods.
+The cluster of n atoms, represent-
+ing the input variable of each term, is well defined by a
+monotonic function, which could be just the identity, of
+interatomic distances r = [r12, r13, . . .].
+In case of the two-body descriptor, GAP implements
+a polynomial transformation that generates a descrip-
+tor from the pair distance r in the form of [rp1, rp2, . . .],
+where {pi}n
+i=1 are a set of exponents. When using this
+descriptor in conjunction with a dot-product kernel, the
+generalised form of a pair potential
+
+V (r) =
+
+n
+�
+
+i=1
+cirpi
+(15)
+
+may be recovered.
+However, for three- or higher body energy terms the
+descriptor formed as a list of interatomic distances is not
+invariant with respect to the permutation of indices of
+the same elements within the cluster, therefore cannot be
+
+
+6
+
+directly used for regression. Permutational invariance is
+achieved by symmetrising, then normalising, the kernel:
+
+k′(r, r′) =
+�
+
+ˆ
+P
+k(r, ˆPr′),
+(16)
+
+k′′(r, r′) =
+k′(r, r′)
+�
+
+k′(r, r)k′(r′, r′)
+,
+(17)
+
+where
+ˆP represents the permutation of the order of
+atoms, and k′′ is used in the GPR.
+In GAP, we implemented the distance nb descriptor,
+where the body order is defined using the order key-
+word. The compact cluster keyword specifies the topol-
+ogy of the cluster. If compact cluster=T, each atom in
+an atomic configuration is considered as a central atom,
+and clusters are formed with its n−1 neighbours that are
+within the spatial cutoff. With the compact cluster=F,
+all possible graphs where the graph edge has a distance
+less than the cutoff are formed, allowing, for example,
+linear chains.
+The special cases corresponding to two- and three-
+body
+terms
+are
+implemented
+as
+distance 2b
+and
+angle 3b, respectively. In case of angle 3b, the trimer
+of atoms formed by the central atom i and its two neigh-
+bours j, k is represented by the invariant descriptors
+[rij + rik, (rij − rik)2, rjk].
+As the interatomic distances are used in the kernel di-
+rectly in these descriptor classes, the implementation of a
+smoothly varying spatial cutoff must be implemented in
+the kernel function. We modify the kernel by multiply-
+ing it by a cutoff function which smoothly interpolates
+between zero, where any of the interatomic distances are
+greater than the spatial cutoff, and one. The elementary
+cutoff function
+
+fcut(r) =
+
+
+
+
+
+
+
+
+1
+if r < rcut − d
+0
+if r ≥ rcut
+1
+2
+�
+cos
+�
+π r−rcut+d
+
+d
+�
++ 1
+�
+otherwise
+,
+
+(18)
+where rcut is the spatial cutoff and d is a transition width,
+is evaluated for each pairwise distance. The final cut-
+off function is obtained as a product of elementary cut-
+off functions, ensuring that each energy term vanishes
+smoothly.
+GAP also allows further adjustment of the tail be-
+haviour of the two-body descriptor, in order to approx-
+imate the polynomial decay of some interaction types.
+This is achieved by further multiplying the cutoff func-
+tion by
+�
+erf(αr)
+
+r
+�q
+, where α is a range parameter and q
+is an exponent.
+
+2.
+SOAP descriptors
+
+The SOAP descriptors were proposed a decade ago[28]
+as invariant descriptors of atomic environments, and
+have been used successfully to develop interatomic
+
+potentials[12, 13, 38, 39], clustering[40] as well as other
+machine learning tasks, such as the ShiftML model
+used to predict Nuclear Magnetic Resonance chemical
+shifts[41]. For details on the theory, the review by Musil
+et al.[27] may be consulted. Here we only repeat what is
+necessary to explain the implementation options.
+To construct the SOAP descriptor, the atomic environ-
+ment is first written as a neighbourhood density function,
+where atoms of element α are represented by Gaussians:
+
+ρα(r) =
+�
+
+i
+δαzi exp
+�−|r − ri|2
+
+2σ2
+
+�
+fcut(|ri|),
+(19)
+
+where the sum over i includes all neighbouring atoms
+with position vector ri, zi is the corresponding atomic
+number and σ is a length scale hyperparameter.
+The
+element density ρα is expanded in a basis set consisting
+of the products of orthonormal radial basis functions gn
+and the spherical harmonics Ylm,
+
+ρα(r) =
+�
+
+nlm
+cα
+nlmYlm(ˆr)gn(r),
+(20)
+
+resulting in the coefficients cα
+nlm.
+In the following, we
+often refer to grouping of certain indices in the basis ex-
+pansions as channels, a term borrowed from signal pro-
+cessing. Therefore, the element indices α are the element
+channels and the radial basis indices n are the radial
+channels.
+The spherical harmonics indices l, together
+with the corresponding m indices, form the angular chan-
+nels.
+An invariant kernel or similarity function of two atomic
+environments is obtained by calculating the overlap of the
+densities, which has to be integrated over all rotations:
+
+k(ρ, ρ′) =
+�
+d ˆR
+
+�����
+
+�
+
+α
+
+�
+drρα(r)ρ′α( ˆRr)
+
+�����
+
+ν
+
+.
+(21)
+
+For the choice of ν = 2, the SOAP kernel can be ana-
+lytically evaluated in the form of a dot-product kernel
+
+k(ρ, ρ′) =
+�
+
+αβ
+
+�
+
+nn′l
+pαβ
+nn′lp′αβ
+nn′l = p · p′,
+(22)
+
+pαβ
+nn′l =
+�
+
+m
+cα∗
+nlmcβ
+n′lm = cα∗
+nl · cβ
+n′l,
+(23)
+
+due to the properties of the Wigner D-matrices repre-
+senting the rotational transformation of the coefficients.
+To ensure that ¯k(ρ, ρ) = 1 for any ρ, we normalise the
+kernel as
+
+¯k(ρ, ρ′) =
+k(ρ, ρ′)
+�
+
+k(ρ, ρ)
+�
+
+k(ρ′, ρ′)
+.
+(24)
+
+The dimension of p scales as O(n2
+maxlmaxS2) where
+nmax, lmax and S are the number of radial basis func-
+tions, spherical harmonics and elements, respectively.
+Apart from the original implementation of SOAP, a
+more efficient variant introduced by Caro[42] is available
+
+
+7
+
+as soap turbo. This descriptor is further described in
+Sec. III C 4 and a comparison with regular SOAP is pro-
+vided in Sec. IV B.
+Increasing nmax and lmax improves the resolution of
+the basis set expansion, and are therefore convergence
+parameters of the SOAP kernel.
+Optimal values are
+strongly dependent of the typical number of neighbours
+and the Gaussian broadening parameter σ. In many ap-
+plications, the user has the choice to adjust nmax and lmax
+to achieve the desired balance of accuracy and computa-
+tional speed. However, the length of p has a quadratic
+dependence on the number of elements, thereby the com-
+putational cost of both the components of p and the
+k(ρ, ρ′) as a dot product are impacted. Various strate-
+gies to reduce this scaling have been proposed, which are
+discussed below.
+
+3.
+SOAP Compression
+
+The O(lmaxn2
+maxS2) scaling of the number of descriptor
+components in SOAP is often limiting as it makes study-
+ing chemically diverse systems, such as multi-component
+alloys or proteins, very computationally demanding. A
+widely used approach [2, 43–46] to reduce this scaling is
+to embed the elements (and optionally radial) channels
+into a fixed K-dimensional space as ck
+nlm = �
+
+α wk
+αcα
+nlm
+(or ck
+lm = �
+
+nα wk
+nαcα
+nlm) and then form a compressed
+descriptor as
+
+pkk′
+nn′l =
+�
+
+m
+ck
+nlmck′
+n′lm.
+(25)
+
+(or pkk′
+l
+= �
+
+m ck
+lmck′
+lm) which reduces the scaling to
+O(lmaxn2
+maxK2) (or O(lmaxK2)). To achieve good per-
+formance for K < S[47] the embedding weights are
+typically optimised during fitting and, following Willatt
+et al., they are interpretable as encoding similarity be-
+tween different elements via the alchemical kernel [43]
+καβ = �
+
+k wk
+αwk
+β = wα · wβ.
+This idea was extended by Darby et al.[48], where it
+was shown that it is sufficient to couple the embedding
+channels to themselves only, rather than taking a full
+tensor product across the embedded index k, thus mak-
+ing the scaling linear in K, rather than quadratic. Two
+flavours of these tensor-reduced descriptors were pro-
+posed.
+The first is motivated by considering fitting a
+linear model as
+
+φ =
+�
+
+αβnn′l
+al
+(α,n),(β,n′)pαβ
+nn′l,
+(26)
+
+where the a are the model coefficients and the element
+and radial indices have been grouped together. For each
+value of l the matrix of coefficients al can be approxi-
+mated using symmetric eigen-decomposition as
+
+al
+(αn),(βn′) =
+
+K
+�
+
+k=1
+λl
+kwk
+(α,n)wk
+(β,n′)
+(27)
+
+This decomposition is exact for K = nmaxS with w
+the eigenvectors of al and is systematically improvable
+with random w.
+Substituting this approximation into
+Eq. (26) results in
+
+φ =
+�
+
+αβnn′l
+
+�
+
+k
+λl
+kwk
+(α,n)wk
+(β,n′)pαβ
+nn′l
+(28)
+
+=
+�
+
+k,l
+λl
+k
+
+��
+
+αn
+wk
+(α,n)cα
+nl
+
+�
+
+·
+
+
+
+�
+
+βn′
+wk
+(β,n′)cβ
+n′l
+
+
+
+
+(29)
+
+=
+�
+
+kl
+λl
+kck
+l · ck
+l =
+�
+
+kl
+λl
+k ˜pk
+l ,
+(30)
+
+where ˜pk
+l are the new features. As the approximation in
+Eq. (27) is systematic, any function that can be fit as
+a linear function of pαβ
+nn′l can also be fit using a linear
+function of pk
+l .
+An alternative and complementary view motivated by
+using random mixing weights wk
+(αn) is to “sketch” the
+power spectrum as
+
+ˆpk
+l =
+
+��
+
+αn
+wk
+αncα
+nl
+
+�
+
+·
+
+
+
+�
+
+βn′
+uk
+βn′cβ
+n′l
+
+
+
+
+(31)
+
+so that
+
+E [ˆp · ˆp′] =
+�
+
+kl
+
+�
+
+αβnn′
+
+δγqq′
+
+E
+�
+wk
+αnuk
+βn′wk
+δquk
+γq′
+�
+
+�
+��
+�
+σ4δ(α,n),(δ,q)δ(β,n′),(γ,q′)
+
+cα
+nlcβ
+n′lc′δ
+qlc′γ
+q′l
+
+(32)
+
+= σ4 �
+
+k
+
+�
+
+αβnn′l
+
+�
+cα
+nl · cβ
+n′l
+� �
+c′α
+nl · c′β
+n′l
+�
+(33)
+
+= Kσ4p · p′,
+(34)
+
+where we have used the fact that E[wk
+i wk
+j ] = σ2δij if the
+wk
+i are symmetric random variables with zero mean and
+that u and w are independent. This is a form of tensor-
+sketching [49] and is also systematic with the expected
+error in approximating the kernel decreasing as K− 1
+
+2 .
+The
+different
+flavours
+of
+element-embedding
+and
+tensor-reduction listed above are all accessible via speci-
+fying various combinations of R mix, Z mix, sym mix and
+K, which specify how the initial channels should be mixed,
+and the coupling keyword which specifies how the re-
+sulting channels should be coupled together. Note that
+optimisation of the embedding weights w is not available
+in gap fit with normallly distributed random weights
+used instead. Please see the keyword glossary for more
+details.
+An alternative compression strategy proposed by
+Darby et al.[50] simply involves summing over one (or
+more) of the α, β, n or n′ indices in Eq.
+(23).
+It is
+efficient to perform this summation at the level of the
+density expansion coefficients cα
+nl where it can also be
+most easily understood; summing over a radial index n
+is equivalent to projecting the 3D density onto the surface
+
+
+8
+
+of the unit sphere whilst summing over the element in-
+dex α corresponds to forming the total, element-agnostic
+density. The power-spectrum is a generalised 3-body de-
+scriptor where each term in the following sum
+
+pαβ
+nn′l =
+�
+
+ij
+cα
+i,nl · cβ
+j,n′l
+(35)
+
+corresponds to a triangle formed by the central atom
+and the neighbour atoms i and j. As such, the various
+possible effects of this compression scheme on an indi-
+vidual 3-body (correlation order 2) term in this summa-
+tion can be visualised as in Fig. 3.
+The different op-
+tions are labelled according to the element-sensitive νS
+and radially-sensitive νR correlation orders where each
+summation over an element (or radial) index lowers the
+respective correlation order by one, e.g., νS = 1, νR = 1
+specifies pα
+nl = �
+
+βn′ pαβ
+nn′l.
+
+FIG. 3: Different SOAP compression strategies.
+Neighbour atoms around the central atom (black) may
+be represented as element-agnostic (grey) or
+element-specific (red or blue). To eliminate the radial
+dependence, neighbours may be projected on the unit
+sphere (dashed circle) around the central atom.
+Reprinted from Darby et al[50] with permission under
+the CC BY 4.0 license.
+
+Finally, it is also possible to achieve compression
+through the experimental Z map keyword, which allows
+the user to group different elements together; equivalent
+to element embedding with wk
+α = 1 if element α is in
+group k or 0 if it is not. As two densities are coupled,
+two distinct sets of groups may be specified if desired.
+Please see the keyword glossary for more details.
+
+4.
+soap turbo descriptors
+
+The soap turbo descriptor is a variant of SOAP op-
+timised for computational efficiency. A detailed account
+of this descriptor has been given in Ref. [42]. Here, we
+briefly describe its main features while giving a more in-
+depth description of the features that have been intro-
+duced since the publication of the original paper, namely
+multispecies support and compression.
+A comparison
+between the soap and soap turbo implementations of
+SOAP is given in Sec. IV B.
+The representation of the atomic density field in the
+local neighborhood, that is, within a cutoff sphere of ra-
+dius rcut of atom i, is carried out in an explicitly sepa-
+rable form of radial and angular channels. Therefore the
+expansion coefficients can also be split into components
+that depend exclusively on the radial index n or angular
+indices l, m:
+
+ρi(r) =
+�
+
+j∈Si(rcut)
+
+�
+
+nlm
+ci,j
+nlmgn(r)Ylm(θ, ϕ),
+(36)
+
+ci,j
+nlm = bi,j
+n ai,j
+lm,
+(37)
+
+where bi,j
+n
+are the radial expansion coefficients, ai,j
+lm are
+the angular expansion coefficients and j runs over all
+neighbours of i within the cutoff sphere. A number of
+smoothing and scaling functions are introduced, to make
+the width of the atom-centered smooth functions depend
+on the distance from the center of the SOAP sphere.
+The main implementation differences between soap and
+soap turbo are the use of smoother polynomial radial
+basis functions and several numerical tricks that allow to
+express the radial and angular expansion coefficients as
+recursive series. There are also differences in how multi-
+species support and compression are handled, described
+below.
+Support in soap turbo for multiple chemical elements
+is provided by augmenting the radial basis set via a direct
+sum:
+
+{g(r)} =
+
+Ns
+�
+
+s=1
+{g(r)}s,
+(38)
+
+where s runs over the number of elements. The only ad-
+vantage of this approach compared to the regular SOAP
+multielement support is that each element can be repre-
+sented with a different radial basis set, including a differ-
+ent number of radial basis functions. One instance where
+this feature may be useful is when one of the elements can
+be represented with fewer radial basis functions than an-
+other, reducing the dimensionality of the descriptor and
+thus its computational cost. In principle, this approach
+also allows for using different cutoff radii for different el-
+ements within the same descriptor although, in practice,
+the GAP interface currently restricts the cutoff to be the
+same for all elements. The angular basis, on the other
+hand, is the same for all elements.
+
+
+9
+
+Compression is also supported by soap turbo through
+three different approaches. The first compression scheme
+is a heuristic recipe, that we refer to as “trivial”, which
+retains only the SOAP elements that run over n = 1
+for single element and the first radial component of the
+element-specific basis for multiple elements:
+
+{˜p} ≡
+
+��
+
+nn′l
+δ1,npnn′l
+
+�
+
+⊕
+
+��
+
+nn′l
+δN 1
+r +1,npnn′l
+
+�
+
+⊕ · · · ⊕
+
+��
+
+nn′l
+δN Ns−1
+r
++1,npnn′l
+
+�
+
+,
+(39)
+
+where the tilde indicates the compressed descriptor and
+N 1
+r is the number of radial basis functions for the first
+element, and the direct sum continues until the last el-
+ement in the descriptor has been considered. The Kro-
+necker deltas indicate that only components with n = 1,
+n = N 1
+r +1, etc., are retained. Trivial compression affords
+of the order of a factor of 5 in dimensionality reduction
+without significant loss in accuracy for most production
+GAP models that we have fitted so far.
+The second compression scheme in soap turbo pro-
+vides a quasiequivalence with the radial- and element-
+sensitive correlation orders offered in regular SOAP com-
+pression introduced in Section III C 3. Numerical com-
+parisons of these compression recipes are given in the
+local property example in Sec. IV.
+The third compression scheme has no predefined
+recipe. Instead, the user can provide an arbitrary lin-
+ear transformation (via an input text file) that projects
+the SOAP vector from its original N-dimensional space
+to a reduced M-dimensional space, where M < N:
+
+˜p = Pp,
+P ∈ MM×N.
+(40)
+
+In all cases, the descriptor is renormalized after compres-
+sion.
+Finally, we remark that due to the overlap properties
+of the polynomial radial basis sets and related instabili-
+ties in the numerical approach employed to construct the
+orthonormal radial basis used to construct soap turbo
+descriptors, there is a practical limitation of nmax ≈ 10.
+For most practical purposes (e.g., in constructing accu-
+rate GAP force fields), there is no need to increase the
+size of the radial basis set beyond ≈ 8 basis functions.
+
+IV.
+PRACTICAL EXAMPLES
+
+A.
+Si interatomic potential
+
+Among the first successful applications of GAP was
+a general-purpose interatomic potential for silicon[39].
+We have used the database of atomic configurations to
+train a series of GAP models to demonstrate the effect
+of the most crucial descriptor and kernel hyperparame-
+ter choices on the performance and computational cost
+
+of the resulting potential. The extended XYZ file, con-
+taining the database and shared in the supplementary
+material of Ref. [39], was randomly split into a training
+and a test set, containing 80% and 20% of the original
+configurations, respectively. We list the parameters used
+in the gap fit command line in Table I with a detailed
+explanation for each.
+While keeping all other parameters constant, we indi-
+vidually varied the SOAP parameters nmax, lmax, rcutoff
+and σ, as well as the polynomial kernel exponent ζ and
+the number of sparse points M. Based on the original
+Si GAP model, the parameters, nmax = 6, lmax = 6,
+rcutoff = 5 ˚A, σ = 0.5 ˚A, ζ = 4 and M = 8000 were used.
+We have evaluated the interaction energies, forces and
+virial stresses of all atomic configurations in the test set
+with the resulting models, and calculated the Root Mean
+Square Error (RMSE) with respect to the ab initio ener-
+gies.
+To illustrate how the choice of the parameters affects
+the computational cost of each model, we have also de-
+termined the average calculation time per atom, using
+a desktop computer utilising a single core of an Intel®
+Core™ i5-9600K CPU at 3.70 GHz.
+Trends are presented in Fig. 4, generally showing that
+more complex models, i.e., those with higher lmax, nmax,
+ζ and M values, are more accurate. Thanks to the regu-
+larisation term in the GPR, higher complexity does not
+result in overfitting. However, the computational cost of
+models with higher lmax, nmax and sparse points is in-
+creased due to the larger number of terms. Even though
+the polynomial kernel at higher orders results in more
+terms, these are not calculated explicitly, therefore the
+computational cost remains approximately constant at
+different ζ values.
+Increasing the spatial cutoff of the atomic neighbour-
+hood environment results in more accurate models up to
+5 ˚A, as further neighbours may influence the local energy
+function. However, at higher cutoff values the quality of
+the model deteriorates, which may be regarded as a sign
+of underfitting, when the available data is not sufficient
+to determine the dependence of the local energy terms
+on further neighbours.
+The cutoff radius of SOAP or other descriptors may
+also be chosen by considering the force constant matrix
+of the atomic system, using a criterion on the spatial
+decay of the elements[12].
+The smoothness parameter σ has a strong influence on
+the accuracy of the model, which is related to how the
+neighbouring atoms are represented. Narrow Gaussians
+lead to fewer similar kernel values between two atomic
+environments, resulting in overfitting, whereas with wide
+Gaussians the resolution of the representation is lower.
+The kernel regularisation hyperparameters provide
+control on the accuracy and smoothness of the resulting
+model. Lower values bias the potential to fit the train-
+ing data more accurately, but may result in overfitting.
+For a given spatial cutoff in the descriptors, the kernel
+regularisation on the forces may be derived from the de-
+
+
+10
+
+FIG. 4: Performance (blue squares) and computational cost (red circles) of different GAP models. The performance
+is quantified by the Root Mean Square Error (RMSE) of the predicted energy, evaluated on a test set. Comparisons
+with respect to changes in (a) the radial resolution nmax of SOAP; (b) the angular resolution lmax of SOAP; (c) the
+spatial cutoff rcutoff of SOAP; (d) the power of the polynomial kernel ζ; (e) the width σ of Gaussians representing
+the atoms in SOAP; (f) the number of sparse points M.
+
+cay of the force constant matrix or by quantifying the
+force uncertainty from ab initio calculations [12]. Find-
+ing appropriate figures for the kernel regularisation of en-
+ergy and virial stress values may require cross-validation,
+but a typical target energy error in condensed systems is
+1 meV/atom, therefore this is often a suitable starting
+figure. The choices of kernel regularisation hyperparam-
+eters is discussed extensively in Ref. [12].
+To illustrate the effect of varying the kernel regulari-
+sation hyperparameters, we fitted a series of silicon GAP
+models using the same parameters, listed in Table I, and
+same training database as previously, but varied the hy-
+perparameters corresponding to energy (σenergy), force
+(σforce) and virial stress (σvirial) independently. We have
+utilised the test set to predict energy, force and virial
+stress values using the resulting models, and evaluated
+RMSE figures for each model and quantity.
+These results are shown in Fig. 5, highlighting how
+different choices of regularisation hyperparameters affect
+the quality of the fit. For the RMSE of the predicted
+energies, there is an optimal value of σenergy, while the
+
+RMSE of the predicted forces and virial stresses decrease
+monotonically when increasing σenergy. Similar opposing
+changes in the errors of predicted quantities may be ob-
+served when σforce and σvirial are varied. We attribute
+these trends to the epistemic uncertainty of our models
+which is due to our assumptions, such as the locality of
+the descriptor or the body-order representation. These
+assumptions limit the simultaneous accuracy the model
+may achieve in energies, forces and virial stresses, and
+biasing the fit towards reproducing a particular quantity
+causes a deterioration in others.
+
+These results are intended to provide a guide to fit-
+ting GAP models and their adaptation is almost cer-
+tainly necessary when fitting potentials representing dif-
+ferent atomic systems. While an exhaustive hyperparam-
+eter search is not always feasible, the recently parallelised
+gap fit allows rapid creation and subsequent evaluation
+of models.
+
+
+11
+
+TABLE I: Command line parameters of gap fit used to fit a GAP model for silicon.
+
+Key
+Value
+Comments
+
+atoms filename
+train.xyz
+Extended XYZ file of training configurations
+gap file
+gp c5.0 n6 l6 s0.5 z4 p8000.xml Filename of output XML of GAP model
+energy parameter name
+dft energy
+Target energy key in the extended XYZ file.
+Default: energy
+force parameter name
+dft force
+Target force key in the extended XYZ file.
+Default: force
+virial parameter name
+dft virial
+Target virial stress key in the extended XYZ file.
+Default: virial
+e0 offset
+2.0
+Shifts the baseline energy which is determined
+from the isolated atom energy.
+sparse jitter
+1e-8
+Regularisation of KMM
+default kernel regularisation
+{0.001 0.1 0.05 0.0}
+Kernel regularisation for target values. Format:
+{energy force virial hessian}
+config type kernel regularisation {
+liq:0.003:0.15:0.2:0.0:
+amorph:0.01:0.2:0.4:0.0:
+sp:0.01:0.2:0.4:0.0:
+}
+
+Override factors for tagged XYZ frames
+format:
+{config type:energies:forces:virials:hessians}
+
+gap
+{ soap
+n max=6
+l max=6
+atom gaussian width=0.5
+soap exponent=4
+n sparse=8000
+cutoff=5.0
+cutoff transition width=1.0
+sparse method=cur points
+covariance type=dot product
+energy scale=3.0
+}
+
+SOAP descriptor, used as a template.
+One per element is generated, based
+on the configurations in the database.
+Broadening of the atoms in the neighbour density (σ)
+Exponent of the polynomial soap kernel
+Many sparse points are needed due to
+the high dimensionality of the descriptor.
+Length scale of radial cutoff in ˚A
+Sparse points are chosen using the CUR method.
+Form of the kernel
+Prefactor of the kernel in eV
+
+B.
+Local Property
+
+While the local energies predicted by GAPs in cohe-
+sive energy models are not physical observables, there
+are different local atomic properties with physical signifi-
+cance amenable to direct learning within the GAP frame-
+work. SOAP descriptors are particularly suited for this
+task. Examples of such models that we have trained in
+the past include adsorption energies [51], effective Hir-
+shfeld volumes [52] and core-electron binding energies
+(CEBEs) [53]. Here, we revisit the CEBE database of
+Ref. [53] and use it as a test bed for the performance
+of SOAP-based local property models as a function of
+different convergence parameters.
+First, let us briefly provide the context for the useful-
+ness of CEBEs in materials science. X-ray photoelectron
+spectroscopy (XPS) uses monochromatic (fixed energy)
+X-ray light to excite the deep-lying core electrons in ma-
+terials and molecules. In oxygen- and carbon-containing
+compounds these are the 1s states. When an X-ray pho-
+ton with sufficient energy is absorbed by one such core
+electron the latter becomes photoejected, in such a way
+that its kinetic energy can be measured by a detector.
+Since the energy of the incident photons is fixed, the dif-
+ference between the measured kinetic energy and the inci-
+dent energy equals the CEBE. This CEBE is characteris-
+
+tic of the chemical environment around the atom whose
+core electron was excited, and so an XPS experiment
+provides a spectrum whose characteristic peaks give in-
+sight into the atomic structure of the material or molecule
+being probed. Because the core electron is strongly lo-
+calized around the nucleus and only feels the influence
+of the immediate surrounding medium, XPS is particu-
+larly well suited to learning with local atomic descriptors
+such as SOAP, as we showed in Ref. [53]. One of the
+results presented in that paper is a database of GW-level
+CEBEs for a subset of the CHO-containing molecules in
+the QM9 dataset [54], a large dataset of small stable or-
+ganic molecules, containing up to 9 non-hydrogen atoms.
+Ref. [53] presented learning curves for C1s and O1s
+CEBE models trained from the QM9-GW data using
+soap turbo descriptors without sparsification. Here we
+take a more detailed look at the effect of different tech-
+nical parameters on the quality of the fit:
+cutoff ra-
+dius for SOAP neighbours, sparsification scheme, soap
+vs soap turbo and the effect of different compression
+recipes on the results. We start out by splitting the QM9-
+GW CEBE database of Ref. [53] into a training set (80 %
+of the structures) and a test set (20 % of the structures).
+The gap fit local property feature relies on the user
+providing a per-atom local property array.
+In this
+case, an ASE-format XYZ file is provided with a list
+
+
+12
+
+FIG. 5: Performance of GAP models as the function of
+regularisation hyperparameters. The RMSE of the
+predicted energies (blue squares), forces (red triangles)
+and virial stresses (blue circles) are shown as the energy
+(panel a), force (panel b) and virial (panel c)
+regularisation hyperparameters are varied
+independently.
+
+of per-atom CEBEs.
+The following is an example for
+a formaldehyde molecule:
+
+4
+Lattice="10.89392123 0.0 0.0 0.0 10.81307256 0.0 0.0 0.0 9.01510639" \
+Properties=species:S:1:pos:R:3:GW_CEBE:R:1:local_property_mask:L:1 pbc="T T T"
+C
+5.45500662
+5.70744485
+4.50565078
+294.52870000
+T
+O
+5.47139525
+4.50000000
+4.50000000
+538.69210000
+T
+H
+6.39392123
+6.31307256
+4.50174003
+0.00000000
+F
+H
+4.50000000
+6.28730276
+4.51510639
+0.00000000
+F
+
+The fifth column contains the 1s CEBE for the C and O
+atoms, given in eV in this example. Since H atoms do
+not have a core, CEBEs for these atoms are not available,
+and we pad the array with zeros. A mask is provided to
+let gap fit know these are to be ignored during the fit.
+
+In addition to the database of atomic structures
+and observables (CEBEs here), one needs to provide
+the name of the local property as specified in the
+database (local property parameter name="GW CEBE"
+here),
+the
+default
+regularization
+parameter
+(default local property sigma=0.01
+here,
+in
+the
+same
+units
+as
+the
+local
+property),
+and
+pos-
+sibly
+offsets
+for
+the
+properties
+to
+be
+learned
+(local property0={C:290.816456:O:537.946208:H:0}
+here). In our case, the 0 offset is computed as the av-
+erage CEBE of C1s and O1s core electrons separately.
+It is important to provide these offsets so that the ML
+model only needs to fit the (smooth) differences in the
+local property values, and not the absolute numbers,
+which are significantly harder to learn. Otherwise, the
+specification of the atomic descriptors is done in the
+same way as for a regular GAP model.
+
+All the results for this example are summarized in
+Fig. 6. In panel (a) we show a comparison of models for
+C1s CEBEs fitted using a soap turbo descriptor with
+varying cutoff radii and varying number of sparse points;
+the cutoff radius is the single most important hyperpa-
+rameter in SOAP-based models. Clearly, the accuracy of
+the models can be systematically increased by increasing
+the cutoff. However, the number of sparse points lim-
+its the expressivity of the model, and models with less
+sparse points will not benefit from further increasing the
+cutoff beyond a certain point. E.g., with 50 sparse points
+a 3 ˚A model performs equal to a 7 ˚A model. We observe
+that the statistical variation in the model performance
+increases with the cutoff, due to the corresponding in-
+crease in the size of configuration space covered by the
+descriptor (the error bars are given as the standard de-
+viation computed over 10 different models obtained from
+10 different randomly chosen sparse sets).
+
+In Fig. 6(b) we show a comparison of C1s and O1s
+models fitted using soap and soap turbo descriptors of
+the same dimensionality (CHO-sensitive descriptors with
+8 radial basis functions per element and up to 8th degree
+
+
+13
+
+60
+
+100
+
+150
+
+200
+
+300
+
+2
+3
+4
+5
+6
+7
+(a)
+80
+
+100
+
+125
+
+150
+
+200
+
+250
+
+50
+100 200
+500 1000
+(b)
+
+80
+
+100
+
+125
+
+150
+
+200
+
+250
+
+50
+100 200
+500 1000
+(c)
+80
+100
+
+150
+
+200
+
+500
+
+1000
+
+2_2
+
+2_1
+
+2_0
+
+1_2
+
+1_1
+
+1_0
+
+0_2
+
+0_1
+
+0_0
+
+trivial
+
+1
+
+2
+
+5
+
+10
+
+20
+
+50
+
+100
+
+200
+
+500
+(d)
+
+RMSE (meV)
+
+Cutoff (Å)
+
+Effect of the SOAP cutoff
+(soap_turbo, C1s)
+푛sparse = 50
+푛sparse = 100
+푛sparse = 200
+푛sparse = 500
+푛sparse = 1000
+
+RMSE (meV)
+
+No. of sparse points
+
+soap vs soap_turbo
+(cutoff = 5 Å)
+soap_turbo C1s
+soap_turbo O1s
+soap C1s
+soap O1s
+
+RMSE (meV)
+
+No. of sparse points
+
+Effect of sparsification
+(soap_turbo, 5 Å, C1s)
+
+Random (“trivial’)
+CUR (“trivial’)
+Random
+CUR
+
+RMSE (meV)
+
+Compression ratio
+
+Effect of compression
+(soap vs soap_turbo, 5 Å, C1s)
+
+soap_turbo
+soap
+comp. ratio
+
+FIG. 6: (a) RMSEs for a soap turbo C1s model as a
+function of SOAP cutoff and sparse set size with
+random selection. (b) Comparison between soap and
+soap turbo C1s and O1s models with random sparse
+set size (fixed cutoff of 5 ˚A). (c) Effect of random and
+CUR sparsification strategies, for a soap turbo-based
+C1s model (fixed cutoff of 5 ˚A); the effect of adding
+compression (soap turbo’s “trivial” recipe) is also
+tested. (d) Effect of different compression recipes on
+soap and soap turbo C1s model performance (fixed
+cutoff of 5 ˚A); the right axis gives the compression ratio
+of the descriptor as the number of dimensions of the full
+descriptor (2700) divided by the number of dimensions
+of the compressed descriptor. In all cases (a-d), error
+bars are estimated from the standard deviation of the
+RMSEs calculated among 10 different models with
+random sparse set selection.
+
+spherical harmonics, the same basis set as used for all
+the calculations in Fig. 6). soap turbo models perform
+slightly better than soap models, except for the C1s mod-
+els with maximum number (1000) of sparse points, where
+they perform equally.
+If Fig. 6(c) we assess the effect of using random sparse
+point selection vs using CUR decomposition to select the
+sparse set descriptors, as well as the possible effect of us-
+
+ing descriptor compression (soap turbo’s “trivial” com-
+pression recipe) on the results. For this numerical test,
+the performance of all models is essentially the same for
+most practical purposes.
+Finally, in Fig. 6(d) we perform a thorough numeri-
+cal test of different compression recipes on the accuracy
+of the QM9-GW models.
+The i j labeling convention
+refers to the νR ≡ i and νS ≡ j soap sensitivity param-
+eters discussed above, and their quasiequivalent recipes
+for soap turbo. Additionally, soap turbo can use the
+“trivial” compression scheme as detailed above. In addi-
+tion to the root-mean-squared error (RMSE), the graph
+shows the compression ratio computed as the number
+of dimensions of the compressed descriptor divided by
+those of the full descriptor. Unsurprisingly, the errors in-
+crease with the compression ratio, with most compression
+recipes providing better performance for soap turbo, ex-
+cept for 2 1, 1 2 and 1 1, where soap performs slightly
+better. That is, the advantage of using soap turbo in-
+creases with the degree of compression, whereas soap
+performs equally or slightly better than soap turbo at
+low compression ratios. The “trivial” compression recipe
+is only available for soap turbo and provides arguably
+the best compromise between accuracy and compression
+ratio (a factor of 4.3 vs uncompressed SOAP) among the
+tested schemes, at least for this particular test with the
+QM9-GW database.
+Although not shown here, the relative advantage of
+soap turbo vs soap increases when looking at the O1s
+models, likely because the QM9-GW training database
+we used contains significantly more C1s data (11.5k en-
+tries) than O1s data (1.5k entries). This indicates bet-
+ter generalization and data efficiency for soap turbo, al-
+though it is important to note that the performance of
+each descriptor is dataset specific.
+
+C.
+High-Entropy Alloy
+
+The Mo-Nb-Ta-V-W quinary high-entropy alloy stud-
+ied by Byggm¨astar et al.[38] is a complex, multicom-
+ponent system. To illustrate the generation of a GAP
+model, we provide the parameters, complete with ex-
+planations and comments, that were used to test and
+benchmark the MPI-ScaLAPACK implementation of the
+gap fit program[37]. Here we highlight a recent feature
+which conveniently allows the fitting parameters to be
+stored in a file, rather than provided as command line
+arguments.
+The fitting parameters are entered in the file config,
+provided in the supplementary information[55], in a
+key=value format, with commentary on each provided
+in Table II. The fitting database is openly available as
+the supplementary material of the article by Byggm¨astar
+et al.[38], which may be downloaded from the Fairdata
+repository[56].
+The fitting procedure can then be carried out by run-
+ning the command gap fit config file=config with
+
+
+14
+
+TABLE II: Contents of file config used to fit a GAP model for the Mo-Nb-Ta-V-W quinary high-entropy alloy.
+
+Key
+Value
+Comments
+
+atoms filename
+db HEA reduced.xyz
+Extended XYZ file of training configurations
+do copy at file
+F
+Do not copy XYZ data to output XML
+gap file
+gp HEA.xml
+Filename of output XML of GAP model
+sparse jitter
+1e-8
+Regularisation of KMM
+default kernel regularisation
+{0.002 0.1 0.5 0.0}
+Kernel regularisation for target values
+format: {energy force virial hessian}
+config type kernel regularisation {
+dimer:0.1:1.0:1.0:0.0:
+hea short range:0.05:0.8:2.0:0.0:
+hea surface:0.01:0.4:1.0:0.0:
+isolated atom:0.0001:0.04:0.01:0.0:
+liquid composition:0.01:0.5:2.0:0.0:
+liquid hea:0.01:0.5:2.0:0.0:
+short range:0.05:0.8:0.8:0.0:
+surf liquid:0.01:0.4:0.2:0.0
+}
+
+Override factors for tagged XYZ frames
+format:
+{config type:energies:forces:virials:hessians}
+
+gap
+{
+distance 2b
+n sparse=20
+sparse method=uniform
+covariance type=ard se
+cutoff=5.0
+cutoff transition width=1.0
+energy scale=10.0
+lengthscale uniform=1.0
+:
+
+Two-body descriptor, used as a template.
+One per element pair is generated.
+In one dimension few sparse points
+(uniformly spaced) are enough.
+Kernel is squared exponential (se).
+
+soap
+n sparse=4000
+sparse method=cur points
+covariance type=dot product
+n max=8
+l max=4
+soap exponent=2.0
+atom gaussian width=0.5
+cutoff=5.0
+cutoff transition width=1.0
+energy scale=1.0
+}
+
+SOAP descriptor, used as a template.
+One per element is generated, based
+on the configurations in the database.
+
+Many sparse points are needed due to
+the high dimensionality of the descriptor.
+
+Sparse points are chosen using the CUR method.
+
+the database file db HEA reduced.xyz and the configu-
+ration file config in the same directory.
+For the par-
+allel implementation, the command line mpirun -np 2
+gap fit config file=config executes the process on
+two computational cores. Hybrid OpenMP-MPI execu-
+tion is possible, for which the number of threads may be
+adjusted by setting the environment variable as export
+OMP NUM THREADS=4.
+For the specific queuing system
+available to the user, the documentation should be con-
+sulted.
+The resulting GAP model is stored in the gp HEA.xml
+file and a set of text files according to the naming pattern
+gp HEA.xml.sparseX.GAP *. The interatomic potential
+may be accessed as a Calculator in ASE as
+
+from quippy.potential import Potential
+p = Potential(param_filename="gp_HEA.xml")
+...
+a.calc = p
+
+where the Python variable a indicates an ASE Atoms
+object.
+Massively parallel simulations with GAP models are
+possible with LAMMPS. To use the high-entropy alloy
+potential, the following lines should be added to the
+LAMMPS input file:
+
+pair_style
+quip
+pair_coeff
+* * gp_HEA.xml "" 42 41 73 23 74
+
+where the LAMMPS atom types 1, 2, 3, 4, and 5 are
+mapped to Mo, Nb, Ta, V and W, respectively.
+
+V.
+CONCLUSION AND OUTLOOK
+
+We have reviewed the GAP framework from an im-
+plementation point of view, highlighting how a generic
+sparse GPR formalism is adapted for the prediction of in-
+teratomic potentials and related quantities. An overview
+
+
+15
+
+of the software package, coding practices and recent de-
+velopments was provided, together with usage examples
+and detailed explanations of adjustable parameters, with
+references to the theory. The QUIP and GAP suite re-
+mains under maintenance and in active development by
+the authors, and will serve as a test bed for exploring
+ideas in the field of MLIPs. With interfaces to Python
+and major simulation packages, GAP serves as a useful
+tool for computational modelling.
+Future developments will include the inclusion of more
+descriptors, such as Atomic Cluster Expansion (ACE)[2],
+rigorous means for uncertainty quantification, utilising
+modern computing architectures such as GPUs, and the
+implementation of more robust and efficient solvers for
+the fitting procedure. With the availability and popu-
+larity of more modern programming languages such as
+Python or Julia, Fortran may appear as an outdated
+choice. However, its interoperability with MPI and re-
+lated libraries such as ScaLAPACK has proved to be
+an advantage in utilising the more traditional, but still
+highly prevalent, high performance computing facilities
+consisting of networked servers. As supercomputers and
+programming skills change, the current framework might
+prove to be too restrictive, but the practical insight doc-
+umented here and the software will remain valuable for
+future endeavours.
+
+ACKNOWLEDGMENTS
+
+This work was financially supported by the NOMAD
+Centre of Excellence (European Commission grant agree-
+ment ID 951786) and the Leverhulme Trust Research
+Project Grant (RPG-2017-191). ABP acknowledges sup-
+port from the CASTEP-USER project, funded by the
+Engineering and Physical Sciences Research Council un-
+der the grant agreement EP/W030438/1.
+MAC ac-
+knowledges personal funding from the Academy of Fin-
+land under grant #330488.
+We acknowledge compu-
+tational resources provided by the Max Planck Com-
+puting and Data Facility provided through the NO-
+MAD CoE, the Scientific Computing Research Technol-
+ogy Platform of the University of Warwick, the EPSRC-
+funded HPC Midlands+ consortium (EP/T022108/1),
+ARCHER2 (https://www.archer2.ac.uk/) via the UK
+
+Car-Parinello consortium (EP/P022065/1), CSC - IT
+Center for Science, and the Aalto University Science-IT
+project. We thank the technical staff at each of these
+HPC centres for their support.
+
+AUTHOR DECLARATIONS
+
+Conflict of interest
+
+ABP and GC are listed as inventors on a patent filed by
+Cambridge Enterprise Ltd. related to SOAP and GAP
+(US patent 8843509, filed on 5 June 2009 and published
+on 23 September 2014). ABP, MAC and GC benefit from
+licensing the GAP software to industrial users.
+Not-
+for-profit use for academic and educational purposes is
+granted under the Academic Software License for no cost.
+The other authors have no conflicts to disclose.
+
+Author Contributions
+
+Sascha Klawohn:
+data curation (lead); method-
+ology (supporting); formal analysis (equal); validation
+(supporting); visualization (equal); writing (supporting).
+James P. Darby:
+data curation (lead); methodol-
+ogy (supporting); formal analysis (supporting); valida-
+tion (supporting); visualization (equal); writing (sup-
+porting). James R. Kermode: methodology (support-
+ing); supervision (equal); funding acquisition (equal);
+writing (supporting). G´abor Cs´anyi: conceptualization
+(equal); methodology (equal); supervision (equal); fund-
+ing acquisition (equal); writing (supporting).
+Miguel
+A. Caro:
+conceptualization (support); formal analy-
+sis (supporting); validation (supporting); visualization
+(equal); methodology (equal); writing (supporting). Al-
+bert P. Bart´ok: conceptualization (equal); formal anal-
+ysis (equal); validation (equal); methodology (equal); su-
+pervision (equal); funding acquisition (equal); writing
+(lead).
+
+Data availability
+
+All databases referred to this work are available in pub-
+lic data repositories.
+
+[1] J. Behler and M. Parrinello, Phys. Rev. Lett. 98, 146401
+(2007).
+
+[2] R. Drautz, Phys. Rev. B 99, 014104 (2019).
+[3] A. P. Bart´ok, M. C. Payne, R. Kondor, and G. Cs´anyi,
+Phys. Rev. Lett. 104, 136403 (2010).
+
+[4] K. T. Sch¨utt,
+H. E. Sauceda,
+P. J. Kindermans,
+A. Tkatchenko, and K. R. M¨uller, J. Chem. Phys. 148,
+241722 (2018).
+
+[5] K. Gubaev, E. V. Podryabinkin, and A. V. Shapeev, The
+Journal of Chemical Physics 148, 241727 (2018).
+
+[6] L. Zhang, J. Han, H. Wang, R. Car, and W. E, Phys.
+Rev. Lett. 120, 143001 (2018).
+
+[7] R. Jinnouchi, J. Lahnsteiner, F. Karsai, G. Kresse, and
+M. Bokdam, Phys. Rev. Lett. 122, 225701 (2019).
+
+[8] S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P.
+Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and
+B. Kozinsky, Nature Communications 13, 2453 (2022),
+
+
+16
+
+2101.03164.
+
+[9] C. Chen and S. P. Ong, Nature Computational Science
+2, 718 (2022).
+
+[10] C. E. Williams and C. K. I. Williams, Gaussian Processes
+for Machine Learning (MIT Press, 2007).
+
+[11] K. Kawaguchi, in Advances in Neural Information Pro-
+cessing Systems, Vol. 29, edited by D. Lee, M. Sugiyama,
+U. Luxburg, I. Guyon, and R. Garnett (Curran Asso-
+ciates, Inc., 2016).
+
+[12] V. L. Deringer, N. Bernstein, G. Cs´anyi, C. Mahmoud,
+M. Ceriotti, M. Wilson, D. A. Drabold, and S. R. Elliott,
+Nature 589, 59 (2020).
+
+[13] V. L. Deringer and G. Cs´anyi, Phys. Rev. B 95, 094203
+(2017).
+
+[14] W. J. Szlachta, A. P. Bart´ok, and G. Cs´anyi, Phys. Rev.
+B 90, 104108 (2014).
+
+[15] V. L. Deringer, M. A. Caro, and G. Cs´anyi, Nature
+Comm. , 1 (2020).
+
+[16] A. P. Bart´ok, M. J. Gillan, F. R. Manby, and G. Cs´anyi,
+Phys. Rev. B 88, 054104 (2013).
+
+[17] D. Dragoni, T. D. Daff, G. Cs´anyi, and N. Marzari, Phys.
+Rev. Mater. 2, 013808 (2018), 1706.10229.
+
+[18] J. Kloppenburg, A. Pedersen, K. Laasonen, M. A. Caro,
+and H. J´onsson, Nanoscale 14, 9053 (2022).
+
+[19] J. Kloppenburg, L. B. P´artay, H. J´onsson, and M. A.
+Caro, J. Chem. Phys. 158, 134704 (2023).
+
+[20] G. Sivaraman, L. Gallington, A. N. Krishnamoorthy,
+M. Stan, G. Cs´anyi, A. Vazquez-Mayagoitia, and C. J.
+Benmore, Phys. Rev. Lett. 126, 156002 (2021).
+
+[21] Y.-B. Liu, J.-Y. Yang, G.-M. Xin, L.-H. Liu, G. Cs´anyi,
+and B.-Y. Cao, The Journal of Chemical Physics , 1
+(2020).
+
+[22] S. J. Clark, M. D. Segall, C. J. Pickard, P. J. Hasnip,
+M. J. Probert, K. Refson, and M. Payne, Z. Kristall.
+220, 567 (2005).
+
+[23] T. K. Stenczel, Z. El-Machachi, G. Liepuoniute, J. D.
+Morrow, A. P. Bart´ok, M. I. J. Probert, G. Cs´anyi, and
+V. L. Deringer, J. Chem. Phys. 159, 044803 (2023).
+
+[24] The QUIP repository, https://github.com/libAtoms/
+QUIP.
+
+[25] D. Mackay, Information Theory, Inference, and Learning
+Algorithms (Cambridge University Press, 2003).
+
+[26] V. L. Deringer, A. P. Bart´ok, N. Bernstein, D. M.
+Wilkins, M. Ceriotti, and G. Cs´anyi, Chem. Rev. 121,
+10073 (2021).
+
+[27] F. Musil, A. Grisafi, A. P. Bart´ok, C. Ortner, G. Cs´anyi,
+and M. Ceriotti, Chem. Rev. 121, 9759 (2021).
+
+[28] A. P. Bart´ok, R. Kondor, and G. Cs´anyi, Phys. Rev. B
+87, 184115 (2013).
+
+[29] L. Foster, A. Waagen, N. Aijaz, M. Hurley, A. Luis,
+J. Rinsky, C. Satyavolu, M. J. Way, P. Gazis, and A. Sri-
+vastava, Journal of Machine Learning Research 10, 857
+(2009).
+
+[30] Quantum mechanics and Interatomic Potentials.
+[31] The quippy-ase Python package, https://pypi.org/
+project/quippy-ase/.
+
+[32] A. H. Larsen, J. J. Mortensen, J. Blomqvist, I. E.
+Castelli, R. Christensen, M. Du�lak, J. Friis, M. N.
+Groves, B. Hammer, C. Hargus, E. D. Hermes, P. C.
+Jennings, P. B. Jensen, J. Kermode, J. R. Kitchin, E. L.
+Kolsbjerg, J. Kubal, K. Kaasbjerg, S. Lysgaard, J. B.
+Maronsson, T. Maxson, T. Olsen, L. Pastewka, A. Pe-
+terson, C. Rostgaard, J. Schiøtz, O. Sch¨utt, M. Strange,
+K. S. Thygesen, T. Vegge, L. Vilhelmsen, M. Walter,
+
+Z. Zeng, and K. W. Jacobsen, J. Phys. Condens. Matter
+29, 273002 (2017).
+
+[33] The
+extended
+XYZ
+format,
+https://github.com/
+libAtoms/extxyz.
+
+[34] M. W. Mahoney and P. Drineas, Proc. Natl. Acad. Sci.
+U.S.A. 106, 697 (2009).
+
+[35] E. Anderson, Z. Bai, C. Bischof, S. Blackford, J. Demmel,
+J. Dongarra, J. Du Croz, A. Greenbaum, S. Hammarling,
+A. McKenney, and D. Sorensen, LAPACK Users’ Guide,
+3rd ed. (Society for Industrial and Applied Mathematics,
+Philadelphia, PA, 1999).
+
+[36] L. S. Blackford, J. Choi, A. Cleary, E. D’Azevedo,
+J. Demmel, I. Dhillon, J. Dongarra, S. Hammarling,
+G. Henry, A. Petitet, K. Stanley, D. Walker, and R. C.
+Whaley, ScaLAPACK Users’ Guide (Society for Indus-
+trial and Applied Mathematics, Philadelphia, PA, 1997).
+
+[37] S. Klawohn, J. R. Kermode, and A. P. Bart´ok, Mach.
+learn.: sci. technol. 4, 015020 (2023).
+
+[38] J. Byggm¨astar, K. Nordlund, and F. Djurabekova, Phys.
+Rev. B 104, 104101 (2021).
+
+[39] A. P. Bart´ok, J. Kermode, N. Bernstein, and G. Cs´anyi,
+Phys. Rev. X 8, 041048 (2018).
+
+[40] S. De, A. P. Bart´ok, G. Cs´anyi, and M. Ceriotti, Physical
+Chemistry Chemical Physics 18, 13754 (2016).
+
+[41] F. M. Paruzzo, A. Hofstetter, F. Musil, S. De, M. Ceri-
+otti, and L. Emsley, Nature Communications 9, 1 (2018).
+
+[42] M. A. Caro, Phys. Rev. B 100, 024112 (2019).
+[43] M. J. Willatt, F. Musil, and M. Ceriotti, Phys. Chem.
+Chem. Phys. 20, 29661 (2018).
+
+[44] A. Goscinski, F. Musil, S. Pozdnyakov, J. Nigam, and
+M. Ceriotti, The Journal of Chemical Physics 155,
+104106 (2021).
+
+[45] K. Gubaev, E. V. Podryabinkin, G. L. Hart, and A. V.
+Shapeev, Computational Materials Science 156, 148
+(2019).
+
+[46] A. Bochkarev, Y. Lysogorskiy, S. Menon, M. Qamar,
+M. Mrovec, and R. Drautz, Phys. Rev. Mater. 6, 013804
+(2022).
+
+[47] N. Lopanitsyna, G. Fraux, M. A. Springer, S. De, and
+M. Ceriotti, Physical Review Materials 7, 045802 (2023).
+
+[48] J. P. Darby, D. P. Kov´acs, I. Batatia, M. A. Caro,
+G. L. W. Hart, C. Ortner, and G. Cs´anyi, Phys. Rev.
+Lett. 131, 028001 (2023), 2210.01705.
+
+[49] D. P. Woodruff et al., Foundations and Trends® in The-
+oretical Computer Science 10, 1 (2014).
+
+[50] J. P. Darby, J. R. Kermode, and G. Cs´anyi, npj Compu-
+tational Materials 8, 166 (2022).
+
+[51] M. A. Caro, A. Aarva, V. L. Deringer, G. Cs´anyi, and
+T. Laurila, Chem. Mater. 30, 7446 (2018).
+
+[52] H. Muhli, X. Chen, A. P. Bart´ok, P. Hern´andez-Le´on,
+G. Cs´anyi, T. Ala-Nissila, and M. A. Caro, Phys. Rev. B
+104, 054106 (2021).
+
+[53] D. Golze, M. Hirvensalo, H.-L. P., A. Aarva, J. Etula,
+T. Susi, P. Rinke, T. Laurila, and M. A. Caro, Chem.
+Mater. 34, 6240 (2022).
+
+[54] R. Ramakrishnan, P. O. Dral, M. Rupp, and O. A.
+Von Lilienfeld, Scientific data 1, 140022 (2014).
+
+[55] Supplementary Information, SI.
+[56] The Mo-Nb-Ta-V-W database, https://doi.org/10.
+23729/1b845398-5291-4447-b417-1345acdd2eae.
+
+[57] C. D¨oring, M.-J. Lesot, and R. Kruse, Comput. Stat.
+Data. Anal. 51, 192 (2006).
+
+
+17
+
+ARGUMENTS OF GAP FIT
+
+We provide a snapshot of the currently available com-
+mand line arguments of the gap fit program for com-
+pleteness. As the QUIP and GAP packages are under con-
+stant development, this list may change. It should also
+be noted that most of the parameters need little adjust-
+ment, whereas those that pertain to the particular fitting
+problem are mandatory, requiring the user to specify a
+value. Some keywords have aliases, often less descriptive,
+but both of which are acceptable. These are indicated as
+option (alias).
+
+1.
+Common arguments
+
+config file
+File as alternative input to command line
+arguments. Newlines are converted to spaces.
+
+atoms filename (at file)
+extended XYZ file con-
+taining database configurations in a concatenated form
+
+gap
+Initialisation string for GAPs
+
+e0
+Atomic energy value to be subtracted from energies
+before fitting, and added back on after prediction. Pos-
+sible options are: a single number, used for all species;
+or by species, e.g.: {Ti:-150.0:O:-320.1}.
+
+local property0
+Local property value to be sub-
+tracted from the local property before fitting, and
+added back on after prediction. Possible options are:
+a single number, used for all species; or by species: e.g.
+{H:20.0:Cl:35.0}.
+
+e0 offset
+Offset of baseline. If zero, the offset is the
+average atomic energy of the input data or the e0 spec-
+ified manually.
+
+e0 method
+Method to determine the constant energy
+baseline e0, if not explicitly specified.
+Possible op-
+tions: isolated (default, each atom present in the
+XYZ needs to have an isolated representative, with a
+valid energy); average (e0 is the average of all total
+energies across the XYZ).
+
+default kernel regularisation (default sigma)
+
+Prior assumption of error in [energies forces virials
+hessians]
+
+default kernel regularisation local property
+(default local property sigma)
+
+Prior assumption of error in local property.
+
+sparse jitter
+Extra regulariser used to regularise the
+sparse covariance matrix before it is passed to the lin-
+ear solver.
+Use something small, it really shouldn’t
+affect your results, if it does, your sparse basis is still
+very ill-conditioned.
+
+hessian displacement (hessian delta)
+Finite
+dis-
+placement to use in numerical differentiation when ob-
+taining second derivative for the Hessian covariance.
+
+baseline param filename (core param file)
+QUIP
+XML file which contains a potential to subtract from
+data, and added back after prediction.
+
+baseline ip args (core ip args)
+QUIP
+initialisa-
+tion string for a potential to subtract from data, and
+added back after prediction.
+
+energy parameter name
+Name of energy property in
+the input extended XYZ file that describes the data
+
+local property parameter name
+Name
+of
+local property as a column in the input XYZ
+file that describes the data.
+
+local property mask parameter name
+Used
+to
+ex-
+clude local properties on specific atoms from the fit.
+In the XYZ, it must be a logical column.
+
+force parameter name
+Name of force property,
+as
+three columns, in the input XYZ file that describes
+the data.
+
+virial parameter name
+Name of virial property in the
+input XYZ file that describes the data.
+
+stress parameter name
+Name of stress property (6-
+vector or 9-vector) in the input XYZ file that describes
+the data - stress values only used if virials are not avail-
+able. Note the opposite sign and standard Voigt order.
+
+hessian parameter name
+Name of hessian property
+(column) in the input XYZ file that describes the data
+
+config type parameter name
+Allows grouping on con-
+figurations into.
+This option is the name of the
+key that indicates the configuration type in the in-
+put XYZ file.
+With the default, the key-value pair
+config type=bcc would place that configuration into
+the group bcc.
+
+kernel regularisation parameter name
+(sigma parameter name)
+
+Kernel regularisation parameters for a given config-
+uration in the database.
+Overrides the command
+line values for both defaults and config-type-specific
+values. In the input XYZ file, it must be prepended
+by energy , force , virial or hessian keywords.
+
+force mask parameter name
+To exclude forces on spe-
+cific atoms from the fit.
+In the XYZ, it must be a
+logical column.
+
+parameter name prefix
+Prefix
+that
+gets
+uniformly
+appended
+in
+front
+of
+{energy,local property,force,virial,...}
+parameter name
+
+config type kernel regularisation
+(config type sigma)
+
+The
+kernel
+regularisation
+values
+to
+choose
+for
+each
+type
+of
+data,
+when
+the
+configura-
+tions
+are
+grouped
+into
+config types.
+Format:
+{configtype1:energy:force:virial:hessian:
+config type2:energy:force:virial:hessian}
+
+kernel regularisation is per atom
+(sigma per atom)
+
+Interpretation
+of
+the
+energy
+and
+virial
+
+
+18
+
+regularisation
+parameters
+specified
+in
+default kernel regularisation
+and
+config type kernel regularisation.
+If T, these
+are interpreted as per-atom errors, and the vari-
+ance will be scaled according to the number of
+atoms in the configuration.
+If F, they are treated
+as absolute errors and no scaling is performed.
+NOTE: values specified on a per-configuration basis
+(see
+kernel regularisation parameter name)
+are
+always absolute, not per-atom.
+
+do copy atoms file (do copy at file)
+Copy the in-
+put XYZ file into the GAP XML file (should be set to
+False for NetCDF input).
+
+sparse separate file
+Save sparse point data in sep-
+arate file, recommended for large number of sparse
+points.
+
+sparse use actual gpcov
+Use actual GP covariance
+for sparsification methods.
+
+gap file (gp file)
+Name of output XML file that
+will contain the fitted potential
+
+verbosity
+Verbosity
+control.
+Options:
+NORMAL,
+VERBOSE, NERD, ANALYSIS.
+
+rnd seed
+Random seed.
+
+openmp chunk size
+Chunk size in OpenMP scheduling.
+
+do ip timing
+To enable or not the timing of the inter-
+atomic potential.
+
+template file
+Template XYZ file for initialising ob-
+ject.
+
+sparsify only no fit
+If true, sparsification is done,
+but no fitting is performed. The sparse index is printed
+by adding print sparse index=file.dat to the de-
+scriptor specification string under the gap option.
+
+dryrun
+If true, exits after memory estimate, before ma-
+jor allocations.
+
+condition number norm
+Norm for condition number of
+matrix A of the linear system; O: 1-norm, I: inf-norm,
+<empty>: skip calculation (default)
+
+linear system dump file
+Basename prefix of linear
+system dump files. Skipped if <empty> (default).
+
+mpi blocksize rows
+Blocksize of MPI distributed ma-
+trix rows. Affects efficiency and memory usage slightly.
+Maximum if specified as 0 (default).
+
+mpi blocksize cols
+Blocksize of MPI distributed ma-
+trix columns. Affects efficiency and memory usage con-
+siderably. Maximum if 0. Default: 100.
+
+mpi print all
+If true, each MPI processes will print
+its output. Otherwise, only the first process does (de-
+fault).
+
+Arguments of the GAP string
+
+The following keywords are to be specified for each
+descriptor within the gap command line argument.
+
+energy scale (delta)
+Set the typical scale of the
+function being fitted, or the specific energy term if us-
+ing multiple descriptors. It is equivalent to the stan-
+dard deviation of the Gaussian Process in the prob-
+abilistic view, and typically this would be set to the
+standard deviation (i.e. root mean square) of the func-
+tion that is approximated with the Gaussian Process.
+
+f0
+Set the mean of the Gaussian Process. Defaults to
+0.
+
+n sparse
+Number of sparse points to use in the sparsi-
+fication of the Gaussian Process
+
+config type n sparse
+Number
+of
+sparse
+points
+in
+each
+configuration
+type.
+Format:
+type1:50:type2:100
+
+sparse method
+Sparsification method.
+Possible op-
+tions:
+RANDOM(default), PIVOT, CLUSTER, UNIFORM,
+KMEANS, COVARIANCE, NONE, FUZZY, FILE, INDEX FILE,
+CUR COVARIANCE, CUR POINTS. For explanations, see
+below.
+
+lengthscale factor (theta fac)
+Set the width of
+Gaussians for the Gaussian and piecewise polynomial
+kernel by multiplying the range of each descriptor by
+lengthscale factor. Can be a single number or dif-
+ferent for each dimension.
+For multiple numbers in
+lengthscale factor, separate each value by whites-
+paces.
+
+lengthscale uniform (theta uniform)
+Set
+the
+width of Gaussians for the Gaussian and piecewise
+polynomial kernel, same in each dimension.
+
+lengthscale file (theta file)
+Set
+the
+width
+of
+Gaussians for the Gaussian kernel from a file. There
+should be as many real numbers as the number of di-
+mensions, in a single line.
+
+sparse file
+Sparse
+points
+from
+a
+file.
+If
+sparse method=FILE,
+descriptor
+values
+as
+real
+numbers listed in a text file, one element per line. If
+sparse method=INDEX FILE, 1-based index of sparse
+points, one per line.
+
+mark sparse atoms
+If true, reprints the original ex-
+tended XYZ file after sparsification process, with a
+sparse property column added, which is true for
+atoms associated with a sparse point.
+
+add species
+If true (default), create species-specific
+descriptors, using the descriptor string as a template.
+
+covariance type
+Type of covariance function to use.
+Available: GAUSSIAN, DOT PRODUCT, BOND REAL SPACE,
+PP (piecewise polynomial).
+
+soap exponent (zeta)
+Exponent of soap type dot
+product covariance kernel
+
+print sparse index
+If given, after determining the
+sparse points, their 1-based indices are appended to
+this file.
+
+unique hash tolerance
+Hash tolerance when filtering
+out duplicate data points.
+
+
+19
+
+unique descriptor tolerance
+Descriptor
+tolerance
+when filtering out duplicate data points.
+
+Options for sparse point selection
+
+none
+No sparsification, selects all datapoints.
+
+index file
+Reads indices of sparse points from the file
+given by sparse file and selects those from the de-
+duplicated data.
+
+file
+Reads sparse points from the file given by
+sparse file.
+
+random
+Selects n sparse random descriptors with the
+same probability.
+
+uniform
+Computes a histogram of the data with
+n sparse bins and returns a data point from each bin.
+This option is only suitable for low-dimensional de-
+scriptors.
+
+kmeans
+The k-means clustering algorithm is performed
+on all descriptors to generate n sparse clusters, of
+which the descriptors closest to the cluster means are
+selected as sparse points.
+
+fuzzy
+A fuzzy version of k-means clustering[57] is used
+to generate n sparse clusters.
+
+cluster
+A k-medoid clustering based on the full co-
+variance matrix of descriptors is performed, resulting
+in n sparse clusters. The medoid points are selected
+as sparse points.
+
+pivot
+The n sparse “pivot” indices of the full covari-
+ance matrix are found, and used as the sparse points.
+
+covariance
+Greedy data point selection based on the
+sparse covariance matrix, to minimise the GPR vari-
+ance of all datapoints.
+
+cur points
+A CUR decomposition, based on the dat-
+apoints, is carried out to find the most representative
+n sparse points.
+
+cur covariance
+A CUR decomposition, based on the
+full covariance matrix, is carried out to find the most
+representative n sparse points.
+
+Descriptors
+
+The GAP module implements over 30 descriptors,
+most of which being experimental or unsupported.
+In
+the following, we include those that are commonly used
+by practitioners and supported by the GAP developers.
+
+distance 2b arguments
+
+cutoff
+Cutoff for distance 2b-type descriptors.
+
+cutoff transition width
+Transition width of cutoff
+for distance 2b-type descriptors.
+
+Z1
+Atom type #1 in bond. Any atom type if missing.
+
+Z2
+Atom type #2 in bond. Any atom type if missing.
+
+resid name
+Name of an integer property in the atoms
+object giving the residue identifier of the molecule to
+which the atom belongs.
+
+only intra
+Only calculate bonds, i.e. intramolecular
+pairs with equal residue identifiers
+
+only inter
+Only apply to non-bonded atom pairs, i.e.
+intermolecular pairs with different residue identifiers.
+
+n exponents
+Number of exponents.
+
+exponents
+Exponents in a list format, for example:
+{-12 -6}
+
+tail range
+Tail range.
+
+tail exponent
+Tail exponent.
+
+soap arguments
+
+cutoff
+Cutoff distance.
+
+cutoff transition width
+Transition width of cutoff
+function.
+
+cutoff dexp
+Cutoff decay exponent.
+
+cutoff scale
+Cutoff decay scale.
+
+cutoff rate
+Inverse cutoff decay rate.
+
+l max
+lmax (spherical harmonics basis band limit) for
+soap-type descriptors.
+
+n max
+nmax (number of radial basis functions) for soap-
+type descriptors.
+
+atom gaussian width (atom sigma)
+Width of atomic
+Gaussian functions for soap-type descriptors.
+
+central weight
+Weight of central atom in environ-
+ment.
+
+central reference all species
+Place
+a
+Gaussian
+reference for all atom species densities. By default (F)
+only consider when neighbour is the same species as
+centre.
+
+average
+Whether to calculate averaged SOAP - one de-
+scriptor per atoms object.
+If false (default), atomic
+SOAP is returned.
+
+diagonal radial
+Only return the n1 = n2 elements of
+the power spectrum.
+
+covariance sigma0
+σ0 parameter in polynomial co-
+variance function.
+
+normalise (normalize)
+Normalise
+descriptor,
+so
+magnitude is 1.
+In this case the kernel of two
+equivalent environments is 1.
+
+basis error exponent
+10−basis error exponent
+is
+the
+max difference between the target and the expanded
+function.
+
+n Z
+How many different types of central atoms to con-
+sider.
+
+
+20
+
+n species
+Number of species for the descriptor.
+
+species Z
+Atomic number of species.
+
+xml version
+Version of GAP the XML potential file
+was created.
+
+Z
+Atomic number of central atom, 0 is the wild-card
+or Atomic numbers to be considered for central atom,
+must be a list.
+
+soap compression arguments
+
+Z mix
+Mix the element channels together if present.
+
+R mix
+Mix the radial channels together if present.
+
+sym mix
+Specifies whether a single set of mixing weights
+is used or whether two sets are used. If sym mix=T,
+tensor-decomposition is enabled. If sym mix=F tensor-
+sketching is used.
+
+K
+Integer specifying how many mixed channels to cre-
+ate.
+For example, R mix=T Z mix=T K=5 will create
+5 mixed channels whereas R mix=F n max=6 Z mix=T
+K=5 will result in K*n max = 30 channels.
+
+coupling
+If coupling=T full tensor-product coupling
+is applied across the resulting channels after mixing,
+whereas if coupling=F element-wise coupling is ap-
+plied instead.
+The only exception to this rule oc-
+curs for Z mix=T R mix=F (or similarly for Z mix=F
+R mix=T) with coupling=F. Here, element-wise cou-
+pling is applied across the mixed-element channels but
+tensor-product coupling is applied across the unmixed
+radial channels, resulting in pk
+nn′l (or similarly pαβ
+kl ).
+
+mix shift
+Integer specifying the shift to the default
+seed that is used for the random number generator
+used to generate the mixing weights.
+
+nu R
+radially sensitive correlation order. Allowed values
+are 0, 1 and 2 (default).
+
+nu S
+species sensitive correlation order. Allowed values
+are 0, 1 and 2 (default).
+
+Z map
+Commas separate groups within a density.
+A
+colon separates the two densities if present.
+Other-
+wise the groups are taken to be equal. Z map= {1, 3,
+22 23 24 } has a separate channel for H and Li but
+treats Ti, V and Cr as identical Z map = {1, 3, 22,
+23, 24 :
+1, 3, 22 23 24} has a separate channel
+for each element in the first density. In the second den-
+sity there is a separate channel for H and Li but Ti, V
+and Cr are identical
+
+soap turbo arguments
+
+rcut hard
+Hard cutoff distance.
+
+rcut soft
+Soft cutoff distance.
+
+n species
+Number of species for the descriptor.
+
+l max
+lmax (spherical harmonics basis band limit) for
+soap-type descriptors.
+
+nf
+Sets the rate of decay of the atomic density in the
+region between soft and hard cutoffs.
+
+radial enhancement
+Integer index (0, 1 or 2) that sim-
+ulates the effect of modulating the radial overlap inte-
+gral with the radial distance raised to this number.
+
+basis
+Options: poly3 or poly3gauss chooses a 3rd
+and higher degree polynomial radial basis set and aug-
+ments it with a Gaussian at the origin, respectively.
+
+compress file
+Optional user-provided file specifying
+the compression recipe.
+
+compress mode
+Optionally provides a predefined com-
+pression recipe.
+
+central index
+1-based
+index
+of
+central
+atom
+species Z in the species array.
+
+alpha max
+Radial basis resolution for each species.
+
+atom sigma r
+Width of atomic Gaussian functions for
+soap-type descriptors in the radial direction.
+
+atom sigma r scaling
+Scaling rate of radial sigma:
+scaled as a function of neighbour distance.
+
+atom sigma t
+Width of atomic Gaussian functions for
+soap-type descriptors in the angular direction.
+
+atom sigma t scaling
+Scaling rate of angular sigma:
+scaled as a function of neighbour distance.
+
+amplitude scaling
+Scaling rate of amplitude: scaled
+as an inverse function of neighbour distance.
+
+central weight
+Weight of central atom in environ-
+ment.
+
+species Z
+Atomic number of species, including the
+central atom.
+
+

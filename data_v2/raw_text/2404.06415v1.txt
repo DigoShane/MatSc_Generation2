@@ -1,0 +1,3366 @@
+arXiv:2404.06415v1  [physics.chem-ph]  9 Apr 2024
+
+Quasi-Particle Self-Consistent GW for
+
+Molecules.
+
+F. Kaplan,† M. E. Harding,† C. Seiler,‡ F. Weigend,†,§ F. Evers,‡ and M. J. van
+
+Setten∗,¶
+
+†Institute of Nanotechnology, Karlsruhe Institute of Technology, Campus North, D-76344
+
+Karlsruhe, Germany
+
+‡Institute of Theoretical Physics, University of Regensburg, D-93040 Regensburg, Germany
+
+¶Nanoscopic Physics, Institute of Condensed Matter and Nanosciences, Universit´e
+
+Catholique de Louvain, 1348 Louvain-la-Neuve, Belgium
+
+§Institute of Physical Chemistry, Karlsruhe Institute of Technology, Campus South,
+
+D-76021 Karlsruhe, Germany
+
+E-mail: mjvansetten@gmail.com
+
+Abstract
+
+We present the formalism and implementation of quasi-particle self-consistent GW
+
+(qsGW) and eigenvalue only quasi-particle self-consistent GW (evGW) adapted to
+
+standard quantum chemistry packages. Our implementation is benchmarked against
+
+high-level quantum chemistry computations (coupled-cluster theory) and experimental
+
+results using a representative set of molecules. Furthermore, we compare the qsGW
+
+approach for five molecules relevant for organic photovoltaics to self-consistent GW
+
+results (scGW) and analyze the effects of the self-consistency on the ground state
+
+density by comparing calculated dipole moments to their experimental values.
+We
+
+show that qsGW makes a significant improvement over conventional G0W0 and that
+
+partially self-consistent flavors (in particular evGW) can be excellent alternatives.
+
+1
+
+
+1
+Introduction
+
+The sufficiently accurate prediction of photo-ionization processes is still a serious computa-
+
+tional challenge. The main workhorse for medium and large sized systems is the Kohn-Sham
+
+density functional theory (KS-DFT).1,2 As is very well known, using KS-DFT eigenvalues
+
+(especially using semi local functionals) for computational spectroscopy has, however, var-
+
+ious fundamental and practical limitations. Moreover ∆SCF ionisation energies, which are
+
+more accurate, are in general only applicable to obtain the first ionisation energies.3–5 An
+
+approach promising better accuracy for the calculation of single particle excitations is the
+
+GW-method. Its central object is the Green’s function G.6–9 It is calculated by solving the
+
+Dyson equation that relates the full (interacting) Green’s function to a know non-interacting
+
+reference one, G0, via a self-energy Σ. Depending on the starting point, G0, Σ adds or
+
+corrects exchange and (dynamical) correlation. In GW-theory Σ is approximated evaluating
+
+the Fock diagram, however employing a screened interaction W. Since the Green’s function,
+
+G, exhibits (complex) poles that describe the (charged) excitation energies (and their life-
+
+times),10,11 GW theory represents a simple and transparent framework for the investigation
+
+of ionization processes.
+
+Since GW comes with a substantial computational effort, a great variety of simplified fla-
+
+vors of GW are in use, the most common being so called G0W0 approximation.9 It treats the
+
+self-energy Σ as a first order (i.e. nonselfconsistent) perturbation acting on a KS or Hartree
+
+Fock (HF) reference system. It produces sizeable corrections, in particular to the energies of
+
+the frontier orbitals, at moderate computational costs; thus medium sized molecules can be
+
+treated efficiently. These advantages are reflected in an increasing number of applications in
+
+quantum chemistry.12–49
+
+However, the lack of self-consistency in G0W0 implicates undesirable shortcomings: Both,
+
+G and the polarization P, that enter the calculation are imported without change from
+
+the underlying reference calculation (KS or HF). As a consequence, G0W0 depends on the
+
+choice of the reference systems, e.g., the exchange-correlation (XC) functional of KS-DFT
+
+2
+
+
+calculation. Furthermore, there is no update in the spatial shape of the orbitals, so the
+
+ground state density of G0W0 reproduces the one of the reference theory.
+
+These limitations are overcome by imposing self-consistency. However, due to the fact
+
+that fully self-consistent GW (scGW) is computationally expensive,25,34,50–58 it is highly
+
+desirable to explore the potential of partially self-consistent schemes. In this work we follow
+
+a procedure towards partial self-consistency that is numerically still tractable and gives
+
+promising results; the quasi-particle (QP) self-consistent GW (qsGW). For solids there is
+
+already encouraging experience with this approach,59–66 and first applications to atoms36
+
+and small molecules58 also seem promising. Here it is adapted for use in a general quantum
+
+chemistry code. Our results indicate that the starting point dependence, observed at the
+
+G0W0 level, which can easily exceed 1.0 eV,25,38,40,51,51,58,67–74 is completely removed in qsGW.
+
+Our calculations suggest that the effects of orbital updates can be often neglected in
+
+comparison to the correction coming from the shifts in the pole positions of the Green’s
+
+function. Therefore, we also implement and investigate a simplified version of qsGW in
+
+which the orbitals are kept fixed at the reference (DFT of HF) result and only the QP-
+
+energies are updated (eigenvalue only GW, evGW). Also this, and similar schemes, have
+
+been successful already in implementations for solids75–77 and first applications in molecular
+
+geometries.26,41,49 It is an approximation especially beneficial for larger systems since it is
+
+computationally less demanding than scGW (and qsGW).
+An important aspect of our
+
+work is that we present a systematic comparison between qsGW and evGW providing a
+
+validation of evGW. In particular we find that in evGW the starting point dependence is
+
+strongly reduced as compared to G0W0.
+
+An important aspect of testing a new methodology is comparison with other approaches.
+
+A generally popular reference are experimental values. This commonly adopted practice
+
+can however be misleading in the case of ionization energies.
+One difficulty is that the
+
+experimental ionization energies are often adiabatic whereas those calculated within the
+
+GW scheme are always vertical.
+In addition intrinsic effects originating from zero-point
+
+3
+
+
+vibrations and relativistic effects (beyond those that enter via the reference calculation) are
+
+usually not included, also not in our current approach. (We mention that at the G0W0
+
+level a two component extension has been implemented recently to account for spin-orbit
+
+effect for closed shell molecules.47) Therefore a comparison to more accurate theoretical
+
+results would be more reliable. In this work, we make use of the possibility to compare
+
+our results to coupled-cluster singles and doubles augmented by a perturbative treatment
+
+of triple excitations (CCSD(T))78,79 employing the same atomic structure and basis set.80
+
+Doing so rules out experimental uncertainties, temperature and zero-point renormalization
+
+effects etc., but also basis set errors.
+
+Our paper is organized as follows: In section 2.1 we present the formalism that is used
+
+within our implementation of qsGW. Section 2.2 explains the details of the implementation.
+
+The third section validates the qsGW method. First, our implementation is tested for in-
+
+ternal consistency (Sec. 3.1), i.e. we test the convergence behavior with the basis set and
+
+the number of iteration cycles. Second, the qsGW method is assessed using first ionization
+
+potentials (IP) of a set of 29 representative molecules (section 3.2).40,51 Third, we compare
+
+higher IPs with experimental data (section 3.3) and with results using the scGW implemen-
+
+tation within the FHI-AIMS software package51 (section 3.3). Furthermore, we evaluate the
+
+ground state densities and the dipole moments in section 3.5. In section 4 we compare the
+
+results of qsGW to those of G0W0.
+
+In section 5 we investigate two different approaches of partial self-consistency. We first
+
+introduce and benchmark our implementation of the evGW method (self-consistency in the
+
+poles positions of G and the response function) versus qsGW and CCSD(T). In section 5.2
+
+we test the GevW0 49 approach (self-consistent only in the poles positions of G), versus qsGW.
+
+Finally section 6 contains an analysis of the computational performance and scaling behavior
+
+of the presented methods.
+
+4
+
+
+2
+Method
+
+2.1
+qsGW Approximation
+
+We are aiming at an approximate self-consistent solution of the Dyson equation
+
+G(E) = (E − H[G] − Σ[G])−1
+(1)
+
+Here, H[G] denotes the Hartree contribution incorporating the external potential (respec-
+
+tively the ions), the kinetic contribution and the Hartree potential. The latter depends on
+
+the charge density and hence is considered as a functional of G.
+
+In the GW-approximation9 the self-energy is given in terms of the causal Green’s function:
+
+Σ(r, r′, ω) = i
+
+2π
+
+�
+dω′G(r, r′, ω + ω′)W(r, r′, ω′)eiηω′
+(2)
+
+and the screened Coulomb interaction W. η denotes a positive infinitesimal. W is obtained
+
+from the following equation
+
+W(r, r′, ω) = v(r, r′) +
+�
+dr′′
+�
+dr′′′v(r, r′′)P(r′′, r′′′, ω)W(r′′′, r′, ω)
+(3)
+
+with v(r, r′) = e2 |r − r′|−1 denoting the bare Coulomb kernel. Ignoring vertex corrections
+
+(consistent with the construction of Σ) the polarization P is calculated within the random
+
+phase approximation (RPA)
+
+PRPA(r, r′, ω) = − i
+
+2π
+
+�
+dω′G(r, r′, ω + ω′)G(r, r′, ω′)eiηω′
+(4)
+
+5
+
+
+2.1.1
+Quasi-Particle Equation and Quasistatic Approximation
+
+A solution of equation 1 is constructed by introducing a quasi-spectral representation;
+
+G(r, r′, z) =
+�
+
+n
+
+ψr,n(r, z) ¯ψl,n(r′, z)
+
+z − εn(z) + iηsgn(εn(z) − µ)
+(5)
+
+The right and left eigenvectors, ψr,n(r, z), ψl,n(r, z) and eigenvalues εn(z) represent quasi-
+
+particle/hole (QP/QH) states and energies, µ being the chemical potential.
+The bar in
+
+¯ψl,n(r′, z) denotes the complex conjugate. The (complex) poles z of the Green’s function 5
+
+follow from the pole condition
+
+z − εn(z) = 0
+(6)
+
+The QP-orbitals as well as the energies are found as solutions of the QP-equations
+
+(εn(z) − HH[G] − Σ[G]) · ψr,n(r, z) = 0
+(7)
+
+ψl,n(r, z) · (εn(z) − HH[G] − Σ[G]) = 0
+(8)
+
+Within qsGW the self-energy 2 is approximated by an energy-independent, Hermitian
+
+matrix. In the literature different variants have been proposed for such approximate self-
+
+energies.60,61,81 Here we follow Faleev et al.60
+
+˜Σnn′ = 1
+
+2 (Σnn′(εn) + Σnn′(εn′))
+(9)
+
+This approximation takes into account the quasi-particle part of the Green’s function
+
+and neglects life-time effects. One of its merits is that it implies a consistent treatment of
+
+the renormalization factor Z within the calculation of many observables.60
+
+Removing the energy dependence from the self-energy has important computational ben-
+
+efits.
+First, the energy integration in eq 2 can be performed analytically.
+Second, the
+
+6
+
+
+approximate self-energy takes an Hermitian form hence left and right eigenvectors coincide
+
+�
+εn − HH[G] − ˜Σ[G]
+�
+· ψn(r) = 0
+(10)
+
+and the poles are real, reflecting an effective single particle theory. Consequently, the Green’s
+
+function of qsGW takes the form
+
+G =
+�
+
+n
+
+ψn(r) ¯ψn(r′)
+
+E − εn + iηsgn(εn − η)
+(11)
+
+2.1.2
+Kohn-Sham Initialization
+
+An iterative procedure of solving eq 10 and 11 self-consistently is typically initialized with a
+
+KS Green’s function constructed from the KS orbitals ψ(0)
+n (r) and energies ε(0)
+n :
+
+G(0)(r, r′, E) =
+�
+
+n
+
+ψ(0)
+n (r) ¯ψ(0)
+n (r′)
+
+E − ε(0)
+n + iηsgn(ε(0)
+n − η)
+(12)
+
+2.2
+Implementation
+
+qsGW has been implemented within a local version of the TURBOMOLE package, building
+
+on the routines for the calculation of the G0W0 self-energy.40
+
+The solution of eq 10 is organized in an iterative scheme starting from the KS-initialization
+
+eq 12. The QP-orbitals of the (i + 1)th iteration ψ(i+1)
+n
+(r) are expressed in the reference
+
+orbitals of the previous iteration:
+
+ψ(i+1)
+n
+(r) =
+�
+
+n
+
+A(i+1)
+nn
+ψ(i)
+n (r)
+(13)
+
+In the reference basis ψ(i)
+n (r) eq 10 takes the form of an eigenvalue problem
+
+�
+
+n
+
+A(i+1)
+n′n
+
+� �
+dr′
+�
+dr ψ(i)
+n (r)
+�
+HH[G(i)]δ(r − r′) + ˜Σ(r, r′)
+�
+ψ(i)
+n (r′)
+�
+= ε(i+1)
+n′
+A(i+1)
+n′n
+(14)
+
+7
+
+
+The diagonalization of eq 14 yields updates in ε(i+1)
+n′
+and A(i+1)
+n′n . With the latter new or-
+
+bitals ψ(i+1)
+n
+(r) are constructed via 13. These are orthonormal by construction due to the
+
+hermiticity of the operators in eq 14.
+
+Since hermiticity gives the present scheme a form similar to an effective single parti-
+
+cle problem we can take advantage of established (DFT) routines to calculate the Hartree
+
+Hamiltonian HH[n(i+1)], n(i+1) = �N
+i=1
+���ψ(i+1)
+n
+(r)
+���
+2
+employing an updated density.
+
+For the computation of the matrix elements of the self-energy
+
+Σnn(E) = ⟨n| Σx |n⟩ + ⟨n| Σc(E) |n⟩
+(15)
+
+we recall the expressions already derived before in the context of the G0W0 implementation.40
+
+The expression for the real part of a matrix element of the correlation part Σc of the self-
+
+energy reads;
+
+Re
+�
+⟨n| Σc(E) |n′⟩
+�
+=
+
+�
+
+m
+
+� occ
+�
+
+i
+(in|ρm)(ρm|n′i) ×
+E − εi + Ωm
+
+(E − εi + Ωm)2 + ¯η2
+
++
+
+unocc
+�
+
+a
+(an|ρm)(ρm|n′a) ×
+E − εa − Ωm
+
+(E − εa − Ωm)2 + ¯η2
+
+�
+(16)
+
+where ρm and Ωm denote the two particle excitation densities and energies and ¯η is a positive
+
+infinitesimal. To express the exchange part we employ the common notation of the Coulomb
+
+integrals
+
+(pq|rs) =
+�
+dr
+�
+dr′p(r)q(r)
+1
+
+|r − r′|r(r′)s(r′)
+(17)
+
+p(r), q(r), etc. denoting single particle orbitals, e.g. of QP or KS type.
+
+The unscreened exchange part of qsGW is identical to the exchange contribution of HF
+
+theory,
+
+⟨n| Σx |n′⟩ =
+
+occ
+�
+
+n
+
+(nn|nn′)
+(18)
+
+where the sum is over all occupied (QP-)orbitals.
+
+8
+
+
+Employing the quasi-spectral representation, eq 5, the new self-energy is calculated from
+
+the updated pole positions ε(i+1)
+n′
+and orbitals ψ(i+1)
+n
+(r). This uses the established routines
+
+from the G0W0 implementation, taking into account all changes, i.e. in both G and W.
+
+After the approximation eq 9 is applied the next iteration is started by solving again
+
+eq 14. This procedure is continued until a self-consistent solution is achieved.
+
+2.2.1
+Convergence Criteria
+
+In terminating the self-consistency cycle different convergence criteria are conceivable. An
+
+obvious choice would consider the change of the QP energies from one cycle to the next.
+
+However, motivated by earlier work,51 we check for the norm of the differences of the Green’s
+
+functions:
+
+∆ =
+1
+
+N2
+Orbitals
+
+�
+
+n,n
+
+��Gnn(E = 0) − G(i−1)
+nn
+(E = 0)
+��
+(19)
+
+=
+1
+
+N2
+Orbitals
+
+�
+
+n
+
+��Gnn(E = 0) − G(i−1)
+nn
+(E = 0)
+�� .
+(20)
+
+The last step is valid when Gn,n is diagonal, i.e. given in the orthonormal eigenstates of the
+
+QP-equation. Typically the iteration is stopped if ∆ < 10−7 is achieved. This corresponds
+
+to orbital energies being converged to within 1 meV.
+
+2.2.2
+Linear Mixing
+
+The iterative approach introduced above does not always converge into a fixed point solution.
+
+To improve stability and also rate of convergence we introduce a linear mixing scheme that
+
+mixes into the updated Green’s function a contribution of the previous one to decrease the
+
+step width between two iterations in a similar manner as done for iterative procedures for
+
+the HF or DFT ground state. Therefore, strictly speaking we do not solve eq 14, but
+
+�
+ε(i+1)
+n
+−
+�
+λ
+�
+HH[G(i)] + Σ[G(i)]
+�
++ (1 − λ)ε(i)
+n
+��
+ψ(i+1)
+n
+= 0
+(21)
+
+9
+
+
+Our tests indicate that λ = 0.3 is a reasonable choice which converges all studied molecules
+
+and, on average, speeds up the convergence by factor 4 as compared to no mixing. As an
+
+example Figure 1 shows the convergence using different mixing parameters for BF.
+
+10−8
+
+10−7
+
+10−6
+
+10−5
+
+10−4
+
+10−3
+
+10−2
+
+0
+10
+20
+30
+Iteration
+
+Norm ∆
+
+λ=0.1
+λ=0.3
+λ=0.5
+λ=0.7
+
+Figure 1: The flow of the convergence of the norm of the difference of the Green’s functions
+from two iterations with the qsGW iteration for the BF. The termination criterion is indi-
+cated by the solid line.
+
+3
+Validation of qsGW
+
+In this section we will first confirm the internal consistency of the implemented qsGW
+
+method. Second, we will benchmark, for a test set of 29 representative molecules, qsGW
+
+versus ∆CCSD(T) first IPs and experimental results of higher IPs of 5 organic molecules.
+
+Finally the results of qsGW are compared to full self-consistency GW (scGW) literature
+
+results to validate the accuracy of qsGW and to shed light on the internal features of the
+
+quasi-static approximation.
+
+10
+
+
+3.1
+qsGW Internal Consistency
+
+We investigate the basis set dependence of the implemented qsGW method and extract a
+
+basis set which yields a good tradeoff of computational cost and accuracy. Furthermore, we
+
+will show that the results of qsGW are independent of the chosen initial functional in the
+
+initializing calculation.
+
+3.1.1
+Basis Set Convergence
+
+We start the study of the basis set dependence of the qsGW IPs by a comparison for three
+
+small molecules, water, nitrogen and methane. The results obtained using the def2-SVP,
+
+def2-TZVP, def2-TZVPP and def2-QZVP basis set series are shown in Figure 2.82,83 The
+
+results are plotted against the inverse of the size of the basis set. We take the ordinate offset
+
+of the linear extrapolation (the dashed lines in Figure 2) of the def2-TZVP and def2-QZVP as
+
+an estimate for the extrapolated complete basis set limit (CBS) result. This same approach
+
+has been used and tested in two of our previous studies for G0W0 comparing also to other
+
+basis sets.40,48 It these studies it turned out have an estimated error of typically within 50
+
+meV for G0W0. Since the same physical quantities enter in qsGW as in G0W0 it is reasonable
+
+to assume that the same holds for qsGW as well. Indeed for these three molecules we observe
+
+the same rate of convergence as for G0W0.40 We therefore use this approach also for qsGW,
+
+at least as long as thoroughly tested extrapolation schemes as known for Hartree-Fock or
+
+coupled-cluster energies are not available.
+
+In a similar manner as shown in Figure 2, we have performed a survey over a larger
+
+subset of our test set of molecules and calculated the CBS limit for each individual molecule,
+
+the overall convergence behavior is indicated in Figure 3. For the def2-SVP basis set we
+
+find a maximum error larger then 0.8 eV. Furthermore, the largest deviations are seen for
+
+systems with strong polar covalent bonds (H2O, LiH, and NH3). (This has already been
+
+observed for G0W0 in ref. 40).
+Our interpretation is that the def2-SVP basis set is not
+
+flexible enough to describe the high charge accumulation at one of the bond partners in ionic
+
+11
+
+
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+H2 O
+
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+N2
+
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+C H4
+
+−16
+
+−15
+
+−14
+
+−13
+
+0.00
+0.01
+0.02
+0.03
+0.04
+1 NBF
+
+εHOMO  (eV)
+
+Figure 2: Convergence test of the qsGW-ionization potential with respect to the basis set
+(using, from left to right, the def2-QZVP, def2-TZVPP, def2-TZVP, def2-SVP basis sets) of
+water, nitrogen and methane. For nitrogen def2-TZVP and def2-TZVPP are identical. The
+intersection of the linear extrapolation of the def2-TZVP and def2-QZVP points with the
+ordinate gives an estimate for the complete basis set limit (CBS).
+
+bonding situations. Therefore, the def2-SVP results have been excluded from the procedure
+
+to obtain the CBS limit.
+
+Overall we find that the def2-TZVP basis shows a maximal deviation of roughly 0.4 eV.
+
+Adding another set of polarization functions, the def2-TZVPP basis set, for most molecules
+
+the deviation drops below 0.3 eV. Previously we have shown that for larger molecules the er-
+
+ror actually is smaller.48 Beyond def2-TZVP the quality of the GW results mainly depends
+
+on the total number of basis functions, not necessarily the quality of the basis functions
+
+at the individual atoms. Moreover, the CCSD(T) results are available in the def2-TZVPP
+
+basis set, making those the ideal candidate for an accurate and unbiased comparison. We
+
+12
+
+
+hence take the def2-TZVPP basis set as a reasonable compromise for the current study, with
+
+an uncertainty due to the basis set of maximally a few hundred meV. For really accurate
+
+calculations def2-QZVP basis set are however recommended. Using these for self-consistent
+
+calculations routinely however, require further parallelization of the response and GW rou-
+
+tines in TURBOMOLE.
+
+Figure 3: Change of the qsGW-ionization potential ǫ with increasing size of the basis set
+(using the def2-SVP, def2-TZVP, def2-TZVPP, def2-QZVP basis sets)82,83 using the complet
+basis set limit (CBS) ¯ǫ as reference. The CBS is obtained from a linear interpolation over
+the inverse of the number of basis functions, see also Figure 2.
+
+3.1.2
+Starting Point Dependence
+
+A major advantage of self-consistent GW schemes is that the fixed-point found in the it-
+
+eration scheme is for the commonly used starting points (largely) independent of the ini-
+
+tialization.84 This is true also for qsGW, as is illustrated in Figure 4. The convergence of
+
+13
+
+
+the HOMO energy with increasing cycle number starting from different Kohn-Sham XC-
+
+functionals is shown for the example of benzene. In this work we explore the LDA,85 PBE,86
+
+PBE0,87 and PBE0(X%) (PBE0 with X % exact exchange). The iterative procedure con-
+
+verges into exactly the same solution, independent of the starting point.
+
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+qsGW converged
+
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+CCSD (T)
+
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+Experimental (vertical) IP
+
+−9.4
+
+−9.2
+
+−9.0
+
+0
+5
+10
+Iteration
+
+HOMO (eV)
+
+Figure 4: The convergence of the HOMO energy for benzene with the qsGW iterative cycle
+using the def2-TZVPP basis set. In this example the self-consistency cycle was initialized
+with a KS-DFT Green’s function calculated employing LDA, PBE and PBE hybrid XC-
+functionals with an exact exchange contribution of 25% (PBE0), 50%, 75%, and 100%. For
+comparison also the G0W0, the experimental, and ∆CCSD(T)80 results are shown.
+
+3.2
+First Ionization Potential: comparison to ∆CCSD(T)
+
+As a first quantitative test we calculate the ionization energies/potentials (IP) for a test set
+
+of 29 molecules ranging from H2 to tetrathiafulvalene.88 We focus on IPs since (i) they are
+
+an important indicator to understand charge transfer processes (ii) experimental reference
+
+data is available and (iii) one has access to results using more accurate theories (at least
+
+14
+
+
+for small size molecules). The first IP is trivially extracted from the calculated data being
+
+the (negative) energy of the highest occupied molecular orbital (HOMO). These, and all
+
+following results have been calculated using the def2-TZVPP basis set.82,83
+
+The G0W0 results have been calculated initialized from DFT using the PBE functional,
+
+denoted G0W0@PBE. In the calculation of the correlation part of the self-energy the positive
+
+infinitesimal η was chosen so that all (orbital-)energies are converged within 1 meV. Typically
+
+η = 1 meV was used. For all calculations the RI approximation was used. It has been
+
+shown previously that the errors introduced by RI, applying the standard auxiliary basis
+
+functions,83 are, except for very small systems like He, Ne, and H2, below than 100 meV.48
+
+The parameters for the qsGW calculations were chosen to converge the pole-positions within
+
+1 meV.
+
+The obtained IPs are compared to results obtained by employing the coupled-cluster
+
+method in the CCSD(T) approximation,80 using the same atomic structures and same basis
+
+set as were used in the GW calculations (def2-TZVPP).
+
+The deviations in the calculated HOMO energies using the different flavors of GW to
+
+∆CCSD(T) IPs are displayed in Figure 5. Together with the experimental (vertical) IPs the
+
+calculated IPs are reported in Table 1. The data shows an improved agreement of qsGW
+
+with ∆CCSD(T) in comparison to the G0W0@PBE results, by up to 1.41eV . The mean
+
+absolute error (MAE) improves by 0.40 eV, see Table 2, from the single-shot G0W0 to the
+
+self-consistent qsGW estimates.
+Furthermore, the increasing trend in the discrepancy is
+
+cleared within qsGW.
+
+3.3
+Higher Ionization Potentials: comparison to scGW and ex-
+
+periment
+
+In this section we discuss the accuracy of qsGW for the calculation of higher IPs. The higher
+
+IPs are difficult to access via CCSD(T). For the first ionization energy the total energy
+
+difference between the neutral and cationic ground state has to be calculated. Calculating
+
+15
+
+
+Table 1: The calculated (minus) HOMO energies from qsGW and G0W0 (initialized from
+DFT employing the PBE functional using the def2-TZVPP basis set) as well as experimental
+(vertical) Ionization Potentials and estimates from ∆CCSD(T).80 All values are in eV and
+all calculated results are obtained wihtin the def2-TZVPP basis set.
+
+molecule
+exp.
+∆CCSD(T)80
+G0W0
+qsGW
+
+H2
+15.42
+16.21
+15.57
+16.04
+Li2
+5.11
+5.20
+4.95
+5.30
+Na2
+4.89
+4.92
+4.78
+4.99
+Cs2
+3.70
+3.58
+3.40
+3.57
+F2
+15.70
+15.46
+14.55
+15.91
+N2
+15.58
+15.54
+14.69
+15.86
+BF
+11.00
+11.14
+10.43
+11.17
+LiH
+7.90
+7.93
+6.47
+7.98
+CO2
+13.78
+13.67
+12.96
+14.06
+H2O
+12.62
+12.61
+11.87
+12.95
+NH3
+10.85
+10.85
+10.24
+11.11
+SiH4
+12.82
+12.70
+12.11
+12.96
+SF4
+12.30
+12.62
+11.88
+13.03
+Au2
+9.50
+9.10
+9.84
+9.12
+Au4
+8.60
+7.67
+7.45
+7.62
+methane
+14.35
+14.36
+13.79
+14.46
+ethane
+12.00
+13.12
+12.22
+12.95
+propane
+11.51
+12.13
+11.54
+12.31
+butane
+11.09
+11.58
+11.39
+11.90
+isobutane
+11.13
+11.68
+11.26
+12.00
+ethylene
+10.68
+10.70
+10.24
+10.68
+acetone
+9.70
+9.71
+8.84
+10.08
+acrolein
+10.11
+10.20
+9.23
+10.55
+benzene
+9.24
+9.34
+8.87
+9.40
+naphthalene
+8.09
+8.04
+7.68
+8.22
+thiophene
+8.85
+8.96a
+8.48
+9.02
+benzothiazole
+8.75
+8.70a
+8.24
+8.83
+1,2,5-thiadiazole
+10.11
+10.09a
+9.65
+10.18
+tetrathiofulvalene
+6.72
+6.42a
+5.98
+6.56
+
+a This work.
+
+16
+
+
+Figure 5: Deviations of the HOMO energies using G0W0@PBE and qsGW with IPs from
+∆CCSD(T)80 calculations.
+The corresponding numerial data is provided in Table 1 and
+statistical evaluation of the deviations is shown in Table 2.
+
+Table 2: Statistical measures of the difference of the calculated IP from G0W0 and qsGW
+to the reference ∆CCSD(T) IP cumulated over the test set. All values are in eV.
+
+G0W0
+qsGW
+
+ME
+0.57
+-0.16
+MAE
+0.59
+0.19
+σ2
+0.08
+0.02
+MaxAE
+1.49
+0.45
+MinAE
+0.14
+0.01
+
+the latter correctly is already delicate. For the higher ionization energies excited states of the
+
+cation have to be calculated. This makes these calculations very cumbersome (sometimes
+
+impossible). We therefore fall back to experimental values as references.89
+
+We extended our test with five organic molecules that are candidates for optical devices
+
+and for which also experimental data is available. These molecules have already been inves-
+
+tigated with scGW by Caruso et al.51,56 We will compare the G0W0, qsGW, and spectra to
+
+17
+
+
+experimental results. The results are shown for naphthalene in this section, the results on
+
+three more molecules (Thiophene, Benzothiazole, and 1,2,3-Thiadiazole) are available in the
+
+supplementary information.
+
+In Figure 6 higher IPs using G0W0, qsGW as well as scGW are compared to the experi-
+
+mental (vertical) IPs for naphthalene. The G0W0 and qsGW methods show similar behavior
+
+as described in the previous section. Furthermore, IPs from qsGW and scGW give simi-
+
+lar agreement with experiment. qsGW clearly outperforms scGW for the lowest ionization
+
+energies but for the higher ionization energies scGW becomes better. Both self-consistent
+
+methods, qsGW and scGW, remove most of the energy dependence in the error of G0W0.
+
+Actually, we find a rigid shift of about 0.5 eV for all energy levels between qsGW and scGW
+
+for nearly all molecules investigated.
+A similar picture is observed for the three further
+
+molecules where we compare the higher ionization energies between qs and scGW (see Sup-
+
+plementary information). For these rather similar aromatic systems we observe in all cases a
+
+shift ∼ 0.5 eV. Whether this holds for a broader class of molecules needs further systematic
+
+investigation, especially since the molecules in this comparison exhibit very similar bonding.
+
+The shift can be understood by recalling the split of the Green’s function into a quasi-
+
+particle part and an incoherent part
+
+G = ZGQP + ¯G
+(22)
+
+In qsGW the Z-factor is unity and the incoherent part ¯G is neglected, while in the scGW
+
+both are taken into account. We suggest that ¯G is only weakly energy dependent, so that
+
+its contribution ¯Σ = i ¯GW to the self-energy is also a relatively flat function of energy. The
+
+current data, and the results by Koval et al.,58 show that for molecules the effect of the
+
+quasi particle approximation however has the opposite sign as in solids. Vanschilfgaarde and
+
+coworkers argue that calculating the response from the full green function, as in scGW, would
+
+lead to under screening and hence overestimation of the ionization energies.61 This is indeed
+
+18
+
+
+Figure 6: Deviation of the QP-energies betweeb G0W0, qsGW and scGW 51 (FHI-AIMS)
+from experimental ionization energies for naphthalene. The dashed line indicates the devia-
+tion of ±0.5 eV.
+
+what one would conclude from results on the homogeneous electron gas.90 In the present
+
+results on molecules scGW underestimates and qsGW overestimates. A systematic study
+
+aiming to understand this inversion including many more molecules, exhibiting different
+
+kinds of bonding is currently in progress.
+
+3.4
+Comparison to qsGW Literature Results
+
+Recently Koval et al.
+also compared qsGW and scGW for a set of molecules.58 Their
+
+work employs a spectral function technique on an equidistant energy grid to calculate the
+
+convolution of G and W. Their method ’A’ is the same as the approach used in this work,
+
+Bruneval’s implementation in molgw,36 and the original implementation by Faleev et al.60
+
+for solids.91
+
+19
+
+
+To make a definite test for the agreement between the three different implementations
+
+of qsGW for molecules, we calculate the helium atom using the basis set employed in the
+
+works by Koval et al. and Bruneval, the correlation-consistent basis sets.92 The results are
+
+compared in Table 3. We observe an excellent agreement with Brunevals results at the meV
+
+level. In contrast, we observe a deviation to the ’A’ method of Koval et al. that is quite
+
+substantial, in the tens of meV range. For comparison Table 3 also lists the results from the
+
+approximate ’B’ method.
+
+Table 3: HOMO energies for atomic helium from qsGW, literature comparison. All values
+are in eV.
+
+basis
+qsGW B58
+qsGW A58
+qsGW 36
+qsGW (this work)
+
+cc-pVDZ
+24.346
+24.350
+24.359
+24.359
+cc-pVTZ
+24.554
+24.340
+24.320
+24.320
+cc-pVQZ
+24.668
+24.751
+24.766
+24.767
+cc-pV5Z
+24.705
+24.799
+24.825
+24.826
+
+3.5
+Densities and Dipole Moments.
+
+A self-consistent solution of the GW equations introduces corrections in the spatial shape
+
+of the QP-orbitals in addition to shifts of the pole positions of the Green’s function. Hence,
+
+corrections to the ground state density as compared to the reference density can arise.
+
+Figure 7 shows the differences between the calculated electron densities of benzene for
+
+DFT(PBE), DFT(PBE0) and qsGW, showing that the qsGW orbitals are slightly more
+
+localized. This localization is cause by the cancelation of a large part of the the spurious
+
+self-interaction of the approximate DFT functionals. The part of the self interaction that is
+
+caused by self-screening is not canceled in qsGW.93 Removing this as well would require the
+
+inclusion of more diagrams.94
+
+The enhanced tendency towards localization displays clearer looking at an ionic molecule
+
+like HF, see Figure 8; we observe a more localized density around the fluoride atom. Fur-
+
+thermore, the amount of charge on the non-bonding side of the hydrogen atom is slightly
+
+20
+
+
+Figure 7: Diagonal: Ground state electron density of benzene as obtained from DFT(PBE),
+DFT(PBE0) and qsGW. Off-diagonal upper right: Difference in the ground state electron
+densities: PBE-PBE0, PBE-qsGW, and PBE0-qsGW, horizontal cut. Off-diagonal lower
+left: Same differences, vertical cut. The positions of the atoms are indicated by the black
+(carbon) and white (hydrogen) crosses.
+The results from the qsGW calculation show a
+slightly stronger localized density (blue area) around the H-C paires in comparison to the
+DFT(PBE) calculations.
+
+reduced. The trend seen here for qsGW agrees with the observations of Caruso et al. for
+
+scGW.56
+
+An experimentally easily accessible observable characterizing the ground state density
+
+is the dipole moment. The comparison is given in Table 4. To also be able to compare to
+
+scGW we will present here the systems used by Caruso et al..
+
+While HF typically overestimates the dipole moment of the dimers, DFT typically slightly
+
+21
+
+
+Figure 8: Difference between the calculated DFT (PBE) density and the qsGW density
+normalized on the (initial) DFT density for hydrogenflouride. The fluor atom is denoted by
+a green cross, the hydrogen atom by a grey cross.
+
+underestimates it. In the range of hybrid functionals the best dipole moments are obtained
+
+from the PBE0 functional. scGW performs comparable to PBE0. In contrast, qsGW yields
+
+better agreement with an overall mean absolute error (MAE) of 0.03 Debye.
+To make
+
+a definitive statistically sound statement discriminating between the qsGW and scGW is
+
+however not possible due to the small number of systems. In conclusion, our results support
+
+the general impression that self-consistent GW, is a promising tool to investigate the charge-
+
+transfer in molecular interfaces and other (nano-scale) hetero-structures.95
+
+Comparing the differences between sc and qs GW for on one hand the ionization energies
+
+and on the other hand the dipole moments we observe a different degree of agreement. The
+
+22
+
+
+Table 4: Comparison between experimental96 and theoretical dipole moments (Debye), from
+PBE, PBE0, PBE0(75%), PBE0(100%), HF, scGW 51 (FHI-AIMS) and qsGW.
+For all
+calculations the experimental equilibrium bond length was considered, the calculations of
+this work are performed in the def2-TZVPP basis-set.
+
+LiH
+HF
+LiF
+CO
+ME
+MAE
+
+Exp.
+5.88
+1.82
+6.28
+0.11
+PBE
+5.60
+1.80
+5.99
+0.24
+-0.12
+0.18
+PBE0(25%)
+5.77
+1.85
+6.18
+0.11
+-0.05
+0.06
+PBE0(75%)
+6.01
+1.93
+6.45
+0.14
+0.11
+0.11
+PBE0(100%)
+6.10
+1.97
+6.54
+0.26
+0.20
+0.20
+HF
+6.03
+1.95
+6.50
+0.26
+0.16
+0.16
+scGW 51
+5.9
+1.85
+6.48
+0.07
+0.05
+0.07
+qsGW
+5.83
+1.84
+6.29
+0.07
+-0.02
+0.03
+
+dipole moments tend to agree better between the two methods than the ionization energies.
+
+We assume this to be related to the rigid shift we observed between two respective spectra.
+
+4
+Comparison of qsGW and G0W0
+
+Given the qsGW results for the IPs from the previous sections, we next evaluate next how well
+
+the traditional G0W0 (G0W00th) is capable of reproducing them if one employs an improved
+
+DFT starting point.
+One can do so by using parametrized functionals derived from the
+
+PBE0 hybrid functional. In addition, the G0W0 2nd order approach49 (G0W02nd), which
+
+takes into account off-diagonal elements of Σ in the QP-equation and hence an influence of
+
+orbital corrections, is also tested.
+
+4.1
+First Ionization Potentials
+
+The HOMO energies obtained from G0W00th@PBE (traditional G0W0 with a PBE starting
+
+point) have a mean absolute error 0.75 eV and show a clear correlation between the error and
+
+the actual value. With increasing energy, the error, as compared to qsGW, systematically
+
+increases. Employing a PBE0 starting point improves the overall agreement with qsGW
+
+down to a mean absolute deviation of 0.42 eV, see Figure 9 and Table 5. Best agreement
+
+23
+
+
+is achieved employing the PBE-hybrid based starting point employing 75% exact exchange.
+
+For this starting point, the correlation between the error and ionizationenergy disappears.
+
+Our data also confirms a trend that already appeared in our earlier work: G0W00th and
+
+G0W02th give similar results. This suggests that off-diagonal elements of Σ give negligible
+
+contributions to the QP-energies.49
+
+Table 5: Statistical measures over the data from Figure 9. Evaluated is the difference of
+the calculated G0W0 and G0W0-2nd HOMO energies to the qsGW HOMO cumulated over
+the test set. Three different DFT based starting points have been employed. On average,
+best agreement is achieved with the PBE hybrid XC-functionals with a contribution of exact
+exchange of 75% as the starting point (PBE0(75%)). All values are in eV.
+
+G0W0
+@PBE
+@PBE0
+@PBE0(75%)
+0th
+2nd
+0th
+2nd
+0th
+2nd
+
+ME
+0.70
+0.67
+0.42
+0.41
+0.11
+0.19
+MAE
+0.75
+0.72
+0.42
+0.41
+0.18
+0.26
+σ2
+0.20
+0.18
+0.05
+0.04
+0.05
+0.23
+MaxAE
+1.46
+1.41
+0.90
+0.87
+0.85
+2.41
+MinAE
+0.17
+0.14
+0.12
+0.10
+0.01
+0.01
+
+4.2
+Higher Ionization Potentials
+
+Figure 10 displays the QP-energies from G0W00th and G0W02th relative to qsGW for differ-
+
+ent PBE0 based starting points for naphthalene. In our example we find best agreement, with
+
+qsGW, employing the starting point with a higher contribution of exchange (PBE0(75%)).
+
+Furthermore, we see in the calculation initialized from PBE0(75%) no energy dependent
+
+trend in the error, while the trend persists in both G0W00th and G0W02nd employing a
+
+PBE or PBE0 starting point.
+
+5
+Validating Partial Self-Consistency
+
+Even though computationally more affordable than typical coupled cluster approaches, qsGW
+
+is still too expensive for systematic screenings over large ensembles of intermediate sized
+
+24
+
+
+Figure 9: Deviation of HOMO energies obtained from G0W00th and G0W02nd to qsGW.
+Results are shown for calculations initialized from DFT, employing PBE and PBE hybrid
+XC-functionals with an exact exchange contribution of 25% (PBE0) and 75% (PBE0(75%)).
+On average best agreement is achieved employing the PBE0(75%) starting point, see Table 5.
+
+molecules. Thus motivated, in this section we test simplified flavors of qsGW. Our aim is to
+
+find an approximation scheme that captures the dominant contributions included in qsGW
+
+and hence is capable of reproducing results of qsGW, at a lower computational cost.
+
+25
+
+
+Figure 10: Comparison of the QP-energies from G0W00th and G0W02nd with qsGW for
+naphthalene. Three different DFT based starting points employing the PBE, and the PBE
+hybrid functional with 25% (PBE0) and with 75% exact exchange (PBE0(75%)), were cho-
+sen. The best agreement, with qsGW, yields the calculation with the PBE0(75%) starting
+point.
+
+5.1
+qsGW with Fixed Orbitals: evGW
+
+Our studies of the charge density for qsGW suggest that orbital updates tend to be small.
+
+Therefore, we next ignore orbital updates in the self-consistency cycle and take into account
+
+only the update in the pole positions: eigenvalue only GW (evGW).26
+
+5.1.1
+Method evGW
+
+Within the methodology described in section 2.1 turning qsGW into evGW is straight for-
+
+ward, one only needs to suppress the update in the orbitals between consecutive qsGW
+
+iterations. In other words the machinery operates solely with the initial set of QP-orbitals
+
+ψ(0)(r) and the orbital update from 13 is skipped. In all equations the orbitals ψ(i)(r) are
+
+26
+
+
+replaced with ψ(0)(r). Furthermore. our treatment of the quasiparticle equation in evGW
+
+neglects off-diagonal elements of Σ. Finally we discard the static approximation and restore
+
+in the QP-equation the energy-dependent self-energy Σ. Then, for each pole the QP-equation
+
+is solved self-consistently. Computationally this introduces the benefit that the Coulomb ex-
+
+change integrals, see 18, do not need to be re-evaluated. For instance, the full exchange part
+
+of the self-energy Σx, see 18, needs only one single evaluation.
+
+5.1.2
+Comparison to qsGW - First IPs
+
+For the set of molecules specified in Table 1, the differences between the evGW estimates
+
+of first IPs and the qsGW results are shown in Figure 11 (see Table 6 for the statistical
+
+evaluation). Because evGW is not self-consistent in the orbitals there is a residual starting
+
+point dependence, which is clearly visible in Figure 11. It is however significantly reduced
+
+as compared to, e.g., G0W0. In contrast to the findings from the G0W0 before we find best
+
+overall agreement with the qsGW by employing the PBE0 functional (and not anymore the
+
+PBE0(75%) hybrid with 75% exact exchange). Even for pure PBE the overall agreement
+
+with qsGW is better than with PBE0(75%).
+
+Table 6: Statistical evaluation of the data from Figure 11. The deviation from calculated
+evGW HOMO energies (from different PBE and PBE-hybrid starting points) to the qsGW
+HOMO cumulated over the test set. With evGW we find best agreement with qsGW if the
+PBE0 starting point is employed. All values are in eV.
+
+evGW
+@PBE
+@PBE0
+@PBE0(75%)
+
+ME
+0.09
+0.12
+0.12
+MAE
+0.17
+0.15
+0.20
+σ2
+0.03
+0.02
+0.06
+MaxAE
+0.39
+0.36
+0.85
+MinAE
+0.01
+0.03
+0.00
+
+5.1.3
+Comparison to qsGW - Higher IPs
+
+A comparison of QP-energies from evGW and qsGW is given in Figure 12 for naphthalene.
+
+The results confirm the findings for the first IPs. The starting point dependence is strongly
+
+27
+
+
+Figure 11: Comparison of HOMO energies using evGW initialized from DFT calculations
+with the qsGW HOMO energies for the test set. The evGW starting point was constructed
+from PBE and PBE-hybrid calculations. The results of evGW show only weak dependence
+on the amount of exact exchange in the functional of the initial DFT calculation.
+
+reduced and we find that the trend in the energy dependence of the error, which was present
+
+in G0W0, is not present anymore for all starting points. All in all, self-consistency in the
+
+poles by it self already produces very good agreement with qsGW QP-energies for all starting
+
+28
+
+
+points.
+
+−0.75
+
+−0.50
+
+−0.25
+
+0.00
+
+0.25
+
+8
+10
+12
+14
+(qsGW)
+n (eV)
+
+(qsGW)
+n − (x)
+n (eV)
+ε
+ε
+
+ε
+
+ev
+ev
+ev
+
+Figure 12: Deviation of the QP-energies from evGW from different PBE and PBE-Hyrbid
+starting points to qsGW for naphthalene.
+
+5.1.4
+Comparison to ∆CCSD(T) - first IPs
+
+To further substantiate the accuracy of evGW we present a comparison to ∆CCSD(T)80
+
+first IPs over the full test set, see Figure 13. The statistical analysis, see Table 7, shows
+
+that the overall error is not larger than the error from qsGW. In fact evGW results exhibit
+
+an even better agreement with ∆CCSD(T), especially when starting from PBE0. Starting
+
+from PBE0(75%), PBE0 with 75% exact exchange, introduces various spurious outliers.
+
+Summarizing, evGW seems to be a promising alternative to qsGW leading in practice to
+
+results very close to the ∆CCSD(T) reference, with a typical deviation of a few 100 meV.
+
+29
+
+
+ev
+
+ev
+
+ev
+
+Figure 13:
+Comparison of the HOMO energies using evGW initialized from different
+DFT(PBEλ) starting points and qsGW calculations to the ∆CCSD(T)80 IP energies.
+
+Table 7: Statistical evaluation of the data shown in Figure 13. The evGW approach shows
+better agreement with the ∆CCSD(T) reference than the qsGW approach, for all considered
+starting points. Best agreement of evGW with ∆CCSD(T) is achieved by employing the
+PBE0 functional in the starting point for the DFT calculation. All values are in eV.
+
+evGW
+qsGW
+@PBE
+@PBE0
+@PBE0(75%)
+
+ME
+-0.16
+-0.07
+-0.04
+-0.04
+MAE
+0.19
+0.15
+0.12
+0.18
+σ2
+0.02
+0.01
+0.01
+0.06
+MaxAE
+0.45
+0.47
+0.46
+1.17
+MinAE
+0.01
+0.02
+0.01
+0.01
+
+5.2
+Comparison of GevW0 versus qsGW
+
+So far, our results indicated that orbital updates have a minor effect on the pole positions of
+
+qsGW. The next question is whether the QP-energies are as sensitive to the pole positions
+
+of W as they are to the pole positions of G in Σ. To this end we recall an approximate
+
+30
+
+
+scheme, GevW0, which we introduced before.49 It keeps the screened interaction based on
+
+the starting point calculation W0, and introduce self-consistency only at the pole positions
+
+of the Green’s function. The computational cost of GevW0 is the same as traditional G0W0
+
+(within our implementation).
+
+5.2.1
+First Ionization Potentials
+
+Figure 14 shows the difference of the HOMO energy obtained as from GevW0 to the qsGW
+
+HOMO energies for the full test set.
+The statistical measures are reported in Table 8.
+
+The first IPs from GevW0 show a reduced starting point dependence in comparison to the
+
+single-shot G0W0 and the G0W02nd results.
+However, the starting point dependence is
+
+much stronger that in the case of evGW. Furthermore, GevW0 shows improved agreement
+
+with qsGW if one employs the PBE or PBE0 starting point. If one employs the optimal
+
+PBE0(75%) starting points the plain G0W0 and the GevW0 are comparable close to the
+
+qsGW results.
+
+Comparing the optimal staring point we find for the three different approximate GW
+
+flavors, G0W0 evGW and GeVW0 there are some interesting remarks to make. In evGW
+
+the differences are rather small with a small preference of PBE0, which is in agreement
+
+with PBE0 having the best dipole moment of the various starting points. The results are
+
+comparable to those of qsGW. The exact shape of the orbitals hence does not impact the
+
+results that much. However, if W is kept fixed there is a clear preference for a PBE0(75%)
+
+starting point. This indicates that given the, relatively small, spread in orbitals obtained
+
+in the range from PBE to HF it is primarily important to have a good screening. Good
+
+orbitals is only of secondary importance. This is also reflected in the small orbital corrections
+
+obtained in qsGW.
+
+31
+
+
+ev
+
+ev
+
+ev
+
+Figure 14: Distance of calculated HOMO energies using GevW0 from DFT(PBEλ) starting
+points to the qsGW HOMO energies. With increasing exact exchange contribution in the
+PBEλ starting point improves the agreement with qsGW.
+Nevertheless, we find for all
+starting points an error which increase with energy. the statistical evaluation is reported in
+Table 8.
+
+5.2.2
+Higher Ionization Potentials
+
+In Figure 15 the QP-energies from GevW0 are compared to the ones from qsGW for naph-
+
+thalene. The spectrum based on GevW0 shows a slight overestimation of the QP-energies
+
+32
+
+
+Table 8: Statistical measures of the difference of the calculated GevW0 HOMO energies
+from DFT(PBEλ) starting points to the qsGW HOMO cumulated over the test set. Best
+agreement is achieved employing the PBE0(75%) starting point. All values are in eV.
+
+GevW0
+@PBE
+@PBE0
+@PBE0(75%)
+
+ME
+0.39
+0.29
+0.13
+MAE
+0.43
+0.30
+0.21
+σ2
+0.09
+0.03
+0.06
+MaxAE
+1.18
+0.66
+0.83
+MinAE
+0.04
+0.04
+0.01
+
+for all starting points. Furthermore, we find that the shift on the poles from the self-energy
+
+due to the QP-correction corrects to poles towards the full qsGW solution. Regarding the
+
+starting point dependence we find again that the PBE0(75%) gives best agreement with the
+
+qsGW results.
+
+6
+Computational Performance
+
+The total computational effort needed for one GW iteration comprises the calculation of the
+
+response function and the self-energy part. Under the latter we understand the construction
+
+of the self-energy and the solution of the quasi-particle equation. The time needed for the
+
+construction of the response function is for all considered approximations identical. The
+
+time needed for the self-energy part varies depending on the treatment of the QP-equation.
+
+Figure 16 displays the computational cost for the different (approximate) GW flavors within
+
+our implementation.
+
+The G0W00th approach is by far the fastest and shows the best scaling with the number
+
+of basis functions of only ∼ N3 for the self-energy part. The computational cost for G0W00th
+
+calculations are hence dominated by the construction of the response function, which has
+
+a scaling of ∼ N4.
+However, this is only true for comparably small molecules.
+In the
+
+exact evaluation, one has to calculate all excitations, a matrix of range ∼ N2 has to be
+
+diagonalized. This is a hard ∼ N6-step, but with a small prefactor and still less than a ∼ N7
+
+33
+
+
+ev
+
+ev
+
+ev
+
+Figure 15: Deviation of the QP-energies from GevW0 to QP-energies from qsGW for naph-
+thalene. Three different DFT based starting points employing the PBE, and the PBE hybrid
+functional with 25% (PBE0) and with 75% exact exchange(PBE0(75%)) were chosen. The
+best agreement, with qsGW, yields the calculation with the PBE0(75%) starting point.
+
+scaling for CCSD(T) in conventional implementations.
+
+Similar to G0W0, evGW approach operates solely on the diagonal part of the QP-
+
+equation. Hence, it has the same scaling behavior as (diagonal only) G0W00th. But, to find
+
+a self-consistent solution, typically six iterations are necessary till convergence is achieved.
+
+Hence, the total time needed for evGW is that of G0W0 plus six times that of the the
+
+response calculation.
+
+Both, G0W02nd and the qsGW approach, which diagonalize the QP-equation 10, the
+
+self-energy part shows a scaling with the number of basis functions N of ∼ N5, worse by a
+
+factor of N2 as compared to G0W00th and evG0W0. Still we find that the computational time
+
+needed for the majority of the molecules within our test set is dominated by the construction
+
+34
+
+
+10−2
+
+100
+
+102
+
+104
+
+25
+50
+100
+200
+400
+NBasis
+
+Time/Iteration (s)
+
+response
+G0W 0 − 0th
+G0W 0 − 2nd
+qsGW
+
+Figure 16: The computational time needed for the construction of the response function and
+the time needed for a single iteration GW-proper over the number of basis functions. In
+evGW every full iteration consistes of a response step and a G0W00th step. In GevW0 only
+the first iteration has a response step, subsequent steps are computationally equivalent to a
+G0W00th step, and times are almost the same for both procedures.
+
+of the response function. Only for systems requiring more than 340 basis functions, the self-
+
+energy part begins to dominate the computational cost. An actual optimization for best
+
+performance within the GW is still an open task within our implementation. Especially in
+
+the qsGW implementation we expect room for improvement.
+
+Note that all GW-proper parts of our implementation have been designed for parallel
+
+computation. We find for all approaches a nearly perfect scaling with the number of cores,
+
+i.e. the typical setup of 8 core nodes gives a typical speedup of 7.94. Hence, due to very
+
+good parallel scaling larger scale systems are tractable.
+
+35
+
+
+7
+Summary
+
+Considering the first IPs, we confirm for or a set of 29 representative molecules, that all flavors
+
+of the GW method strongly improve agreement with experiment and CCSD(T) results as
+
+compared to the underlying DFT calculation. Moreover, the self-consistent qsGW improves
+
+agreement with the CCSD(T) by an order of magnitude as compared to G0W00th using a
+
+semi-local starting point (see Figure 5). Also, we find that qsGW has a better agreement
+
+with experiment in ionization spectra as compared to results based on G0W0 using a semi
+
+local starting point by typically 500 meV. Using an optional staring point, i.e. PBE0(75%)
+
+for G0W0 and GevW0 and PBE0 for evGW, gives results very close to qsGW. Comparing
+
+qsGW and scGW, we observed a rigid shift towards stronger binding in qsGW, in the favor
+
+of qsGW for both dipole moments and ionization energies. The small number of molecules
+
+however prohibits to make a final claim un the ultimate accuracy difference between sc and
+
+qsGW for molecules. A study comparing the two using the GW100 set48 is currently under
+
+way.
+
+The qsGW introduces only minor corrections on the spatial shape of the QP-orbitals
+
+and ground state density as compared to the KS-reference. Comparing calculated dipole
+
+moments to experimental results we find that the qsGW improves agreement to experiment
+
+compared to traditional method like the Density Functional Theory (DFT) using a PBE
+
+functional, and the Hartree-Fock (HF) approach (see Table 4).
+
+Based on this result we conclude that the partially self-consistent flavor of qsGW updating
+
+only the orbitals, eigenvalue only qsGW (evGW) is an efficient alternative. The evGW is able
+
+to reproduce the (first) IPs from qsGW very well and showed a strongly reduced dependence
+
+on the choice of the functional in comparison to G0W0.
+
+If system size is prohibiting even evGW we find the best alternative to be G0W0@PBE0(75%).
+
+The increased amount of exact exchange is reasoned to mainly be necessary to improve the
+
+screening. Since the standard PBE0 orbitals turn out to be in general closest to the qsGW
+
+results and also give best dipole moments as compared to experiment, one could even envi-
+
+36
+
+
+sion a hybrid approach. This would use the orbitals from PBE0, but perturbatively correct
+
+the eigenvalues using 75% exact exchange before calculating the response function.
+
+8
+Outlook
+
+The full solution of Hedin’s equations gives access not only to the quasi-particle (qp) energies,
+
+but also to charge neutral, particle-hole (ph) type excitations.
+A characteristic feature
+
+that all variants of the GW-theory share is that the energy of a ph-excitation is estimated
+
+neglecting the interaction between the particle and the hole, so that there is a tendency to
+
+overestimate the energy cost for creating ph-pairs, i.e. excitons.97 As a result the Coulomb
+
+interaction is under screened, which leads to an underestimation of the magnitude of the
+
+correlation part of the self-energy. Thus, the HOMO energy is typically underestimated (i.e.
+
+the ionization potential is over estimated) as also observed in our results.
+
+There is no real consensus about the consequences of under screening for the qp-energies.
+
+A wide-spread belief is that under screening in the effective interaction W (denominator)
+
+does not affect these energies because it is fully cancelled by the explicit vertex corrections
+
+(Γ, nominator) appearing in the self-energy diagrams. Rigorous arguments in favor of the
+
+cancellation have not been given; so far, the existing evidence supporting cancellation relies
+
+on explicit calculations for a number of test systems, such as, e.g., homogeneous electron
+
+gases98 and bulk silicon.99
+
+Our results indicate that when applying qsGW to single molecules, HOMO energies and
+
+ionization potentials are typically underestimated. In our opinion, a natural explanation is
+
+under screening of the Coulomb-interaction in W; we hence propose that the cancellation of
+
+vertex-terms is not efficient in molecular matter.
+
+To account for the binding-energy of excitons in the polarization function, one has to go
+
+beyond the GW-framework, i.e., include vertex corrections. A common means to this end
+
+is solving the Bethe-Salpeter equation (BSE). This is computationally challenging, however,
+
+37
+
+
+and can be done only by employing suitable approximation schemes.100
+
+On the simplest level (RPA-X) one modifies the calculation of the polarization function
+
+by adding an exchange-matrix element to the Coulomb-matrix element of conventional RPA.
+
+The resulting theory would reproduce the time-dependent Hartree-Fock approximation if it
+
+were not for the correlation part of the self-energy. Following our philosophy of exploring
+
+the potential of static approximations, this step would be the most natural one to try next
+
+for us.
+
+Indeed, several groups have already employed the GW+BSE method to molecular sys-
+
+tems in order to investigate into the effect of vertex corrections for charge-neutral excita-
+
+tions. We only mention two very recent works benchmarking the approach against TDDFT
+
+for small molecules.101,102 We would like to consider these results as an indication that
+
+vertex-corrections are indeed significant for predicting and understanding molecular spectra.
+
+These studies also indicate, that BSE-calculations inherit the starting point dependency of
+
+the underlying G0W0-calculations.101 To eliminate this artifact of G0W0, self-consistent cal-
+
+culations on the qsGW-level have been employed; they can achieve a numerical accuracy
+
+comparable to TD-PBE0 calculations.102
+
+As promising as it is, the combination of GW and BSE adds vertex corrections only to
+
+the response function still neglecting them when constructing Γ for the self-energy Σ. The
+
+approximation thus obtained is not conserving.
+Moreover, if indeed large system classes
+
+exhibit a cancellation between vertex terms in W and Γ, then these systems cannot be
+
+treated with the present technology. Therefore, we consider it very likely that a general
+
+method to be applied successfully to molecules and metals has to treat vertex corrections in
+
+W and Σ on the same footing.
+
+In principle, also the study of strongly correlated electron liquids relies on solving Hedin’s
+
+equations – at least to the extent that perturbative methods are being employed – even
+
+though the respective community does not usually think about it in this way. In this context,
+
+a new method has been devised in recent years, the functional renormalization group method
+
+38
+
+
+(FRG )103,104 Unlike GW+BSE, FRG includes vertex corrections to W and Σ in a consistent
+
+way.
+Its success for strongly-correlated matter originates from its capability to reliably
+
+signalize the existence of new phases with a broken symmetry, such as magnetism. From a
+
+conceptual point of view, FRG is very appealing because it can predict phase transitions in
+
+an unbiased manner; in principle, an apriori guess about what phases are likely to appear is
+
+not required.
+
+Similar to qsGW, also FRG is typically formulated employing a static approximation for
+
+the self-energy and the interaction vertex. Like traditional BSE-calculations, also the FRG
+
+focuses on the simplest subset of diagrams for the vertex. However in contrast to traditional
+
+BSE, the FRG solves these (approximated) Hedin equations in a self-consistent manner.
+
+This is how FRG goes beyond the GW+BSE-scheme.
+
+The enhanced complexity requires a solution strategy that differs from the conventional
+
+iteration scheme to self-consistency still underlying, e.g., qsGW. The strategy of FRG is to
+
+reformulate the self-consistency problem in terms of a set of (non-linear) differential matrix
+
+equations.
+The main idea may be understood as follows: In traditional self-consistency
+
+solvers, an initial guess gradually transforms (“flows”) into the fixed-point solution under
+
+the action of the iteration routine. Now, FRG replaces this “iterative flow” by another flow
+
+along an artificial coordinate, Λ, that plays the role of a cut-off energy familiar from the
+
+renormalization group.
+By construction, Λ connects a known trivial solution of Hedin’s
+
+equations at Λ=∞ with the exact solution at Λ=0.
+The advantage of this formulation
+
+as compared to the traditional self-consistency routines is that it is known exactly how
+
+to initialize the flow equations; a starting guess for the Green’s function, self-energy and
+
+interaction vertex is not required. If instabilities occur along solving the differential equation,
+
+then these can be interpreted as “runaway flow” indicating a nearby phase with broken
+
+symmetry.
+
+Applications of FRG to molecules do not yet exist. A first step into this direction has
+
+been made recently by two of us who formulated the FRG for systems without translational
+
+39
+
+
+invariance.105 Since vertex functions are kept explicitly, FRG comes with a computational
+
+complexity that might prohibit its use for intermediate sized molecular systems in the near
+
+future. Nevertheless, for benchmarking GW+BSE and high precision calculations for smaller
+
+molecules, FRG could have a significant potential that we believe is worthwhile to explore
+
+in future research.
+
+Acknowledgement
+
+MvS acknowledges support financial support the DFG-Center for Functional Nanostructures
+
+at the KIT. CS and FE acknowledge support from the DFG-grants EV30/7-1, EV30/8-1 and
+
+the DFG-Center for Functional Nanostructures at the KIT. FW and MEH also acknowledge
+
+the Bundesministerium fur Bildung und Forschung (BMBF) through the Helmholtz Research
+
+Program Science and Technology of Nanosystems for support and for providing the necessary
+
+infrastructure. Cpu time allocation at the HC3 cluster at the Karlsruhe Institute of Technol-
+
+ogy (KIT) Steinbuch Center for Computing (SCC) is gratefully acknowledged. The authors
+
+further acknowledge valuable discussions with X. Blase and V. Olevano. The authors also
+
+thank F. Caruso for providing the numerical data from ref. 51.
+
+Supporting Information Available
+
+Full details of the used atomic structures (TXT) and tables containing the calculated IP’s
+
+and EA’s as well as analysis of the computational performance and scaling scaling behavior
+
+of the competing methods (PDF).
+
+References
+
+(1) Kohn, W. Nobel Lecture: Electronic structure of matter—wave functions and density
+
+functionals. Reviews of Modern Physics 1999, 71, 1253–1266.
+
+40
+
+
+(2) Kohn, W.; Sham, L. J. Self-Consistent Equations Including Exchange and Correlation
+
+Effects. Phys. Rev. 1965, 140, A1133–A1138.
+
+(3) Chong, D.; Gritsenko, O.; Baerends, E. J. Chem. Phys. 2002, 116, 1760–1772.
+
+(4) Gritsenko, O.; Baerends, E. J. Can. J. Chem.-Rev. Can. Chim. 2009, 87, 1383–1391.
+
+(5) Baerends, E. J.; Gritsenko, O. V.; van Meer, R. The Kohn-Sham gap, the fundamental
+
+gap and the optical gap: the physical meaning of occupied and virtual Kohn-Sham
+
+orbital energies. Phys. Chem. Chem. Phys. 2013, 15, 16408–16425.
+
+(6) Hedin, L. Phys. Rev. 1965, 139, A796.
+
+(7) Hedin, L. Ark. Fys. 1965, 30, 231.
+
+(8) Hedin, L.; Lundqvist, B. I. J. Phys. C 1971, 4, 2064.
+
+(9) Hedin, L. J. Phys.: Condens. Matter 1999, 11, R489.
+
+(10) Abrikosov, A. A.; Gorkov, L. P.; Dˇzaloˇsinskij, I. E. Methods of quantum field theory
+
+in statistical physics; Doverice-Hall, 1963; pp 51–77.
+
+(11) Fetter, A. L.; Walecka, J. D. Quantum theory of many-particle systems; Dover Publ.,
+
+1971; pp 53 – 100.
+
+(12) Ethridge, E. C.; Fry, J. L.; Zaider, M. Quasiparticle spectra of trans-polyacetylene.
+
+Phys. Rev. B 1996, 53, 3662–3668.
+
+(13) Ishii, S.; Ohno, K.; Kawazoe, Y.; Louie, S. G. Ab initio. Phys. Rev. B 2001, 63,
+
+155104.
+
+(14) Grossman, J. C.; Rohlfing, M.; Mitas, L.; Louie, S. G.; Cohen, M. L. Phys. Rev. Lett.
+
+2001, 86, 472.
+
+41
+
+
+(15) Ishii, S.; Ohno, K.; Kawazoe, Y.; Louie, S. G. Ab initio GW. Phys. Rev. B 2002, 65,
+
+245109.
+
+(16) Ismail-Beigi, S.; Louie, S. G. Excited-State Forces within a First-Principles Green’s
+
+Function Formalism. Phys. Rev. Lett. 2003, 90, 076401.
+
+(17) Pavlyukh, Y.; H¨ubner, W. Life-time of quasiparticle states in metallic clusters from
+
+GW theory. Phys. Lett. A 2004, 327, 241.
+
+(18) Tiago, M. L.; Chelikowsky, J. R. Phys. Rev. B 2006, 73, 205334.
+
+(19) del Puerto, M. L.; Tiago, M. L.; Chelikowsky, J. R. Phys. Rev. Lett. 2006, 97, 096401.
+
+(20) del Puerto, M. L.; Tiago, M. L.; Chelikowsky, J. R. Phys Rev. B 2008, 77, 045404.
+
+(21) Ramos, L. E.; Paier, J.; Kresse, G.; Bechstedt, F. Phys Rev. B. 2008, 78, 195423.
+
+(22) Noguchi, Y.; Ishii, S.; Ohno, K.; Sasaki, T. J. Chem. Phys. 2008, 129, 104104.
+
+(23) Bruneval, F. Phys. Rev. Lett. 2009, 103, 176403.
+
+(24) Tiago, M. L.; Idrobo, J. C.; ¨O˘g¨ut, S.; Jellinek, J.; Chelikowsky, J. R. Phys. Rev. B
+
+2009, 79, 155419.
+
+(25) Rostgaard, C.; Jacobsen, K. W.; Thygesen, K. S. Phys. Rev. B 2010, 81, 085103.
+
+(26) Blase, X.; Attaccalite, C.; Olevano, V. First-principles GW calculations for fullerenes,
+
+porphyrins, phtalocyanine, and other molecules of interest for organic photovoltaic
+
+applications. Phys. Rev. B 2011, 83, 115103.
+
+(27) Qian, X.; Umari, P.; Marzari, N. Phys. Rev. B 2011, 84, 075103.
+
+(28) Refaely-Abramson, S.; Baer, R.; Kronik, L. Fundamental and excitation gaps in
+
+molecules of relevance for organic photovoltaics from an optimally tuned range-
+
+separated hybrid functional. Phys. Rev. B 2011, 84, 075144.
+
+42
+
+
+(29) Foerster, D.; Koval, P.; Sanchez-Portal, D. J. Chem. Phys. 2011, 135, 074105.
+
+(30) Ke, S. All-electron GW methods implemented in molecular orbital space: Ionization
+
+energy and electron affinity of conjugated molecules. Phys. Rev. B 2011, 84, 205415.
+
+(31) Baumeier, B.; Andrienko, D.; Ma, Y.; Rohlfing, M. J. Chem. Theory Comput. 2012,
+
+8, 997.
+
+(32) Sharifzadeh, S.; Tamblyn, I.; Doak, P.; Darancet, P. T.; Neaton, J. B. Euro. Phys. J.
+
+B 2012, 85, 323.
+
+(33) Nguyen, H.-V.; Pham, T. A.; Rocca, D.; Galli, G. Phys. Rev. B 2012, 85, 081101.
+
+(34) Ren, X.; Rinke, P.; Blum, V.; Wieferink, J.; Tkatchenko, A.; Sanfilippo, A.; Reuter, K.;
+
+Scheffler, M. Resolution-of-identity approach to Hartree Fock, hybrid density function-
+
+als, RPA, MP2 and GW with numeric atom-centered orbital basis functions. New J.
+
+Phys. 2012, 14, 053020.
+
+(35) H¨ubener, H.; P´erez-Osorio, M. A.; Ordej´on, P.; Giustino, F. Dielectric screening in
+
+extended systems using the self-consistent Sternheimer equation and localized basis
+
+sets. Phys. Rev. B 2012, 85, 245125.
+
+(36) Bruneval, F. Ionization energy of atoms obtained from GW self-energy or from ran-
+
+dom phase approximation total energies. The Journal of Chemical Physics 2012, 136,
+
+194107.
+
+(37) Pham, T. A.; Nguyen, H.-V.; Rocca, D.; Galli, G. Phys. Rev. B 2013, 87, 155148.
+
+(38) Bruneval, F.; Marques, M. A. L. J. Chem. Theory Comput. 2013, 9, 324.
+
+(39) Faber,
+C.;
+Attaccalite,
+C.;
+Olevano,
+V.;
+Runge,
+E.;
+Blase,
+X.
+First-
+
+principles ¡span class=”aps-inline-formula”¿¡math display=”inline”¿¡mrow¿¡mi math-
+
+variant=”italic”¿GW¡/mi¿¡/mrow¿¡/math¿¡/span¿ calculations for DNA and RNA
+
+nucleobases. Phys. Rev. B 2011, 83, 115123.
+
+43
+
+
+(40) van Setten, M. J.; Weigend, F.; Evers, F. J. Chem. Theory Comput. 2013, 9, 232–246.
+
+(41) Faber, C.; Boulanger, P.; Attaccalite, C.; Duchemin, I.; Blase, X. Excited states
+
+properties of organic molecules:
+from density functional theory to the GW and
+
+Bethe–Salpeter Green’s function formalisms. Philosophical Transactions of the Royal
+
+Society A: Mathematical, Physical and Engineering Sciences 2014, 372.
+
+(42) Faber, C.; Boulanger, P.; Duchemin, I.; Attaccalite, C.; Blase, X. Many-body Green’s
+
+function GW and Bethe-Salpeter study of the optical excitations in a paradigmatic
+
+model dipeptide. J. Chem. Phys. 2013, 139, 194308.
+
+(43) Baumeier, B.; Rohlfing, M.; Andrienko, D. Electronic Excitations in Push–Pull
+
+Oligomers and Their Complexes with Fullerene from Many-Body Green’s Functions
+
+Theory with Polarizable Embedding. Journal of Chemical Theory and Computation
+
+2014, 10, 3104–3110.
+
+(44) Ren, X.; Marom, N.; Caruso, F.; Scheffler, M.; Rinke, P. Beyond the¡mml:math
+
+xmlns:mml=”http://www.w3.org/1998/Math/MathML”¿¡mml:mrow¿¡mml:mi¿G¡/mml:mi¿¡mml:m
+
+A second-order screened exchange correction. Physical Review B 2015, 92.
+
+(45) Migani, A.; Mowbray, D. J.; Zhao, J.; Petek, H. Quasiparticle Interfacial Level Align-
+
+ment of Highly Hybridized Frontier Levels: H2O on TiO2(110). Journal of Chemical
+
+Theory and Computation 2014, 11, 239–251.
+
+(46) Laflamme Janssen, J.; Rousseau, B.; Cote, M. Efficient dielectric matrix calculations
+
+using the Lanczos algorithm for fast many-body G0W0 implementations. Phys. Rev.
+
+B 2015, 91, 125120.
+
+(47) K¨uhn, M.; Weigend, F. One-Electron Energies from the Two-Component GW Method.
+
+Journal of Chemical Theory and Computation 2015, 11, 969–979.
+
+44
+
+
+(48) van Setten, M. J.; Caruso, F.; Sharifzadeh, S.; Ren, X.; Scheffler, M.; Liu, F.; Lis-
+
+chner, J.; Lin, L.; Deslippe, J. R.; Louie, S. G.; Yang, C.; Weigend, F.; Neaton, J. B.;
+
+Evers, F.; Rinke, P. J. Chem. Theory Comput. 2015, under review.
+
+(49) kaplan, F.; Weigend, F.; Evers, F.; van Setten, M. J. J. Chem. Theory Comput. 2015,
+
+under review.
+
+(50) Wang, L.-W. Fully self-consistent solution of the Dyson equation using a plane-wave
+
+basis set. Phys. Rev. B 2015, 91, 125135.
+
+(51) Caruso, F.; Rinke, P.; Ren, X.; Scheffler, M.; Rubio, A. Unified description of ground
+
+and excited states of finite systems: The self-consistent GW approach. Phys. Rev. B
+
+2012, 86, 081102.
+
+(52) Kaasbjerg, K.; Thygesen, K. S. Phys. Rev. B 2010, 81, 085102.
+
+(53) Sakuma, R.; Miyake, T.; Aryasetiawan, F. Effective quasiparticle Hamiltonian based
+
+on L¨owdin’s orthogonalization. Phys. Rev. B 2009, 80, 235128.
+
+(54) Stan, A.; Dahlen, N. E.; van Leeuwen, R. Levels of self-consistency in the GW ap-
+
+proximation. J. Chem. Phys. 2009, 130, 114105.
+
+(55) Holm, B.; von Barth, U. Fully self-consistent GW self-energy of the electron gas. Phys.
+
+Rev. B 1998, 57, 2108–2117.
+
+(56) Caruso, F.; Rinke, P.; Ren, X.; Rubio, A.; Scheffler, M. Self-consistent GW: All-
+
+electron implementation with localized basis functions. Physical Review B 2013, 88.
+
+(57) Gatti, M.; Bruneval, F.; Olevano, V.; Reining, L. Understanding Correlations in Vana-
+
+dium Dioxide from First Principles. Phys. Rev. Lett. 2007, 99, 266402.
+
+(58) Koval,
+P.;
+Foerster,
+D.;
+S´anchez-Portal,
+D.
+Fully
+self-consistent¡mml:math
+
+xmlns:mml=”http://www.w3.org/1998/Math/MathML”¿¡mml:mrow¿¡mml:mi¿G¡/mml:mi¿¡mml:m
+
+45
+
+
+quasiparticle self-consistent¡mml:math xmlns:mml=”http://www.w3.org/1998/Math/MathML”¿¡mm
+
+molecules. Physical Review B 2014, 89.
+
+(59) van Schilfgaarde, M.; Kotani, T.; Faleev, S. Quasiparticle Self-Consistent GW Theory.
+
+Phys. Rev. Lett. 2006, 96, 226402.
+
+(60) Faleev, S. V.; van Schilfgaarde, M.; Kotani, T. All-Electron Self-Consistent GW Ap-
+
+proximation: Application to Si, MnO, and NiO. Phys. Rev. Lett. 2004, 93, 126406.
+
+(61) van Schilfgaarde, M.; Kotani, T.; Faleev, S. Phys. Rev. Lett. 2006, 96, 226402.
+
+(62) Kotani, T.; Van Schilfgaarde, M.; Faleev, S. V. Quasiparticle self-consistent GW
+
+method: A basis for the independent-particle approximation. Phys. Rev. B 2007,
+
+76, 1–24.
+
+(63) Shishkin, M.; Kresse, G. Phys. Rev. B 2007, 75, 235102.
+
+(64) Shishkin, M.; Marsman, M.; Kresse, G. Phys. Rev. Lett. 2007, 99, 246403.
+
+(65) Bruneval, F.; Vast, N.; Reining, L. Phys. Rev. B 2006, 74, 045102.
+
+(66) Bruneval, F.; Vast, N.; Reining, L.; Izquierdo, M.; Sirotti, F.; Barrett, N. Exchange
+
+and Correlation Effects in Electronic Excitations of Cu2O. Phys. Rev. Lett. 2006, 97,
+
+267601.
+
+(67) Holm, B.; von Barth, U. Cancellation Effects in the GW Approximation. Physica
+
+Scripta 2004, 2004, 135.
+
+(68) Rinke, P.; Qteish, A.; Neugebauer, J.; Freysoldt, C.; Scheffler, M. Combining GW
+
+calculations with exact-exchange density-functional theory: an analysis of valence-
+
+band photoemission for compound semiconductors. New J. of Phys. 2005, 7, 126.
+
+(69) Fuchs, F.; Furthm¨uller, J.; Bechstedt, F.; Shishkin, M.; Kresse, G. Quasiparticle band
+
+structure based on a generalized Kohn-Sham scheme. Phys. Rev. B 2007, 76, 115109.
+
+46
+
+
+(70) K¨orzd¨orfer, T.; Marom, N. Strategy for finding a reliable starting point for G0W0
+
+demonstrated for molecules. Phys. Rev. B 2012, 86, 041110.
+
+(71) Marom, N.; Caruso, F.; Ren, X.; Hofmann, O. T.; K¨orzd¨orfer, T.; Chelikowsky, J. R.;
+
+Rubio, A.; Scheffler, M.; Rinke, P. Benchmark of GW methods for azabenzenes. Phys.
+
+Rev. B 2012, 86, 245127.
+
+(72) Atalla, V.; Yoon, M.; Caruso, F.; Rinke, P.; Scheffler, M. Hybrid density functional
+
+theory meets quasiparticle calculations: A consistent electronic structure approach.
+
+Phys. Rev. B 2013, 88, 165122.
+
+(73) Marom,
+N.;
+Caruso,
+F.;
+Ren,
+X.;
+Hofmann,
+O.
+T.;
+K¨orzd¨orfer,
+T.;
+
+Chelikowsky,
+J.
+R.;
+Rubio,
+A.;
+Scheffler,
+M.;
+Rinke,
+P.
+Benchmark
+
+of¡mml:math
+xmlns:mml=”http://www.w3.org/1998/Math/MathML”
+dis-
+
+play=”inline”¿¡mml:mrow¿¡mml:mi¿G¡/mml:mi¿¡mml:mi¿W¡/mml:mi¿¡/mml:mrow¿¡/mml:math¿m
+
+for azabenzenes. Physical Review B 2012, 86.
+
+(74) Lischner, J.; Sharifzadeh, S.; Deslippe, J.; Neaton, J. B.; Louie, S. G. Effects of self-
+
+consistency and plasmon-pole models on GW calculations for closed-shell molecules.
+
+Phys. Rev. B 2014, 90, 115130.
+
+(75) Fuchs, F.; Furthm¨uller, J.; Bechstedt, F.; Shishkin, M.; Kresse, G. Phys. Rev. B 2007,
+
+76, 115109.
+
+(76) Shishkin, M.; Marsman, M.; Kresse, G. Phys. Rev. Lett. 2007, 99, 246403.
+
+(77) Gonze, X.; Rignanese, G.-M.; Verstraete, M.; Beuken, J.-M.; Pouillon, Y.; Caracas, R.;
+
+Jollet, F.; Torrent, M.; Zerah, G.; Mikami, M.; Ghosez, P.; Veithen, M.; Raty, J.-Y.;
+
+Olevano, V.; Bruneval, F.; Reining, L.; Godby, R.; Onida, G.; Hamann, D.; Allan, D.
+
+Zeitschrift f¨ur Kristallographie 2005, 220, 558–562.
+
+47
+
+
+(78) Purvis, G. D.; Bartlett, R. J. A full coupled-cluster singles and doubles model: The in-
+
+clusion of disconnected triples. The Journal of Chemical Physics 1982, 76, 1910–1918.
+
+(79) Raghavachari, K.; Trucks, G. W.; Pople, J. A.; Head-Gordon, M. A fifth-order per-
+
+turbation comparison of electron correlation theories. Chemical Physics Letters 1989,
+
+157, 479–483.
+
+(80) Krause, K.; Harding, M. E.; Klopper, W. Coupled-cluster reference values for the
+
+GW27 and GW100 test sets for the assessment of GW methods. Molecular Physics
+
+2015, in press, 1–9.
+
+(81) Effective quasiparticle Hamiltonian based on L¨owdin’s orthogonalization. Phys. Rev.
+
+B 2009, 80, 1–8.
+
+(82) Weigend, F.; Ahlrichs, R. Phys. Chem. Chem. Phys. 2005, 7, 3297.
+
+(83) Weigend, F. Phys. Chem. Chem. Phys. 2006, 8, 1057.
+
+(84) Tandetzky, F.; Dewhurst, J. K.; Sharma, S.; Gross, E. K. U. Multiplicity of solutions
+
+to GW-type approximations. ArXiv e-prints 2012, 1205.4274.
+
+(85) Perdew, J. P.; Wang, Y. Accurate and simple analytic representation of the electron-
+
+gas correlation energy. Phys. Rev. B 1992, 45, 13244.
+
+(86) Perdew, J. P.; Burke, K.; Ernzerhof, M. Phys. Rev. Lett. 1996, 77, 3865.
+
+(87) Perdew, J. P.; Ernzerhof, M.; Burke, K. J. Chem. Phys. 1996, 105, 9982.
+
+(88) The set of molecules used in this manuscript is based on the GW27 set exlud-
+
+ing antracene and naphacene and adds Thiophene, Benzothiazole, Thiadiazole and
+
+Tetrathiofulvalene. These four are added to compare to existing full self-consistent
+
+GW results.
+
+48
+
+
+(89) Mayer, P. M.; Blanchet, V.; Joblin, C. Threshold photoelectron study of naphtha-
+
+lene, anthracene, pyrene, 1, 2-dihydronaphthalene, and 9, 10-dihydroanthracene. The
+
+Journal of Chemical Physics 2011, 134.
+
+(90) Holm, B.; von Barth, U. Fully self-consistent GW self-energy of the electron gas.
+
+Physical Review B 1998, 57, 2108–2117.
+
+(91) In Koval et al.’s ’B’ method the off-diagonal matrix elements of the self-energy are
+
+approximated by evaluating them at the Fermi energy. Koval et al. observe convergence
+
+problems in the ’A’ method and report the main results obtained in the ’B’ method. In
+
+our implementation, using the linear mixing scheme as described in section 2.2.2, we
+
+have no convergence problems. Koval et al. also report a non-monotonous convergence
+
+with respect to the basis-set in the ’A’-method. We observe this as well but only for
+
+some very small molecules (hydrogen and nitrogen).
+
+(92) Dunning, T. H. Gaussian basis sets for use in correlated molecular calculations. I. The
+
+atoms boron through neon and hydrogen. The Journal of Chemical Physics 1989, 90,
+
+1007–1023.
+
+(93) Nelson, W.; Bokes, P.; Rinke, P.; Godby, R. W. Self-interaction in Green’s-function
+
+theory of the hydrogen atom. Physical Review A 2007, 75.
+
+(94) Aryasetiawan, F.; Sakuma, R.; Karlsson, K. GW approximation with self-screening
+
+correction. Physical Review B 2012, 85.
+
+(95) Caruso, F.; Atalla, V.; Ren, X.; Rubio, A.; Scheffler, M.; Rinke, P. First-principles
+
+description of charge transfer in donor-acceptor compounds from self-consistent many-
+
+body perturbation theory. Phys. Rev. B 2014, 90, 085141.
+
+(96) http://cccbdb.nist.gov (accessed 22-04-2016).
+
+49
+
+
+(97) The situation is analogous in time dependent density functional theory when adiabatic
+
+approximations are being employed.
+
+(98) Mahan, G. D.; Sernelius, B. E. Electron-electron interactions and the bandwidth of
+
+metals. Physical Review Letters 1989, 62, 2718–2720.
+
+(99) Del Sole, R.; Reining, L.; Godby, R. W. GWΓ approximation for electron self-energies
+
+in semiconductors and insulators. Physical Review B 1994, 49, 8024–8028.
+
+(100) Sander, T.; Maggio, E.; Kresse, G. Beyond the Tamm-Dancoff approximation for
+
+extended systems using exact diagonalization. Physical Review B 2015, 92.
+
+(101) Bruneval, F.; Hamed, S. M.; Neaton, J. B. A systematic benchmark of the ab initio
+
+Bethe-Salpeter equation approach for low-lying optical excitations of small organic
+
+molecules. The Journal of Chemical Physics 2015, 142.
+
+(102) Jacquemin, D.; Duchemin, I.; Blase, X. Benchmarking the Bethe–Salpeter Formalism
+
+on a Standard Organic Molecular Set. Journal of Chemical Theory and Computation
+
+2015, 11, 3290–3304.
+
+(103) Salmhofer, M. Renormalization: An Introduction; Springer Berlin, Heidelberg, 1999.
+
+(104) Metzner, W.; Salmhofer, M.; Honerkamp, C.; Meden, V.; Schoenhammer, K. Rev.
+
+Mod. Phys. 2012, 84, 299.
+
+(105) Seiler, C.; Evers, F. arXiv:1605.07024 2016,
+
+50
+
+
+Figure 17: TOC graphic
+
+51
+
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+10
+12
+14
+experimental (vertical) IP (eV)
+
+εn + IPexp. (eV)
+
+G0W0 (PBE)
+foGW (PBE)
+qsGW
+scGW
+
+
+
+−1.0
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+10
+12
+14
+16
+experimental (vertical) IP (eV)
+
+εn + IPexp. (eV)
+
+G0W0 (PBE)
+foGW (PBE)
+qsGW
+scGW
+
+
+
+−0.5
+
+0.0
+
+0.5
+
+1.0
+
+9
+10
+11
+12
+13
+14
+experimental (vertical) IP (eV)
+
+εn + IPexp. (eV)
+
+G0W0 (PBE)
+foGW (PBE)
+qsGW
+scGW
+
+
+

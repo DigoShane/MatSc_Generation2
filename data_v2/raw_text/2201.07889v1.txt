@@ -1,0 +1,1395 @@
+Machine Learning Enhances Algorithms for Quantifying Non-Equilibrium Dynamics in
+Correlation Spectroscopy Experiments to Reach Frame-Rate-Limited Time Resolution
+
+Tatiana Konstantinova, Lutz Wiegart, Maksim Rakitin, Anthony M DeGennaro,∗ and Andi M Barbour†
+
+Brookhaven National Laboratory
+Upton, NY 11973, USA
+(Dated: January 21, 2022)
+
+Analysis of X-ray Photon Correlation Spectroscopy (XPCS) data for non-equilibrium dynamics
+often requires manual binning of age regions of an intensity-intensity correlation function. This
+leads to a loss of temporal resolution and accumulation of systematic error for the parameters
+quantifying the dynamics, especially in cases with considerable noise. Moreover, the experiments
+with high data collection rates create the need for automated online analysis, where manual binning
+is not possible. Here, we integrate a denoising autoencoder model into algorithms for analysis of
+non-equilibrium two-time intensity-intensity correlation functions. The model can be applied to
+an input of an arbitrary size. Noise reduction allows to extract the parameters that characterize
+the sample’s dynamics with temporal resolution limited only by frame rates.
+Not only does it
+improve the quantitative usage of the data, but it also creates the potential for automating the
+analytical workflow. Various approaches for uncertainty quantification and extension of the model
+for anomalies detection are discussed.
+
+I.
+INTRODUCTION
+
+Technological advances, such as high-brightness X-
+ray photon sources [1–3] and high-rate high-sensitivity
+detectors [4, 5], enable new discoveries by means of
+X-ray Photon Correlation Spectroscopy (XPCS) [6].
+Non-equilibrium dynamics are signature of many sys-
+tems studied with XPCS, including superconductors [7],
+metallic glasses [8], proteins [9] and polymeric nanocom-
+posites [10].
+Such dynamics are commonly repre-
+sented via two-time intensity-intensity correlation func-
+tions (2TCFs) [11], defined by the expression:
+
+C2(qqq; t1, t2) = ⟨I(qqq; t1)I(qqq; t2)⟩
+
+⟨I(qqq; t1)⟩⟨I(qqq; t2)⟩
+(1)
+
+where I(qqq; t) is the intensity of a detector pixel corre-
+sponding to the wave vector qqq at time t. The average
+is taken over pixels with equivalent qqq values. The quan-
+titative analysis of a non-equilibrium 2TCF (Fig. 1(A))
+often starts with its binning along the sample’s age axis
+ta into quasi-equilibrium regions [12, 13] prior to making
+cuts along the time delay axis td and averaging them, i.e.
+obtaining ‘aged’ one-time intensity-intensity correlation
+functions (1TCFs)[14] of delay time:
+
+C1(qqq, ta; td) = ⟨C2(qqq; ta, td)⟩ta
+(2)
+
+The reason for binning and averaging is increasing the
+accuracy of further analysis. The resulting 1TCFs are
+fit to a functional form that is characteristic for the dy-
+namics under investigation.
+The traditional analysis of experimental data with
+non-equilibrium dynamics presents several challenges.
+
+∗ adegennaro@bnl.gov
+† abarbour@bnl.gov
+
+Selection of the quasi-equilibrium regions is often a non-
+trivial and time-consuming task, which requires interven-
+tions from a human researcher for a visual inspection of
+the calculated 2TCF and intermediate results.
+More-
+over, the temporal resolution of the evolution of dynam-
+ics’ parameters deteriorates due the binning procedure.
+Besides, with increasing data collection rates, it often be-
+comes unfeasible to properly do on-the-fly data analysis
+during XPCS experiments when such analysis requires
+inputs from a researcher. This can lead to inefficient use
+of beam facilities and the efforts of scientific stuff as well
+as to unfortunate omission of important parameter space
+regions during measurements. The sheer volume of col-
+lected data can reach hundreds of thousands of 2TCFs a
+day, making even the offline data processing a challenging
+task. Automating the analytical routine is an inevitable
+step towards high-throughput autonomous XPCS experi-
+ments. Ability to perform the analysis with experimental
+frame-rate resolution is the ultimate target.
+
+Since the motivation behind binning and averaging the
+data is to curtail the impact of noise, pre-processing
+a 2TCF
+with a noise-reducing algorithm would in-
+crease the chance of achieving a frame-rate resolution
+along ta during quantitative analysis.
+Previously, we
+demonstrated an approach for noise reduction in 2TCFs
+with equilibrium dynamics, which is based on Convolu-
+tional Neutral Network–Encoder-Decoder model (CNN–
+ED) [15]. The method is shown to work well for equi-
+librium data and has a promising potential for use with
+slowly ageing dynamics when applied as a sliding win-
+dow along ta. However, there are two major concerns
+regarding the use of the model for general cases of non-
+equilibrium dynamics. Firstly, if the rate of the dynamics
+changes fast, an equilibrium approximation may not be
+valid, even in narrow age regions. Thus, the application
+of the model would lead to loss of experimental resolu-
+tion and extraction of less accurate results. Secondly, for
+a 2TCF containing a much larger number of frames than
+
+arXiv:2201.07889v1  [eess.SP]  17 Jan 2022
+
+
+2
+
+FIG. 1. Examples of intensity-intensity correlation functions. (A) A non-equilibrium 2TCF. t1 and t2 are experiment time
+measured in frames. Yellow arrows indicate the directions of age axis ta and time delay axis td, defined according to the
+formulas in the inset. Pink dashed lines and the grey solid line represent the edges and the bin center, respectively, for the
+region used for generating the 1TCF in (B). (B) 1TCFs for a single cut along the bin center (grey solid) and average within
+the bin of 50 frames(pink dashed).
+
+the input size of the model, a considerable portion of it
+would still contain the original level of noise after the
+model is applied along ta.
+Here, we build upon the previous model to address the
+reduction of noise in arbitrary-sized 2TCFs with non-
+equilibrium dynamics such as ageing. We further demon-
+strate how the new model, integrated into a workflow
+for quantitative analysis of XPCS data, eliminates the
+need of age binning and allows wider parameter bounds
+for the fit of 1TCFs. The results of such analysis have
+temporal resolution, which is limited only by the exper-
+imental acquisition rates.
+The methods for estimating
+the creditability of the results – uncertainty scoring for
+denoised 2TCFs and trust regions for dynamics’ param-
+eters – are discussed. Various options for analysis work-
+flows are demonstrated for several XPCS experiments.
+
+II.
+METHODS
+
+A.
+Data
+
+For a denoising model to perform well for non-
+equilibrium 2TCFs, data from experiments with these
+types of dynamics are used for training. The data are
+
+collected from 65 XPCS experiments at the CHX beam-
+line of NSLS-II from three different samples, recorded at
+different conditions and with different detector collection
+rates.
+Some of the measurements are repeated multi-
+ple times at the same conditions. The samples exhibit
+dynamics, common for many materials, that at various
+rates monotonically accelerate with age, monotonically
+decelerate with age or stay at quasi-equilibrium. For all
+considered dynamics, individual 1TCFs can be approx-
+imated with the Kohlrausch-Williams-Watts (KWW)
+form:
+
+C1(td) = C∞ + βe−2(Γtd)α
+(3)
+
+where Γ is the rate of the dynamics, β is the contrast fac-
+tor, α is the compression constant and C∞ is the baseline.
+All parameters are functions of ta and qqq. Several regions
+of interest in the reciprocal space are considered for each
+experiment when calculating 2TCFs. There is a total of
+492 2TCFs, ranging from 134 to 2950 frames. The orig-
+inal full-sized 2TCFs were split between training (454)
+and validation (38) sets prior to generating the inputs to
+the model and augmenting the data as described below.
+Inputs are obtained from raw experimental 2TCFs by
+cropping the 100×100 frames pieces along the ta in a sim-
+ilar way as was done previously [15]. Prior to cropping,
+
+
+3
+
+the diagonal values, containing high errors, are replaced
+by the average of their nearest off-diagonal neighbors.
+That is, the value at [j, j] is replaced by the mean of
+the values at [j-1, j] and [j+1, j].
+This approach pre-
+serves the information in the experiments with slowly
+varying contrast. For data augmentation, additional in-
+puts are constructed by considering every 2nd, 3rd, 4th
+
+and 5th frame of the original data when enough frames
+are available to form at least one 100×100 example. The
+final size of the training and validation sets are 25222
+and 1557 cropped examples respectively. Each input is
+scaled to have zero mean and unit variance prior to pas-
+sage through the model. A reverse transformation is per-
+formed for the model output.
+
+B.
+Denoising Autoecoder Model
+
+The CNN-ED model architecture, used for equilibrium
+data, demonstrated several advantages, such as simplic-
+ity, control of overfitting as well as fast training and appli-
+cation. Trying the same model architecture with certain
+adjustments for non-equilibrium data is a natural choice.
+The model presented here consists of an encoder with
+two 10-channel convolutional layers, 8-dimensional latent
+vector and the decoder with two 10-channel transpose-
+convolutional layers. Two modifications are implemented
+during the model training to meet the peculiarities of
+non-equilibrium dynamics.
+Firstly, since a ‘noise-free’
+version of an input cannot be obtained by averaging mul-
+tiple cropped inputs collected from the same full-sized
+2TCF, the model is trained in an autoencoder (AE)
+mode with an input and its target being the same. Sec-
+ondly, a non-equilibrium 2TCF cannot be described by a
+single 1TCF and thus only the mean square loss between
+the output and the target are chosen as the training loss
+function.
+Despite the increased complexity of dynamics in the
+training data, the architecture still appears appropriate
+for the denoising task based on the model’s good perfor-
+mance for the validation set [see Appendix D, E]. The ef-
+fectiveness of models with convolutional kernel sizes from
+1 to 17 is tested and only minor improvements in the
+smoothness of the output and the level of finite details
+preserved for larger kernels are discovered. The models
+with larger kernels take longer to train and the compu-
+tational time during their application also becomes sig-
+nificant. Further in the text, unless stated otherwise, a
+model with the kernel size 1 is considered. The fact that
+the same model architecture works well for both equi-
+librium and non-equilibrium ageing 2TCFs confirms it
+robustness for different types of dynamics.
+
+C.
+Adapting Model to Arbitrary Input Size
+
+Since the model has a fully connected layer (the latent
+vector), it can only be applied to a fixed-size input, i.e.
+
+100×100 frames. However, the dimensions of an experi-
+mental 2TCF can vary considerably. The symmetry of a
+2TCF prevents the model to be applied as a raster scan
+over the entire image. Application of the model in a slid-
+ing window fashion along the age axis ta can help with the
+noise reduction in certain cases like in out original quasi-
+equilibrium analysis [15]. Nevertheless, this approach is
+not suitable for general cases of 2TCFs, where dynamics
+may happen outside of the first 100 delay frames along
+the td axis.
+Figure 2 shows a possible solution, which is inspired
+by the procedure of data augmentation when the original
+2TCFraw is mapped down (down-mapped) to a smaller
+size by considering every N-th frame horizontally and
+vertically, where N = 2, 3, 4, 5.
+For model applica-
+tion, N is a whole part of division of total number of
+frames in 2TCFraw by 100. This way, the size of a newly
+constructed 2TCFreduced matches the required model’s
+input size.
+By its definition (Eq. 1), a 2TCF is sym-
+metric with respect to ta.
+However, when the start-
+ing point for down-mapping is away from the ta axis
+(td >0) of 2TCFraw, the reduced version is not sym-
+metrical.
+To ensure the symmetry of the input, only
+the bottom part of the 2TCFreduced is considered and a
+reflection across the td=0 line is applied to it. For all
+starting points, the 2TCFreduced values at td=0 are ex-
+trapolated by the neighboring points in the same way it is
+done for model’s training. After application of the model,
+its output 2TCFout is mapped back (up-mapped) to the
+size of the 2TCFraw by placing [i, j]-th point from the
+2TCFout to [N*i, N*j]-th point in the resulting denoised
+2TCFdenoised. Again, only the bottom half is filled and
+then reflected across the td=0 line. The process is re-
+peated for all possible starting points, covering fully the
+2TCFraw.
+For regions of very fast dynamics and for large-sized
+2TCFs, this down-and-up mapping approach may im-
+pair the experimental temporal resolution. In such sit-
+uations, the values near the diagonal of 2TCFraw can
+instead be processed in a sliding-window fashion, when
+the model is successively applied to parts consisting of
+cropped 100×100 frames equally distanced along ta, and
+the outputs are averaged. The results of the model’s ap-
+plication in the down-and-up mapping and sliding win-
+dow fashion are combined to obtain the final denoised
+version of the original 2TCFraw. This method reduces
+noise in the entire 2TCFraw and preserves the experi-
+mental temporal resolution for both ta and td.
+
+D.
+Uncertainty Quantification for Denoising
+
+When applying a model to unseen data, there are three
+potential sources of uncertainty: error (noise) of the in-
+put, model’s bias and model’s variance. The bias of the
+model primarily originates from selection of the training
+dataset and constricting the model’s architecture. Vari-
+ance appears due to random initializations of model’s
+
+
+4
+
+FIG. 2.
+Scheme of the model application to an input of arbitrary size.
+
+weights and ordering of data butches during model’s
+training. Approaches for quantifying uncertainty for a
+deep learning model often involve random perturbations
+of the model during training and/or application and ob-
+taining the distribution of respective outputs [16].
+We estimate the variance of the denoising AE by con-
+sidering deviations of outputs for models trained with
+different random initializations (see Appendix E). It ap-
+pears that the model’s variance is generally much smaller
+than the corresponding values of β.
+Moreover, the
+fluctuations of values in the neighboring points of a
+2TCFdenoised, caused by down-and-up mapping during
+model application, scale linearly with the inherent vari-
+ance of the model. Thus, it is not necessary to separately
+estimate the model’s variance for experiments with more
+than 100 frames, as the point-to-point variations in a
+2TCFdenoised already influence the quantitative analysis
+of its 1TCFs.
+From the practical point of view, the main potential
+source of uncertainty of the model is its bias. Obviously,
+a denoising AE must exhibit some bias to remove noise.
+Hence, to drive the decision about applicability of the
+model in each case, the quantification of the bias ought
+to answer the question: how certain can one be that the
+model’s output is a valid representation of the underly-
+ing sample’s dynamics in the input? Naturally, a model
+returns the most trustworthy results for the inputs that
+are very similar to the examples in the training set. We
+suggest two quantitative measures – uncertainty scores –
+
+for estimating the bias by comparing a new input to the
+training examples.
+The first measure is based on the Euclidean distance
+between the latent vector representation of an input and
+the center of the latent representations of all training
+examples. The analysis of the pairwise distributions of
+the 8 latent coordinates of the training set reveals that
+they form a single compact cluster [see Appendix F]. The
+shape of the cluster is determined by the distribution of
+dynamics and the noise level in the training set. How-
+ever, the values of each of the eight latent coordinates are
+mostly concentrated around a single point. The distance
+from this central point is thus indicative of how different
+a given input is from most of the training data and thus
+can be used as an uncertainty score. To ensure an equal
+contribution of each latent dimension to the uncertainty
+score, all coordinates are scaled to have a zero mean and
+unit variance across the training dataset. To improve the
+interpretability of the bias, the distance to the center is
+normalized by its median value among the training set
+examples. The normalization of the distance helps to set
+a general threshold for an acceptable level of the bias
+without reference to a particular model or the training
+set.
+The second measure of bias of the denoising is less ab-
+stract and does not depend on the model architecture.
+It involves evaluation of trends in residuals, i.e., the dif-
+ferences between the model’s targets and corresponding
+outputs. When the output is a valid representation of
+
+
+5
+
+the sample’s dynamics, the residual should resemble ran-
+dom and sometimes correlated noise in form of vertical
+and horizontal stripes, without trends along neither ta
+nor td.
+Since the training examples mostly represent
+monotonically ageing dynamics, the model tends to per-
+form well for similar cases.
+A trend in a residual can
+indicate a heterogeneity on top of the ageing dynamics
+or a completely different type of dynamics. Such situ-
+ations require additional attention during analysis. To
+identify the trends, it is convenient to look at the pro-
+jection of a two-dimensional residual to the vertical (or
+horizontal) direction. Without trends, the autocorrela-
+tion coefficients (ACCs) of this projection are close to
+zero. In contrast, when a trend is present, the absolute
+value of the ACCs grows. We calculate the first ACC for
+all the examples of the training set and calculate proba-
+bility density distribution using Gaussian kernel density
+estimator [see Appendix G]. The probability density for
+the first ACC of the residual for a new test example is
+the second type of uncertainty scoring of the model pre-
+diction.
+Since both bias measures are based on the distribution
+of the training examples, they are suitable for detecting
+anomalies – inputs that are different from the training
+set. The analysis workflow can flag a new 2TCF as an
+anomaly if its uncertainty score is above the user-defined
+threshold.
+
+E.
+Extracting Dynamics Parameters
+
+Quantitative analysis of XPCS experimental results
+with non-equilibrium dynamics, such as ageing, involves
+taking time-slices along the delay axis td of a 2TCF at
+different sample’s ages ta and fitting the resulting 1TCFs
+with an appropriate model that describes the dynamics,
+which in many cases is the KWW form Eq. 3.
+Typi-
+cally, several adjacent slices within age range ∆ta need
+to be averaged to target a signal-to-noise ratio that is
+sufficient for extracting dynamics parameters with rea-
+sonable certainty. It is necessary that the dynamics do
+not change much within ∆ta.
+An example of select-
+ing a quasi-equilibrium bin within a 2TCF is shown in
+Fig. 1. This approach leads to a loss of temporal res-
+olution for the parameters. Moreover, the procedure of
+binning 1TCFs often requires an repetitive evaluation
+of the fitting results and adjustment of bins’ boundaries
+by an expert researcher. For a large volume of collected
+data, it becomes challenging to properly split 2TCFs for
+each experimental region of interest (ROI), leading to
+growing uncertainty of the results.
+Ability to perform
+an adequate quantitative analysis for a single value of
+∆ta across the entire experiment would facilitate the au-
+tomation of the analysis process. The highest temporal
+resolution and maximum usage of experimental data are
+achieved when considering cuts with ∆ta = 1
+1
+
+frame rate
+(or, fr−1).
+We compare the possibility of conducting a quan-
+
+titative analysis of a 2TCFraw and a corresponding
+2TCFdenoised while considering 1TCF cuts with ∆ta =
+1 fr−1 without a prior knowledge of the dynamic’s pa-
+rameter ranges (Fig. 3). An example of a noisy 2TCFraw
+(350 frames) from the validation set (Fig. 3A) is passed
+through the model, resulting in the 2TCFdenoised with
+a significantly reduced level of noise (Fig. 3B-C). The
+latent space representations of the 100×100 frames
+2TCFreduced are close to the center of the training set
+(Fig. 3D), indicating that the model output is likely a
+valid representation of the dynamics in the input.
+To
+extract the parameters, each of the 1TCF cuts is fitted
+to Eq. 3. Cuts with less than 5 points are not consid-
+ered.
+The results of the fit are shown in Fig. 3(E-H).
+The fits for the 1TCF cuts from the 2TCFraw with ∆ta
+= 35 fr−1 are provided as ground truth values. Appar-
+ently, high noise in the 2TCFraw does not allow extract-
+ing meaningful information about temporal evolution of
+dynamics parameters without restricting the fit parame-
+ters within narrow regions or increasing the bins’ width.
+The 2TCFdenoised, on the other hand, produces clear,
+slowly evolving trends, matching the ground truth val-
+ues.
+
+While binning and averaging 1TCFs reduces the noise,
+it is not a universal solution because material’s dynamics
+can vary considerably within an age bin, and therefore,
+a single set of parameters cannot describe them. For the
+example shown in Fig. 3, this becomes apparent when
+considering averaging all available 1TCFs and fitting the
+result to Eq. 3. Since β and C∞ are not changing in this
+experiment, the resulting values for these parameters are
+close to the ground truth values.
+However, the values
+for Γ and α are not close to their corresponding average
+values.
+
+For an automatic analysis, it is important to flag
+the results that cannot be fully trusted, even when the
+goodness-of-fit to Eq. 3 is acceptable. If dynamics are
+not fully captured by the experiment, parameters of the
+Eq. 3 become mutually dependent and the outputs of
+non-linear regression can be misleading because several
+different sets of the dynamics’ parameters can result in al-
+most equally good fits. Therefore, we introduce the con-
+cept of trust regions for the parameters. A trust region
+of a parameter is a binary vector with the length equal to
+the number of bins along ta, which indicates whether the
+parameter is likely to be reliably identified within each
+bin. The binary values are determined by several criteria
+including the rate of the dynamics, correlations between
+parameters and parameters’ relative errors.
+
+When a material’s dynamics are slow with respect to
+the duration of the experiment, the baseline C∞ cannot
+be reliably identified. Likewise, the true value of β can-
+not be extracted if the dynamics are not fully captured
+by the experiment due to them being either too fast or
+too slow. The quantitative measure for establishing re-
+spective thresholds for dynamics’ rate is a half-time, i.e.,
+the time it takes for the contrast to drop by half:
+
+
+6
+
+FIG. 3.
+Comparison of quantitative analysis for 2TCFraw and 2TCFdenoised. (A)2TCFraw, (B) 2TCFdenoised, (C) 1TCFs
+taken along the line in (A-B), (D) distribution of latent vector lengths for the training set (green) and the 2TCFreduceds
+(orange), (E-J) plots for dynamics parameters values according to the legend.
+The trust regions are calculated for fits of
+2TCFdenoised.
+
+T1/2 =
+�ln2
+
+2
+
+� 1
+
+α 1
+
+Γ
+(4)
+
+For slow dynamics, when the half-time is larger than
+a user-defined portion of 1TCF’s length, the trust region
+values for C∞ and β are set to zero: not trustable. In
+case of fast dynamics, when the half-time is less than a
+certain number of frames, the trust region for β is set to
+zero. However, the C∞ can be reliably extracted for fast
+dynamics and hence its trust region values are set to one.
+Similarly, threshold-based conditions are defined for the
+correlation coefficient between parameters, relative errors
+of the parameters and R2 measure of the fit.
+
+III.
+RESULTS
+
+A.
+Analysis Workflow
+
+Depending on the application, there are various ways
+to design an analysis workflow that includes 2TCFraws
+and 2TCFdenoiseds as well as any prior knowledge about
+the material’s dynamics. An example flowchart for ex-
+tracting dynamical parameters from a 2TCFraw is shown
+in Fig. 4. In this workflow, a 2TCFdenoised is used for
+flagging unusual observations and narrowing parameter
+boundaries based on the initial fit. The new boundaries
+are then used to fit the 2TCFraw and the 2TCFdenoised.
+
+
+7
+
+The last step of the analysis results in two sets of param-
+eters with corresponding errors and trust regions: one
+for the 2TCFraw and one for the 2TCFdenoised. Step-
+by-step dynamics extraction algorithms are provided in
+Appendix H.
+Naturally, when reporting experimental outcomes, the
+fitting results of unprocessed 2TCFraw have a higher pri-
+ority with respect to the fitting results of 2TCFdenoised
+because signal processing, such as noise removal, intro-
+duces an uncertainty. According to the presented anal-
+ysis workflow, 2TCFdenoised can be used for evaluating
+the parameters’ boundaries for fitting the raw data dur-
+ing the second pass with the same or greater bin width.
+However, it is also possible to supplement the fitting re-
+sults for 2TCFraw with fitting results for 2TCFdenoised
+for regions in parameter space where the low signal-to-
+noise ratio in raw data prevents from obtaining mean-
+ingful parameter values. Note that removing the noise
+is just an additional step in extracting parameters from
+the raw experimental data.
+Therefore, the fitting re-
+sults for 2TCFdenoised can be tested against 2TCFraw
+with goodness-of-fit measures such as R2. Alternatively,
+one can use the fitting results for 2TCFdenoised to select
+quasi-equilibrium regions for the analysis of 2TCFraw.
+Upon
+calculating
+the
+uncertainty
+score
+for
+the
+2TCFdenoised, one may wish to extend the workflow to
+investigate possible dynamic heterogeneities of the sam-
+ple by relying on the denoised output and the results of
+the 1TCFs’ fit. The bias of the denoising model pro-
+vides the opportunity to separate the average ‘envelope’
+dynamics and stochastic heterogeneities by subtracting
+either the 2TCFdenoised or the 2TCF, computed based
+on the fit parameters for the 2TCFdenoised, from the orig-
+inal 2TCFraw.
+
+B.
+Application to New Data: Standard Analysis
+
+We test a workflow for XPCS analysis with the use of
+denoising AE on previously reported data for 3D print-
+ing with solution of Lithium Titanate particles [17]. The
+experiment is not a part of the training or the valida-
+tion datasets used in the current work.
+However, the
+far-from-equilibrium dynamics of the ink, exhibited dur-
+ing its deposition and recovery, are similar to the types
+of dynamics used during the models’ training. Thus, the
+experiment presents an intended use case for the denois-
+ing AE.
+There are several factors that limit the signal-to-noise
+ratio in this experiment: operando character of the mea-
+surements, beam-sensitivity of the ink and anisotropy of
+the dynamics, which requires selection of small ROIs in
+the reciprocal space for analysis. In the original work,
+unevenly spaced age bins of various width have been se-
+lected to obtain good quality ‘aged’ 1TCF slices [17].
+Here, we test the advantages of applying the denoising
+AE for conducting the same analysis with bin width ∆ta
+= 1 fr−1.
+
+Figure 5 provides an example of the denoising AE be-
+ing applied to the 2TCFraw for one of the ROIs. Since
+the dynamics is relatively fast, the points near the ta axis
+are denoised when the model is applied in a sliding win-
+dow fashion and the points away from ta are denoised
+via down-and-up mapping approach. The difference in
+level of noise for 2TCFraw and 2TCFdenoised can be seen
+from corresponding 1TCFs taken at different ages. Bin
+width of 1 frame has been considered for 2TCFdenoised
+and resulting 1TCFdenoised(ta) are fitted to Eq. 3 to ob-
+tain 1TCFfit(ta).
+1TCFraw(ta) for bin widths 1 and
+100 are compared against the same 1TCFfit(ta). As ex-
+pected, the fit to denoised version of correlation function
+describes the raw data well. As the width of the bins
+increases, the values of 1TCFraw(ta) lie closer to the cor-
+responding 1TCFfit(ta) lines. The model captures well
+not only the characteristic time of the signal decorrela-
+tion, but also the change in the contrast factor β, caused
+by initial fast non-ergodic dynamics with timescales out-
+side of the experimental time window.
+The sample’s dynamics for multiple ROIs is quanti-
+fied according to the scheme in Fig. 4. We calculate the
+drift velocity from relaxation times at different wave vec-
+tors along deposition direction Φ = −90◦ using only de-
+noised 2TCFs and compare them to the values obtained
+in Ref. [17], as shown in Fig. 5G. The values obtained
+from 2TCFdenoised are very close to results of the origi-
+nal analysis, confirming the denoising AE does not dis-
+tort the data. Instead, it eliminates the need to carefully
+select the age bins and ensures the ultimate temporal
+resolution of a single acquisition period.
+
+C.
+Application to New Data: Outlier Detection
+
+By using latent space representation of a denoising AE,
+it is possible to quantitatively compare 2TCFs from the
+same group of measurements even if the model was not
+exposed to this type of dynamics during training. This
+is suitable for anomaly detection in series of consecutive
+XPCS measurements for the same material. We test the
+application of the model for instabilities detection dur-
+ing data collection for static dynamics of a LSAT sample
+(MTI Corporation) at the CSX beamline of NSLS-II. Six
+data series, 7200 frames (exposure 1.0875 seconds) each
+are purposefully collected during synchrotron accelera-
+tor testing to introduce a disturbance of experimental
+conditions. Three of the series are collected in a stable
+beam regime, one series is recorded with small distur-
+bance of the beam energy and two series are recorded dur-
+ing strong beam energy disturbance. From each series,
+72 model’s inputs (size 100×100 frames) are generated
+by considering every 72nd frame with different starting
+points. Each of the down-mapped inputs from a single
+series contain the same information, but different noise.
+To make the comparison sensitive to the mean value and
+variance of the contrast, the inputs are not scaled, but
+are clipped within values of 1 and 2. The values at td
+
+
+8
+
+FIG. 4.
+Analysis workflow. Shape keys: rhombus – data supplied to the algorithm, rounded shape - model, diamond shape –
+result of calculations. Color keys: green – results of XPCS measurements, purple – supplied by a user, orange – intermediate
+results, red – the final results.
+
+= 0 are extrapolated with the neighboring values as it is
+done for a routine model application.
+Figure 6 shows the representations of stable and un-
+stable series in the latent space. Inputs formed from the
+same full-sized 2TCF are located in close proximity of
+each other, forming a tight cluster. This confirms the
+contractive property of the denoising AE - the fact that
+similar inputs are close in the latent space. Having mul-
+tiple 2TCFs representing the same dynamics through
+down-mapping procedure allows estimating the charac-
+teristic size of the cluster, to which all other points in
+the latent space should be compared to. The means and
+variances of contrasts for the inputs collected from exper-
+iment with a small disturbance are similar to the undis-
+turbed series, resulting in a small distance in the latent
+space, comparable to the size of the clusters. However,
+when the disturbance is so strong, that the beam is lost
+for part of the series, the latent space representations of
+a 2TCF are much further away from the undisturbed
+series. In fact, the strongly disturbed series form a sepa-
+rate cluster, where points are much more spread out than
+for stable series. Selecting a threshold distance between
+points helps to filter out the measurements taken at very
+unstable experimental conditions. Thus, it is possible to
+
+identify unusual observations in a set of XPCS series by
+looking into the denoising AE’s latent representation of
+2TCFs and comparing the distance between series.
+
+IV.
+DISCUSSION
+
+Analysis of XCPS data is a multistep, often iterative,
+process that requires continuous evaluation of intermedi-
+ate results by a domain expert. Large volumes of obser-
+vations and subjectivity in alleviating low signal-to-noise
+ratio complicate proper extraction of valuable informa-
+tion from experiments. Computationally reducing noise
+in 2TCFs as a data processing step helps to achieve sev-
+eral goals: automating the analysis workflow, improving
+temporal resolution of parameters that quantify the sys-
+tem’s dynamics and increasing quantitative usage of data
+with high cost of collection.
+Here, we demonstrate how a denoising AE model can
+be included into analysis workflow of XPCS data for ex-
+periments with ageing dynamics. Quantification of the
+model’s bias helps driving the decision about the use of its
+outputs as well as flagging unusual observations, such as
+heterogeneities or dynamics that are very different from
+
+
+9
+
+FIG. 5.
+Comparison of use 2TCFraw and 2TCFdenoised from 3D printing experiments [17] for quantitative analysis. (A)
+2TCFdenoised and bins of width 1 frame (dashed lines). (B) 1TCFs corresponding to the bins in (A) (open circles) and their
+fits to Eq. 3 (solid lines). (C) 2TCFraw and bins of width 1 frame (dashed lines). (D) 1TCFs corresponding to the bins in
+(C) (open circles) and fits to denoised data from (B) (solid lines). (E) 2TCFraw and bins of width 100 frames (dashed lines).
+(F) 1TCFs corresponding to the bins in (E) (open circles) and fits to denoised data from (B) (solid lines). (G)drift velocity
+obtained from a set of experimental scattering series, calculated using 2TCFdenoised (solid teal circles) and from Ref. [17].
+Results from 2TCFdenoised have 7854 points and the previous results have 19 points.
+
+ageing. The denoised correlation function can be used
+for complementing the fit of the raw data. The concept
+of trust regions combines the assessment of the fit quality
+as well as domain expertise, which helps to not only re-
+port the most reliable results, but to automate sequential
+narrowing of the fit parameters boundaries.
+
+The model’s performance for unseen 3D printing data
+(not included in the training/validation datasets) demon-
+strates the advantages of its application to actual XPCS
+experiments.
+For measurements where the material’s
+dynamics are similar enough to the model’s training
+dataset, the analysis does not require a human-in-the-
+loop after all the thresholds are selected prior to anal-
+ysis. Moreover, the analysis is suitable for autonomous
+
+data acquisition. It provides values of dynamics param-
+eters, which are important for making decisions about
+adapting data acquisition parameters such as acquisition
+rate, exposure time, duration of data acquisition or about
+changing the sample and/or the processing parameters.
+We further demonstrate how encoded representations
+of a 2TCF can be used for quantitative comparison of
+two or more scattering time series, which can be useful
+for identifying anomalies such experimental instabilities
+or phase transitions. The comparison can even be done
+for the types of dynamics, not present in the training set.
+In conclusion, in this work we demonstrate how a
+CNN-based denoising AE can be used for 2TCFs with
+non-equilibrium dynamics for experimental scattering se-
+
+
+10
+
+FIG. 6. Detection of anomalies in static experiments by encoding data with the denoising AE model. (A) points in the latent
+space corresponding to inputs generated from the experimental series. The points are mapped to 2D space using linear principal
+components. B,D,F – 2TCFs for stable(B), slightly unstable(D) and very unstable(F) experimental conditions. C,E,F – average
+intensities on the detector for the respective experiments on the left.
+
+ries of arbitrary size. Addition of the denoising AE to
+XPCS analysis along with quantifying uncertainty helps
+automating the analysis and improves temporal resolu-
+tion of extracted parameters. Besides, analysis of resid-
+uals and latent space representations of the inputs helps
+detect anomalous dynamics that go beyond monotonic
+ageing. This property can be employed for recognizing
+heterogeneities or phase transitions. Several examples of
+incorporating the denoising AE in analysis workflows for
+actual experimental data, collected at NSLS-II, demon-
+strate its effectiveness for unseen data and diversity of
+its applications.
+Denoising and encoding properties of
+the model are auspicious for various online and offline
+data analysis tasks at XPCS facilities.
+
+ACKNOWLEDGMENTS
+
+This research used the CHX and CSX beamlines and
+resources of the National Synchrotron Light Source II,
+a U.S. Department of Energy (DOE) Office of Science
+User Facility operated for the DOE Office of Science by
+Brookhaven National Laboratory(BNL) under Contract
+No.
+DE-SC0012704 and under a BNL Laboratory Di-
+rected Research and Development (LDRD) project 20-
+038 ”Machine Learning for Real-Time Data Fidelity,
+Healing, and Analysis for Coherent X-ray Synchrotron
+Data”
+
+Appendix A: Denoising Model Training
+
+The denoising model is written in Pytorch (version
+1.9.0+cuda10.2). The model is trained using CUDA ac-
+
+
+11
+
+celerator Nvidia GeForce RTX 2070 Super. Early stop-
+ping is used for model overfitting. Aside a few changes,
+the same model architecture and training procedure is
+used as described in [15].
+The model is trained in the autoencoder regime, i.e.
+each input serves as its target. The cost function is the
+mean square loss between the model’s output and its tar-
+get(input). Adam [18] optimizer is used for training. Its
+starting learning rate of 1e−4 (batch size 8) is decreased
+at each epoch by a factor 0.9995.
+One training epoch takes from 28 seconds (kernel size
+1) to 320 seconds (kernel size 17). 20-30 epochs are re-
+quired for training, depending on random initialization of
+the model’s weights and the order of training examples
+supplied to the model.
+
+Appendix B: Fitting a 2TCF
+
+Each individual 1TCF is fit to Eq. 3 using nonlinear
+regression implemented in Scipy package [19] according
+to the Trust Region Reflective algorithm [20]. Generally,
+when a 1TCF is calculated for a single-frame-wide cut of
+a 2TCF, each of its points is given equal weight during
+the fit and when several-frames-wide cuts are considered,
+the weights are assigned inversely proportionally to the
+standard errors of correlation function values at each td
+point.
+The optimization algorithm for nonlinear regression is
+sensitive to the initial guess of the parameters. The initial
+values for β and C∞ can be estimated from characteris-
+tics of the experimental setup and test measurements.
+The algorithm seems to be robust with respect to the
+initial value of α, which is set to 1. However, a proper
+initial guess of Γ is important and Γ values can vary
+significantly between experiments and ROIs in the recip-
+rocal space. To automate selection of the initial guess
+for Γ, several values are attempted and the fit with the
+smallest R2 is returned. The values range between 0.01
+and 1 fr. If neither of the values results in better fit than
+a line 1TCF(td) = const, then the error (‘not a number’)
+is returned for all parameters.
+It is common to have a situation when a signal decor-
+relates within a small delay and most of the points along
+the td axis in a 1TCF are at the baseline level. In such
+case, points at the tail of the 1TCF have high leverage,
+but carry little information regarding the dynamics’ rate,
+the contrast factor and the compression constant. The
+equidistant delay points in 1TCFs obtained through cuts
+of a 2TCF contrast with logarithmic-spaced delay points
+of 1TCFs, calculated directly from the speckled images
+using the traditional multi-tau algorithm [21].
+To re-
+duce the influence of the points at the tail of the 1TCF,
+lower weights can be assigned to them during the fit with
+nonlinear regression. For implementing this, at the first
+pass, the data are fit to Eq. 3 with points weighted ei-
+ther equally or according to standard errors, as described
+above. Based on the results of the first fit, the points for
+
+which the fitted values are larger than 1+ β
+
+e are assigned
+the weight of 1 during the second fit and the rest of the
+points are assigned the weight
+1
+
+log(td).
+The same data
+are fit for the second time to Eq. 3 with the fixed value
+C∞ from the previous fit and the new points’ weights.
+Both weighted and unweighted results are returned by
+the fitting procedure.
+The nonlinear regression algorithm returns the param-
+eter values as well as their covariance matrix. The values
+of Γ and α for the best fit are used for calculating the half-
+time (Eq. 4) and establishing initial trust regions. Square
+roots of variances (the diagonal elements of the covari-
+ance matrix) are attributed to the parameters’ errors.
+The off-diagonal elements are converted to correlations.
+Optionally, the parameters’ errors and correlations and
+the R2 values are used for narrowing the trust regions
+based on user-defined thresholds.
+
+Appendix C: Output Files Formats
+
+2TCFdenoised and uncertainty scores are saved as
+datasets in a hdf5 [22] file, which allows accessing data
+(loading into memory) in parts.
+Parameters, parame-
+ter’s errors, parameter’s correlations and the R2 of the
+fits at each age are recorded as nested dictionaries into a
+json [23] file. Besides, the parameter boundaries and the
+initial guesses are also saved in a json file.
+
+Appendix D: Different Kernel Sizes
+
+Comparison of the denoising AEs with different con-
+volutional kernels shows that models with larger kernel
+sizes have less bias and closer resemble the dynamics even
+if they slightly deviate from the KWW form. Examples
+of model outputs for the validation data are shown in
+Fig. 7 and Fig. 8. The figures show the model output for
+the 2TCFs with 300 frames, rather than for single 100-
+frame inputs (see the main text for details of applying
+the model to an arbitrary-sized input). Generally, with
+increasing the kernel size of the model, the trends in the
+residuals become less pronounced.
+However, the difference between the models’ outputs is
+generally not significant for quantitative analysis, which
+involves further fitting of the 1TCFs. We compare the
+error of parameters extracted from the 2TCFs passed
+through the models with different kernels for all full-sized
+2TCFs from the validation set. For this, we fit single-
+frame-wide cuts of a 2TCFraw and its denoised version
+2TCFdenoised in an iterative process according to Fig. 4.
+The initial fitting of 2TCFdenoised is used for establishing
+parameter boundaries for the contrast factor β and the
+baseline C∞, applied during the second fit. The ground
+truth values are obtained by separately fitting 20-frames-
+wide cuts of 2TCFraw and interpolating the results of the
+fit across the entire range of ages. The ground truth fits
+
+
+12
+
+FIG. 7.
+Comparison of denoising with models with different kernel sizes (1,3,11,17) for relatively slow dynamics.
+(A)
+2TCFraw, (B-E) 2TCFdenoised, (F-J) residuals, (I-M) 1TCFs for cut at ta = 150frames, (N-Q) 1TCF for ta = 50frames.
+∆ta = 1frame. Color scale is the same within each row.
+
+
+13
+
+FIG. 8.
+Comparison of denoising with models with different kernel sizes (1,3,11,17) for relatively fast dynamics. (A) 2TCFraw,
+(B-E) 2TCFdenoised, (F-J) residuals, (I-M) 1TCFs for cut at ta = 150frames, (N-Q) 1TCF for ta = 50frames. ∆ta = 1frame.
+Color scale is the same within each row.
+
+
+14
+
+involve human intervention for establishing the parame-
+ters’ boundaries.
+One 2TCF is removed from consideration because its
+dynamics are too fast to be captured with the down-
+and-up mapping approach.
+Two other 2TCFs are re-
+moved from consideration because the trust regions for β
+from the first fit of 2TCFdenoised contained less than two
+points and thus the parameter boundaries could not be
+established. Those 2TCFs contained very slow dynam-
+ics. Overall, 8100 single-frame 1TCFs have been fit for
+each kernel value.
+The distribution of errors for the models with kernels
+1, 3 and 17 is shown in Fig. 9. For Γ the relative er-
+ror (REΓ) is considered since dynamics’ rate can be in
+a broad range, including values close to zero. The abso-
+lute error is considered for α (AEα), β (AEβ) and C∞
+(AEC∞). Table I shows the comparison of median val-
+ues of the errors. The analysis procedures involving all
+models produce comparable errors.
+The errors produced by fitting 2TCFraw have larger
+median errors for both REΓ and AEα, even when the
+parameter bounds for β and C∞ are narrowed. The dif-
+ference in errors for β and C∞ between fits for 2TCFraw
+and 2TCFdenoised is not significant because in both
+cases the parameter boundaries were established using
+2TCFdenoised at the previous step.
+When considering denoising AEs with different ker-
+nel sizes, one needs to account for the computational
+time. The comparison of computational times for denois-
+ing models with different kernel sizes is shown in Fig. 10.
+These times are measured for a single 100-frame 2TCF
+input (average of 50 repeated measurements). Depend-
+ing on the acceleration hardware and the need to trans-
+fer data to/from a CPU/GPU Pytorch Tensor, the dif-
+ference between computation times for models with ker-
+nel=1 and kernel=17 can be 60 times (CPU) or can be
+non-existent (GPU, without transfer).
+
+Appendix E: Model Variance
+
+We estimate the variance of a denoising AE model by
+applying an ensemble of 9 models trained with different
+random initializations to examples from the validation
+set. For each full-sized 2TCF from the validation set, a
+reduced version 2TCFreduced is generated by considering
+each 3rd frame horizontally and vertically, starting at
+point [0,0], and then cropping the first 100x100 frames
+part. The resulting 2TCFreduced is passed to each of the
+models in the ensemble and the frame-wise variance (σ2)
+is calculated. That is, each of the 100×100 frames input
+produces 104 variances. We refer to these variances as
+generated via drawing from model space.
+When a single denoising AE model is applied to a
+2TCF with 200 or more frames, the down-and-up map-
+ping process also introduces variance between neighbor-
+ing values. The difference in underlying dynamics repre-
+sented in the down-mapped 2TCF originating from start-
+
+ing points [i, i] (i, j = 0,1,2) is often negligible. Therefore,
+the down-mapped 2TCFs can be viewed as an approxi-
+mation of realization of the same dynamics. Thus, it is
+possible to estimate the variance of a model via draw-
+ing from input space by applying the model to each of
+such realizations and estimating the variances of the out-
+puts. Here, we estimate the variance by considering in-
+puts, obtained from the 2TCFs from the validation set
+by considering each 3rd frame horizontally and vertically,
+starting at points: [0,0], [1,1], [2,2] and then cropping the
+first 100×100 frames part from each of the down-mapped
+2TCF. A single model is applied to each of the 3 inputs
+and the frame-wise variance is calculated.
+As a result, for each example in the validation set the
+frame-wise variance is calculated by drawing from both
+model space and input space. The variances, calculated
+by both methods, are comparable. (Fig. 11) The variance
+values are considerably smaller than both the noise in
+the original raw inputs and the typical values of contrast
+factor β, making the model’s variance negligible for the
+quantitative analysis.
+Moreover, there is a linear dependence between the
+variances calculated by the two methods (the correlation
+coefficient is 0.73), indicating that the model variance
+typically is already reflected in the down-and-up map-
+ping process of the model application. Therefore, it is
+not necessary to separately estimate the variance of the
+model using an ensemble method.
+
+Appendix F: Latent Coordinates Distribution
+
+Latent space coordinates can be used for applying
+distance-based similarity measures for the model inputs.
+The model is likely to perform well for new inputs that
+are similar to the training set examples. The pair-wise
+distributions of the latent coordinates for the training
+set (Fig. 12) reveals that the majority of the data is ap-
+proximately centered around a single point. As a result,
+the measure of similarity between a new input and the
+training set can be expressed as the Euclidean distance
+from the input to the central point of the training set
+coordinates distribution. Prior to calculation of the dis-
+tance, the coordinates are standardized using the mean
+values and variances for each coordinate calculated for
+the training set.
+
+Appendix G: Quantifying Bias With Residuals
+
+For general applications, investigating trends in resid-
+uals is a common test for a model’s bias. If a residual
+resembles a ‘random’ noise, the bias of the model is low.
+In an opposite case of trends in the residual, the model
+does not fully represent the process in the input, i.e., it
+exhibits a bias.
+For a denoising AE the situation is not straightfor-
+ward and depends on the perception of noise for each ap-
+
+
+15
+
+FIG. 9.
+Distribution of errors for parameters extracted from 2TCFs in the validation set, denoised with models having kernel
+size 1 (circle), 3(triangle) and 17(square). Relative error for dynamics rate Γ (A); absolute error for stretching constant α (B),
+β (C) and C∞ (D).
+
+kernel
+REΓ(model)
+AEβ(model)
+AEC∞(model)
+AEα(model)
+
+1
+0.133
+0.0076
+0.0023
+0.21
+
+3
+0.135
+0.0081
+0.0026
+0.23
+
+7
+0.127
+0.0075
+0.0023
+0.21
+
+11
+0.121
+0.0069
+0.0023
+0.21
+
+17
+0.132
+0.0075
+0.0025
+0.22
+
+kernel
+REΓ(raw)
+AEβ(raw)
+AEC∞(raw)
+AEα(raw)
+
+NA
+0.195
+0.0088
+0.0025
+0.35
+
+TABLE I. Errors for parameters extracted from a 2TCF denoised with different kernels and from the raw data for examples
+from the validation set.
+
+
+16
+
+FIG. 10.
+Computation times for application of the denoising AE model (single 100x100 frames input) with/without GPU
+acceleration and with/without data transfer from CPU-based numpy arrays to CUDA-based Pytorch tensors. Error bars are
+standard deviations for measurements repeated 50 times.
+
+plication. For a 2TCF, in cases of low detector count or
+frame-by-frame instabilities, the residual for the denoised
+output should not have any trends (Fig. 13). However, in
+cases when an average, ‘envelope’, dynamics is under in-
+terest, the dynamics heterogeneities are treated as noise,
+leaving a pattern in the residual (Fig. 14), that can be
+investigated separately. It is convenient to measure noise
+using autocorrelation coefficient (ACC) at lag=1 of resid-
+uals, projected at one of the time axes .
+
+Just like the latent space coordinates, the ACC of
+residuals for each new example can be compared to the
+analogous values for examples in the training set. This
+helps to understand, what values of ACC are unusual.
+For quantifying the comparison, the probability density
+function (Fig. 15) is estimated for ACC values of the
+training set and is calculated for each new test example.
+
+Appendix H: Examples of workflows for Online and
+Offline Data Analysis
+
+Algorithm 1 (online analysis):
+
+• apply denoising AE to the 2TCFraw to obtain
+2TCFdenoised
+
+• calculate an uncertainty score through latent space
+and/or residuals
+
+• unless observation is unusual:
+
+– do the first round of fit for 2TCFdenoised (op-
+tionally with wider time cuts) using wide pa-
+rameter boundaries
+
+– calculate new parameter boundaries based on
+values within trust regions
+
+– if needed, repeat the fits for 2TCFdenoised for
+single-frames cuts with new parameter bound-
+aries
+
+
+17
+
+FIG. 11.
+Variance of the model. (A,C) A 1TCF with ∆ta = 1fr−1 obtained from a 2TCFraw (green) of two different
+experiments and from respective average of 2TCFdenoiseds for ensembles drawn from the model space (orange) and the input
+space (blue). (B) Standard deviations of 2TCFdenoised values for ensembles drawn from model space versus respective values
+for ensembles drawn from the input space. Each point corresponds to a value of a 2TCF at a single point [t1, t2]. Red line is a
+linear fit between the variables. (D) Distribution of the standard deviation values from (B).
+
+• if the observation is unusual:
+
+– use 2TCFraw and wide-bin 1TCFs for the fits
+
+• report results of the fit and trust regions
+
+Algorithm 1 (offline analysis):
+
+• apply denoising AE to the 2TCFraw to obtain
+2TCFdenoised
+
+• calculate an uncertainty score through latent space
+and/or residuals
+
+• based on the uncertainty score, alarm about an un-
+usual observation if encountered
+
+• unless observation is unusual:
+
+– do the first round of fit for 2TCFdenoised (op-
+tionally with wider time cuts) using wide pa-
+rameter boundaries
+
+– calculate new parameter boundaries based on
+values within trust regions
+
+– fit both 2TCFraw and 2TCFdenoised with new
+parameter bounds
+
+
+18
+
+FIG. 12. Pairwise distribution of latent coordinates for the training set. The coordinates are scaled to have zero mean and
+unit variance.
+
+• if the observation is unusual:
+
+– use 2TCFraw and wide-bin 1TCFs for the fits
+
+– report results of the fit and trust regions
+
+
+19
+
+FIG. 13. Example from training set where the residual does not have trends.
+
+FIG. 14. Example from training set where the residual has a well pronounced trend.
+
+
+20
+
+FIG. 15. Distribution of the model uncertainty (ACC(lag=1) of residuals) for the training set. Solid blue line is the probability
+density function for the distribution calculated with Gaussian Kernel density estimator.
+
+
+21
+
+[1] U. Bergmann,
+J. Corlett,
+S. Dierker,
+R. Falcone,
+J. Galayda, M. Gibson, J. Hastings, B. Hettel, J. Hill,
+Z. Hussain, et al., Science and technology of future light
+sources: A white paper, Tech. Rep. (Stanford Linear Ac-
+celerator Center (SLAC), 2009).
+
+[2] M. E. Couprie, New generation of light sources: Present
+and future, Journal of Electron Spectroscopy and Related
+Phenomena 196, 3 (2014).
+
+[3] I. Vartanyants and A. Singer, Synchrotron light sources
+and free-electron lasers, edited by ej jaeschke, s. khan, jr
+schneider & jb hastings (2016).
+
+[4] P. Grybos, P. Kmon, P. Maj, and R. Szczygiel, 32k Chan-
+nels readout IC for single photon counting detectors with
+75 µm pitch, ENC of 123 e- rms, 9 e- rms offset spread
+and 2 % rms gain spread, in 2015 IEEE Biomedical Cir-
+cuits and Systems Conference (BioCAS) (2015) pp. 1–4.
+
+[5] X. Llopart, M. Campbell, R. Dinapoli, D. San Segundo,
+and E. Pernigotti, Medipix2: A 64-k pixel readout chip
+with 55-/spl mu/m square elements working in single
+photon counting mode, IEEE transactions on nuclear sci-
+ence 49, 2279 (2002).
+
+[6] Q. Zhang, E. M. Dufresne, and A. R. Sandy, Dynamics in
+hard condensed matter probed by x-ray photon correla-
+tion spectroscopy: Present and beyond, Current Opinion
+in Solid State and Materials Science 22, 202 (2018).
+
+[7] A. Ricci, G. Campi, B. Joseph, N. Poccia, D. Innocenti,
+C. Gutt, M. Tanaka, H. Takeya, Y. Takano, T. Mizokawa,
+et al., Intermittent dynamics of antiferromagnetic phase
+in inhomogeneous iron-based chalcogenide superconduc-
+tor, Physical Review B 101, 020508 (2020).
+
+[8] Z. Evenson, B. Ruta, S. Hechler, M. Stolpe, E. Pineda,
+I. Gallino, and R. Busch, X-ray photon correlation spec-
+troscopy reveals intermittent aging dynamics in a metal-
+lic glass, Physical review letters 115, 175701 (2015).
+
+[9] N. Begam, A. Ragulskaya, A. Girelli, H. Rahmann,
+S. Chandran, F. Westermeier, M. Reiser, M. Sprung,
+F. Zhang, C. Gutt, et al., Kinetics of network forma-
+tion and heterogeneous dynamics of an egg white gel
+revealed by coherent x-ray scattering, Physical Review
+Letters 126, 098001 (2021).
+
+[10] B. M. Yavitt, D. Salatto, Z. Huang, Y. T. Koga, M. K.
+Endoh, L. Wiegart, S. Poeller, S. Petrash, and T. Koga,
+Revealing nanoscale dynamics during an epoxy curing re-
+action with x-ray photon correlation spectroscopy, Jour-
+nal of Applied Physics 127, 114701 (2020).
+
+[11] G. Brown, P. A. Rikvold, M. Sutton, and M. Grant,
+Speckle from phase-ordering systems, Physical Review E
+56, 6601 (1997).
+
+[12] A. Madsen, A. Fluerasu, and B. Ruta, Structural dynam-
+ics of materials probed by x-ray photon correlation spec-
+
+troscopy, Synchrotron Light Sources and Free-Electron
+Lasers: Accelerator Physics, Instrumentation and Sci-
+ence Applications , 1989 (2020).
+
+[13] O. Bikondoa, On the use of two-time correlation func-
+tions for x-ray photon correlation spectroscopy data anal-
+ysis, Journal of applied crystallography 50, 357 (2017).
+
+[14] A. Madsen, R. L. Leheny, H. Guo, M. Sprung, and
+O. Czakkel, Beyond simple exponential correlation func-
+tions and equilibrium dynamics in x-ray photon corre-
+lation spectroscopy, New Journal of Physics 12, 055001
+(2010).
+
+[15] T. Konstantinova, L. Wiegart, M. Rakitin, A. M. De-
+Gennaro, and A. M. Barbour, Noise reduction in x-ray
+photon correlation spectroscopy with convolutional neu-
+ral networks encoder-decoder models, Scientific Reports
+11, 14756 (2021).
+
+[16] M. Abdar, F. Pourpanah, S. Hussain, D. Rezazadegan,
+L. Liu, M. Ghavamzadeh, P. Fieguth, X. Cao, A. Khos-
+ravi, U. R. Acharya, et al., A review of uncertainty quan-
+tification in deep learning: Techniques, applications and
+challenges, Information Fusion (2021).
+
+[17] C.-H. Lin, K. Dyro, O. Chen, D. Yen, B. Zheng, M. T.
+Arango, S. Bhatia, K. Sun, Q. Meng, L. Wiegart, et al.,
+Revealing meso-structure dynamics in additive manufac-
+turing of energy storage via operando coherent x-ray scat-
+tering, Applied Materials Today 24, 101075 (2021).
+
+[18] D. P. Kingma and J. Ba, Adam: A method for stochastic
+optimization, arXiv preprint arXiv:1412.6980 (2014).
+
+[19] P. Virtanen, R. Gommers, T. E. Oliphant, M. Haber-
+land, T. Reddy, D. Cournapeau, E. Burovski, P. Pe-
+terson, W. Weckesser, J. Bright, S. J. van der Walt,
+M. Brett, J. Wilson, K. J. Millman, N. Mayorov, A. R. J.
+Nelson, E. Jones, R. Kern, E. Larson, C. J. Carey, ˙I. Po-
+lat, Y. Feng, E. W. Moore, J. VanderPlas, D. Laxalde,
+J. Perktold, R. Cimrman, I. Henriksen, E. A. Quintero,
+C. R. Harris, A. M. Archibald, A. H. Ribeiro, F. Pe-
+dregosa, P. van Mulbregt, and SciPy 1.0 Contributors,
+SciPy 1.0: Fundamental Algorithms for Scientific Com-
+puting in Python, Nature Methods 17, 261 (2020).
+
+[20] M. A. Branch, T. F. Coleman, and Y. Li, A subspace,
+interior, and conjugate gradient method for large-scale
+bound-constrained minimization problems, SIAM Jour-
+nal on Scientific Computing 21, 1 (1999).
+
+[21] T. Wohland, R. Rigler, and H. Vogel, The standard devi-
+ation in fluorescence correlation spectroscopy, Biophysi-
+cal journal 80, 2987 (2001).
+
+[22] The HDF Group, Hierarchical data format version 5
+(2000-2010).
+
+[23] F. Pezoa, J. L. Reutter, F. Suarez, M. Ugarte, and
+D. Vrgoˇc, Foundations of json schema (2016).
+
+

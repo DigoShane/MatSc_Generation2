@@ -1,0 +1,3388 @@
+Optimization of Non-Equilibrium Self-Assembly Protocols Using Markov
+State Models
+Anthony Trubiano1, a) and Michael F. Hagan1, b)
+
+Martin Fisher School of Physics, Brandeis University, Waltham, Massachusetts 02454,
+USA
+
+(Dated: 13 October 2022)
+
+The promise of self-assembly to enable bottom-up formation of materials with prescribed architectures and functions
+has driven intensive efforts to uncover rational design principles for maximizing the yield of a target structure. Yet,
+despite many successful examples of self-assembly, ensuring kinetic accessibility of the target structure remains an
+unsolved problem in many systems. In particular, long-lived kinetic traps can result in assembly times that vastly exceed
+experimentally accessible timescales. One proposed solution is to design non-equilibrium assembly protocols in which
+system parameters change over time to avoid such kinetic traps. Here, we develop a framework to combine Markov
+state model (MSM) analysis with optimal control theory to compute a time-dependent protocol that maximizes the yield
+of the target structure at a finite-time. We present an adjoint-based gradient descent method that, in conjunction with
+MSMs for a system as a function of its control parameters, enables efficiently optimizing the assembly protocol. We also
+describe an interpolation approach to significantly reduce the number of simulations required to construct the MSMs.
+We demonstrate our approach on two examples; a simple semi-analytic model for the folding of a polymer of colloidal
+particles, and a more complex model for capsid assembly. Our results show that optimizing time-dependent protocols
+can achieve significant improvements in yields of selected structures, including equilibrium free energy minima, long-
+lived metastable structures, and transient states.
+
+I.
+INTRODUCTION
+
+Designing building blocks that are pre-programmed to self-
+assemble into a target structure has enabled creating micro-
+scopic and nano-scale materials with desirable properties and
+promising applications1–7.
+However, achieving high yields
+and selective assembly of the target structures remains a crit-
+ical unsolved problem in most systems. Thus, there has been
+intense research aimed at discovering the governing princi-
+ples of self-assembly that would indicate how to optimize the
+yield of complex targets, particularly in multifarious systems,
+which are capable of assembling different target structures de-
+pending on the experimental conditions. Many of these theo-
+retical studies investigate self-assembly within the framework
+of equilibrium statistical mechanics, in which the thermody-
+namic stability of a desired target state is maximized. Suc-
+cessful self-assembly has been achieved in various model sys-
+tems by optimizing, according to this criterion, the subunit
+concentrations8, interaction strengths9,10, particle shape11,12,
+and bond specificity13.
+Despite the successes of this approach, it suffers from a fun-
+damental limitation: the thermodynamic stability of a struc-
+ture does not guarantee its kinetic accessibility in the finite
+timescales available to experiments, due to the presence of
+long-lived intermediates along self-assembly pathways14–19.
+Finite-time assembly yields depend on a competition between
+thermodynamic and kinetic effects — thermodynamic sta-
+bility of a target structure and rapid nucleation are favored
+by strong interactions, whereas correction of misassembled
+subunits requires weak interactions. Identifying the optimal
+
+a)trubiano@brandeis.edu
+b)hagan@brandeis.edu
+
+trade-off between these requirements can be difficult, both
+computationally and experimentally20.
+As a result, a different route to achieve self-assembly has
+been proposed: driving the system out of equilibrium21,22 by
+using a time-varying protocol for system parameters23–27. For
+example, temperature protocols with heating and cooling cy-
+cles have been shown to enhance control over crystal size
+distribution in crystallization experiments28,29 as well as se-
+lectively assemble a structure distinct from the global free-
+energy minimum in lattice simulations of a multi-component
+mixture30. There is a broad range of experimental systems
+for which this approach can and has been applied; strand dis-
+placement reactions can tune interaction strengths between
+DNA-coated colloids31,32, light-activated interactions can be
+tuned via spatiotemporal intensity protocols33, and system
+properties such as temperature, pressure, and concentrations
+can be controlled within microfluidic devices34–36.
+While
+the technology to implement such protocols is available, the
+field lacks an efficient framework to rationally design and
+optimize them.
+‘On-the-fly’ methods37, such as the sta-
+tistical physics design engine38, and machine learning ap-
+proaches, such as automatic differentiation of molecular dy-
+namics trajectories39, have been successful for select systems,
+but the high computational cost of sampling a large parameter
+space under experimentally relevant conditions is prohibitive
+for most systems. To bridge this gap, we seek to develop a
+method to efficiently compute optimal time-dependent proto-
+cols to maximize the yield of a chosen target state, even for
+challenging systems such as those exhibiting long assembly
+timescales, kinetic trapping, or competing metastable states.
+Our approach relies on the construction of Markov State
+Models (MSMs)40,41. MSMs are a powerful tool for coarse-
+graining the dynamics of complex systems into a reduced-
+order form that is tractable to analysis and allows charac-
+terizing the system dynamics on timescales that are orders
+
+arXiv:2210.05749v1  [cond-mat.soft]  11 Oct 2022
+
+
+2
+
+of magnitude longer than those accessible to straightforward
+simulations40,42–45.
+We show that, by taking advantage of
+properties satisfied by general MSMs46,47, we can analytically
+and efficiently evaluate derivatives of state probabilities with
+respect to tunable system parameters for use in gradient-based
+optimization. Although our approach has features in com-
+mon with previously developed methods to compute feedback
+control policies for self-assembly with real-time system sen-
+sors (e.g.48–51), it avoids the potentially expensive dynamic
+programming calculations in those methods by directly con-
+sidering the final time target state probability in the objec-
+tive function. We first demonstrate the method on a semi-
+analytic Markov model for the assembly of a short polymer of
+six colloidal particles in two dimensions. For this system, we
+can optimize the time-dependent interactions between differ-
+ent particle types to achieve selective, high yield assembly of
+multiple structures, including the stable equilibrium structure,
+metastable rigid structures, and floppy structures that are only
+transient for most constant parameter sets. Our results pose
+an interesting choice of tradeoffs for experimental systems;
+we show that tuning a time-dependent protocol and increasing
+subunit complexity (i.e. the number of distinct subunit types)
+can have similar results on yield, but one of these choices may
+be easier to implement experimentally.
+
+To investigate generality, we also demonstrate our algo-
+rithm on a very different system — a two-parameter model
+for capsid assembly on a spherical nanoparticle. For this ex-
+ample, there is no analytical form for the transition matrix.
+We show how simulations and interpolation can be used to
+make such complex problems suitable for our optimization
+algorithm. By combining our algorithm with the use of radial
+basis function interpolation within parameter space, we de-
+velop a framework to dramatically reduce the computational
+requirements for protocol optimization. The method is also
+robust and reusable in comparison to existing methods; simu-
+lations do not need to be rerun to change the initial or target
+states in the optimization, as would be the case for ‘on-the-fly’
+methods. Using this procedure, we compute time-dependent
+protocols to assemble a target state that is highly kinetically
+inaccessible; there is approximately a 60% gap between the
+estimated equilibrium and dynamical yields. For timescales
+we are able to simulate by brute force dynamics, our com-
+puted time-dependent protocols increase the target yield by
+greater than twofold over the best constant protocol, in the
+same amount of assembly time. The MSMs also allow for
+probing of longer timescales, for which we predict optimal
+time-dependent protocols that achieve yields within 1% of
+equilibrium, in orders of magnitude less time than required
+to approach equilibrium under a constant protocol.
+
+Importantly, the method is generally applicable to any sys-
+tem that can be approximated by an MSM and optimized by
+an objective function involving state probabilities, including
+multifarious52–57 and reconfigurable assembly systems22,58–66.
+Moreover, it can be used as a highly efficient parameter esti-
+mation tool for both constant and time-dependent protocols.
+
+II.
+METHODS
+
+A.
+Theoretical Setup
+
+We begin by assuming the process of interest is described
+by a Markov State Model over the discrete state space, S. For
+a given lag time, τ, we define a temporal discretization with
+tn = nτ for n = 0, . . . , N. The time-dependent protocol
+will be piece-wise constant, represented as {θn}N−1
+n=0 , where
+θn is a constant parameter value from time tn to tn+1. The
+transition matrices are then given by P n = P (θn), which
+propagate the state probabilities from tn to tn+1. Extension
+to multiple control parameters, ⃗θn, as we use in the second
+example below, is straightforward.
+Let the row vector ⃗p n denote the probability distribution
+over the system states at time tn. The evolution of this proba-
+bility is governed by the forward Kolmogorov equation,
+
+⃗p n+1 = ⃗p nP (θn),
+⃗p 0 = ⃗p0.
+(1)
+
+For a set of target states, B ∈ S, we are interested in optimiz-
+ing P N
+B = �
+
+i∈B pN
+i , subject to the constraint that the proto-
+col does not change too rapidly. To this end, we maximize the
+objective function
+
+Φ[θ] = P N
+B − λ
+
+2
+
+N−1
+�
+
+n=0
+
+�θn+1 − θn
+
+τ
+
+�2
+,
+(2)
+
+where the second term is a smoothing penalty function whose
+strength is controlled by λ > 0. We will report this smooth-
+ing parameter as λ∗ = λ/(Nτ 2), which is normalized with
+respect to the timescales of the system. It is straightforward
+to add additional terms to Eq. (2), for example to limit the
+magnitude of the control parameter or maximize the speed of
+assembly.
+
+B.
+Protocol Optimization
+
+We compute the gradient of P N
+B via an adjoint method67,68.
+The adjoint equation is the backward Kolmogorov equation,
+
+⃗F n = P (θn)⃗F n+1,
+⃗F N = ⃗1B,
+(3)
+
+where F n is the adjoint variable at time tn, and ⃗1B is the
+indicator vector for the set B. This equation is prescribed at
+a final condition and solved backward in time. By solving
+Equations (1) and (3) for all time, the gradient components
+can be computed (see the SM for details) as
+
+∂P N
+B
+
+∂θk
+= ⃗p k ∂P k
+
+∂θk
+⃗F k+1.
+(4)
+
+The derivative of the penalty term with respect to θk can
+be interpreted as a discretization of the second time derivative
+of the protocol. The gradient descent update step can then
+be seen as solving a discretized diffusion equation, where the
+
+
+3
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Yield (%)
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Yield (%)
+
+Parameter Set
+Parameter Set
+F1
+F2
+F3
+F4&5
+TD1
+TD2
+TD3
+TD4
+TD5
+
+1
+
+2
+
+3
+
+4
+5
+
+(a)
+(b)
+(c)
+
+FIG. 1.
+Visualization and statistics for the colloidal polymer system. (a) Depiction of the initial colloidal chain with alternating red-blue
+particle types and fixed backbone (shown in white), as well as example configurations of five states for which we optimize yields. Note
+that only a single representative permutation is shown for each state, but reported yields are combined over all consistent permutations. (b)
+Histograms of the yield for each of the five states in (a) (color-coded) for four sets of fixed parameter values. The number in the parameter set
+label indicates which state’s yield is being maximized. Yields are computed by averaging over 600 Brownian Dynamics trajectories with the
+given parameter values. The final time is Tf = 5 for state 1, Tf = 7.5 for state 3, and Tf = 10 for the others, reported as a non-dimensional
+simulation time. (c) Same as (b), but the parameter sets are now the optimal time-dependent protocols.
+
+gradient of P N
+B acts as a source term. For stability reasons,
+we solve this equation with the IMEX69 scheme
+
+θj+1
+k
+= θj
+k + h∂P N,j
+B
+
+∂θk
++ λh
+
+τ 2
+
+�
+θj+1
+k+1 − 2θj+1
+k
++ θj+1
+k−1
+�
+, (5)
+
+where j indexes the iteration number, P N,j
+B
+= P N
+B [θj], and h
+is a step-size to be chosen. See the SM for details.
+
+C.
+Model Systems
+
+We demonstrate our optimization algorithm on two sys-
+tems, which involve different levels of complexity to con-
+struct the MSM. The first example is a simple model for short
+polymer chains constructed from colloidal particles with pro-
+grammable interactions, which enables analytical construc-
+tion of an MSM. The second example is a model for viral
+capsid assembly in which two types of conical subunits as-
+semble on the surface of a spherical nanoparticle. In this case
+we construct an MSM by estimating transition rate matrix el-
+ements from an ensemble of short unbiased simulations.
+
+1.
+Colloidal Chain Folding
+
+The first model describes the folding of an initially linear
+polymer made up of six colloidal particles in two dimensions.
+The folding problem has many features in common with as-
+sembly, including analogous thermodynamic and kinetic ef-
+fects, and provides a simple illustration of the optimal control
+method. The interactions between each particle in the chain
+can be programmed, for example by coating the surface of
+the particles with strands of DNA70. Further, these interac-
+tions can be varied in time by modulating the melting temper-
+atures of different strand types71 and applying a temperature
+
+protocol. Depending on the choice of interaction strengths,
+the system can fold into one of three ground states as well
+as a number of floppy states, which have been characterized
+both experimentally72,73 and via theory and simulation20. It
+has been shown for this system, as well as many others9,74–76,
+that increasing the number of subunit types allows for more
+efficient assembly of a target structure. However, increasing
+the number of subunit types generally makes systems more
+susceptible to kinetic traps and thus more sensitive to parame-
+ter variations. Further, additional species require greater costs
+in materials development and synthesis. Here we aim to in-
+vestigate how time-dependent interaction strengths can boost
+folding yields, as well as identify tradeoffs between subunit
+complexity (number of different subunit types) and protocol
+complexity.
+
+To study the minimal subunit complexity case that allows
+for multiple free energy minima, we allow for only two types
+of particles, which we will distinguish as red and blue. We
+assume the initial chain has an alternating ordering of these
+particles, i.e. red, blue, red, blue, and so on. Figure 1(a)
+shows this initial chain as well as five potential folded struc-
+tures. Structures 1 through 3 are the rigid ground states for
+this system, while structures 4 and 5 are floppy structures that
+are typically folding intermediates, but can be stabilized by
+setting some of the interactions strengths to zero. Figure 1(b)
+shows histograms of the yields of each of these structures un-
+der a number of parameter sets, which consist of fixed values
+for each of the three interaction strengths; ERR, ERB, and EBB,
+which are the well-depths for a short-ranged Morse potential.
+We denote parameter set i as the one that maximizes the finite-
+time yield of structure i. We find that relatively large yields
+are already possible for most structures using fixed protocols,
+except for structure 3, the triangle. While it is possible to fur-
+ther boost yields of some of these structures by changing the
+particle type distribution, we investigate what can be achieved
+using this fixed ordering along with time-dependent protocols.
+
+
+4
+
+The model we use to construct an MSM for this system was
+previously developed to study equilibrium folding of colloidal
+chains20. To summarize the model, a state space is defined by
+enumerating all possible adjacency matrices describing bonds
+between the six particles. For each adjacency matrix, the rate
+of forming a new bond and the probability distribution for
+which bond forms first are estimated using Brownian Dynam-
+ics simulations. This specifies all the forward rates of a rate
+matrix, which are independent of interaction strength. For a
+given set of interaction strengths, the equilibrium probabilities
+of each adjacency matrix are measured using a Monte Carlo
+sampler. The backward rates are then set from the forward
+rates by imposing detailed balance with respect to the esti-
+mated equilibrium measure. A re-weighting procedure can
+then be used to evaluate the backward rates for other values of
+the interaction strengths. The resulting rate matrix can be con-
+verted into a probability transition matrix by exponentiation,
+at which point the optimization can be performed as described
+above.
+These simulations are performed in non-dimensionalized
+form. Positions, energies, and time are respectively scaled
+by particle diameter σ, kBT, and a reference time tc. The re-
+sulting equations have a non-dimensional diffusion coefficient
+ϵ = Dtc/σ2, where D is the dimensional diffusion coeffi-
+cient. We set ϵ = 1, and use experimentally measured values
+σ = 1.3µm and D = 0.065µm2/s for DNA coated colloids77
+
+to obtain an order-of-magnitude estimate of tc ≈ 17s.
+
+2.
+Conical Subunit Assembly On a Nanoparticle
+
+We study a system adapted from Ref.78, consisting of two
+types of conical subunits that assemble into capsids on the sur-
+face of a spherical nanoparticle. The subunits are rigid bodies
+comprised of six beads of increasing radius, consistent with a
+cone angle, α. Each of the four interior beads interacts attrac-
+tively with the corresponding bead on other subunits, through
+a Morse potential. The innermost bead has an attractive Morse
+interaction with the nanoparticle.
+The two subunit types have relative diameters such that they
+correspond to pentamers (P) and hexamers (H) in the lowest
+energy icosahedral capsid structure79. There are two types of
+interactions between the subunits; an H-H attraction and an H-
+P attraction. The strength of these interactions can be tuned by
+varying the well-depth of the corresponding Morse potential,
+EHH and EHP, respectively. Interaction strengths are chosen
+in the range 1.2kBT to 1.8kBT, which can facilitate assembly
+on the nanoparticle surface, but typically is too weak to drive
+nucleation in the bulk. The strength of the attraction to the
+nanoparticle is held constant at ENH = 7kBT for hexamers
+and ENP = 6.3kBT for pentamers. The system contains one
+nanoparticle, 86 pentamer subunits and 214 hexamer subunits,
+so that subunits are in excess and the chemical potential of
+free subunits remains nearly constant throughout the assem-
+bly process. We consider a cubic box with side length 120l0,
+where l0 = 1nm is set as the unit length scale for the system.
+Assembly simulations are performed using the Brownian dy-
+namics algorithm in HOOMD80 with periodic boundary con-
+
+ditions. Times are measured in terms of the HOOMD derived
+unit, t0 =
+�
+
+m/kBTl0, where m is the subunit mass. We also
+construct an MSM for the system by estimating the transition
+matrix elements from these Brownian dynamics simulations
+(section II D). Further details on the simulations are provided
+in the SM.
+The structures with the lowest potential energy (per parti-
+cle) for this system are capsids with either T = 4 icosahe-
+dral symmetry or D5 symmetry, which both contain 30 hex-
+amer and 12 pentamer subunits with the same number of H-H
+and H-P bonds81. However, in finite-time dynamical simula-
+tions assembly usually results in asymmetric structures that,
+although containing about 42 subunits, have one or more de-
+fects. Figure 2 depicts the five most probable end structures
+after Tf = 8 × 105t0, for the parameters that maximized the
+yield of symmetric capsids (T = 4 and D5). The observation
+time Tf was chosen as the timescale after which the yield only
+grows logarithmically for most parameter sets that we focus
+on. We also compare the finite-time yields to the equilibrium
+yields, which we estimated using the MSM. This comparison
+shows that the system is far from reaching equilibrium at Tf,
+and from the MSM we estimate that approaching equilibrium
+would require a timescale of approximately 60Tf.
+These observations are consistent with the competition
+among thermodynamic and kinetic effects that arise for con-
+stant assembly driving forces. For very low subunit-subunit
+interactions or subunit concentrations, assembly is either ther-
+modynamically unfavorable or does not nucleate on relevant
+timescales, while overly high interactions or concentrations
+cause the system to become trapped in metastable structures.
+Since subunit-subunit interactions must be broken to exit a
+metastable state, reconfiguration timescales increase exponen-
+tially with interaction strengths.
+In our system, while the
+T = 4 and D5 structures are energetically favored, the other
+metastable states that we observe are more kinetically acces-
+sible under interaction strengths that enable nucleation on rel-
+evant timescales and thus occur in most assembly trajectories.
+These competing effects suggest that assembly yields and
+fidelity could be enhanced by time-dependent sequences of
+interactions, which can drive rapid nucleation while also
+avoiding kinetic traps by facilitating reconfiguration from
+metastable states into the ground state(s).
+To investigate
+this possibility, we apply our optimization algorithm to the
+cones system. Our objective is to compute an optimal time-
+dependent protocol for EHH and EHP interactions that maxi-
+mizes the yield of the symmetric T = 4 and D5 capsids at a
+specified observation time.
+
+D.
+Constructing Markov State Models
+
+To apply the protocol optimization algorithm in Eq. (5),
+transition matrices need to be evaluated for the possible pro-
+tocol values that are encountered during maximization of the
+objective function. While this analysis is computationally ef-
+ficient for the colloidal polymer system because we have a
+semi-analytic Markov model, we are not so fortunate for the
+cones model. Similarly, for most relevant systems it will not
+
+
+5
+
+79%
+5%
+6%
+1%
+1%
+
+24%
+30%
+16%
+8%
+3%
+
+TARGET
+A
+D
+B
+C
+
+Finite Time Yield:
+Equilibrium Yield:
+
+Structure:
+
+Time
+
+(a)
+(b)
+
+FIG. 2. Visualization and assembly statistics for the cones system. (a) Snapshots along a typical trajectory. The first image shows the entire
+simulation domain, consisting of pentamer subunits (purple), hexamer subunits (orange), and a spherical nanoparticle (red). The following
+images show a zoomed-in view of the nanoparticle as assembly progresses. (b) Visual renderings of the most common end states for simulations
+with fixed interactions set to EHP = 1.35kBT and EHH = 1.475kBT, along with their finite-time yields at Tf = 8×105t0, estimated from 150
+independent simulations. The target capsid is the second most common end state. The other states differ from the target due to the presence
+of one or more defects, which are circled in green. The bottom row on the right is the equilibrium yield for each structure, estimated by
+constructing an MSM and computing the stationary distribution.
+
+FIG. 3. Feasibility set for the cones system. The allowed parameter
+values for the optimization are shown within the bounded region of
+parameter space. Black nodes represent parameter values for which
+we constructed local MSMs. Global transition matrices are interpo-
+lated for the optimization and to evaluate and plot the assembly pop-
+ulations as a function of time. The red point indicates the parameters
+that achieve the maximum target yield with fixed interactions. The
+optimal time-dependent protocol is traced by the curve, from purple
+(T0) to light blue (Tf), with representative snapshots of the structures
+at various time points.
+
+be possible to analytically evaluate the transition matrix. It
+would be computationally intractable to perform the sampling
+from unbiased simulations required to estimate the transition
+matrix at every candidate parameter value encountered during
+every candidate protocol sequence. Therefore, we describe
+here a computationally efficient procedure for estimating an
+MSM over parameter space to apply our optimization algo-
+rithm. This process has three steps: (1) We construct and
+validate local MSMs for fixed values of the system parame-
+ters, distributed over the region in parameter space that as-
+sembly protocols are likely to visit (which we denote as the
+feasibility set). (2) We perform an interpolation to construct a
+global MSM that can be evaluated for any intermediate values
+of the feasibility set. (3) During the optimization, if the proto-
+col attempts to leave the feasibility set, we perform additional
+sampling from unbiased trajectories to expand the feasibility
+set as required. Similarly, if analysis indicates that interpola-
+tion errors are large within a subregion of the feasibility set,
+we perform sampling at additional parameter sets within that
+
+subregion.
+To construct local MSMs for the cones system, we require
+a state space discretization; i.e., a mapping between simula-
+tion configurations and MSM microstates. We use the state
+space discretization (nP, nH, IH), where nP and nH are the
+number of pentamers and hexamers attached to the nanopar-
+ticle, and IH is equal to the number of hexamers in contact
+with precisely two pentamers. The target state is specified by
+the triplet (12, 30, 30), which corresponds to a T = 4 or D5
+capsid. We find that this three-variable description is insuffi-
+cient for a subset of configurations, for which we augment the
+discretization with the variables bHH and bHP, the number of
+hexamer-hexamer and hexamer-pentamer bonds, respectively.
+See the SM for details.
+We construct MSMs from unbiased dynamics trajectories
+by computing a row-normalized count matrix of the number
+of transitions between discrete states after a lag time, τ. We
+determine that τ = 3125t0, is sufficient to build converged
+local MSMs and capture the assembly dynamics (see the SM
+for detailed convergence and validation). We identify a region
+in parameter space that leads to productive assembly, and per-
+form simulations at parameter values on an unstructured grid
+within that region to construct a collection of local MSMs.
+Figure 3 shows this region for our example and the sampled
+parameters within it as black nodes. To avoid extrapolation
+errors, we restrict optimization to the feasible set. However,
+as noted above, the feasible set can be expanded by additional
+sampling if the protocol attempts to leave the region.
+To construct an MSM during the protocol optimization at
+parameter sets between sampled nodes, we perform inter-
+polation of the transition matrix entries using radial basis
+functions82,83. Since each parameter set may sample a disjoint
+collection of states, we first define a global discretized state
+space as the union of all states observed in each local MSM.
+For each pair of states with at least one transition among all
+parameter sets, we construct a list of their transition probabil-
+ities for each parameter set. We assign a probability of 0 if
+the transition is not observed. Using a Gaussian kernel, we
+construct an interpolant for each non-zero transition matrix
+entry, which can be evaluated for any parameter values in the
+allowed region, and used to construct a global transition ma-
+trix. See the SM for details on constructing and evaluating
+these interpolants. Note that this process can be made more
+
+
+6
+
+efficient by using information from sampling at all parameter
+sets for evaluation of a given transition matrix, for example
+by using transition-based reweighting analysis methods (e.g.
+DHAM84, xTRAM85 and dTRAM86). For simplicity, we have
+not employed these protocols in this work.
+
+III.
+RESULTS
+
+A.
+Colloidal Chain Assembly
+
+We apply our optimization code to compute the time-
+dependent protocol that maximizes the yield for each struc-
+ture shown in Figure 1(a). We use different final times Tf for
+each structure, choosing Tf to be long enough for each phase
+of a protocol to approximately reach a steady state. We use
+a regularization parameter λ∗ = 2 ∗ 10−3 for structures 1-3
+and λ = 2 ∗ 10−4 for structures 4 and 5. We believe that it
+was it necessary to reduce λ for states 4 and 5 because these
+are floppy structures that are difficult to stabilize. In all cases,
+we use a line search with starting step size h = 1, and set
+the lag time to τ = Tf/50. The resulting yields are shown in
+Figure 1(c), where the label number denotes which structure
+was being optimized for. Comparing these values to the opti-
+mal yields for fixed protocols in Figure 1(b), we see improve-
+ments for each structure. We find that structures 1 and 2 can
+be formed with relatively high selectivity among the tracked
+structures, whereas the protocols for the other targets result in
+a spread of structures, but with the target being the maximal
+probability structure in each case.
+The triangle state, structure 3, sees the largest gain in yield
+with the time-dependent protocol among the five. The yield
+more than doubles from around 20% to just under 50%. The
+protocol is relatively simple, shown in Figure 4(a).
+It be-
+gins with a large EBB value, which we know to form struc-
+ture 4 with roughly 50% yield. Then by switching on a large
+value for ERB, the triangle state becomes the dominant end-
+point for any trajectory that enters the structure 4 state. Figure
+4(b) shows the probability for the highest yield structures us-
+ing this protocol, evaluated using the MSM, which shows the
+pathway taken to form the target. Note that the MSM pre-
+dicts a nearly perfect yield, but simulation results in a yield
+of around 50%. This is due to a two-fold degeneracy in the
+adjacency matrix representation of states along this transi-
+tion pathway. Whether the outer particle rotates clockwise or
+counter-clockwise to form bonds, the adjacency matrix rep-
+resentation is the same, but the resulting configurations either
+form the triangle state or a kinetic trap, reducing the maximum
+yield by a factor of two (see the SM for further discussion).
+Finally, Figure 4(c) shows the yield of the triangle state as a
+function of time for three protocols, evaluated from unbiased
+Brownian dynamics trajectories. We see the optimal fixed pro-
+tocol for the alternating chain quickly levels off at around 20%
+yield. In contrast, for the optimal time-dependent protocol,
+probability first accumulates in structure 4, then very quickly
+forms the triangle once the red-blue interaction is turned on,
+achieving around a 50% yield. We also compare these curves
+to the best fixed protocol that can be achieved by adding addi-
+
+tional particle types. The minimal complexity solution turns
+out to be three particle types, in the configuration shown in
+Figure 4(c), which is as efficient as having all particles being
+unique20. We see that we can achieve comparable assembly
+efficiency by using a time-dependent protocol with two par-
+ticle types as we can by optimizing constant protocols with
+three particle types. These kinds of tradeoffs are important
+to characterize, as in many systems it is more economical to
+vary experimental conditions in time than it is to design and
+synthesize new subunit types with specified interactions.
+The optimal protocols and the Brownian dynamics verifica-
+tion of their predicted yield for each of the other structures in
+Figure 1(a) can be found in the SM. Our computed protocols
+and expected yields for the rigid structures are consistent with
+recent experimental findings73.
+
+B.
+Conical Subunit Capsid Assembly
+
+First, we get a sense of how the assembly proceeds un-
+der fixed parameter values, with an observation time Tf =
+8 × 105t0, or 256τ. We construct the transition matrix in-
+terpolant for parameter values inside the feasibility set (indi-
+cated by black points in Figure 3), and then use it to compute
+target yields according to Eq. (1). The resulting yields are
+shown as a heat map in Figure 3. We see that if the inter-
+actions are too weak, the target does not form due to ther-
+modynamic unfavorability or slow nucleation. As the inter-
+actions strengthen, we reach the optimal assembly conditions
+( ⃗E = (EHP, EHH) = (1.35kBT, 1.475kBT), red point), where
+the target is stable, but subunits can rearrange to correct de-
+fects during assembly trajectories. Further strengthening the
+interactions reduces the target yield, as defect states can no
+longer rearrange on simulated timescales and the system be-
+comes trapped in metastable states. This nonmonotonic de-
+pendence of yields on interaction strengths for fixed interac-
+tions is typical in self-assembling systems14,16,18.
+Next, we apply our optimization algorithm to the capsid as-
+sembly problem using λ∗ = 4 ∗ 10−3 and h determined each
+iteration by a back-tracking line search. Our initial guess is a
+piece-wise constant protocol, ⃗E = (1.5kBT, 1.5kBT) for the
+first 25 lag times, and ⃗E = (1.3kBT, 1.5kBT) for the remain-
+ing time. The protocol converges to the result shown in Figure
+5(a). The time-dependence of this protocol is traced out in the
+parameter space in Figure 3, and representative snapshots of
+the system are shown along the pathway. The sequence goes
+from an empty nanoparticle, to defective structure C, through
+a variety of transient structures, and finally the target structure.
+By propagating the time evolution of state probabilities
+with the MSM, we obtain estimates for the target yield as a
+function of time for each protocol (Figure 5(b)). The opti-
+mal time-dependent protocol achieves a yield of about 55%
+at our chosen final time Tf = 8 × 105t0, compared to the
+optimal constant protocol yield of about 22%. Thus, the time-
+dependent protocol enhances yields by more than two-fold in
+the same assembly time. To test these estimates, we perform
+Brownian dynamics according to the same protocols, and
+compare the computed yield curves (averaged over 150 inde-
+
+
+7
+
+0
+2
+4
+6
+Time
+
+2
+
+4
+
+6
+
+8
+
+10
+
+12
+
+Well-Depth (kT)
+
+ERR
+ERB
+EBB
+
+0
+2
+4
+6
+Time
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Probability
+
+0
+2
+4
+6
+Time
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+Target Yield
+
+Optimal Fixed Protocol - 2 Types
+Optimal Time-Dependent Protocol - 2 Types
+Optimal Fixed Protocol - 3 Types
+
+(a)
+(b)
+(c)
+
+FIG. 4. Protocol optimization results and verification for the triangle state of the colloidal polymer. (a) Optimal time-dependent protocol
+for the three interaction parameters found by our algorithm. The initial guess was the optimal constant values for the like interactions,
+ERR = 0.01 kBT and EBB = 14 kBT, and a linear protocol from 1 kBT to 12 kBT for ERB. (b) State populations as a function of time for
+the optimal protocol, evaluated using the MSM. Only states with a maximum yield of over 0.2 are shown. (c) Time-dependent yield of the
+triangle state computed from Brownian dynamics. For the alternating chain, we compare the optimal fixed protocol yields with the optimal
+time-dependent protocol yields. We also show the yield for the optimal fixed protocol with three particle types, and the corresponding optimal
+particle. Results are averaged over 600 independent Brownian dynamics trajectories.
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.0
+
+0.2
+
+0.4
+
+Target Probability
+
+Time-Dependent (MSM)
+Time-Dependent (BD)
+Constant (MSM)
+Constant (BD)
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+1.2
+
+1.3
+
+1.4
+
+1.5
+
+Subunit Attraction
+
+H-P  Time Dependent
+
+H-P  Constant
+
+H-H  Constant
+
+H-H  Time Dependent
+
+(a)
+(b)
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.0
+
+0.2
+
+0.4
+
+State Probability
+
+TARGET
+
+A
+
+D
+
+B
+
+C
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+State Probability
+
+TARGET
+
+A
+
+B
+
+C
+
+D
+
+(c)
+(d)
+Constant 
+Protocol
+Time
+Dependent 
+Protocol
+
+FIG. 5. Protocol optimization results and testing for the cones sys-
+tem. (a) The optimal time-dependent protocol found by our algo-
+rithm is shown as a solid line. The optimal constant protocol, de-
+termined in Figure 3, is shown as a dashed line. (b) MSM esti-
+mates of the target probability as a function of time for the optimal
+time-dependent protocol and optimal constant protocol. The MSM
+estimates are verified by performing 150 Brownian dynamics (BD)
+simulations performed with the optimal time-dependent or constant
+protocols respectively, and tracking the number of trajectories in the
+target state as a function of time. (c) MSM estimates of all com-
+mon state probabilities using the optimal constant protocol. (d) MSM
+estimates of all common state probabilities using the optimal time-
+dependent protocol.
+
+pendent Brownian dynamics simulations) to the MSM predic-
+tion (Figure 5(b)). The MSM estimates match the Brownian
+dynamics results well, even for the time-dependent protocol.
+This close agreement demonstrates that, with sufficient sam-
+pling for estimating transition matrices and sufficient cover-
+age of the feasibility set, the radial basis function interpolation
+
+X
+
+X
+X
+
+Time
+
+TARGET
+B
+
+C
+
+0
+50
+100
+150
+200
+250
+Lagtimes
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+Transition Counts
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+Protocol Values
+
+A (4 counts)
+
+D (7 counts)
+
+B (8 counts)
+C (25 counts)
+
+EHH 
+
+EHP 
+
+(a)
+(b)
+
+FIG. 6.
+Analysis of how the optimal time-dependent protocol en-
+hances yield. (a) Distribution of times when transitions from the
+competing states to the target state begin in trajectories with the op-
+timal time-dependent protocol (from Figure 2(b)). (b) Examples of
+transition pathways from states B and C into the target state, ob-
+served under the optimal time-dependent protocol. Green X’s denote
+that a particle has dissociated in the next snapshot, and blue arrows
+denote the reconfiguration of associated subunits that results in the
+next snapshot.
+
+enables effective MSM predictions for non-sampled parame-
+ter sets.
+Figures 5(c) and 5(d) show yield curves for each of the
+high-population structures (those shown in Figure 2(b)) for
+the optimal constant and time-dependent protocols respec-
+tively. For the optimal constant case, we see the yield curves
+are all nearly flat near time zero, reflecting the length of time
+required for nucleation and growth of capsids. Further, the
+yield curves for all structures increase monotonically over the
+simulated timescale, implying that once one of these struc-
+tures is reached, transitions to the others are unlikely. Consis-
+tent with this conclusion, only 4 out of 150 simulation trajec-
+tories exhibit a transition between labeled states, which all oc-
+cur from state C to the target. In contrast, the time-dependent
+protocol enables rapid nucleation and growth of capsids. Each
+tracked state accumulates approximately 10% yield, at about
+the same rate, during the initial growth phase. During the next
+phase, where interaction strengths are reduced, states B, C,
+and D are destabilized and begin to decrease in probability
+
+
+8
+
+0
+5
+10
+15
+20
+25
+Final Time, Tf /105t 0
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+Optimal Yield
+
+Constant
+Protocols
+
+Time-Dependent
+Protocols
+
+Equilibrium Yield
+
+Reported
+Results
+
+0
+10
+20
+t/105t0
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+State Probability
+
+TARGET
+
+A
+B
+
+D
+
+C
+
+(a)
+(b)
+
+FIG. 7.
+Effect of the final time on optimal yields. (a) The optimal
+target yield from our computed constant and time-dependent proto-
+cols as a function of the final time. For reference, the yellow dashed
+line shows the estimated equilibrium target yield as in Figure 2(b),
+and the black dashed line shows the final time used to generate our
+prior results. (b) MSM estimates of all common state probabilities
+using the optimal protocol for Tf = 900τ ≈ 28.12 × 105t0.
+
+while state A continues to accumulate, but more slowly. The
+target state, however, quickly increases in yield, indicating
+that transitions are occurring from these destabilized struc-
+tures to the target structure. In simulations, we observe 44
+of 150 trajectories with such transitions, occurring from all of
+the A, B, C, and D states into the target. The distribution of
+times along the optimal protocol when these transitions be-
+gin is plotted in Figure 6(a), which shows that the transitions
+are concentrated when the interactions first become weak, and
+that state C is the initial state for most transitions. Figure 6(b)
+shows two example transition pathways. Both pathways be-
+gin with a subunit detaching from the nanoparticle, allowing
+rearrangement of the nearby subunits. While hexamers are in-
+volved in the rearrangements, pentamer rearrangements seem
+to drive the transitions, which explains why the optimal pro-
+tocol decreases EHP more than EHH.
+The rapid transition between weak and strong interactions
+in the optimal time-dependent protocol is qualitatively con-
+sistent with Fullerton and Jack’s results on colloidal clus-
+ter growth87, which considered simpler protocols defined by
+two interaction strengths and a single time to switch between
+them. To investigate how much additional enhancement a full
+time-dependence achieves in comparison to a piece-wise con-
+stant protocol, we converted our protocol to a simple two-step
+protocol. We used the time of the large jump as the transi-
+tion time, at which point the interactions switch from ⃗E =
+(1.5kBT, 1.5kBT) to ⃗E = (1.2kBT, 1.4kBT). This protocol
+gives a yield of about 49.9%, so we estimate that the fully
+time-dependent protocol boosts the yield by an additional 5%.
+While this further improvement is relatively small, our effi-
+cient optimization algorithm provides a converged, fully time-
+dependent protocol much faster than it would take to sample
+all possible three parameter step-function protocols. In partic-
+ular, one gradient descent iteration requires approximately the
+same computation time as sampling two step-function proto-
+cols, and we typically observe convergence in 20 − 40 itera-
+tions (for a good initial guess protocol).
+Effect of final time and regularization. Thus far, we have
+performed the protocol optimization using a final time Tf =
+8 × 105t0, since this is tractable for testing the predicted pro-
+
+tocols with Brownian dynamics simulations. One of the ben-
+efits of constructing MSMs is that it enables the probing of
+timescales beyond what is feasible for simulation. We take
+advantage of this to compute optimal protocols for larger val-
+ues of Tf. We find that the resulting protocols are all similar;
+they all spend about the same amount of time in the strong in-
+teraction phases at the beginning and end of the protocol, and
+the extra assembly time gets allocated to the weak interaction
+phase as Tf increases. This is likely because we only optimize
+for the target yield at the final time, without enforcing con-
+straints on assembly rate. Figure 7(a) shows the optimal time-
+dependent and constant target yields as a function of the final
+time. We see that for constant protocols, the optimal yield
+increases approximately linearly, but slowly, while the time-
+dependent optimal yield increases quickly initially and then
+levels off. As it levels off, it seems to approach the estimated
+equilibrium yield for the target state, coming within 1% of it
+when Tf = 900τ. To determine what sets the timescale for this
+approach to equilibrium, we plot the MSM estimated proba-
+bility of each common state in Figure 7(b). States B, C, and D
+reach steady state probabilities along this protocol, but state A
+is still decreasing to its equilibrium value near the final time.
+State A is seen to be the slowest to transition to the target, so
+this transition rate is what sets the necessary time-scale for the
+optimal time-dependent protocol to drive the system towards
+its equilibrium statistics. This suggests another mode for fur-
+ther optimization; search for new regions in parameter space
+that either minimize assembly of state A or allow for quicker
+transitions out of it.
+The optimal protocol and the resulting maximum yield de-
+pend on the regularization constant λ in Equation (2). The
+results shown here used λ∗ = 4 ∗ 10−3; by decreasing λ∗ by
+a few order of magnitude, we observe maximum yields that
+increase by up to 2%, but also involve protocols which are
+much less smooth than the one shown in Figure 5(a). Thus,
+one can adjust λ depending on the trade-off between difficulty
+in implementing abrupt changes in the control parameters and
+increase in yield. See the SM for an analysis of how λ∗ affects
+the optimal yield and protocol smoothness.
+The optimization also converges to different results based
+on the initial guess, suggesting that we have not found the
+global maximum. We performed additional optimizations that
+were initialized with various piece-wise constant protocols, as
+well as a linear protocol between the optimal start and end val-
+ues. The results are qualitatively similar in each case; interac-
+tions go from strong to weak to strong, but at different times,
+with target yields ranging from 45% to 55%. These results ob-
+tained from different initial guesses suggest that our protocol
+is near-optimal, but that it would be beneficial to use alter-
+native optimization algorithms better suited to finding global
+extrema on rugged landscapes.
+
+IV.
+CONCLUSIONS
+
+Markov State Models (MSMs) have been widely adopted
+by the molecular dynamics community for their ability to
+probe long-time kinetics in a way that is human-interpretable.
+
+
+9
+
+By leveraging these properties of MSMs, as well as proper-
+ties of the underlying transition matrices, we have developed
+an optimization algorithm that can efficiently compute time-
+dependent parameter protocols that maximize the finite-time
+probability of observing a chosen target state. Furthermore, in
+the (typical) case when an analytic form for the transition ma-
+trix cannot be obtained, we have described a sampling and
+interpolation procedure that enables constructing MSMs as
+a continuous function of the system control parameters after
+performing sampling at only discrete parameter sets. The re-
+sulting MSM can then be used for optimization.
+We have tested the method and evaluated its performance
+on two systems. For a short polymer of colloidal particles,
+time-dependent interaction strengths between particle types
+can be tuned to drive selective folding into a number of dif-
+ferent cluster geometries.
+Importantly, we show that the
+time-dependent protocols can be used to selectively enhance
+the yield of not only the equilibrium ground state, but also
+metastable states including floppy structures which are typi-
+cally transient under constant protocols. For some structures,
+it is possible to reduce the number of distinct particle types
+needed to achieve high folding yields under constant parame-
+ters, by instead tuning a time-dependent protocol. Thus, this
+approach could simplify experimental realizations of folding
+and assembly, since time-dependent protocols may be easier
+to implement in some systems than synthesizing new subunit
+types with specific interactions. For example, in systems with
+interactions mediated by DNA hybridization, Rogers et al.31,32
+
+showed that DNA sequences can be designed such that multi-
+ple sets of particle-particle interactions can be simultaneously
+tuned by varying temperature.
+We also consider a more computationally challenging sys-
+tem, conical subunits assembling around a spherical nanopar-
+ticle as a model for viral capsid assembly. In this example, the
+target yield is suppressed because kinetic traps correspond-
+ing to defective structures prevent many trajectories from at-
+taining the ground state configuration on relevant timescales.
+We demonstrate that by optimizing time-dependent subunit-
+subunit interaction strengths, the maximum yield can be more
+than doubled in comparison to that achieved with constant in-
+teractions. The optimal protocol begins with strong interac-
+tions that drive rapid nucleation, but into primarily defective
+structures, followed by selectively weakening interactions to
+enable rearrangement into the stable target state. Using un-
+biased simulations, we verify that the MSM estimates are ac-
+curate to within a few percent yield, which is notable con-
+sidering the potentially compounding errors arising from the
+discretization of state space when constructing the MSM and
+the interpolation error associated due to estimating transition
+matrices at discrete parameter sets. Importantly, one should
+not extrapolate outside of the sampled domain (feasibility set)
+when using the interpolation procedure. As an example, in
+the cones system extrapolation outside of the feasibility set
+(based on the nearby transition matrix values) predicts nucle-
+ation in some parameter regions where unbiased simulations
+exhibit no nucleation, leading to large errors in MSM predic-
+tions. Instead, the feasibility set can be enlarged by additional
+sampling if the optimization algorithm identifies additional re-
+
+gions of parameter space as important.
+While we developed this algorithm in the context of fold-
+ing or self-assembly protocols, the adjoint-based optimization
+algorithm is generically applicable to MSMs and any objec-
+tive function involving a state probability. For instance, the
+same framework can be used as a highly efficient parameter
+estimation tool, by determining the protocol (e.g. parame-
+ters such as temperature, interaction strengths, and concen-
+trations) that most closely reproduces an experimental yield
+curve. Such estimation can be performed for time-dependent
+or constant protocols. Alternatively, the algorithm can be used
+for multifarious52–57 or reconfigurable22,58–66 assembly sys-
+tems. By changing the initial and target states in the optimiza-
+tion, one can optimize for assembly of a wide range of target
+states or to promote transitions between particular states.
+Combining optimal control theory with closed-loop feed-
+back control. The method described in this article uses an
+MSM and a single optimal control theory computation to gen-
+erate a protocol that is optimal at the ensemble level. On av-
+erage, we have shown that the assembly will proceed accord-
+ing to the MSM predictions, but due to the stochastic nature
+of self-assembling systems there will inevitably be some tra-
+jectories that quickly reach the target, some that take longer,
+and some that get trapped. Moreover, stochastic noise and
+experimental error could diminish the performance of the pre-
+dicted protocol. Both of these limitations could be improved
+by combining our method with closed-loop feedback control,
+which has been shown to make assembly more robust by al-
+lowing the protocol to respond to the current state of the sys-
+tem, rather than the average state of the system at that time
+(e.g.49–51). Our method can be applied to closed-loop control
+by monitoring the current state of a simulation or experiment
+at prescribed time intervals. At each time interval, the current
+system configuration is set as the initial state in the optimiza-
+tion, and a new optimal protocol is computed.
+Limitations of the method and outlook. In this work, we
+have considered systems in which the subunit chemical poten-
+tial is irrelevant (for the folding problem) or nearly constant
+in time (since the subunits are in excess in the cones system).
+We will describe in a subsequent publication how the method
+can be modified to account for time-varying chemical poten-
+tials, such as occurs due to depletion of subunits in systems
+involving homogeneous nucleation or where subunits are not
+in excess.
+The current implementation of our method also suffers
+from a few limitations. The first is scaling to a larger num-
+ber of control parameters. Sampling and interpolation costs
+scale exponentially in the number of parameters. Fortunately,
+there is a desire to be economical in terms of system design,
+so many systems of interest will have only a few independent
+parameters. In higher dimensional parameter spaces, a more
+targeted sampling approach will be necessary; for example,
+sampling could be performed on-the-fly in regions indicated
+as important by the optimization algorithm.
+State space discretization is another important considera-
+tion, as it is for constructing an MSM in any system. A good
+state space discretization must describe all relevant slow de-
+grees of freedom, and the results of our algorithm can be sen-
+
+
+10
+
+sitive to the extent of discretization error. In addition, the user
+must decide on a trade-off between the number of collective
+coordinates used to discretize the state space, and the compu-
+tational complexity. For example, our coordinate for the cones
+system lumps together the T = 4 and D5 capsids, as these
+structures are very similar. While it would be straightforward
+to include an additional coordinate that distinguishes between
+the structures and then optimize specifically for D5 structures,
+we expect the resulting protocol would not change much be-
+cause the T = 4 yield is so low (≈ 5% compared to 50% for
+D5). The size of the state space also affects computational and
+memory requirements. Machine learning approaches have the
+potential to address both these issues. Neural network archi-
+tectures such as VAMPnets88 or GraphVAMPnets89 have been
+shown to streamline the MSM creation process by determin-
+ing a minimal state space decomposition.
+Finally, there is an implicit restriction on the temporal reso-
+lution of the protocols. The lower bound is set by the smallest
+lag time that results in convergence for all local MSMs. If
+this lag time is not sufficiently small compared to the assem-
+bly time-scales, the protocols are unlikely to be informative.
+This issue could be avoided in three ways: performing a finer
+discretization of state space such that a smaller lag time can
+be used; constructing a transition rate matrix90 and exponen-
+tiating it to construct the probability transition matrix, as we
+do for the colloids example; or formulating the optimization
+algorithm for a transition rate matrix directly, rather than a
+probability transition matrix.
+
+AUTHOR CONTRIBUTIONS
+
+Michael Hagan: Conceptualization (equal); Methodology
+(equal); Funding Acquisition (lead); Supervision (lead); Writ-
+ing - Original Draft (equal); Writing - Review and Edit-
+ing (equal). Anthony Trubiano: Conceptualization (equal);
+Methodology (equal); Data Curation (lead); Formal Analysis
+(lead); Software (lead); Visualization (lead); Writing - Origi-
+nal Draft (equal); Writing - Review and Editing (equal).
+
+ACKNOWLEDGMENTS
+
+We would like to thank Eric Vanden-Eijnden for the idea
+for applying optimal control principles to self-assembling sys-
+tems modeled by MSMs, and Miranda Holmes-Cerfon for
+helpful discussions on the method.
+We acknowledge sup-
+port from NIH R01GM108021 and the Brandeis NSF MR-
+SEC, Bioinspired Soft Materials, DMR-2011846. We also
+acknowledge computational support from NSF XSEDE com-
+puting resources allocation TG-MCB090163 and the Brandeis
+HPCC which is partially supported by the NSF through DMR-
+MRSEC 2011846 and OAC-1920147.
+
+CONFLICTS OF INTEREST
+
+The authors declare no conflicts of interest.
+
+DATA AVAILABILITY STATEMENT
+
+The code used to generate data, construct MSMs, per-
+form optimization, and produce figures for the colloids
+model is publicly available at the Github repository:
+https://github.com/onehalfatsquared/CPfold.
+The code used to generate data, construct MSMs, per-
+form optimization,
+and produce figures for the cones
+model is publicly available at the Github repository:
+https://github.com/onehalfatsquared/protocolOptMSM.
+
+SUPPLEMENTARY MATERIALS
+
+A supplemental PDF contains details on the implementa-
+tion of simulation of the cones model, derivations for the ad-
+joint method gradient calculation, details on performing gradi-
+ent descent, details on MSM construction, details on the tran-
+sition matrix interpolation and evaluation, and the full proto-
+col optimization results for the colloidal polymer system.
+
+1G. A. Garg T, Rath G, Critical Reviews in Therapeutic Drug Carrier Sys-
+tems 32(2), 89 (2015).
+
+2M. Beija, R. Salvayre, N. Lauth-de Viguerie, and J.-D. Marty, Trends in
+Biotechnology 30, 485 (2012).
+
+3S. Ebbens, Current Opinion in Colloid & Interface Science 21, 14 (2016).
+4S. A. Mallory, C. Valeriani, and A. Cacciuto, Annual Review of Physical
+Chemistry 69, 59 (2018), pMID: 29106809.
+
+5J. A. Fan, Y. He, K. Bao, C. Wu, J. Bao, N. B. Schade, V. N. Manoharan,
+G. Shvets, P. Nordlander, D. R. Liu, and F. Capasso, Nano Letters 11, 4859
+(2011), pMID: 22007607.
+
+6J.-H. Huh, K. Kim, E. Im, J. Lee, Y. Cho, and S. Lee, Advanced Materials
+32, 2001806 (2020).
+
+7Y. Ke, L. L. Ong, W. M. Shih, and P. Yin, Science 338, 1177 (2012).
+8A. Murugan, J. Zou, and M. Brenner, Nature Communications 6, 6203
+(2015).
+
+9S. Hormoz and M. P. Brenner, Proceedings of the National Academy of
+Sciences of the United States of America 108, 5193 (2011).
+
+10Z. Zeravcic, V. N. Manoharan, and M. P. Brenner, Rev. Mod. Phys. 89,
+031001 (2017).
+
+11P. F. Damasceno, M. Engel, and S. C. Glotzer, Science 337, 453 (2012).
+12S. Sacanna, W. T. M. Irvine, P. M. Chaikin, and D. J. Pine, Nature 464, 575
+(2010).
+
+13Y. Wang, Y. Wang,
+and D. e. a. Breed, Nature
+(2012), 10.1038/na-
+ture11564.
+
+14M. F. Hagan and D. Chandler, Biophysical Journal 1, 42 (2006).
+15A. W. Wilber, J. P. K. Doye, A. A. Louis, E. G. Noya, M. A. Miller, and
+P. Wong, The Journal of Chemical Physics 127, 085106 (2007).
+
+16J. Grant, R. L. Jack, and S. Whitelam, The Journal of Chemical Physics
+135, 214505 (2011).
+
+17C.-A. Palma, M. Cecchini, and P. Samor`ı, Chemical Society Reviews 41,
+3713 (2012).
+
+18S. Whitelam and R. L. Jack, Annual Review of Physical Chemistry 66, 143
+(2015), pMID: 25493714.
+
+19G. Bisker and J. L. England, Proceedings of the National Academy of Sci-
+ences 115, E10531 (2018).
+
+20A. Trubiano and M. Holmes-Cerfon, Soft Matter 17, 6797 (2021).
+21A. Das and D. T. Limmer, The Journal of Chemical Physics , 1 (2021).
+22A. Das and D. T. Limmer, “Nonequilibrium design strategies for functional
+colloidal assemblies,” (2022).
+
+23M.
+Nguyen
+and
+S.
+Vaikuntanathan,
+Proceedings
+of
+the
+National
+Academy
+of
+Sciences
+113,
+14231
+(2016),
+https://www.pnas.org/content/113/50/14231.full.pdf.
+
+24Z. M. Sherman and J. W. Swan, ACS Nano 10, 5260 (2016), pMID:
+27096705.
+
+25L. Heinen and A. Walther, Soft Matter 11, 7857 (2015).
+
+
+11
+
+26S. L. Taylor, R. Evans, and C. P. Royall, Journal of Physics: Condensed
+Matter 24, 464128 (2012).
+
+27M.
+Tagliazucchi,
+E.
+A.
+Weiss,
+and
+I.
+Szleifer,
+Proceed-
+ings
+of
+the
+National
+Academy
+of
+Sciences
+111,
+9751
+(2014),
+https://www.pnas.org/doi/pdf/10.1073/pnas.1406122111.
+
+28R. C. Snyder, S. Studener, and M. F. Doherty, AIChE Journal 53, 1510
+(2007), https://aiche.onlinelibrary.wiley.com/doi/pdf/10.1002/aic.11174.
+
+29M. R. Abu Bakar, Z. K. Nagy, A. N. Saleemi, and C. D. Rielly, Crystal
+Growth & Design 9, 1378 (2009).
+
+30A.
+Bupathy,
+D.
+Frenkel,
+and
+S.
+Sastry,
+Proceedings
+of
+the
+National
+Academy
+of
+Sciences
+119,
+e2119315119
+(2022),
+https://www.pnas.org/doi/pdf/10.1073/pnas.2119315119.
+
+31W. B. Rogers and V. N. Manoharan, Science 347, 639 (2015).
+32E. W. Gehrels, W. B. Rogers, and V. N. Manoharan, Soft Matter 14, 969
+(2018).
+
+33J.
+Stenhammar,
+R.
+Wittkowski,
+D.
+Marenduzzo,
+and
+M.
+E.
+Cates,
+Science
+Advances
+2,
+e1501850
+(2016),
+https://www.science.org/doi/pdf/10.1126/sciadv.1501850.
+
+34Y. Dou, B. Wang, M. Jin, Y. Yu, G. Zhou, and L. Shui, Journal of Microme-
+chanics and Microengineering 27, 113002 (2017).
+
+35J.-C. Chang, Z. Swank, O. Keiser, S. Maerkl, and E. Amstad, Scientific
+Reports 8 (2018), 10.1038/s41598-018-26542-x.
+
+36R. Zhang, Q. Li, L. Tian, J. Gong, Z. Li, W. Liu,
+and L. Gui, Jour-
+nal of Micromechanics and Microengineering 31 (2021), 10.1088/1361-
+6439/abf1b4.
+
+37B. A. Lindquist, R. B. Jadrich, and T. M. Truskett, The Journal of Chemical
+Physics 145, 111101 (2016), https://doi.org/10.1063/1.4962754.
+
+38M. Z. Miskin, G. Khaira, J. J. de Pablo, and H. M. Jaeger, Proceedings of
+the National Academy of Sciences 113, 34 (2016).
+
+39M. C. Engel, J. A. Smith, and M. P. Brenner, “Optimal control of nonequi-
+librium systems through automatic differentiation,” (2022).
+
+40B. E. Husic and V. S. Pande, Journal of the American Chemical Society
+140, 2386 (2018), pMID: 29323881.
+
+41M. R. Perkett and M. F. Hagan, The Journal of Chemical Physics 140,
+214101 (2014).
+
+42V. S. Pande, K. Beauchamp, and G. R. Bowman, Methods 52, 99 (2010),
+protein Folding.
+
+43C. R. Schwantes, R. T. McGibbon, and V. S. Pande, The Journal of Chem-
+ical Physics 141, 090901 (2014), https://doi.org/10.1063/1.4895044.
+
+44G. Hummer and A. Szabo, The Journal of Physical Chemistry B 119, 9029
+(2015).
+
+45E. Su ˜A¡rez, R. P. Wiewiora, C. Wehmeyer, F. No ˜A©, J. D. Chodera, and
+D. M. Zuckerman, Journal of Chemical Theory and Computation 17, 3119
+(2021).
+
+46J. R. Norris, Markov Chains, Cambridge Series in Statistical and Proba-
+bilistic Mathematics (Cambridge University Press, 1997).
+
+47C. W. Gardiner, Handbook of stochastic methods for physics, chemistry
+and the natural sciences, 3rd ed., Springer Series in Synergetics, Vol. 13
+(Springer-Verlag, Berlin, 2004) pp. xviii+415.
+
+48J. J. Ju ˜A¡rez and M. A. Bevan, Advanced Functional Materials 22, 3833
+(2012), https://onlinelibrary.wiley.com/doi/pdf/10.1002/adfm.201200400.
+
+49X. Tang, B. Rupp, Y. Yang, T. D. Edwards, M. A. Grover, and M. A. Bevan,
+ACS Nano 10, 6791 (2016).
+
+50X. Tang, J. Zhang, M. A. Bevan, and M. A. Grover, Journal of Process
+Control 60, 141 (2017), dYCOPS-CAB 2016.
+
+51M. A. Grover, D. J. Griffin, and X. Tang, IFAC-PapersOnLine 52, 1 (2019),
+12th IFAC Symposium on Dynamics and Control of Process Systems, in-
+cluding Biosystems DYCOPS 2019.
+
+52A. Murugan, Z. Zeravcic, M. P. Brenner, and S. Leibler, Proceedings of the
+National Academy of Sciences 112, 54 (2015).
+
+53D.
+Zwicker
+and
+L.
+Laan,
+Proceedings
+of
+the
+Na-
+tional
+Academy
+of
+Sciences
+119,
+e2201250119
+(2022),
+https://www.pnas.org/doi/pdf/10.1073/pnas.2201250119.
+
+54A. Ben-Ari, L. Ben-Ari, and G. Bisker, The Journal of Chemical Physics
+155, 234113 (2021).
+
+55S.
+Osat
+and
+R.
+Golestanian,
+“Non-reciprocal
+multifarious
+self-
+organization,” (2022).
+
+56W. M. Jacobs, Phys. Rev. Lett. 126, 258101 (2021).
+57L. Mohapatra, B. L. Goode, P. Jelenkovic, R. Phillips, and J. Kondev, An-
+nual Review of Biophysics 45, 85 (2016), pMID: 27145876.
+
+58K. L. Kohlstedt and S. C. Glotzer, Phys. Rev. E 87, 032305 (2013).
+59D. Ortiz, K. L. Kohlstedt, T. D. Nguyen, and S. C. Glotzer, Soft Matter 10,
+3541 (2014).
+
+60C. L. Phillips, E. Jankowski, B. J. Krishnatreya, K. V. Edmond, S. Sacanna,
+D. G. Grier, D. J. Pine, and S. C. Glotzer, Soft Matter 10, 7468 (2014).
+
+61K. L. Young, M. R. Jones, J. Zhang, R. J. Macfarlane, R. Esquivel-
+Sirvent, R. J. Nap, J. Wu, G. C. Schatz, B. Lee,
+and C. A. Mirkin,
+Proceedings of the National Academy of Sciences 109, 2240 (2012),
+https://www.pnas.org/doi/pdf/10.1073/pnas.1119301109.
+
+62T. D. Nguyen and S. C. Glotzer, ACS Nano 4, 2585 (2010), pMID:
+20408583.
+
+63M. Nguyen and S. Vaikuntanathan, “Dissipation induced transitions in two
+dimensional elastic membranes,” (2018).
+
+64S. Mann, Nature materials 8 10, 781 (2009).
+65M. J. Solomon, Nature 464, 496 (2010).
+66A. W. Long and A. L. Ferguson, The Journal of Physical Chemistry B 118,
+4228 (2014), pMID: 24660984.
+
+67R.-E. Plessix, Geophysical Journal International 167, 495 (2006),
+https://academic.oup.com/gji/article-pdf/167/2/495/1492368/167-2-
+495.pdf.
+
+68M. Giles and N. Pierce, Flow, Turbulence and Combustion 65 (2000),
+10.1023/A:1011430410075.
+
+69U. M. Ascher, S. J. Ruuth, and B. T. R. Wetton, SIAM Journal on Numeri-
+cal Analysis 32, 797 (1995), https://doi.org/10.1137/0732037.
+
+70Y. Wang, Y. Wang, X. Zheng, ˜A. Ducrot, M.-G. Lee, G.-R. Yi, M. Weck,
+and D. J. Pine, Journal of the American Chemical Society 137, 10760
+(2015), pMID: 26192470.
+
+71K. Garima and J. Bhyravabhotla, PloS one 5 (2010), 10.1371/jour-
+nal.pone.0012433.
+
+72A. McMullen, M. Holmes-Cerfon, F. Sciortino, A. Y. Grosberg, and J. Bru-
+jic, Phys. Rev. Lett. 121, 138002 (2018).
+
+73A. McMullen, M. Munoz Basagoiti,
+and Z. Zeravcic, Nature
+(2022),
+10.1038/s41586-022-05198-8.
+
+74J. Russo, F. Romano, L. Kroc, F. Sciortino, L. Rovigatti, and P. ˇSulc, Jour-
+nal of Physics: Condensed Matter 34, 354002 (2022).
+
+75W. M. Jacobs and D. Frenkel, Journal of the American Chemical Society
+138, 2457 (2016).
+
+76Z.
+Zeravcic,
+V.
+N.
+Manoharan,
+and
+M.
+P.
+Brenner,
+Proceed-
+ings
+of
+the
+National
+Academy
+of
+Sciences
+111,
+15918
+(2014),
+https://www.pnas.org/doi/pdf/10.1073/pnas.1411765111.
+
+77R. W. Perry, M. C. Holmes-Cerfon, M. P. Brenner, and V. N. Manoharan,
+Phys. Rev. Lett. 114, 228301 (2015).
+
+78G. R. L ˜A¡zaro, B. Dragnea, and M. F. Hagan, Soft Matter 14, 5728 (2018).
+79D. L. D. Caspar and A. Klug, Cold Spring Harbor symposia on quantitative
+biology 27, 1 (1962).
+
+80J. A. Anderson, J. Glaser, and S. C. Glotzer, Computational Materials Sci-
+ence 173, 109363 (2020).
+
+81Measuring the average energy of assembled capsids in simulations indicates
+that the D5 structures are slightly (< 0.1%) lower total energy than T = 4
+capsids.
+
+82G. E. Fasshauer and J. G. Zhang, Numerical Algorithms 45 (2007),
+https://doi.org/10.1007/s11075-007-9072-8.
+
+83T.
+Hines,
+“Rbf,”
+https://github.com/treverhines/rbf
+(2016).
+
+84E. Rosta and G. Hummer, Journal of Chemical Theory and Computation
+11, 276 (2015), pMID: 26574225.
+
+85A. S. J. S. Mey, H. Wu, and F. No´e, Phys. Rev. X 4, 041018 (2014).
+86H. Wu, A. S. J. S. Mey, E. Rosta, and F. No ˜A©, The Journal of Chemical
+Physics 141, 214106 (2014).
+
+87C. J. Fullerton and R. L. Jack, The Journal of Chemical Physics 145, 244505
+(2016), https://doi.org/10.1063/1.4972861.
+
+88A. Mardt, L. Pasquali, H. Wu, and F. No ˜A©, Nature Communications 9
+(2018), 10.1038/s41467-017-02388-1.
+
+89M. Ghorbani, S. Prasad, J. B. Klauda, and B. R. Brooks, The Journal of
+Chemical Physics 156, 184103 (2022).
+
+90D. Crommelin and E. Vanden-Eijnden, Multiscale Modeling & Simulation
+7, 1751 (2009).
+
+91M. GOLDBERG, Tohoku Mathematical Journal, First Series 43, 104
+(1937).
+
+
+12
+
+92W. H. Press, S. A. Teukolsky, W. T. Vetterling, and B. P. Flannery, Numer-
+ical Recipes in C: The Art of Scientific Computing (Cambridge University
+Press, New York, NY, USA, 1992).
+
+93J.-H. Prinz, H. Wu, M. Sarich, B. Keller, M. Senne, M. Held, J. D. Chodera,
+C. Sch ˜A¼tte, and F. No ˜A©, The Journal of Chemical Physics 134, 174105
+(2011), https://doi.org/10.1063/1.3565032.
+
+94S. Rippa, Advances in Computational Mathematics 11, 193 (1999).
+95R. D. Hipp, “SQLite,” (2020).
+
+Appendix A: Simulation Details for Cones System
+
+Our simulations consist of two types of conical subunits78,
+each made up of 6 attractor beads, denoted A0 through A5,
+constrained to form a rigid body. We also include a spherical
+nanoparticle of radius Rnp.
+The hexamer (H) is the reference subunit and is defined to
+have a cone height of h = 4 nm, cone angle of α = 17.8◦, and
+outermost bead diameter of σd = 7.7nm. We can compute
+Rcone = σd/(2 sin(α)) − h to be the distance between A0 and
+an origin defined by the point of the cone with height h and
+angle α. A5 is located at distance Rcone + h, with the four
+interior beads equally spaced between the outer beads. The
+radii of each bead is then given by
+
+ri = (Rcone + ih/5) sin(α),
+i = 0, . . . , 5.
+(A1)
+
+The pentamers (P) are then constructed by multiplying the
+hexamer bead radii by a scaling factor 0.77 and keeping the
+height constant. This scaling factor is roughly the ratio of the
+radii of the circle inscribed inside the pentagon to that of the
+hexagon in a chamferred dodecahedron91.
+There are two types of attractive interactions between the
+subunits, an H-H attraction and an H-P attraction, modeled
+via a Morse potential. Between two beads of type Ai, the
+bond has equilibrium length L0 = 2ri, a cutoff distance of
+L0 + 2, a range parameter ρ = 14/L0, and well-depth as
+tunable parameters, EHH or EHP. There is also an attractive
+Morse potential between A0 and the spherical nanoparticle,
+with equilibrium length L0 = r0 +Rnp, cutoff distance Rnp +
+3, range parameter ρ = 2/L0, and well-depths ENH = 7 and
+ENP = 6.3.
+All other interactions are repulsive Lennard-Jones interac-
+tions. We impose excluded volume interactions between all
+pairs of unlike beads. We use a cutoff distance equal to the
+equilibrium length, L0 = ri + rj, for a bead of type i in-
+teracting with type j. We use a well-depth ϵij = 0.5 for all
+combinations of i ̸= j, except ϵ1,6 = 0.05 to help with sta-
+bility. We add longer range repulsive interactions between
+two pentamers beads of the same type by increasing the cut-
+off distance to 1.25L0, which helps promote assembly without
+defects. Finally, we impose excluded volume interactions be-
+tween the nanoparticle and outermost beads A3 through A5 in
+the same way, with well-depth ϵ = 0.5. We allow overlap of
+the inner beads to help with stability of subunits bonded to the
+nanoparticle.
+The dimensionless distance in the simulation corresponds
+to l0 = 1 nm, and energies are in units of kBT. Interaction
+strengths are chosen in the range 1.2kBT to 1.8kBT, which
+can facilitate assembly on the nanoparticle surface, but does
+
+not typically drive nucleation in the bulk. Each simulation
+uses 300 capsomer subunits, split such that roughly 12/42
+are pentamers and 30/42 are hexamers, and a single spheri-
+cal nanoparticle with radius Rnp = 8.3 nm. The simulation
+domain is a cube with side length 120 nm.
+The time step
+is 0.02t0, and the systems are run for between 5 × 106 to
+4 × 107 time steps, depending on the subunit-subunit interac-
+tion strengths, detailed in Section E 2. The simulations use the
+HOOMD-blue80 Brownian Dynamics (BD) integrator, with an
+inverse temperature β = 1. The configurations are logged ev-
+ery ∆t = 25t0 units of simulation time.
+
+Appendix B: Target Probability Gradient Derivation
+
+Here we show the derivation of the probability gradient in
+Equation (4). We first need to express the adjoint vector, ⃗F n,
+as a conditional expectation of the form
+
+F n
+i = E[V (XN)|Xn = i],
+(B1)
+
+where V is an arbitrary function, and Xn is a random variable
+representing the state of the process at time step n. This can
+be shown to satisfy the Kolmogorov backward equation by
+utilizing the law of total probability and the Markov property,
+
+F n
+i = E[V (XN)|Xn = i]
+(B2)
+
+=
+�
+
+j
+E[V (XN)|Xn = i, Xn+1 = j]P(Xn+1 = j|Xn = i)
+
+(B3)
+
+=
+�
+
+j
+P(Xn+1 = j|Xn = i)E[V (XN)|Xn+1 = j]
+
+(B4)
+
+= P nF n+1
+i
+.
+(B5)
+
+The final condition set for the backward equation corresponds
+to selecting V (x) = ⃗1B(x), the indicator vector for the tar-
+get set, B. Computing the expectation of ⃗1B(XN) gives the
+probability to maximize, pN
+B . Using the law of total probabil-
+ity, this is also equal to
+
+pN
+B = E[⃗1B(XN)]
+(B6)
+
+=
+�
+
+j
+E[⃗1B(XN)|Xi = j]P(Xi = j)
+(B7)
+
+= ⃗p i · ⃗F i,
+(B8)
+
+the inner product between the forward and backward equation
+solutions, evaluated at any intermediate time step, i. Thus
+we can compute the relevant partial derivatives by a simple
+product rule to get
+
+∂pN
+B
+
+∂θk
+= ∂⃗p i
+
+∂θk
+⃗F i + ⃗p i ∂ ⃗F i
+
+∂θk
+.
+(B9)
+
+This expression turns out to be quite useful, as any value
+of i can be used in the computation. For a given k, an i can
+be chosen such that one of the two derivatives on the right
+
+
+13
+
+hand side is zero, and such that only a matrix-vector multi-
+ply is needed to evaluate the other derivative. For example,
+we know that F i is independent of θk if i > k, since the ad-
+joint equation is propagated backwards in time. We can then
+choose i = k + 1, making the second partial derivative zero.
+The expression becomes
+
+∂pN
+B
+
+∂θk
+= ∂⃗p k+1
+
+∂θk
+⃗F k+1 + 0
+(B10)
+
+=
+∂
+∂θk
+
+�
+
+⃗p 0
+k
+�
+
+m=1
+P m
+�
+⃗F k+1
+(B11)
+
+= ⃗p k ∂P (θk)
+
+∂θk
+⃗F k+1,
+(B12)
+
+which only requires a matrix-vector product and an inner
+product to evaluate.
+
+Appendix C: Penalty Terms
+
+To ensure physically realizable protocols, we penalize vari-
+ations in the parameters that occur too rapidly by adding the
+penalty term
+
+S[θ] = −λ
+
+2
+
+N−1
+�
+
+j=0
+
+�θj+1 − θj
+
+τ
+
+�2
+(C1)
+
+to the objective function. Directly taking the derivative of this
+penalty term with respect to the protocol at fixed times gives
+
+∂S
+∂θk
+= λ
+
+τ 2 (θk+1 − 2θk + θk−1) ,
+(C2)
+
+which is proportional to a centered finite difference approxi-
+mation of the second time derivative of the protocol.
+We may also want to add another penalty term to favor
+faster assembly, or rather more stable assembly. One option is
+to include something like
+
+S2[θ] = −1
+
+2
+
+N
+�
+
+k=1
+µk(1 − P k
+B)2,
+(C3)
+
+which penalizes the target probability being different from 1
+at each time step. The µk can be chosen to be constant, or be
+time-dependent to reflect how important it is to be in the target
+at each time. The gradient of this penalty is
+
+∂S2
+∂θj
+= −
+
+N
+�
+
+k=j+1
+µk(P k
+B − 1)∂P k
+B
+
+∂θj
+.
+(C4)
+
+By solving the forward equation, we already know all the
+P k
+B. The partial derivatives are computed in exactly the same
+way as described previously, using the adjoint method, just
+with the terminal conditions set at each time step k instead of
+N. Computationally, the forward equation only needs to be
+solved once, but the backward equation needs to be solved for
+
+each k, with terminal condition ⃗F k = ⃗1B. We store the gra-
+dient of the probability for each k using this method, noting
+that derivatives of P k
+B with respect to θj are zero if j > k,
+i.e. if that value in the full protocol has not yet influenced the
+system at time k.
+Our code includes the option of adding this penalty func-
+tion, but it was not used to generate the results shown here, as
+we found it was not necessary to achieve stable assembly.
+
+Appendix D: Gradient Descent
+
+1.
+Implementation
+
+Next, we describe how we perform gradient descent for the
+optimization. First, apply the adjoint-based gradient method
+to calculate the derivatives of the target probability with re-
+spect to each θk. Let ∂P N
+B
+
+∂θk
+= G(N, k). Next, we combine
+this with the smoothness penalty term derivative and perform
+a gradient descent step with step size h to update the protocol
+from iteration n to n + 1. This looks like
+
+θn+1
+k
+= θn
+k +hGn(N, k)+ λh
+
+τ 2
+�
+θn
+k+1 − 2θn
+k + θn
+k−1
+�
+. (D1)
+
+Note that this update looks like a forward Euler discretiza-
+tion of a heat equation with source term, e.g.
+θt(x, t) =
+G(x, t) + λθxx(x, t). From stability analysis of numerical
+PDEs, we know that this discretization would result in a se-
+vere restriction in the step h due to the diffusive CFL con-
+dition for stability. With this in mind we instead discretize
+with an IMEX (Implicit-Explicit) method, where we treat the
+source term explicitly and the diffusive term implicitly. Doing
+so gives the linear system
+
+θn+1
+k
+= θn
+k + hGn(N, k) + λh
+
+τ 2
+�
+θn+1
+k+1 − 2θn+1
+k
++ θn+1
+k−1
+�
+,
+(D2)
+which can also be written in matrix form as
+
+(I + νD)⃗θ n+1 = ⃗θ n + h⃗G n,
+(D3)
+
+where ν = λh/τ 2 is the diffusive CFL number, D is the cen-
+tered second finite difference matrix, I is the N × N identity
+matrix, and ⃗G n is the probability gradient evaluated using the
+protocol at step n. This is a tri-diagonal system that can be
+solved quickly using the Thomas algorithm92.
+This system also needs to be equipped with two boundary
+conditions, due to the second derivative discretization. The
+choice of boundary conditions depends on the situation. If an
+experiment dictates specific initial and final values for the pa-
+rameters, then Dirichlet conditions should be implemented. If
+the initial and final conditions can be chosen, then choosing
+Neumann boundary conditions will allow the system to deter-
+mine the optimal start and end points, which is what we use in
+this paper. Combinations of the two types may also be used.
+Finally, note that the gradient of the S2 penalty term does
+not explicitly depend on θj. This means we can lump this
+gradient in with the probability gradient in the source term
+G(N, k) and treat it explicitly, unlike the smoothing penalty
+term.
+
+
+14
+
+2.
+Step Size and Convergence
+
+The value of h at each time step can be set manually or
+determined by a line search. We initialize a starting value
+h0 = 1.5, compute the new protocol according to the method
+above, and see if the result leads to an increase of the objec-
+tive function. If not, we successively reduce the value of h by
+a factor of two until we see an increase. Our convergence cri-
+teria is if the difference in successive objective function values
+is below a set tolerance of 10−5, or if the line search cannot
+find a step size that results in an increase of the objective func-
+tion.
+We find that the solution determined by the gradient descent
+algorithm typically depends on the initial guess for the proto-
+col, implying that the objective function landscape contains
+many local extrema. We implement a simple global optimiza-
+tion scheme to try to avoid these local extrema. To begin we
+initialize from a number of different initial conditions; various
+mixtures of constants, linear ramps, and oscillatory protocols.
+When the gradient descent is determined to have arrived at a
+critical point, we log the objective function value as well as
+the protocol. We then apply noise point-wise to the protocol
+and re-initialize the optimization. The noise is chosen to be
+either independent Gaussian noise with chosen variance, or a
+biased version where we ensure the noise is pointing in the
+direction of the last computed gradient. We keep track of the
+10 best critical points, stopping if four consecutive critical ob-
+jective function values do not exceed the running maximum.
+This global optimization technique was applied to the cones
+system, but not the colloids system, where the optimization
+was more robust. This could reflect that the interpolated tran-
+sition matrices for the cone system likely have noisier objec-
+tive function landscapes than the semi-analytic model for the
+simpler colloidal polymer system.
+
+3.
+Effect of Regularization Parameter
+
+The value used for the regularization parameter, λ, controls
+the tradeoff between optimal target yield and smoothness of
+the resulting protocol. We report values for the re-scaled reg-
+ularization parameter, λ∗ = λ/(Nτ 2), which normalizes the
+value with respect to the timescales of the particular system.
+Figure 8(a) shows the optimal yield and protocol roughness
+as a function of λ∗ for the cones system optimization. We see
+that choosing a small value for the regularization results in
+the highest yield protocol, but also the least smooth one. This
+protocol is shown in Figure 8(b), which is qualitatively sim-
+ilar to the optimal protocol shown in the main text, but with
+large and frequent oscillations in the values. As λ∗ increases
+over several orders of magnitude, the optimal yield is reduced
+as the protocol becomes smoother. Eventually, the penalty
+function becomes too strong and the protocol is reduced to
+the optimal constant values that were found by sampling val-
+ues on an equally spaced grid with spacing 0.0075kBT in both
+dimensions.
+
+Appendix E: Markov State Models
+
+This section describes our procedure for constructing and
+validating the local Markov State Models for the cones sys-
+tem.
+
+1.
+State Space Discretization Coordinates
+
+First, we need a set of coordinates to describe the configu-
+rations in the simulations to generate discrete trajectories. We
+use the state space discretization coordinate (nP, nH, IH) to
+define a state, where nP and nH are the number of pentamers
+and hexamers attached to the nanoparticle, and IH is equal to
+the number of hexamers in contact with precisely two pen-
+tamers. Contacts are determined by setting cutoff distances.
+We use a cutoff distance of 13 nm between the nanoparticle
+center and the second outer-most cone bead to determine ad-
+sorption onto the nanoparticle. For subunit-subunit contacts,
+we use a cutoff distance r1 + r2 + 2, where r1 and r2 are the
+radii of the second outer-most bead of the corresponding sub-
+units. The target state is specified by the triplet (12, 30, 30),
+which corresponds to a T = 4 or D5 capsid. We find that this
+three variable description is insufficient for a subset of config-
+urations, in which case we augment our coordinate with the
+variables bHH and bHP, the number of hexamer-hexamer and
+hexamer-pentamer bonds, respectively. As an example, the
+five coordinate state (12, 30, 26, 60, 60) corresponds to a sin-
+gle, well-defined structure (structure C in Figure 1). The three
+coordinate description, (12, 30, 26), lumps this state together
+with other transient structures, such as (12, 30, 26, 56, 59),
+with distinct transition dynamics, so we refine our coordinate
+in this case. In total, our state space consists of 5727 states.
+We discuss how we determine which states are insufficiently
+characterized by the three coordinate description after detail-
+ing how we perform our sampling of trajectories and construct
+MSMs.
+
+2.
+Sampling Trajectories
+
+Next we discuss how we sample trajectories to construct
+the MSMs. There are roughly three distinct regimes in the pa-
+rameter space we are considering; a weak interaction regime
+where subunits will never nucleate on the nanoparticle (1.2 ≤
+EHP ≤ 1.4, EHH < 2.8 − EHP), an intermediate interaction
+regime where capsid growth occurs slowly but consistently for
+long times (1.3 ≤ EHP ≤ 1.5, EHH ≥ 2.8−EHP), and a strong
+interaction regime where capsid growth occurs quickly but
+typically with defects (EHP > 1.5). We perform simulations
+differently in each of these regimes. In the intermediate in-
+teraction regime, we initialize 200 trajectories with an empty
+nanoparticle and simulate until a final time of Tf = 8 × 105.
+In the strong regime, the yield curves for the common states
+saturate much quicker, so we do the same but only simulate
+until Tf = 5 × 105. The weak regime requires a different
+approach since initializing with an empty nanoparticle makes
+capsid growth an exceedingly rare event. Instead, we initialize
+
+
+15
+
+10 -5
+10 -2
+10 1
+
+Smoothing Penalty ( /(N 2))
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+Optimal Target Yield
+
+10 -10
+
+10 -5
+
+Penalty Function Value
+
+Optimal 
+Constant
+
+Reported Value
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+1.2
+
+1.4
+
+1.6
+
+Subunit Attraction
+
+Highest Yield
+Least Smooth
+
+H-P  Time Dependent
+H-H  Time Dependent
+
+(a)
+(b)
+
+FIG. 8. Effect of regularization on optimal yield and protocol smoothness. (a) Plot of the optimal target yield in the cones system as a function
+of λ∗ = λ/(Nτ 2). Also plotted is the penalty function value for the resulting protocol. Large values correspond to large gradients in the
+protocol, and a value of zero corresponds to a constant protocol. The regularization used to generate the results in the main text is indicated by
+the dashed line. (b) Example protocol computed using the smallest regularization shown in (a), λ∗ = 4 × 10−6. This protocol achieves the
+highest yield, but contains large and rapid oscillations.
+
+the system in one of the five most common structures, shown
+in Figure 1, and simulate until Tf = 8 × 105. We perform
+40 simulations in each of the five states as a baseline and add
+more as needed. In this parameter regime, the four off-target
+structures tend to transition to the ground state target structure,
+which remains stable, but occasionally the starting capsid will
+fully disassemble.
+In addition to these long simulations, we also perform
+shorter simulations that target rarely sampled transitions that
+are deemed important to the assembly process. To identify
+such states, we use the MSM to compute the average prob-
+ability of each state over the simulation time, as well as the
+maximum probability of each state over the simulation. If the
+average probability of a state is greater than 10−5 or its max
+probability is greater than 0.005, we identify that state as im-
+portant and save a snapshot of the configuration. We perform
+this process for one parameter set in each of the three assem-
+bly regimes, and take the union of all important states. This
+leaves us with a total of 1497 important states. For each of
+these states, we initialize three simulations in a snapshot of
+that state, and simulate until Tf = 9.3 × 104, or about 30 lag
+times.
+
+3.
+MSM Construction
+
+After trajectories have been sampled, they are converted to
+discrete trajectories via the state space discretization coordi-
+nate. Unique values of the state space discretization coordi-
+nate are assigned an integer index in the order they are first
+seen in the trajectories.
+The discrete trajectories are used to estimate count matri-
+ces at a lag time τ. We use a sliding window, which counts
+transitions that occur between frame t and frame t + τ, for
+
+t = 0, · · · , T − τ. We use sparse matrix storage to keep
+track of all such transitions between pairs of states i and j.
+For each MSM, the count matrix is of the same size, the total
+number of states observed among all parameter sets (5727 in
+our case), regardless of each state being observed for that par-
+ticular parameter set or not. This means that some rows will
+be completely empty, depending on the parameter set used to
+generate the trajectories.
+
+Next, we perform a pruning step. This eliminates entries
+corresponding to extremely rare and likely unimportant tran-
+sitions and saves on memory. We set a cutoff of 2 counts for
+self-transitions, i.e. the diagonal component of the count ma-
+trix. If a state is only observed for a single frame it is likely to
+be highly unstable and not worth tracking. We remove the cor-
+responding row and column from the count matrix if it does
+not meet the cutoff. We also set a cutoff of 3 counts for non-
+diagonal transitions. Transitions observed twice or less can
+be considered rare and are likely unimportant in characteriz-
+ing the most common transition paths. We set counts that do
+not meet this cutoff to zero, removing them from the sparse
+matrix.
+
+We can now construct the probability transition matrix.
+This is done by summing each row of the count matrix to get
+a total number of counts, and then normalizing each row by
+this number. This is straight-forward, except in the case of a
+row with no observations. We refer to such states as inactive.
+In this case, we simply put a 1 on the diagonal to construct
+this row. During this process, we keep track of all such inac-
+tive states. We can then construct a reduced transition matrix,
+only over the active states, by removing the rows and columns
+of inactive states, and creating a mapping between state in-
+dices in the full and reduced forms. We use the reduced tran-
+sition matrices for all calculations. Finally, we do not impose
+reversibility during MSM construction, since capsid assem-
+
+
+16
+
+bly is out of equilibrium and thus the sampled trajectories are
+not reversible (although the underlying dynamics obeys mi-
+croscopic reversibility). It should be possible to achieve re-
+versible sampling by combining the unbiased assembly simu-
+lations with free energy calculations or other enhanced sam-
+pling methodologies to sample improbable disassembly tran-
+sitions, but that is beyond the scope of the present study since
+the unbiased trajectories enable estimating a sufficiently accu-
+rate MSM.
+
+4.
+Convergence and Validation
+
+MSMs can describe system dynamics at long timescales
+with high accuracy, but this requires a suitable choice of
+discretization and lag time93. The typical approach to test-
+ing convergence of an MSM is to perform a Chapman-
+Kolmogorov (CK) test or to compute the largest implied
+timescales from the transition matrix and check if they are
+lag-time-independent near the chosen value of τ. These tests
+are difficult to apply to our system.
+We find unconverged
+timescales no matter how large we choose τ, but these cor-
+respond to absorbing or nearly-absorbing states with many
+defects that are unimportant to the capsid assembly process.
+Based on this, we perform a validation that is better suited to
+and more stringently tests the assembly problem, used here41.
+To gauge convergence of the MSMs, we compute yield
+curves for the four most common assembled capsids for var-
+ious lag-times. These yield curves track the fraction of tra-
+jectories in a particular state as a function of time. These
+curves will depend on all the implied timescales that are rel-
+evant to that particular assembly process, not just the longest
+timescales, so this is a stricter measure of the MSM’s conver-
+gence. Figure 9 shows these yield curves for the four most
+common structures at an example parameter set in each of the
+three regimes of interaction strengths. Note that the left col-
+umn tracks disassembly starting from the shown state, while
+the other plots track assembly to that state starting from an
+empty nanoparticle. We find that the yield curves using lag-
+times of 3125t0 and 3750t0 are essentially overlapping in
+each plot, which validates the construction of MSMs using
+τ = 3125t0 in our reported results. In addition to testing con-
+vergence, we also compare the MSM predicted yield curves
+to direct estimates from sampling. The agreement is excellent
+for most cases, and at least qualitatively accurate on average
+in the worst cases.
+
+5.
+State Space Refinement
+
+We now describe how we choose which states in our
+discretization to refine,
+from the three coordinate de-
+scription, (nP, nH, IH), to the five coordinate description,
+(nP, nH, IH, bHH, bHP).
+We begin by constructing an MSM using half of the avail-
+able simulation trajectories, split randomly. For each state, we
+can access the corresponding row in the count matrix as well
+as the transition matrix. This allows us to estimate a standard
+
+error for our transition matrix estimates. By treating each row
+of the count matrix as a multinomial distribution, where the
+states are bins, the standard error of bin i, σM(i), can be com-
+puted as
+
+σM(i) =
+
+�
+
+pi(1 − pi)
+
+N
+(E1)
+
+where pi is the transition probability of state i and N is the
+total number of counts in the row.
+Once we have these standard errors for each row, we can
+compute another MSM using the full set of simulation data
+and compare these new estimates, p′
+i, to the base estimates, pi.
+If the new estimates differ from the base estimates by some
+tolerance, we conclude that the samples are likely sampling
+different regions of the state space, so the state corresponding
+to row i should be refined. We set the tolerance to |pi − p′
+i| >
+3σM(i).
+
+Appendix F: Interpolation
+
+1.
+Radial Basis Function Background
+
+Consider the interpolation problem where we are given N
+points, {xi}N−1
+i=0 , xi ∈ Rd, as well as N values {yi}N−1
+i=0 such
+that each of these values is assumed to be sampled from some
+unknown function, i.e. f(xi) = yi. The goal is to construct a
+function that satisfies the known data, but can be extrapolated
+to other values of the input.
+The radial basis function (RBF) method is a mesh free way
+of constructing such an interpolating function. Given the data,
+which is potentially sampled in an unstructured way, an inter-
+polant is constructed as a linear combination of a set of radial
+basis functions, or kernels, φ(r). The expression for the inter-
+polant is given by
+
+ˆf(x) =
+
+N−1
+�
+
+i=0
+ciφ(∥x − xi∥2),
+(F1)
+
+where the ci are constant coefficients chosen to satisfy the N
+constraints from the observed data. This gives a linear sys-
+tem of the form Kc = y to solve for the coefficients, where
+Kij = φ(∥xi − xj∥2). Since this system is linear and sym-
+metric, a unique solution to the interpolation will exist if the
+matrix is also positive definite. Certain kernels guarantee pos-
+itive definiteness of the matrix K, but numerical issues such
+as round-off errors can introduce small, negative eigenvalues
+that may prevent a solution from being found.
+Here we will use the Gaussian kernel, φ(r) = e−ϵr2. Note
+that this expression contains a parameter, ϵ, called the shape
+parameter, that affects the width of the basis functions as well
+as how accurate the resulting interpolant is.
+Smaller val-
+ues of the shape parameter result in flatter basis functions,
+which spread the information from the given data points fur-
+ther away from the source nodes. Typically, the interpolation
+error decreases with smaller shape parameter, up to a point,
+and then increases again beyond this value. Thus, constructing
+
+
+17
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.25
+
+0.50
+
+0.75
+
+1.00
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.25
+
+0.50
+
+0.75
+
+1.00
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.85
+
+0.90
+
+0.95
+
+1.00
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.0
+
+0.2
+
+0.4
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.000
+
+0.025
+
+0.050
+
+0.075
+
+0.100
+
+Yield
+
+0.0
+2.5
+5.0
+7.5
+t/105t0
+
+0.000
+
+0.025
+
+0.050
+
+0.075
+
+0.100
+
+Yield
+
+EHH = 1.4
+EHP = 1.2
+EHH = 1.45
+EHP = 1.4
+EHH = 1.3
+EHP = 1.6
+
+FIG. 9. Yield curves for the four most common cone assemblies for various values of the MSM lag-time, τ. Tests are performed for a single
+parameter set in each of the three assembly regimes; weak interactions (left), intermediate interactions (middle), and strong interactions (right).
+Blue curves are estimated directly from sampled trajectories. The other curves are computed from an MSM with lag-times 625t0 (orange),
+3125t0 (green), and 3750t0 (red). Note that red and green curves are essentially overlapping in each plot, signifying convergence with respect
+to the choice of lag-time.
+
+an RBF interpolant will involve a procedure for determining
+what value of the shape parameter minimizes the interpolation
+error.
+A simple method for determining the optimal value for the
+shape parameter is known as cross-validation. More specif-
+ically, the leave-one-out cross validation (LOOCV) is well
+suited to this problem. Here, the interpolant is constructed
+on N − 1 data points, and then the final data point is used
+to get a measure of the error. This can be repeated for each
+point, giving a vector of N errors whose l2 norm can then be
+minimized to determine an optimal shape parameter.
+
+The direct method as stated above is quite inefficient; each
+linear solve to construct the RBF interpolant involves O(N 3)
+computation, which must be done N times, giving an O(N 4)
+algorithm for each choice of the shape parameter. This can be
+reduced to O(N 3) by the use of an interesting property of the
+error. It can be shown94 that the error incurred by excluding
+the k-th data point can be computed as
+
+ek = ˆfk(xk) − yk =
+ck
+
+(K−1)kk
+,
+(F2)
+
+which only involves inversion of a single linear system, the
+
+
+18
+
+system required to construct the interpolant in the first place.
+With this result, an expression for the error comes for free with
+computation of the interpolant. We identify that the error min-
+imizing shape parameter typically takes values in the interval
+[0.1, 100] for our problem. To choose ϵ, we sample 200 log-
+arithmically spaced points in this interval, compute the errors
+according to the above formula, and determine which value
+globally minimizes the l2 norm of the error.
+
+2.
+Constructing Interpolants
+
+The first step in constructing the transition matrix inter-
+polant is to define a global state space. Each locally esti-
+mated MSM has its own set of active states, which we will
+call the active set. We take the union of all of these active
+sets to construct the global active set.
+We also determine
+a mapping that converts a state index from the original full
+state space to an index in the global active set and vice-versa.
+The nodal points for the interpolation are all parameter values,
+⃗Ek = (Ek
+HP, Ek
+HH), in which MSMs are estimated, which we
+represent as x = { ⃗Ek}K
+k=1, where K is the number of parame-
+ter values sampled. We then consider each pair of states, i and
+j, that have a nonzero transition probability in any of the K
+local MSMs. We construct a list of values y = {Pij( ⃗Ek)}K
+k=1,
+the estimated transition probabilities for that transition in each
+MSM. If a particular transition is observed for some k, but
+not all, then we append a transition probability of 0 when it is
+not observed. If a transition is not observed in any of the K
+MSMs, we leave this entry empty in the sparse matrix storing
+the values.
+Once the sparse matrix of transition probabilities has been
+filled, we pass each entry to the interpolation scheme that
+computes the optimal shape parameter, using the above al-
+gorithm, and returns the interpolant object.
+Each entry is
+independent, so this calculation can be trivially parallelized.
+The resulting interpolants can be stored in a sparse matrix and
+then serialized for future access. If the system becomes too
+large, it may become difficult to store all interpolants in RAM,
+as becomes the case with our system with 5727 states. For
+this case, we construct an SQL database on the HDD using
+SQLite395 to store interpolants. We use a python package83
+
+for computing the radial basis function interpolants.
+
+3.
+Evaluating Interpolants
+
+To evaluate a transition matrix at a desired valued of the
+parameters, θ, we evaluate each of the stored interpolants at
+that value, which consists of plugging in the coefficients we
+solve for into Equation (F1), and organizing them into a sparse
+matrix. Before using this transition matrix, we perform a re-
+normalization procedure on each of the rows. This serves two
+purposes; to ensure we use a valid transition matrix in the opti-
+mization and to reduce the number of entries for both accuracy
+of the model and memory savings. Interpolation typically re-
+sults in many small non-zero entries, on the order of 10−5,
+where the nodal values should be 0. Over long timescales,
+
+such as the assembly timescale we consider, this can result
+in spurious dynamics such as leaking probability out of an ab-
+sorbing state, so we prune these values. Further, noise induced
+by interpolation error results in un-normalized probability dis-
+tributions that must be normalized before a valid MSM can be
+used for optimization.
+Our normalization procedure for the j-th row of the tran-
+sition matrix, denoted ⃗pj(θ), is as follows. First we compute
+the probability row sum, Sj(θ) = �
+
+i pj
+i(θ), and check if this
+is greater than a threshold of pcut = 0.02. If not, we put a 1 on
+the diagonal entry for the row and go to the next. If the first
+threshold is met, we let M denote the largest entry in the row.
+We then check if each element is greater than M/R, where
+R = 40000 is a reference scaling constant determined by trial
+and error. If an entry is less than M/R, we append it to a
+pruned set, P j, and add the value to a running sum, Sj
+P (θ).
+We then set the entry to zero. Otherwise, we keep the entry
+and add the index to the kept set, Kj. We then distribute the
+total pruned probability, Sj
+P (θ), equally to each non-zero en-
+try in the row except the state on the diagonal as to not bias
+towards self-loops. Finally, we divide each entry by the row
+sum to ensure the distribution is normalized. Denoting the
+normalized row ⃗nj(θ), it can be computed as
+
+nj
+i(θ) = uj
+i(θ)
+
+Sj(θ) =
+1
+
+Sj(θ)
+
+
+
+
+
+
+
+
+pj
+i(θ)
+if i = j,
+pj
+i(θ) +
+1
+
+|K|Sj
+P (θ)
+if i ∈ Kj and i ̸= j,
+0
+if i ∈ P j,
+(F3)
+where uj
+i(θ) is the un-normalized probability after the pruning
+step. This procedure has the effect of removing entries that are
+not sufficiently large compared to the largest probability in
+the row. This is intended to keep the important probabilities,
+while suppressing the small, spurious entries that come from
+interpolating values near 0.
+We also need to compute partial derivatives of the transi-
+tion matrix with respect to each parameter for the optimiza-
+tion. The evaluation of derivatives of uj
+i(θ) is trivial; one only
+needs to differentiate the basis functions, which are Gaussian
+in this case. The tricky step is accounting for the pruning on
+elements and re-normalization of rows in the transition matrix
+when computing the derivative matrix. Applying the quotient
+rule to the expression for the normalized probability, we get
+
+dj
+i(θ) = (∂θuj
+i(θ))Sj(θ) − uj
+i(θ)(∂θSj(θ))
+
+(Sj(θ))2
+(F4)
+
+=
+1
+
+Sj(θ)
+
+�
+∂θuj
+i(θ) − nj
+i(θ)∂θSj(θ)
+�
+(F5)
+
+as an expression for the rows of the derivative of the transition
+matrix.
+Evaluating an individual interpolant is computationally
+simple, but evaluating a large number of them when the sys-
+tem size gets large can be demanding. For this reason, we do
+not always evaluate the transition matrices on the fly. Instead,
+we set up a discretization and caching system. We discretize
+our feasible parameter region on a uniform grid with spac-
+ing 0.0075 between grid points. When an interpolant is re-
+quested at parameter θ, we determine the grid point closest to
+
+
+19
+
+θ and evaluate the interpolant there. After an interpolant and
+its derivatives have been evaluated at a grid point, we cache
+the resulting transition matrices into a dictionary stored on the
+HDD, using the python shelve module. The next time a tran-
+sition matrix is requested at this grid point, we retrieve it from
+the dictionary instead of computing it from scratch.
+
+Appendix G: Detailed Results for Colloid Optimization
+
+The optimization results and verification for each of the col-
+loidal structures in the main text are summarized in Figure 10.
+The parallelogram and chevron, structures 1 and 2, respec-
+tively, were optimized starting from an initial guess of a con-
+stant energy of 6 kBT for each interaction. Both structures see
+yields increase from around 70 % with fixed interactions, to
+over 90 % with a time-dependent protocol. The optimal proto-
+col for the parallelogram begins with large ERR and EBB, and
+weak ERB. This promotes assembly of the permutation shown
+in Figure 10(a). It then slightly lowers EBB but such that the
+assembled permutation remains stable, while increasing ERB,
+which promotes assembly of other permutations that are stuck
+in floppy configurations. The chevron protocol begins with
+just a large ERB, which selectively forms a structure similar
+to the chevron, but with the middle row of particles aligned
+with the other to form a rectangle. By switching on EBB, the
+chevron becomes the only possible structure to form.
+The floppy structures, 4 and 5, both form with about 50%
+probability when only EBB is allowed to be non-zero and it
+is chosen to be large. Structure 4 is selected when all blue-
+blue bonds form on the same side of the central blue particle,
+whereas structure 5 forms when the blue-blue bonds are on
+opposite sides of the central blue particle.
+There is a degeneracy issue in the Markov model that must
+be addressed before optimizing for these structures. It is clear
+from looking at the bond networks that structure 5 cannot
+form structure 4 without first breaking bonds. However, the
+adjacency matrix for structure 5 is identical to that of a struc-
+ture made by taking structure 4 and removing the bond be-
+tween the upper blue particles. This structure can transition
+
+to structure 5, and this degeneracy in the adjacency matrix
+representation leads to the MSM predicting structure 4 form-
+ing with 100 % yield with only a blue-blue interaction, when
+really it should be split roughly equally between these two
+structures.
+To fix this issue we manually modify a few of the estimated
+transition rates between adjacency matrices. To start, we set
+the transition rate of structure 5 to structure 4 to zero. Let
+structure S24 denote the structure where there is one bond be-
+tween particles 2 and 4, and S46 denote the structure with a
+bond between particles 4 and 6. We then make the approxi-
+mation that if either of these structures form structure 4, both
+of the additional bonds form at once. We further approximate
+that these transitions happen at the same rate of both of these
+structures transitioning to structure 5, which we already have
+estimates for. The resulting MSM gives then gives approxi-
+mately 50/50 odds of forming structures 4 and 5 when only
+the blue-blue interaction is active.
+By performing the optimization with this modified tran-
+sition matrix, the yields of these structures can be slightly
+boosted to around 63% using different protocols. Structure
+4 has three blue-blue bonds, making it more stable than struc-
+ture 5. It follows then that a tempering protocol that increases
+and decreases EBB would promote transitions from structure
+5 to structure 4, while leaving the already assembled structure
+4s intact. We use an initial guess of zero for the red-red and
+red-blue interactions strengths, and a cosine protocol oscillat-
+ing between 6kBT and 14kBT over six periods. The result-
+ing protocol begins and ends with a strong blue-blue interac-
+tion, with oscillations in between, which does indeed boost
+the yield of structure 4. We note that in order to observe os-
+cillations in the optimization result, they needed to be present
+in the initial guess. This is likely due to the smoothing param-
+eter penalizing the introduction of too much variation in the
+protocol.
+To optimize for structure 5, we used constant initial guesses
+of 6kBT for each pair of interactions, while leaving the third
+near zero. The final protocol for structure 5 is relatively sim-
+ple; the yield can be boosted by adding in a red-blue interac-
+tion initially, then turning it off midway through the assembly.
+
+
+20
+
+0
+1
+2
+3
+4
+5
+Time
+
+2
+
+4
+
+6
+
+8
+
+10
+
+12
+
+Well-Depth (kT)
+
+ERR
+ERB
+EBB
+
+0
+1
+2
+3
+4
+5
+Time
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Probability
+
+0
+1
+2
+3
+4
+5
+Time
+
+6
+
+8
+
+10
+
+12
+
+Well-Depth (kT)
+
+ERR
+ERB
+EBB
+
+0
+1
+2
+3
+4
+5
+Time
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Probability
+
+0
+5
+10
+Time
+
+2
+
+4
+
+6
+
+8
+
+10
+
+12
+
+Well-Depth (kT)
+
+ERR
+ERB
+EBB
+
+0
+5
+10
+Time
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Probability
+
+0
+5
+10
+Time
+
+2
+
+4
+
+6
+
+8
+
+10
+
+12
+
+Well-Depth (kT)
+
+ERR
+ERB
+EBB
+
+0
+5
+10
+Time
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+Probability
+
+0
+2
+4
+6
+8
+10
+Time
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+Target Yield
+
+Optimal Fixed Protocol
+Optimal Time-Dependent Protocol
+
+0
+1
+2
+3
+4
+5
+Time
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+Target Yield
+
+Optimal Fixed Protocol
+Optimal Time-Dependent Protocol
+
+0.0
+2.5
+5.0
+7.5
+10.0
+Time
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+Target Yield
+
+Optimal Fixed Protocol
+Optimal Time-Dependent Protocol
+
+0.0
+2.5
+5.0
+7.5
+10.0
+Time
+
+0.0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1.0
+
+Target Yield
+
+Optimal Fixed Protocol
+Optimal Time-Dependent Protocol
+
+(a)
+(b)
+(c)
+(d)
+
+FIG. 10. Protocol optimization results and verification for the colloidal polymer system. (a) The structure being optimized for in each row.
+Note that only a single permutation is shown, but all permutations consistent with the target structure are lumped for the optimization. (b)
+The protocols for each interaction strength determined by the optimization. (c) Probabilities as a function of time for all structures achieving
+a maximum yield of over 0.2 using the optimal protocol in (b), evaluated using the MSM. (d) Time-dependent yield of the target structure
+averaged over 600 Brownian dynamics trajectories using both the optimal fixed interactions and the optimal protocol in (b).
+
+

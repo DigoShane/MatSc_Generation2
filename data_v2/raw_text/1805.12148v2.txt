@@ -1,0 +1,2541 @@
+Automated construction of symmetrized Wannier-like tight-binding models from ab
+initio calculations
+
+Dominik Gresch1, QuanSheng Wu2,∗ Georg W. Winkler3,∗ Rico
+H¨auselmann4, Matthias Troyer1,5, and Alexey A. Soluyanov1,6,7
+
+1Theoretical Physics, ETH Zurich, CH-8093 Zurich, Switzerland
+2Institute of Physics, ´Ecole Polytechnique F´ed´erale de Lausanne (EPFL), CH-1015 Lausanne, Switzerand
+3Station Q, Microsoft Research, Santa Barbara, California 93106-6105, USA
+4Theory and Simulation of Materials (THEOS) and National Centre for
+Computational Design and Discovery of Novel Materials (MARVEL),
+´Ecole Polytechnique F´ed´erale de Lausanne, 1015 Lausanne, Switzerland
+5Microsoft Research, Redmond, WA, United States
+6St.
+Petersburg State University, St.
+Petersburg, 199034, Russia and
+7Physik-Institut, Universit¨at Z¨urich, Winterthurerstrasse 190, CH-8057 Zurich, Switzerland
+
+Wannier tight-binding models are effective models constructed from first-principles calculations.
+As such, they bridge a gap between the accuracy of first-principles calculations and the computa-
+tional simplicity of effective models. In this work, we extend the existing methodology of creating
+Wannier tight-binding models from first-principles calculations by introducing the symmetrization
+post-processing step, which enables the production of Wannier-like models that respect the symme-
+tries of the considered crystal. Furthermore, we implement automatic workflows, which allow for
+producing a large number of tight-binding models for large classes of chemically and structurally
+similar compounds, or materials subject to external influence such as strain. As a particular illus-
+tration, these workflows are applied to strained III-V semiconductor materials. These results can
+be used for further study of topological phase transitions in III-V quantum wells.
+
+I.
+INTRODUCTION
+
+A significant part of materials science is devoted to the
+problem of finding the electronic structure of a given ma-
+terial. As a result, numerous computational techniques
+have been developed to study this problem. These tech-
+niques can roughly be classified into two kinds: First-
+principles methods solve the problem using the funda-
+mental physical principles and properties of atoms com-
+prising the material.
+For weakly-interacting systems,
+density functional theory (DFT) [1] is the dominant
+(mean field) technique for solving the electronic struc-
+ture problem from first principles.
+In contrast, empirical methods aim to capture the rel-
+evant physical properties using a simplified model. Such
+models are usually matched to known properties of the
+material, which can be obtained from either experiments
+or first-principles calculations. An example of such an
+empirical method is given by the tight-binding approxi-
+mation, which describes a material as a set of localized
+orbitals and predefined electron hopping terms between
+them. While the first-principles methods typically have
+superior accuracy, empirical methods are often used due
+to their lower computational cost. In particular, calcu-
+lations of complex device geometries are often inaccessi-
+ble to a direct first-principles study. As such, the con-
+struction of reliable empirical models is of significant im-
+portance. And the technique of creating Wannier tight-
+binding models [2, 3] from first-principles calculations is
+
+∗ The work was carried out at Theoretical Physics, ETH Zurich,
+8093 Zurich, Switzerland
+
+arguably one of the most popular tools in nowadays com-
+putational materials science. The use of Wannier tight-
+binding models allows one to combine the simplicity of
+empirical methods with the correct wave function prop-
+erties obtained from first-principles.
+In recent years, high-throughput techniques made a
+profound impact in various fields of materials science [4–
+7]. While the domain eludes a strict definition, a common
+feature of such techniques is that computational tools are
+applied to a wide range of candidate materials, or vari-
+ations of a given material, in search of some beneficial
+property. Existing codes and techniques are combined
+and applied on a scale that was not previously possi-
+ble.
+A range of automated frameworks [8, 9] support
+this by facilitating the combination of separate calcula-
+tions into logical workflows. The challenge in designing
+such a high-throughput workflow is to make it resilient
+to varying input parameters. Since the number of cal-
+culations performed is too large to be human-controlled,
+many decisions – for example which calculation to per-
+form based on the output of a previous calculation – need
+to be encoded into the automated workflow.
+In this paper, we introduce steps for addressing two
+standardly known problems of using Wannier90 [10, 11]
+in combination with any ab initio software to construct
+tight-binding models: the absence of symmetries present
+in the original compound in the obtained tight-binding
+model, and the neccessity to search for optimal inner and
+outer energy windows for projection of the first-principles
+energy bands. We do not, however, treat the issue of se-
+lecting the initial projections used by Wannier90.
+As
+such, we create automated workflows which are appli-
+cable to large classes of materials with similar orbital
+
+arXiv:1805.12148v2  [cond-mat.mtrl-sci]  5 Oct 2018
+
+
+2
+
+character of the bands of interest. However, these work-
+flows are not yet applicable to high-throughput scenarios
+in the sense that they can trivially be applied to arbi-
+trary compounds. Nevertheless, the presented workflows
+are written in a way that they could be combined with
+efforts to address the problem of selecting initial projec-
+tions [12].
+In Sec. II, we review the general process of calculat-
+ing the Wannier tight-binding models by means of Wan-
+nier90 and explain the proposed and implemented sym-
+metrization and automatic energy window choice proce-
+dures. Sec. III describes how these procedures are used
+for the development of an automated workflow using the
+AiiDA [8] framework. While this workflow automates the
+tight-binding calculation itself, there are still some tun-
+able parameters which might be eliminated by a more
+sophisticated system.
+By using a modular design ap-
+proach, we provide an extensible framework for imple-
+menting such improvements.
+In the final section, we
+illustrate the application of this workflow to calculate
+tight-binding models for strained III-V semiconductor
+materials. These are useful in the pursuit of Majorana
+devices [13–15], enabling the study of transport proper-
+ties for different topological devices with III-V quantum
+wells, where strains play an important role in the topo-
+logical transition.
+
+II.
+CONSTRUCTION OF WANNIER-LIKE
+TIGHT-BINDING MODELS
+
+In this section, we describe the process of generating
+symmetrized Wannier-like tight-binding (SWTB) mod-
+els.
+First, we give a short description of the method
+for creating Wannier tight-binding models (WTB) as in-
+troduced in the works of Refs. [2, 3] and implemented
+in the Wannier90 [10, 11] software package.
+Next, we
+describe a method for symmetrizing these WTBs in a
+post-processing step. Finally, we describe a scheme to
+enhance the band-structure accuracy by optimizing the
+energy windows used by Wannier90.
+
+A.
+Wannier tight-binding construction
+
+Tight-binding models represent a common way to de-
+scribe crystalline systems in a computationally cheap
+way. The material is described as a system of localized
+orbitals with positions ti in the unit cell, and hopping
+terms Hij[R] between the j-th orbital in the unit cell
+at location R and the i-th orbital in the home unit cell
+R = 0. From these parameters, the matrix Hamiltonian
+can be written as [16]
+
+Hij(k) =
+�
+
+R
+Hij[R]eik.(R+tj−ti).
+(1)
+
+For the case of spinful systems, we choose the indices i, j
+to include the spin index for simplicity.
+
+The Wannier tight-binding (WTB) method utilizes lo-
+calized Wannier functions as basis orbitals to capture the
+compound’s physics. These basis Wannier functions are
+obtained from first-principles simulations.
+This proce-
+dure is based on the work of Refs. [2, 3] and implemented
+in the Wannier90 [10, 11] code. After obtaining the neces-
+sary Wannier90 input files from a first-principles calcula-
+tion, two steps are performed to construct these Wannier
+functions:
+In a first step, the Bloch wave-functions
+��ψn,k
+�
+calcu-
+lated by the first-principles code are disentangled to ob-
+tain M wave-functions, where M is the target number of
+basis Wannier functions in WTB. For selecting the Bloch
+wave-functions which are involved in this procedure, one
+needs to choose an outer energy window. Optionally, an
+inner energy window can be chosen. States inside this
+inner window will be preserved by the disentanglement.
+An optimization routine is performed to select the M
+states such that the “change of character” ΩI (defined
+in Ref. [3]) is minimized.
+As an initial guess for this
+optimization procedure, M localized trial orbitals |gm⟩
+are used. Because the disentanglement procedure needs
+to discard some states, it usually changes both the sym-
+metry and the energy bands of the model in comparison
+with first-principles results. Consequently, choosing good
+values for both the energy windows and the trial orbitals
+has a strong effect on the quality of the resulting model.
+As a second (optional) step, another optimization is
+performed to find a unitary transformation such that the
+resulting Wannier functions are maximally localized [2].
+Again, the trial orbitals |gm⟩ are used to create an ini-
+tial guess for this optimization. Typically, these orbitals
+are chosen to be those chemical atomic orbitals that con-
+tribute most to the bands of interest. A method for con-
+structing Wannier orbitals without the need for such a
+guess is described in Ref. [12].
+
+B.
+Symmetrization
+
+An important feature of tight-binding models, espe-
+cially for studying topological effects, is that they pre-
+serve certain crystal symmetries. For a given symmetry
+group G, the symmetry constraint on the Hamiltonian
+matrix is given by [17]
+
+∀g ∈ G : H(k) = Dk(g)H(g−1k)Dk(g−1),
+(2)
+
+where Dk(g) is the k-dependent representation of the
+symmetry g from the group G. We define the k - inde-
+pendent part D(g) of the representation as
+
+Dk(g) = eiαg.kD(g),
+(3)
+
+where αg is the translation vector of the symmetry.
+For a Hamiltonian which does not fulfill these symme-
+try constraints, we define the symmetrized Hamiltonian
+as the group average
+
+˜H(k) =
+1
+|G|
+
+�
+
+g∈G
+Dk(g)H(g−1k)Dk(g−1).
+(4)
+
+
+3
+
+This procedure projects the Hamiltonian onto the sym-
+metric subspace, meaning that the modified Hamiltonian
+respects Eq. (2), as shown in Appendix A. Furthermore,
+if the original Hamiltonian is already symmetric, the orig-
+inal and symmetrized Hamiltonians are identical. Since
+this construction does not explicitly construct the corre-
+sponding Wannier functions, we term these models sym-
+metrized Wannier-like tight-binding models (SWTB).
+It is important to note that the eigenstates and eigen-
+values of the symmetrized Hamiltonian may differ signif-
+icantly from those of the non-symmetrized Hamiltonian.
+In fact, for an anti-symmetric initial Hamiltonian, mean-
+ing that
+
+Dk(g)H(g−1k)Dk(g−1) = −H(k)
+(5)
+
+for some symmetry g, the symmetrized result vanishes
+completely.
+However, given a Hamiltonian which al-
+most respects the symmetry, this technique can effec-
+tively eliminate small symmetry-breaking terms.
+In the context of tight-binding models, this sym-
+metrization technique can only straightforwardly be ap-
+plied when the underlying basis set is symmetric.
+If
+the tight-binding basis contains an orbital |α⟩ centered
+around the position r, it must also contain g|α⟩ centered
+around gr for all symmetries g ∈ G. For example, if the
+model for a material which has Cx
+4 symmetry contains a
+px orbital at the origin, it must also contain a py orbital
+at the origin.
+For Wannier tight-binding models, this means that the
+technique can generally only be applied when the step
+of maximally localizing the Wannier functions is omit-
+ted, and pre-defined atomic orbitals are used. When this
+condition is met however, the method can be applied
+for both unitary and anti-unitary symmetries, as well as
+non-symmorphic symmetry groups.
+To apply the group average to tight-binding models,
+it is convenient to rewrite Eq. 4 directly in terms of the
+hopping matrices H[R] (see App. B for derivation):
+
+˜Hij[R] =
+1
+|G|
+
+�
+
+g∈G
+l,m
+
+Dil(g)Hlm[S−1
+g (R − Tml
+ij )]Dmj(g−1),
+
+(6)
+where Sg is the real-space rotation matrix of the sym-
+metry g, Tml
+ij
+= Sg(tm − tl) − tj − ti, and the indices
+m, l only go over values for which Tml
+ij is a lattice vector.
+Note that we use the k - independent part D(g) of the
+representation here.
+Fig. 1 shows the results of this symmetrization pro-
+cedure on a tight-biding model for bulk silicon in the
+diamond cubic crystal structure, with atom-centered sp3
+
+orbitals. The initial model already approximately fulfills
+the symmetry condition, which is reflected in the fact
+that the bandstructure does not change in the electron-
+volt scale. However, at the sub-millielectronvolt scale the
+band degeneracies are lifted in the original model, but
+restored after the symmetrization procedure. Since the
+symmetry group of the diamond cubic structure Fd¯3m
+
+(no. 227) is non-symmorphic, this example demonstrates
+that the symmetrization technique is capable also of en-
+forcing such symmetries. In panel b of Fig. 1, we compare
+the symmetrization using the full symmetry group to a
+partial symmetrization enforcing only the symmorphic
+subgroup. Adding non-symmorphic symmetries enforces
+the four-fold degeneracy at the X point and two-fold de-
+generacy on the X − U line, whereas symmorphic sym-
+metries only enforce a two-fold degeneracy on the Γ − X
+line.
+To determine the matrix representations D(g), we use
+the fact that Wannier90 allows one to manually choose
+the trial orbitals |gm⟩. As a result, the basis after the
+disentanglement procedure corresponds to the chosen or-
+bitals, up to some numerical error. Since the behavior
+of the basis orbitals under symmetries is known, D(g)
+can be determined in this way.
+For the treatment of
+spin, we use the rotation matrices as given in ref. [18].
+The action of time-reversal on the spin basis {|↑⟩, |↓⟩}
+is given by σy ˆK, where ˆK represents complex conjuga-
+tion.
+An automated method for generating the repre-
+sentation matrices for given atomic orbitals is available
+in the symmetry-representation package. Importantly,
+we used Wannier90 without performing the maximal lo-
+calization step. It is the case in the illustrated application
+of Sec. IV, where this allows us to preserve the orbital ba-
+sis. Alternatively, one could use the basis transformation
+matrices U (k) provided by Wannier90 [10] to transform
+D(g) into the maximally-localized basis. While this ap-
+proach produces computationally cheaper localized mod-
+els, the drawback is that the basis is different for each
+produced tight-binding model. As a result, comparing
+models is more difficult. Also, linear interpolation be-
+tween models, as described in Section IV C, would require
+a change of basis.
+Another
+approach
+to
+obtaining
+symmetric
+tight-
+binding models is to use the site-symmetry mode im-
+plemented in Wannier90 [19]. However, this method is
+limited to symmetries which leave a given real-space co-
+ordinate invariant (site symmetries), and does not in-
+clude time-reversal. The method presented here has no
+such limitation, but is instead limited to models which
+have a symmetric set of basis functions as described
+above. The site-symmetry mode also relies on obtain-
+ing the symmetry information from the first-principles
+code, which is currently implemented only for Quantum
+Espresso [20, 21].
+The workflow described in Sec. III
+could be adapted to allow using this approach with only
+minimal changes.
+
+C.
+Optimization for bandstructure fit
+
+As described above, an important parameter in run-
+ning Wannier90 is the choice of the so-called energy win-
+dows [10].
+There are two such windows:
+The outer
+window determines which states are taken into account
+for the disentanglement procedure. At every k-point, it
+
+
+4
+
+X U|K
+L
+W
+X
+
+5
+
+0
+
+5
+
+10
+
+15
+
+E (eV)
+
+-0.004
+0
+0.004
+
+X
+U
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+0.20
+
+0.25
+
+E (meV)
+
++3.38275e3
+(a)
+(b)
+
+Figure 1. (Color online) Comparison of the initial (blue) and symmetrized (orange) bandstructure for a tight-binding model
+of silicon with atom-centered sp3 orbitals. (a) In the eV scale, there are no visible differences between the two models. (b)
+A zoom in around the X point on the meV scale reveals a slight lifting of the band degeneracies in the initial model. This
+incorrectness is resolved in the symmetrized model. For comparison, a symmetrized bandstructure taking into account only
+symmorphic symmetries (green) is also shown.
+
+must contain at least M bands, where M is the desired
+number of bands in the tight-binding model. The inner
+(or frozen) window on the other hand determines which
+states should not be modified during disentanglement. It
+can contain at most M bands at any given k.
+Since the quality of the resulting tight-binding model
+depends sensitively on the choice of energy windows, a
+strategy for reliably choosing good windows is required.
+A straightforward way of achieving this is by iteratively
+optimizing the window values. Having constructed and
+symmetrized a tight-binding model, its quality can be de-
+termined by comparing its bandstructure to a reference
+computed directly from first-principles [22]. As a mea-
+sure of their mismatch, we choose the average difference
+between the energy eigenvalues
+
+∆ = 1
+
+M
+1
+Nk
+
+M
+�
+
+i=1
+
+�
+
+k
+
+���εDFT
+i,k
+− εTB
+i,k
+��� .
+(7)
+
+Some values of the energy windows cannot produce a
+tight-binding model, for example if the outer window con-
+tains less than M bands. As a result, finding appropriate
+energy windows is a constrained, four-dimensional opti-
+mization problem. The Nelder-Mead (downhill simplex)
+algorithm [23] can be used to solve this problem [24].
+Fig. 2 shows the result of such an optimization pro-
+cedure for unstrained InSb, as described in Section IV.
+A clear improvement is visible between the tight-binding
+model obtained with the initial windows chosen by hand
+(panel a), and the optimized window values (panel b). In
+particular, the conduction bands at the X and Z points
+
+are represented more accurately in the optimized model.
+Since the given bands for InSb are not entangled, it is also
+possible to skip the disentanglement step completely by
+using the exclude bands parameter of Wannier90 to ig-
+nore all other energy bands. The resulting bandstructure
+is shown in Fig. 2(c). Nevertheless, we find that the band-
+structure using optimized disentanglement is slightly bet-
+ter (∆ = 0.0327) than the one without disentanglement
+(∆ = 0.0375), especially for the four lowest conduction
+bands on the Z - Γ - X line.
+Hence, it can be useful
+to apply the disentanglement procedure and energy win-
+dow optimization even in cases where the bands are not
+inherently entangled, especially when the time required
+to run the tight-binding calculation is short compared to
+the initial first-principles calculation.
+
+III.
+IMPLEMENTATION IN AiiDA
+WORKFLOWS
+
+The AiiDA [8] platform is a Python framework for
+performing high-throughput calculations, focused on the
+field of materials physics.
+It enables reproducible re-
+search by keeping track of inputs, outputs and settings
+for each calculation. On top of this provenance layer, it
+provides a toolset for automatically chaining calculations
+into user-defined workflows.
+In this section, we describe the implementation of the
+Wannier tight-binding extraction scheme as an AiiDA
+workflow. This automation enables the application to the
+study of strain effects (described in Section IV). Special
+
+
+5
+
+Z
+X
+L
+K
+
+2
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+12
+
+14
+
+E (eV)
+
+(a)
+initial window
+
+Z
+X
+L
+K
+
+(b)
+optimized window
+
+Z
+X
+L
+K
+
+(c)
+exclude bands
+
+Figure 2. (Color online) Comparison between the reference first-principles bandstructure (blue) and bandstructures calculated
+from tight-binding models (orange) for InSb. The tight-binding model in (a) was calculated with the initial energy window,
+whereas (b) shows the model using the optimized energy window as detailed in Table II. The model in (c) was calculated
+without the disentanglement procedure, using the exclude bands parameter.
+
+care has been taken to design the workflow in a modu-
+lar way, which enables re-using parts of the workflow for
+purposes other than tight-binding extraction. We first
+discuss these design principles, before showing how they
+are applied in the tight-binding workflows.
+The code for the AiiDA workflows is available in the
+open-source aiida-tbextraction package, and provided
+as supplementary material.
+
+A.
+Modular workflow design
+
+The basic principle of modular workflow design is to
+split up a single monolithic workflow into minimal sub-
+workflows or calculations that perform exactly one task.
+For example, the tight-binding model created by Wan-
+nier90 is post-processed by parsing it to an HDF5 format,
+followed by optionally changing the order of the basis and
+symmetrizing the model. While this could easily be im-
+plemented in a single script, splitting these three steps
+up into separate calculations allows separately re-using
+each of the steps.
+More complex workflows are created by combining
+multiple sub-workflows into a logical unit at a higher ab-
+straction level.
+Inputs to the sub-workflow are either
+forwarded directly from the input to the parent workflow
+or created within the parent workflow. Similarly, outputs
+from the sub-workflow can either be forwarded to be an
+output of the parent workflow or consumed directly to
+guide the further execution of the parent workflow.
+Since a complex workflow can consist of multiple lay-
+ers of wrapped sub-workflows, this modular approach is
+
+maintainable only if the overhead of forwarding input
+and output is minimal.
+Following the single responsi-
+bility principle, a parent workflow should not have to
+change if an input or output parameter of a sub-workflow
+changes, unless it directly interacts with this parame-
+ter. To achieve this, a syntax is needed to specify that a
+parent workflow will inherit inputs or outputs of a sub-
+workflow, without explicitly listing each parameter. In
+AiiDA, such a feature is available in the newly-introduced
+expose functionality, as described in Appendix C.
+
+The modular architecture improves not only the re-
+usability, but also the flexibility of workflows. Often, a
+given part of a workflow could be performed in different
+ways.
+For example, many different codes can perform
+the first-principles calculations in the tight-binding ex-
+traction workflows. Additionally, one might want to add
+steps such as relaxation or cut-off energy convergence.
+
+To allow for this, the parent workflow can allow for
+dynamically selecting a workflow for performing a given
+task by passing it as an input [25]. An abstract workflow
+class defines the interface that a workflow must fulfill so
+that it can be used to perform the task. If needed, the
+parent workflow can allow for dynamic inputs, which are
+just forwarded to the specific workflow implementing the
+interface. In this way, the parent workflow can act as a
+template that defines an abstract series of steps, without
+knowledge of the detailed input flags available on each
+step.
+
+
+6
+
+RunWindow
+RunWindow
+
+1
+2
+
+1
+
+1
+N
+...
+...
+
+OptimizationWorkChain
+
+WindowSearch
+FirstPrinciplesRunBase
+
+OptimizeFirstPrinciplesTightBinding
+
+1
+
+ModelEvaluationBase
+
+1
+2
+
+Wannier90
+Parse
+Symmetrize
+Slice
+
+1
+2
+3
+4
+
+TightBindingCalculation
+
+RunWindow
+
+(a)
+
+(b)
+
+Figure 3. Schematic of the AiiDA workflow for creating tight-
+binding models with energy window optimization. Workflows
+are shown in blue, and calculations in purple. Orange arrows
+show calls from parent- to child-workflows (or calculations).
+Dashed green arrows show the implicit data dependency be-
+tween workflows of the same level. In calculation names, the
+suffix Calculation is omitted for brevity.
+
+B.
+Tight-binding extraction workflow
+
+Having discussed the design principles for modular
+workflows, we now show how these are applied to create
+a workflow for the construction of tight-binding models.
+This workflow is implemented in the OptimizeFirst-
+PrinciplesTightBinding class as sketched in Fig. 3. At
+the uppermost level, the workflow has two parts: First-
+PrinciplesRunBase, which executes the first-principles
+calculations, and WindowSearch which calculates the
+tight-binding model with energy window optimization.
+
+Since different first-principles codes can produce the
+input files required by Wannier90, FirstPrinciples-
+RunBase defines only the minimum interface needed to
+perform this task. As described in the previous section,
+a workflow that implements this interface for a specific
+first-principles code can then be chosen dynamically. As
+a result, the subsequent parts of the workflow are inde-
+pendent of which first-principles code is used.
+The WindowSearch workflow performs the Nelder-
+Mead algorithm for finding the optimal energy window.
+Because optimization schemes are useful outside of this
+specific application, we implemented the Nelder-Mead
+method in a general way. The OptimizationWorkChain,
+defined in the aiida-optimize module, can be used to
+solve generic optimization problems in the context of
+AiiDA workflows.
+It requires two inputs: A workflow
+which defines the function to be optimized, and an en-
+gine that implements the optimization method. Conse-
+quently, changing the whole workflow to use a different
+optimization method would be a simple matter of using
+a different engine.
+
+Because AiiDA workflows need to be able to stop and
+re-start after any given step, the engine is written in an
+object-oriented instead of a procedural way. While this
+complicates implementing the Nelder-Mead method, it
+allows for serializing and storing the state of the engine.
+The
+function
+which
+is
+optimized
+by
+the
+OptimizationWorkChain is implemented in the Run-
+Window workflow.
+It again consists of two parts:
+TightBindingCalculation
+creates
+the
+tight-binding
+model itself, and ModelEvaluationBase evaluates the
+quality of the model.
+The first step in the Tight-
+BindingCalculation workflow is to run Wannier90
+on the given input parameters.
+In a second step,
+the Wannier90 output is parsed and converted into
+the TBmodels [26] HDF5 format.
+A third, optional,
+“slicing” step is used to either permute the basis orbitals
+or discard some orbitals.
+Finally, the (also optional)
+symmetrization procedure is performed. Both the Slice
+and the Symmetrize calculation have a TBmodels HDF5
+file as both input and output, meaning that they could
+be chained arbitrarily with other such post-processing
+steps.
+For the evaluation of the tight-binding model, we again
+use an abstract interface class, ModelEvaluationBase.
+While for the purposes of this paper we used the aver-
+age difference of band energies (Eq. (7)) as a measure of
+model quality, other quantities might be more appropri-
+ate for different applications.
+
+IV.
+STRAIN-DEPENDENT TIGHT-BINDING
+MODELS FOR MAJORANA DEVICES
+
+The quest for Majorana zero modes (MZMs) in con-
+densed matter systems has recently attracted a lot of
+interest [13–15, 27–31]. The non-abelian exchange statis-
+tics of Majorana Fermions makes these zero modes
+promising candidates for the realization of topological
+quantum computation devices [13, 32]. Experimental in-
+vestigations of possible MZMs focus on the proposal by
+Lutchyn et. al. and Oreg et. al. [14, 15] in which MZMs
+appear on the boundaries of proximitized spin-orbit cou-
+pled quantum wires.
+Current experimental setups in-
+clude semiconducting InAs nanowires with epitaxial su-
+perconducting Al [33], and InAs/GaSb heterostructures
+in which the quantum spin Hall effect [34, 35] can be re-
+alized providing the possibility to proximity couple the
+helical edge state [28, 30]. While there is a good deal of
+evidence suggesting that MZMs exist in the wire-based
+setups [36, 37], a conclusive proof requires directly show-
+ing the braiding statistics of MZMs. An important step
+in realizing braiding with the systems based on the he-
+lical edge state is the search for optimized device and
+material properties. For optimizing the topological gap,
+a better theoretical understanding of the electronic struc-
+ture in such devices is required. In this section, we show
+how the workflows can be used to generate tight-binding
+models which form the basis for accurate device simu-
+
+
+7
+
+lations. While these device simulations themselves are
+outside the scope of this work, this shows the potential
+use of the method for a topic of active research in current
+condensed matter physics.
+
+Highly accurate first-principles methods, using hybrid
+functionals [38], or the GW approximation [39], are com-
+putationally too demanding for the simulation of realistic
+device geometries and heterostructures. State of the art
+simulations of such structures use the k.p method [40],
+or empirical tight-binding (ETB) methods [41]. In both
+of these methods the Hamiltonian is parametrized by a
+small number of parameters which are obtained empiri-
+cally, for example via fitting to the first-principles band
+structure. For both of these methods the choice of pa-
+rameters is ambiguous and one can obtain a good fit
+of the bandstructure while at the same time the elec-
+tronic wavefunction might be wrongly represented. This
+might lead to unphysical solutions in confined geome-
+tries [42, 43], and low transferability of the bulk models
+to the heterostructure in general. Recently, it was shown
+that better matching the ETB with the first-principles
+calculations can improve their transferability [43, 44].
+
+Realistic simulations of heterostructures require a cor-
+rect treatment of strains at interfaces. In the k.p and the
+ETB method this is usually done by strain-dependent pa-
+rameter sets. However, often the symmetries are not bro-
+ken correctly. In this context, the Wannier or Wannier-
+like tight-binding models can offer a significant improve-
+ment by accurately representing the first-principles wave-
+function and correctly capturing the effect of strain. As
+a demonstration of the AiiDA workflows, we construct
+SWTB models for the III-V semiconductors InSb, InAs
+and GaSb.
+
+Including spin-orbit coupling (SOC), we require only
+14 basis functions, namely s and p orbitals centered on
+the In/Ga atom, and p orbitals centered on the As/Sb
+atom. The popular sp3d5s∗ ETB models on the other
+hand require 40 [45] basis functions.
+The reason for
+this is that WTB models generally include longer-range
+neighbor interactions, whereas ETB is typically limited
+to nearest-neighbor (or next-nearest-neighbor in some
+cases [46]) interactions to keep the number of parame-
+ters manageable. As illustrated in Fig. 4, the produced
+tight-binding models include long-range hopping param-
+eters, with amplitudes quickly decaying with distance.
+
+To account for strain, we construct tight-binding mod-
+els with biaxial (001), (110) and (111) strains, and the
+uniaxial [110] strain, as described in Appendix D. For
+each material and strain direction, we calculated 16 mod-
+els in the range of ±4% strain. Including the unstrained
+models, we constructed a total of 195 tight-binding mod-
+els, showing the applicability of the AiiDA workflow to a
+large number of chemically and structurally similar com-
+pounds.
+
+A.
+Strained tight-binding workflow
+
+To automatically extract tight-binding models for dif-
+ferent strain directions and strengths, we define an addi-
+tional workflow, OptimizeStrainedFirstPrinciples-
+TightBinding, as shown in Fig. 5.
+The first step
+in this workflow, ApplyStrainsWithSymmetry, creates
+the strained structures from the initial structure and
+strain parameters. Since strain can break crystal sym-
+metries, the symmetries of the unstrained system are
+tested against the strained structure. With the strained
+structures and the remaining symmetries, we then use
+the OptimizeFirstPrinciplesTightBinding workflow
+to create a tight-binding model for each strain value.
+
+B.
+First-principles calculations
+
+In the first step of generating the SWTB we need to
+carry out a first-principles calculation of the bulk semi-
+conductor structure.
+We performed all first-principles
+calculations using the Vienna Ab-initio Simulation Pack-
+age (VASP) utilizing projector augmented-wave (PAW)
+basis sets [47]. To obtain an accurate prediction of the
+band gap we employed hybrid functionals [48].
+The
+HSE03/HSE06 hybrid functionals proved to be success-
+ful in computing band structures of III-V semiconduc-
+tors [49]. These hybrid functionals are constructed by re-
+placing a quarter of the density functional short-range ex-
+change (which is the Perdew-Burke-Enzerhof functional
+in our case [50]) with its Hartree-Fock counterpart. The
+screening parameter µ defines the separation into long-
+and short-range parts. In the popular HSE06 scheme,
+it is set to µ = 0.2 ˚A
+−1. We treated µ as an empirical
+parameter such that the calculated band gap is fitted to
+the experimental value. In this work, we used µInAs =
+0.20 ˚A
+−1, µGaSb = 0.15 ˚A
+−1 and µInSb = 0.23 ˚A
+−1, fol-
+lowing the prescriptions of Ref. [51]. Since the SOC of
+III-V semiconductors is significant, we accounted for it
+by using scalar-relativistic PAW potentials.
+InAs, GaSb and InSb crystallize in the zincblende
+structure with space group T 2
+d (no. 216). For the un-
+strained structures we perform the first-principles calcu-
+lation with the experimental lattice constant a at 300K,
+that is aInAs = 6.058 ˚A, aGaSb = 6.096 ˚A, aInSb =
+6.479 ˚A, from ref. [52].
+A plane-wave energy cutoff of
+380 eV was used for all calculations. The Brillouin-zone
+integrations were sampled by a 6 × 6 × 6 Γ-centered k-
+points mesh.
+To get optimal results from the Wannier90 code in con-
+junction with VASP [47] we found that it is necessary to
+turn symmetries off in VASP, that is setting the ISYM-
+tag to 0. Since the states are obtained by a numerical
+diagonalization routine, they obtain a random phase at
+each k-point.
+When symmetries are enabled however,
+the phases are the same for all vectors forming the star
+of k.
+Since the convergence of Wannier90 is better if
+
+
+8
+
+0
+5
+10
+15
+20
+
+0
+1 2
+4
+7
+11 16 23
+31
+42
+
+distance (Å)
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+hopping weight (eV)
+
+0
+5
+10
+15
+20
+
+0
+1 2
+4
+7
+11 16 23
+31
+42
+
+distance (Å)
+
+0.00
+
+0.01
+
+0.02
+
+0.03
+
+0.04
+
+0.05
+
+0
+
+20
+
+40
+
+60
+
+80
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+neighbor #
+neighbor #
+
+(a)
+(b)
+
+Figure 4. Average (blue, left axis) and total (orange, right axis) weights of the hopping parameters for the unstrained InSb
+tight-binding model, as a function of distance.
+
+OptimizeFirstPrinciplesTightBinding
+
+1
+2
+
+FilterSymmetries
+
+1
+2
+
+ApplyStrainsWithSymmetry
+
+OptimizeStrainedFirstPrinciplesTightBinding
+
+ApplyStrains
+
+Figure 5.
+Sketch of the workflow for constructing strained
+tight-binding models.
+The color scheme is the same as in
+Fig. 3.
+
+the numerical phases are random, turning symmetries
+off generally results in more localized Wannier functions
+after the projection step.
+
+The interface for running first-principles calculations
+in the tight-binding extraction workflow is defined in
+the FirstPrinciplesRunBase class (see Section III B).
+Here, we describe the specific sub-class used to imple-
+ment these calculations with VASP [47], VaspFirst-
+PrinciplesRun (see Fig. 6). In a first step, this work-
+flow performs a self-consistent calculation. The resulting
+wave-function is then passed to calculations for the ref-
+erence band-structure and the input files for Wannier90.
+Two workflows VaspReferenceBands and VaspWannier-
+Input are used to perform these calculations. The work-
+flows are thin wrappers around the corresponding cal-
+culations from the aiida-vasp plugin [53], providing
+additional input and output validation. For the band-
+structure calculation, the workflow also adds the k-point
+grid needed for hybrid functional calculations.
+
+Vasp2w90
+
+VaspWannierInput
+
+2
+
+Vasp
+
+VaspReferenceBands
+
+2
+1
+
+Vasp
+
+VaspFirstPrinciplesRun
+
+Figure 6.
+Sketch of the FirstPrinciplesRunBase subclass
+used for calculating the Wannier90 input and reference bands
+with VASP and hybrid functionals.
+
+C.
+Strain interpolation
+
+Using the AiiDA workflow, we obtained tight-binding
+models for strains in the range of ±4%, in steps of 0.5%.
+However, it is sometimes useful to have a finer control
+over the strain value without having to run additional
+first-principles calculations. A common way of obtaining
+this is by linear interpolation of the hopping parameters.
+Given two strain values s1 and s2, for which the hopping
+parameter Hsi[R] are known, the hopping parameters for
+an unknown s∗ can be calculated as
+
+Hs∗[R] = αHs1[R] + (1 − α)Hs2[R],
+(8)
+
+where
+
+α = s∗ − s2
+
+s1 − s2
+.
+(9)
+
+Since this method assumes that the hopping parame-
+ters are a linear function of strain value, it becomes un-
+reliable when s∗ is too far away from s1 and s2. For this
+
+
+9
+
+Material Method |m∗
+SO| |m∗
+LH| |m∗
+HH| |m∗
+e|
+g-factor
+
+HSEbgfit 0.129 0.018 0.245
+0.017
+
+InSb
+SWTB
+0.118 0.016 0.219
+0.015 -49.8
+
+Expt.
+0.110 0.015 0.263
+0.014 -50.6
+
+HSEbgfit 0.112 0.033 0.343
+0.027
+
+InAs
+SWTB
+0.118 0.036 0.340
+0.029 -15.3
+
+Expt.
+0.140 0.027 0.333
+0.026 -15
+
+HSEbgfit 0.143 0.047 0.235
+0.042
+
+GaSb
+SWTB
+0.124 0.039 0.20
+0.036 -15.1
+
+Expt.
+0.120 0.044 0.250
+0.039 -7.8
+
+Table I. Effective masses of light hole (LH), heavy hole (HH),
+split-off hole and electron at Γ point along [100] direction
+in the unstrained case. Values for symmetrized Wannier-like
+tight-binding models (SWTB) are compared to first-principles
+(HSEbgfit) [51] and experimental results [51, 54].
+
+reason, we compared a tight-binding model for InSb with
+2% biaxial (001) strain obtained from linear interpolation
+of 1% and 3% strain models with one calculated directly
+from first-principles. Figure 7 shows a comparison of the
+two band-structures, which we find to be almost identi-
+cal.
+Important to note is that while linear interpolation
+works well for strains of the same kind, this is not nec-
+essarily the case when combining two models with dif-
+ferent strain directions. The reason for this is that the
+symmetries of a particular structure depend on the di-
+rection of the applied strain, but (unless it is zero) not
+on its strength. As a result, a tight-binding model re-
+sulting from linear interpolation between two models of
+a different strain direction would not have the correct
+symmetries.
+
+D.
+Results
+
+To validate the tight-binding models obtained using
+the aiida-tbextraction workflows, several material pa-
+rameters were calculated. Table I shows effective masses
+and g-factors for the unstrained models, in comparison
+to first-principles [51] and experimental [51, 54] values.
+Effective masses for the tight-binding models were cal-
+culated using a second-order polynomial fit with range
+0.001 ˚A
+−1. The g-factor calculations were performed us-
+ing both perturbation theory and a Landau level cal-
+culation [55], with good agreement (< 0.5% difference)
+between the two methods.
+The effect of the energy window optimization is shown
+in Table II, which lists the initial and optimized windows,
+as well as the corresponding band-structure mismatch.
+As previously shown in Fig. 2, it can be seen that the
+mismatch is substantially reduced after optimization.
+Finally, the effect of strain on the energy levels at high-
+
+Material
+Energy Windows (eV)
+∆
+
+InSb
+initial
+(−4.5,
+[−4,
+6.5],
+16)
+0.107
+
+optimized (−4.44, [−3.24, 8.67], 14.01) 0.033
+
+InAs
+initial
+(−4.5,
+[−4,
+6.5],
+16)
+0.113
+
+optimized (−4.44, [−3.59, 7.34], 15.04) 0.046
+
+GaSb initial
+(−4.5,
+[−4.5,
+7],
+16)
+0.082
+
+optimized (−5.35, [−3.34, 7.90], 14.27) 0.043
+
+Table II. Initial and optimized energy windows used for calcu-
+lating unstrained tight-binding models, and the corresponding
+band-structure mismatch as defined in Eq. (7).
+
+symmetry points is shown in Fig. 8. The numerical data
+is listed in the supplementary files [56].
+In the supplementary materials of this paper, an export
+of the AiiDA database is given [57]. This database con-
+tains the full provenance of each calculation performed
+to create the tight-binding models. For ease of accessi-
+bility, a separate data set containing only the 195 strained
+tight-binding models is also given [58].
+
+V.
+CONCLUSION AND OUTLOOK
+
+We have implemented a workflow for an automatic
+construction of Wannier tight-binding models from first-
+principles calculations.
+Building on the known pro-
+cedure for calculating these models, we introduced a
+post-processing step to symmetrize the models, and
+an optimization of the energy windows used for disen-
+tanglement.
+These workflows are implemented in the
+aiida-tbextraction package, which is a free and open-
+source plugin for the AiiDA framework. As a test case,
+tight-binding models for strained III-V semiconductor
+materials were calculated. These results should enable
+device simulations for Majorana designs and other quan-
+tum devices.
+The workflows have been implemented in a modular
+and extensible way.
+As a result, they can be used as
+building blocks for further improvements in automating
+the process of generating Wannier tight-binding models.
+Possible directions include extending the number of first-
+principles codes which are compatible with the plugin,
+adding different fitness criteria for the energy window op-
+timization, and further minimizing the number of tunable
+parameters. For example, the need for choosing initial
+trial orbitals could be eliminated either by using another
+optimization step, or by utilizing the method of Ref. [12].
+
+ACKNOWLEDGMENTS
+
+We would like to thank S. Huber, M. Uhrin, G. Pizzi,
+A. Marrazzo, M. K¨onz and D. Rodic for helpful dis-
+
+
+10
+
+Z
+X
+L
+K
+
+6
+
+4
+
+2
+
+0
+
+2
+
+4
+
+6
+
+8
+
+E (eV)
+
+-0.1
+0
+0.1
+
+L
+K
+
+0.3
+
+0.2
+
+0.1
+
+0.0
+
+0.1
+
+0.2
+
+0.3
+
+E (eV)
+
+(a)
+(b)
+
+Figure 7.
+Comparison between the InSb bandstructure obtained directly from the tight-binding model with 2% biaxial (001)
+strain (blue), and from the linear interpolation (orange) between models with 1% and 3% strain. The energy scale is fixed by
+setting the top of the valence bands at Γ to zero. (a) At the electron-volt scale, the only visible difference is in the upper bands
+along the Γ - K line. (b) Close-up of the bands around Γ. The bands for 1% (purple) and 3% strain (green) are also shown.
+
+cussions.
+The authors were supported by Microsoft
+Research, and the Swiss National Science Foundation
+through the National Competence Centers in Research
+MARVEL and QSIT. AAS also acknowledges the sup-
+
+port of the Swiss National Science Foundation Professor-
+ship. Calculations were performed on the M¨onch cluster
+of ETH Zurich.
+
+[1] P. Hohenberg and W. Kohn, Phys. Rev. 136, B864
+(1964).
+
+[2] N. Marzari and D. Vanderbilt, Phys. Rev. B 56, 12847
+(1997).
+
+[3] I. Souza, N. Marzari, and D. Vanderbilt, Phys. Rev. B
+65, 035109 (2001).
+
+[4] A. Franceschetti and A. Zunger, Nature 402, 60 (1999).
+[5] G. H. J´ohannesson, T. Bligaard, A. V. Ruban, H. L.
+Skriver, K. W. Jacobsen, and J. K. Nørskov, Phys. Rev.
+Lett. 88, 255506 (2002).
+
+[6] S. Curtarolo, D. Morgan, K. Persson, J. Rodgers,
+and
+G. Ceder, Phys. Rev. Lett. 91, 135503 (2003).
+
+[7] S. Curtarolo, G. L. W. Hart, M. B. Nardelli, N. Mingo,
+S. Sanvito, and O. Levy, Nat. Mater. 12, 191 (2013).
+
+[8] G. Pizzi, A. Cepellotti, R. Sabatini, N. Marzari,
+and
+B. Kozinsky, Computational Materials Science 111, 218
+(2016).
+
+[9] A. Jain, S. P. Ong, W. Chen, B. Medasani, X. Qu,
+M. Kocher, M. Brafman, G. Petretto, G.-M. Rignanese,
+G. Hautier, D. Gunter,
+and K. A. Persson, Concurr.
+Comput. Pract. Exp. 27, 5037 (2015).
+
+[10] A. A. Mostofi, J. R. Yates, Y.-S. Lee, I. Souza, D. Van-
+derbilt,
+and N. Marzari, Computer Physics Communi-
+cations 178, 685 (2008).
+
+[11] A. A. Mostofi, J. R. Yates, G. Pizzi, Y.-S. Lee, I. Souza,
+D. Vanderbilt, and N. Marzari, Computer Physics Com-
+
+munications 185, 2309 (2014).
+
+[12] J. I. Mustafa, S. Coh, M. L. Cohen,
+and S. G. Louie,
+Phys. Rev. B 92, 165134 (2015).
+
+[13] A. Y. Kitaev, Phys.-Usp. 44, 131 (2001).
+[14] R. M. Lutchyn, J. D. Sau, and S. Das Sarma, Phys. Rev.
+Lett. 105, 077001 (2010).
+
+[15] Y. Oreg, G. Refael, and F. von Oppen, Phys. Rev. Lett.
+105, 177002 (2010).
+
+[16] In this work, we use the tight-binding convention I of
+Ref. [59].
+
+[17] M. S. Dresselhaus, G. Dresselhaus, and A. Jorio, Group
+Theory: Application to the Physics of Condensed Matter
+(Springer Science & Business Media, 2007).
+
+[18] H. E. Haber, “Three-Dimensional Proper and Improper
+Rotation Matrices,” (2011).
+
+[19] R. Sakuma, Phys. Rev. B 87, 235109 (2013).
+[20] P. Giannozzi, S. Baroni, N. Bonini, M. Calandra, R. Car,
+C. Cavazzoni, Davide Ceresoli, G. L. Chiarotti, M. Co-
+coccioni, I. Dabo, A. D. Corso, S. de Gironcoli, S. Fabris,
+G. Fratesi, R. Gebauer, U. Gerstmann, C. Gougoussis,
+Anton Kokalj, M. Lazzeri, L. Martin-Samos, N. Marzari,
+F. Mauri, R. Mazzarello, Stefano Paolini, A. Pasquarello,
+L. Paulatto, C. Sbraccia, S. Scandolo, G. Sclauzero, A. P.
+Seitsonen, A. Smogunov, P. Umari,
+and R. M. Wentz-
+covitch, J. Phys.: Condens. Matter 21, 395502 (2009).
+
+
+11
+
+4
+
+2
+
+0
+
+2
+
+E (eV)
+
+(001)
+
+InSb
+InAs
+GaSb
+
+4
+
+2
+
+0
+
+2
+
+E (eV)
+
+(110)
+
+4
+
+2
+
+0
+
+2
+
+E (eV)
+
+(111)
+
+4
+2
+0
+2
+4
+
+strain (%)
+
+4
+
+2
+
+0
+
+2
+
+E (eV)
+
+[110]
+
+4
+2
+0
+2
+4
+
+strain (%)
+
+4
+2
+0
+2
+4
+
+strain (%)
+
+Figure 8. Strain dependence of band energies. The two highest valence bands and the lowest conduction band are shown
+at the Γ (blue), X (orange) and L (green) points, where each band is doubly degenerate. Energy values are shifted such
+that the valence band maximum at Γ is zero. The line represents values calculated from the tight-binding models with linear
+interpolation (Eq. (8)) in steps of 0.1%. For comparison, the points show values calculated from first-principles. We find a
+good agreement between the tight-binding and first-principles values, except for the conduction band value at the L - point at
+−4% biaxial (111) strain.
+
+[21] P. Giannozzi, O. Andreussi, T. Brumme, O. Bunau,
+M. B. Nardelli, M. Calandra, R. Car, C. Cavazzoni,
+D Ceresoli, M. Cococcioni, N. Colonna, I. Carnimeo,
+A. D. Corso, S. de Gironcoli, P. Delugas, R. A. D. Jr,
+A Ferretti, A. Floris, G. Fratesi, G. Fugallo, R. Gebauer,
+U. Gerstmann, F. Giustino, T. Gorni, J. Jia, M. Kawa-
+mura, H-Y Ko, A. Kokalj, E. K¨u¸c¨ukbenli, M. Lazzeri,
+M. Marsili, N. Marzari, F. Mauri, N. L. Nguyen, H.-
+V. Nguyen, A Otero-de-la-Roza, L. Paulatto, S. Ponc´e,
+
+D. Rocca, R. Sabatini, B. Santra, M. Schlipf, A. P. Seitso-
+nen, A. Smogunov, I Timrov, T. Thonhauser, P. Umari,
+N. Vast, X. Wu, and S. Baroni, J. Phys.: Condens. Mat-
+ter 29, 465901 (2017).
+
+[22] Because the first-principles calculation usually contains
+more than M bands, we need to choose which bands
+should be represented by the tight-binding model.
+
+[23] J. A. Nelder and R. Mead, Comput J 7, 308 (1965).
+
+
+12
+
+[24] The constraint is implemented by assigning an infinite
+value of ∆ to invalid energy windows.
+
+[25] For storing the workflow in the AiiDA database, it needs
+to be converted into an AiiDA data type. We chose to
+convert it into a string containing the fully qualified class
+name, from which we import the workflow when needed.
+
+[26] D.
+Gresch,
+“TBmodels
+documentation,”
+http://z2pack.ethz.ch/tbmodels.
+
+[27] J. Alicea, Phys. Rev. B 81, 125318 (2010).
+[28] D. I. Pikulin, J. P. Dahlhaus, M. Wimmer, H. Schomerus,
+and C. W. J. Beenakker, New J. Phys. 14, 125011 (2012).
+
+[29] J. Alicea, Rep. Prog. Phys. 75, 076501 (2012).
+[30] S. Mi, D. I. Pikulin, M. Wimmer,
+and C. W. J.
+Beenakker, Phys. Rev. B 87, 241405 (2013).
+
+[31] C. Beenakker, Annu. Rev. Condens. Matter Phys. 4, 113
+(2013).
+
+[32] A. Y. Kitaev, Annals of Physics 303, 2 (2003).
+[33] M. T. Deng, S. Vaitiek˙enas, E. B. Hansen, J. Danon,
+M. Leijnse, K. Flensberg, J. Nyg˚ard, P. Krogstrup, and
+C. M. Marcus, Science 354, 1557 (2016).
+
+[34] C. L. Kane and E. J. Mele, Phys. Rev. Lett. 95, 226801
+(2005).
+
+[35] C. Liu, T. L. Hughes, X.-L. Qi, K. Wang,
+and S.-C.
+Zhang, Phys. Rev. Lett. 100, 236601 (2008).
+
+[36] V. Mourik, K. Zuo, S. M. Frolov, S. R. Plissard, E. P.
+a. M. Bakkers,
+and L. P. Kouwenhoven, Science 336,
+1003 (2012).
+
+[37] H. O. H. Churchill, V. Fatemi, K. Grove-Rasmussen,
+M. T. Deng, P. Caroff, H. Q. Xu,
+and C. M. Marcus,
+Phys. Rev. B 87, 241401 (2013).
+
+[38] A. D. Becke, The Journal of Chemical Physics 98, 5648
+(1993).
+
+[39] L. Hedin, Phys. Rev. 139, A796 (1965).
+[40] E. O. Kane, in Semiconductors and Semimetals, Semi-
+conductors and Semimetals, Vol. 1, edited by R. K.
+Willardson and A. C. Beer (Elsevier, 1966) pp. 75–100.
+
+[41] J. C. Slater and G. F. Koster, Phys. Rev. 94, 1498 (1954).
+[42] Y. Tan, M. Povolotskyi, T. Kubis, Y. He, Z. Jiang,
+G. Klimeck, and T. B. Boykin, J Comput Electron 12,
+56 (2013).
+
+[43] Y. P. Tan, M. Povolotskyi, T. Kubis, T. B. Boykin, and
+G. Klimeck, Phys. Rev. B 92, 085301 (2015).
+
+[44] Y. Tan, M. Povolotskyi, T. Kubis, T. B. Boykin,
+and
+G. Klimeck, Phys. Rev. B 94, 045311 (2016).
+
+[45] J.-M. Jancu, R. Scholz, F. Beltram,
+and F. Bassani,
+Phys. Rev. B 57, 6493 (1998).
+
+[46] T. B. Boykin, Phys. Rev. B 56, 9613 (1997).
+
+[47] G. Kresse and J. Furthm¨uller, Phys. Rev. B 54, 11169
+(1996).
+
+[48] J. Heyd, G. E. Scuseria, and M. Ernzerhof, The Journal
+of Chemical Physics 118, 8207 (2003).
+
+[49] J. Heyd and G. E. Scuseria, The Journal of Chemical
+Physics 121, 1187 (2004).
+
+[50] J. P. Perdew, K. Burke, and M. Ernzerhof, Phys. Rev.
+Lett. 77, 3865 (1996).
+
+[51] Y.-S. Kim, M. Marsman, G. Kresse, F. Tran,
+and
+P. Blaha, Phys. Rev. B 82, 205212 (2010).
+
+[52] O. Madelung, U. R¨ossler, and M. Schulz, (2002).
+[53] R.
+H¨auselmann,
+“AiiDA-VASP
+documentation,”
+https://aiida-vasp.readthedocs.io/.
+
+[54] I. Vurgaftman, J. R. Meyer,
+and L. R. Ram-Mohan,
+Journal of Applied Physics 89, 5815 (2001).
+
+[55] M. Graf and P. Vogl, Phys. Rev. B 51, 4940 (1995).
+[56] See Supplemental Material at [URL] for tables containing
+the band energies at high-symmetry points for different
+values of strain.
+
+[57] See Supplemental Material at [URL] for an full export
+of the AiiDA database containing the calculations of
+strained InSb, InAs, and GaSb tight-binding models.
+
+[58] See Supplemental Material at [URL] for an archive con-
+taining the 195 strained tight-binding models of InSb,
+InAs, and GaSb.
+
+[59] T. Yusufaly, D. Vanderbilt, and S. Coh, “Tight-Binding
+Formalism in the Context of the PythTB Package,”
+http://www.physics.rutgers.edu/pythtb/ downloads/pythtb-
+formalism.pdf (2013).
+
+[60] D. B. Litvin and V. Kopsk´y, Acta Cryst A, Acta Cryst
+Sect A, Acta Crystallogr A, Acta Crystallogr Sect A,
+Acta Crystallogr A Found Crystallogr, Acta Crystallogr
+Sect A Found Crystallogr 67, 415 (2011).
+
+[61] Following the same reasoning, we can see that an arbi-
+trary phase of the matrix Ug does not change the result.
+
+[62] Y. Sun, T. Nishida, and S. E. Thompson, Strain Effect
+in Semiconductors (Springer, Boston, MA, 2010).
+
+[63] Q. M. Ma, K. L. Wang, and J. N. Schulman, Phys. Rev.
+B 47, 1936 (1993).
+
+[64] C. G. Van de Walle and R. M. Martin, Phys. Rev. B 34,
+5621 (1986).
+
+[65] J. S´anchez-Dehesa, C. Tejedor, and J. A. Verg´es, Phys.
+Rev. B 26, 5960 (1982).
+
+[66] O. Madelung, Semiconductors, Data in Science and Tech-
+nology (Springer, Berlin, Heidelberg, 1991).
+
+[67] L. Brey, N. E. Christensen, and M. Cardona, Phys. Rev.
+B 36, 2638 (1987).
+
+[68] O. H. Nielsen and R. M. Martin, Phys. Rev. B 32, 3792
+(1985).
+
+Appendix A: Properties of the symmetrized Hamiltonian
+
+The symmetrized Hamiltonian is defined as (Eq. (4))
+
+˜H(k) =
+1
+|G|
+
+�
+
+g∈G
+Dk(g)H(g−1k)Dk(g−1).
+(A1)
+
+
+13
+
+We first show that this Hamiltonian respects the symmetries in G. Let g′ ∈ G:
+
+Dk(g′) ˜H([g′]−1k)Dk([g′]−1) =
+1
+|G|
+
+�
+
+g∈G
+Dk(g′)Dk(g)H(g−1[g′]−1k)Dk(g−1)Dk([g′]−1)
+(A2)
+
+=
+1
+|G|
+
+�
+
+g∈G
+Dk(g′g)H([g′g]−1k)Dk([g′g]−1)
+=
+g′′=g′g
+1
+|G|
+
+�
+
+g′′∈G
+Dk(g′′)H([g′′]−1k)Dk([g′′]−1) = ˜H(k)
+
+Also, it is easily shown that symmetrizing a Hamiltonian Hsymm.
+k
+which already respects the symmetry does not
+change it:
+
+˜Hsymm.(k) =
+1
+|G|
+
+�
+
+g∈G
+Dk(g)Hsymm.(g−1k)Dk(g−1)
+=
+Eq. (2)
+1
+|G|
+
+�
+
+g∈G
+Hsymm.(k) = Hsymm.(k).
+(A3)
+
+Appendix B: Symmetrized Hamiltonian in terms of real-space matrices
+
+In this appendix, we show how the symmetrized Hamiltonian ˜H(k) can be expressed in terms of real-space hopping
+matrices H[R]. In the following, we will assume that the representation matrix Dk(g) of unitary operations is given
+in the form
+
+Dk(g) = eiαg.kD(g) = eiαg.kUg,
+(B1)
+
+where αg is the translation vector and Ug is a unitary matrix. For anti-unitary operations, we assume they are of the
+form
+
+Dk(g) = eiαg.kD(g) = eiαg.kUg ˆK,
+(B2)
+
+where ˆK represents complex conjugation.
+First, we notice that Dk
+il(g) ̸= 0 only if gtl − ti ∈ Zd, meaning that orbitals centered at tl are mapped onto ti, up
+to a possible lattice translation. Using Eqs. (1) and (4), we can write the symmetrized Hamiltonian as
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dk
+il(g)Hlm[R]ei(g−1k).(R+tm−tl)Dk
+mj(g−1),
+(B3)
+
+where the indices l, m only go over non-zero Dk
+il(g) and Dk
+mj(g−1). Writing the real-space operator for g in Seitz
+notation [60]
+
+gr =
+�
+Sg
+��αg
+�
+,
+g−1
+r
+=
+�
+S−1
+g
+���−S−1
+g αg
+�
+,
+(B4)
+
+where Sg is the rotational part, and αg is the translation vector of the symmetry, this means that
+
+gtl − ti = Sgtl + αg − ti ∈ Zd
+(B5)
+
+g−1tj − tm = S−1
+g tj − S−1
+g αg − tm ∈ Zd ⇒ tj − αg − Sgtm ∈ Zd
+(B6)
+
+⇒
+−(B5)−(B6) Tml
+ij = Sg(tm − tl) − (tj − ti) ∈ Zd.
+(B7)
+
+Next, we must consider how g acts on the reciprocal-space vector k. For an (anti-) unitary operator, we know that
+
+⟨k, r⟩ = ±⟨gk, gr⟩,
+(B8)
+
+where the positive (negative) sign corresponds to the unitary (anti-unitary) case. Since g acts on r with Sg, it follows
+that
+
+⟨k, r⟩ = ±⟨Ak, Sgr⟩
+(B9)
+
+kT r = ±kT AT Sgr,
+
+
+14
+
+where A is the operation which acts upon k when g is applied. Since this is true for all k and r,
+
+A = ±(ST
+g )−1,
+(B10)
+
+and thus
+
+g−1k = ±ST
+g k.
+(B11)
+
+For the next step, we treat the unitary and anti-unitary cases separately for clarity.
+
+1. Unitary case
+
+By applying Eq. (B11) to Eq. (B3), we get
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dk
+il(g)Hlm[R]ei(ST
+g k).(R+tm−tl)Dk
+mj(g−1)
+(B12)
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dk
+il(g)Hlm[R]eik.[Sg(R+tm−tl)]Dk
+mj(g−1).
+
+Applying Eq. (B1), we obtain
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+eiαg.k �
+Ug
+�
+
+il Hlm[R]eik.[Sg(R+tm−tl)] �
+U †
+g
+�
+
+mj e−iαg.k
+(B13)
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+�
+Ug
+�
+
+il Hlm[R]
+�
+U †
+g
+�
+
+mj eik.[Sg(R+tm−tl)]
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dil(g)Hlm[R]Dmj(g−1)eik.[Sg(R+tm−tl)].
+
+2. Anti-unitary case
+
+In the anti-unitary case, we get
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dk
+il(g)Hlm[R]ei(−ST
+g k).(R+tm−tl)Dk
+mj(g−1)
+(B14)
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dk
+il(g)Hlm[R]e−ik.[Sg(R+tm−tl)]Dk
+mj(g−1).
+
+When applying Eq. (B2), it is important to note that the representation of the inverse is given by
+
+Dk(g−1) =
+�
+Dk(g)
+�−1
+=
+�
+eiαg.kUg ˆK
+�−1
+= ˆKU †
+ge−iαg.k
+(B15)
+
+= eiαg.k ˆKU †
+g = eiαg.kD(g−1).
+
+
+15
+
+Applying Eqs. (B2) and (B15) to Eq. (B14), we get
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+eiαg.k �
+Ug
+�
+
+il ˆKHlm[R]eik.[−Sg(R+tm−tl)]eiαg.k ˆK
+�
+U †
+g
+�
+
+mj
+(B16)
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+�
+Ug
+�
+
+il ˆKHlm[R] ˆK
+�
+U †
+g
+�
+
+mj eik.[Sg(R+tm−tl)]
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dil(g)Hlm[R]Dmj(g−1)eik.[Sg(R+tm−tl)].
+
+We observe that the result is the same for the unitary and anti-unitary cases, and treat them together in the
+following. Note that the k - dependent part of the representation cancels with its inverse in both cases [61].
+Next, we substitute tm − tl using Tml
+ij
+defined above, and define R′ = SgR + Tml
+ij . Since R′ is again a lattice
+vector, we can change the summation from R to R′:
+
+˜Hij(k) =
+1
+|G|
+
+�
+
+g∈G
+l,m
+R
+
+Dil(g)Hlm[R]Dmj(g−1)eik.[SgR+Tml
+ij +tj−ti]
+(B17)
+
+=
+1
+|G|
+
+�
+
+g∈G
+l,m
+R′
+
+Dil(g)Hlm[S−1
+g (R′ − Tml
+ij )]Dmj(g−1)eik.(R′+tj−ti).
+(B18)
+
+Finally, we again use Eq. (1) to obtain the symmetrized real-space hopping matrices
+
+˜Hij[R′] =
+1
+|G|
+
+�
+
+g∈G
+l,m
+
+Dil(g)Hlm[S−1
+g (R′ − Tml
+ij )]Dmj(g−1).
+(B19)
+
+Appendix C: AiiDA expose functionality
+
+In this appendix, we illustrate how the AiiDA expose functionality simplifies writing modular workflows. It allows
+implicitly forwarding input and output values of a sub-workflow instead of having to explicitly specify each value.
+Listing 1 shows a simple workflow with two inputs a and b, and one output c. A parent workflow that only wraps
+this workflow is shown in Listings 2 and 3 with and without using the expose functionality, respectively. Import
+statements are omitted in all listings for brevity.
+Besides reducing the boilerplate code in the parent workflow, this enables adhering to the single responsibility
+principle: The parent workflow does not need to change if the inputs or outputs of the wrapped workflow change,
+unless it directly impacts the parent workflow logic.
+
+Listing 1. A simple workflow with inputs a and b, and output c. The steps executing the workflow are omitted.
+
+c l a s s SubWF(WorkChain ) :
+@classmethod
+def
+define ( cls ,
+spec ) :
+spec . input ( ’ a ’ ,
+valid type=Int )
+spec . input ( ’b ’ ,
+valid type=Int )
+spec . output ( ’ c ’ ,
+valid type=Int )
+. . .
+
+Listing 2. A workflow that wraps SubWF by using the expose functionality.
+
+c l a s s ParentWF(WorkChain ) :
+
+
+16
+
+@classmethod
+def
+define ( cls ,
+spec ) :
+spec . expose inputs (SubWF)
+spec . expose outputs (SubWF)
+
+spec . ou t l i n e (
+c l s . invoke subwf ,
+c l s . write outputs
+)
+
+def
+invoke subwf ( s e l f ) :
+return ToContext (
+sub wf=s e l f . submit (SubWF,
+∗∗ s e l f . exposed inputs (SubWF))
+)
+
+def
+write outputs ( s e l f ) :
+s e l f . out many ( s e l f . exposed outputs ( s e l f . ctx . sub wf ))
+
+Listing 3. A workflow that wraps SubWF without using the expose functionality.
+
+c l a s s ParentWF(WorkChain ) :
+@classmethod
+def
+define ( cls ,
+spec ) :
+spec . input ( ’ a ’ ,
+valid type=Int )
+spec . input ( ’b ’ ,
+valid type=Int )
+spec . output ( ’ c ’ ,
+valid type=Int )
+
+spec . ou t l i n e (
+c l s . invoke subwf ,
+c l s . write outputs
+)
+
+def
+invoke subwf ( s e l f ) :
+return ToContext (
+sub wf=s e l f . submit (SubWF,
+a=s e l f . inputs . a , b=s e l f . inputs . b)
+)
+
+def
+write outputs ( s e l f ) :
+s e l f . out ( ’ c ’ ,
+s e l f . ctx . sub wf . out . c )
+
+Appendix D: Strain tensor and strained atom position
+
+In this section, we list all the strain tensors that we used in the above simulations. Under a small homogeneous
+and elastic strain, the lattice vectors R transform (in Cartesian coordinates) into [62, 63]
+
+R′ = (1 + ϵ)R,
+(D1)
+
+where
+
+ϵ =
+
+
+
+
+
+
+
+ϵxx ϵxy ϵxz
+ϵyx ϵyy ϵyz
+ϵzx ϵzy ϵzz
+
+
+
+
+
+
+(D2)
+
+is the strain tensor. Due to the stress-strain relation, the strain tensor under different kinds of strain can be obtained
+as listed below [63–65]:
+
+
+17
+
+1. (001) plane biaxial strain
+
+ϵbi
+001 =
+
+
+
+
+
+
+
+ϵxx
+0
+0
+0
+ϵyy
+0
+0
+0
+ϵzz
+
+
+
+
+
+
+(D3)
+
+where ϵxx = ϵyy = ϵ′, ϵzz = −2 C12
+
+C11 ϵ′.
+
+2. (110) plane biaxial strain
+
+ϵbi
+110 =
+
+
+
+
+
+
+
+ϵxx ϵxy
+0
+ϵxy ϵxx
+0
+0
+0
+ϵzz
+
+
+
+
+
+
+(D4)
+
+where
+
+ϵzz = ϵ′
+(D5)
+
+ϵxx =
+2C44 − C12
+
+2C44 + C11 + C12
+ϵ′
+
+ϵxy =
+−C11 − 2C12
+
+2C44 + C11 + C12
+ϵ′
+
+3. (111) plane biaxial strain
+
+ϵbi
+111 =
+
+
+
+
+
+
+
+ϵxx ϵxy ϵxy
+ϵxy ϵxx ϵxy
+ϵxy ϵxy ϵxx
+
+
+
+
+
+
+(D6)
+
+where
+
+ϵxx =
+4C44
+
+4C44 + C11 + 2C12
+ϵ′
+(D7)
+
+ϵxy =
+−C11 − 2C12
+
+4C44 + C11 + 2C12
+ϵ′
+
+4. [110] uniaxial strain
+
+ϵuni
+110 =
+
+
+
+
+
+
+
+ϵxx ϵxy
+0
+ϵxy ϵxx
+0
+0
+0
+ϵzz
+
+
+
+
+
+
+(D8)
+
+where
+
+ϵzz = ϵ′
+(D9)
+
+ϵxx = − C11
+
+2C12
+ϵ′
+
+ϵxy = −(C11 − C12)(C11 + 2C12)
+
+4C44C12
+ϵ′
+
+In the distorted system, the position of the atoms also changes with the strain tensor. In the unstrained InAs,
+GaSb and InSb system, the cation is located in the (0, 0, 0) site and the anion is located at ˆτ =(1/4, 1/4, 1/4) in
+primitive lattice vectors. In Cartesian coordinates, τ changes by the following [63–65]:
+
+
+18
+
+Quantity
+Symbol
+unit
+InAs GaSb InSb
+
+C11
+1011dyn cm−2 8.329 8.834 6.918
+
+Elastic constanta
+C12
+1011dyn cm−2 4.526 4.023 3.788
+
+C44
+1011dyn cm−2 3.959 4.322 3.132
+
+internal dis.b
+ζ
+-
+0.58
+0.99
+0.9
+
+a From Ref. [66]
+
+b From Ref. [67]
+
+c From Ref. [68]
+
+Table III. Strain parameters used in this work
+
+1. (001) biaxial strain
+
+ˆτ ′ = (1 + ϵ)ˆτ
+(D10)
+
+2. (111) biaxial strain
+
+ˆτ ′ = (1 + ϵ)ˆτ − a0
+
+2 ϵxyζ
+
+
+
+
+
+
+
+1
+1
+1
+
+
+
+
+
+ = (1 + ϵ − 2ϵxyζ)ˆτ,
+(D11)
+
+where a0 is the lattice constant without strain.
+
+3. (110) biaxial strain and [110] uniaxial strain
+
+ˆτ ′ = (1 + ϵ)ˆτ − a0
+
+2 ϵxyζ
+
+
+
+
+
+
+
+0
+0
+1
+
+
+
+
+
+ =
+
+
+
+
+
+
+1 + ϵ − 2ϵxyζ
+
+
+
+
+
+
+
+0 0 0
+0 0 0
+0 0 1
+
+
+
+
+
+
+
+
+
+
+
+
+ ˆτ.
+(D12)
+
+The internal displacement ζ and the stiffness constants C11, C12, C44 of InAs, GaSb and InSb we used in the paper
+are listed in Table III
+
+

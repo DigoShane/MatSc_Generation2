@@ -1,0 +1,1350 @@
+AtomVision: A machine vision library for atomistic images
+
+Kamal Choudhary1,2, Ramya Gurunathan1, Brian DeCost1, and Adam Biacchi3
+
+1Material Measurement Laboratory, National Institute of Standards and Technology,
+Gaithersburg, 20899, MD, USA
+
+2Theiss Research, La Jolla, 92037, CA, USA
+
+3Physical Measurement Laboratory, National Institute of Standards and Technology,
+Gaithersburg, 20899, MD, USA
+
+December 7, 2022
+
+Abstract
+
+Computer vision techniques have immense potential for materials design applications. In this work,
+
+we introduce an integrated and general-purpose AtomVision library that can be used to generate, curate
+
+scanning tunneling microscopy (STM) and scanning transmission electron microscopy (STEM) datasets
+
+and apply machine learning techniques. To demonstrate the applicability of this library, we 1) generate
+
+and curate an atomistic image dataset of about 10000 materials, 2) develop and compare convolutional
+
+and graph neural network models to classify the Bravais lattices, 3) develop fully convolutional neural
+
+network using U-Net architecture to pixelwise classify atom vs background, 4) use generative adversarial
+
+network for super-resolution, 5) curate a natural language processing based image dataset using open-
+
+access arXiv dataset, and 6) integrate the computational framework with experimental microscopy tools.
+
+AtomVision library is available at https://github.com/usnistgov/atomvision.
+
+1
+Introduction
+
+Only a few experimental techniques allow a materials scientist to “see” the local atomic structure of a sample.
+
+Atomistic imaging techniques such as scanning tunneling microscopy (STM), atomic force microscopy (AFM),
+
+transmission electron microscopy (TEM) and their variants provide insights into the local atomic structure,
+
+defects and their dynamics, which are critically linked to the functionality and performance of the materials
+
+[1]. Due to rapid growth in computer-vision techniques [2, 3], its application to atomic scale image data
+
+is natural. These data can be obtained from experimental as well as computational methods and recently
+
+their usage has become widespread [4–20]. Nevertheless, an integrated library to capture, curate, generate
+
+datasets and apply data-analytics methods is still needed.
+
+Such libraries can be useful for microscopy image tasks such as image classification [7,21–23], pixelwise
+learning (e.g., semantic segmentation) [17, 24–30], object/entity recognition, localization, super-resolution
+
+[31–35] etc. The application of such libraries encompasses multiple science domains such as materials science,
+
+condensed matter physics, biology etc [5,8,36].
+
+1
+
+arXiv:2212.02586v1  [cond-mat.mtrl-sci]  5 Dec 2022
+
+
+Computationally, there are several methods for simulating STM and scanning transmission electron
+
+microscopy (STEM) images.
+STM images can be computational simulated using Bardeen [37], Tersoff-
+
+Hamman [38] and Chen [39] methods. STM images can be either constant height or constant current based.
+
+For standard high angle annular dark field (HAADF) STEM, methods such as convolution, Bloch wave and
+
+multislice approximations [40–43, 43, 44] can be used. The convolution approximation is one of the fastest
+ways to simulate STEM images. It is based on an incoherent linear image model that convolves the probe
+
+point-spread function with simple atomic potentials for the specimen and are usually used for thin films.
+
+Bloch wave and multislice methods are computationally heavy but are more generalizable.
+
+Some of the major libraries (experimental and computational) based on microscopy images include ab
+
+initio Transmission Electron Microscopy (abTEM) [45], EXtraction, Separation, and Caption-based natural
+
+Language Annotation of IMages (EXCLAIM) [23], AtomAI [46], [47], Prismatic [48] and Quantitative
+
+TEM/STEM Simulations (QSTEM) [49]. Deep learning techniques such as convolutional neural network
+
+(CNN) are commonly applied to atomistic image data.
+There have been several previous works on the
+
+application of deep-learning (DL) techniques [5] to atomistic image data.
+In Ref [24] pixelwise DL was
+
+applied to detect atoms in simulated atomic-resolution TEM images of graphene. A neural network model
+
+was developed to detect the presence of atoms as well as predict its height. Ref [25] demonstrated atomistic
+
+defect recognition and tracking across sequences of atomic-resolution STEM images of WS2. In ref [26] U-net
+
+architecture was used to detect vacancies and dopants in WSe2 in STEM images with high model accuracy.
+
+In ref [27] DefectSegNet was developed to automatically identify defects in transmission and STEM images of
+
+steel including dislocations, precipitates, and voids. Ziatdinov et al. applied DL techniques to learn surface
+
+molecular structures [29]. More details about previous works on atomistic imaging and machine learning
+
+techniques can be found elsewhere [5,8,36].
+
+In this work, we present the AtomVision library, which can be used to generate a simulated STM/STEM
+
+dataset using several levels of approximation, as well as using natural language processing to collect images
+
+from literature and experiments. We also provide generalized scripts that can be used for a broad level
+
+of image machine learning tasks such as identifying five 2D-Bravais lattices [50], atomistic segmentation
+
+to distinguish between background and images and later apply convolutional neural network (CNN)/graph
+
+neural network (GNN) on the segmented images, and generative design of atomistic images using generative
+
+adversial network (GAN) techniques. This library is a part of the NIST-JARVIS (Joint Automated Repository
+
+for Various Integrated Simulations) infrastructure [51] for accelerated materials design using electronic
+
+structure, force-field, machine learning calculations and experiments. The atomvision library is publicly
+
+available at https://github.com/usnistgov/atomvision.
+
+2
+Methods
+
+2.1
+Dataset generation and curation
+
+We use Tersoff-Hamann (TH) technique [38] to calculate the STM images of 2D materials. TH is a simple
+model of an s-wave STM tip.
+
+n(r, E) =
+�
+
+µ
+|ψ(r)2|δ(ϵµ − E)
+(1)
+
+ˆ EF +eV
+
+EF
+n(r, E) dE
+(2)
+
+2
+
+
+In this approach, the tunneling current I, which depends on the tip position r and the applied voltage
+
+V , is proportional to the integrated local density of states (ILDOS). The ILDOS is calculated from the
+
+Kohn-sham eigenvectors, ψµ, and eigenvalues, ϵµ, where µ labels different states. EF is the Fermi-energy.
+
+Different experiments will choose different applied voltages, but we concentrate on two values, 0.5 eV for
+
+positive bias and -0.5 eV for negative bias, which require integrating from EF to EF ±0.5eV. We choose
+
+0.5 eV range for simplicity sake, and other values usually produce qualitatively similar images for metals or
+
+small gap semiconductors. However, simulations for other voltages should also be possible with the method
+and tools discussed in this work. This method is readily available in DFT software such as Vienna ab initio
+
+simulation package (VASP) [52,53].
+
+The STEM images [40–43, 43, 44] were generated with the convolution approximation (based on fast
+
+Fourier transform based convolutions) following:
+
+I(r) = R(r, Z) ⊗ PSF(r)
+(3)
+
+where r is a 2D vector in the image plane, I(r) is the image intensity,
+
+R(r, Z) =
+
+N
+�
+
+i
+Z1.7
+i
+δ(r − ri)
+(4)
+
+R(r, Z) is the transmission function of the N atoms at position ri, and includes information about the
+
+atomic potential of the system given by Zi, the atomic number of the atom. Rutherford scattering from
+
+the nuclear charge predicts a Z2 dependence of the intensity, but the exponent is reduced by core electron
+
+screening, and depends on the detection collection angles. The power value of 1.7 is an approximate value
+
+that represents a compromise between these many factors.
+In previous works, the power values of 1.3-
+
+1.7 [54] have also been used to match experiments, however, for the sake of generality, we use 1.7 for all the
+
+systems. We note that for such STEM images only crystallographic coordinates and atom-type information
+
+are needed. The optimized geometry for the 2D materials were obtained from density functional theory
+
+calculations. We generate STEM images with output size of 256x256 pixels for at least 2.5 nm x 2.5 nm
+
+size. The microscope point spread function (PSF) is modeled as a normalized Gaussian with width of 0.5 ˚A.
+
+We use the 2D materials available in the JARVIS-DFT-2D [51,55], Computational 2D Materials Database
+
+(C2DB) [56] and 2DMatPedia [57] datasets, leading to 9150 systems with unique chemical compositions and
+
+structural spacegroup information.
+
+For natural language processing (NLP) related dataset, we use the open access arXiv dataset, which
+consists of 1.8 million articles starting from 1986 to 2020.
+We use ChemNLP [58] to extract chemistry
+
+information from the arXiv articles. We search for keywords such as STEM, STM, microscopy, HRTEM,
+
+scanning tunneling microsopy and scanning transmission electron microscopy in the abstract and figure
+
+captions of articles, and if the system has that info, we further find out if the article contains clear
+
+STM/STEM images to curate an image dataset.
+The figure caption parsing was carried out with the
+
+BeautifulSoup package.
+
+Currently, the experimental STEM image dataset consists of images of nanoparticles. As an example
+
+experimental dataset we use TEM images of Iron oxide (Fe3O4), rhodium (Rh), and tin(II) sulfide (SnS)
+
+nanoparticles. In future, we plan to expand this dataset to multiple systems, especially for the materials
+
+available in the JARVIS-DFT dataset. Iron oxide, rhodium, and tin(II) sulfide nanostructures were synthesized
+
+using previously reported solution strategies based on the thermal decomposition of elemental precursors. All
+
+3
+
+
+syntheses were carried out under Ar using standard Schlenk techniques. Briefly, Fe3O4 spherical nanoparticles
+
+were synthesized by heating iron oleate in benzyl ether to 300 °C and then centrifugally washing twice before
+
+dispersing the collected product in hexanes [59].
+Rh triangular nanoplates were synthesized by heating
+
+RhCl3.xH2O and 40,000 molecular weight poly(vinylpyrrolidone) in triethylene glycol to 135 °C before then
+
+centrifugally washing twice and redispersing the product in ethanol [60]. α-SnS micron-sized nanoribbons
+
+were synthesized by heating SnCl2 and sulfur powder in oleylamine to 180 °C and then centrifullally washing
+
+twice before redispersing the product in toluene [61]. Transmission electron microscopy (TEM) images were
+collected using a Phillips EM-400 operating at an accelerating voltage of 120 kV and high-resolution TEM
+
+(HRTEM) images were obtained with a FEI Titan 80-300 operating at 300 kV. Samples were prepared by
+
+casting one drop of dilute nanomaterial solution onto 300-mesh Formvar and carbon-coated copper grids (Ted
+
+Pella). Please note that commercial products used in this work are identified to specify procedures. Such
+
+identification does not imply recommendation by National Institute of Standards and Technology (NIST).
+
+2.2
+Machine learning model
+
+For the machine learning models, we primarily use the STEM dataset developed with the convolution
+
+approximation.
+We use several machine/deep learning approaches such as clustering, classification with
+
+convolution and graph convolution neural network, fully convolutional neural network using U-Net and
+
+generative adversial network [4–20].
+
+For clustering analysis, we use t-distributed stochastic neighbor embedding (t-SNE), which is a statistical
+
+method for visualizing high-dimensional data in a two- or three-dimensional map.
+The t-SNE plot was
+
+generated with the help of Scikit-learn library [62]. The images were flattened into a python numpy array
+
+and then their dimensionality was reduced using nonlinear t-SNE for visualization purposes.
+
+The pixelwise classification/semantic segmentation task was performed with segmentation-models-with-
+
+pytorch (SMP) [63] package using U-Net [64] pretrained model using Binary cross-entropy with logits loss
+(BCELogitLoss) function. All the supervised ML tasks used 75:25 training:testing of samples during training.
+
+For the Bravais lattice classification task, we use DenseNet (Dense Convolutional Network) [65] with
+
+pre-trained model available in PyTorch [66]. We use a uniform size of 256x256 images for each material. We
+
+use Pytorch-Ignite library to setup the training run with Adam optimizer, 0.001 learning rate and negative
+
+log likelihood loss (NLLLoss) for 100 epochs.
+
+After pixelwise classification, we convert the images into networkx and deep graph library graphs [67],
+
+which are then used along with atomistic line graph neural network (ALIGNN) [68] for image classification
+
+tasks as well. We use maximum, minimum and mean intensity of blobs in the images as the node features,
+
+while a 4 ˚A cutoff is used to generate neighborlist and generate bond-angles of different nodes. We use
+
+a batch size of 32, learning rate of 0.001, AdamW optimizer, negative log likelihood loss (NLLLoss) and
+
+50 epochs for ALIGNN training. We used the original hyperparameters of the ALIGNN model as used in
+
+ref. [68].
+
+We create a synthetic dataset of STEM images with low resolution (4 times lower resolution, i.e. 64x64
+
+pixel images instead of 256x256) and high-resolution (as generated with convolution approximation) images
+
+and train a generative adversarial network (GAN) for image super-resolution (SR) using SR-GAN model [69].
+
+In SR-GAN, we use the 4th layer of VGG19 (visual geometry group convolutional neural network that is 19
+
+layers deep) [70] as feature-extractor. We use a perpetual loss function during SR-GAN training, which is
+
+a combination of both adversarial loss and content loss. We train the model for 50 epochs, learning rate of
+
+0.00008 and Adam optimizer during training.
+
+4
+
+
+Next, we analyze the reconstruction of image capabilities using an autoencoder model with PyTorch.
+
+We take the 256x256 image, and use an auto-encoder of dimension 1120. The decoding part of the model
+
+reconstructs the image in 256x256 size. We train the models for 200 epochs, with mean squared loss function,
+
+Adam optimizer, and a learning rate of 0.001.
+
+3
+Results
+
+AtomVision
+
+DFT Image
+
+Dataset
+
+Experimental 
+
+Image
+Dataset
+
+Graphs & 
+Inverse 
+design
+
+Segmentation
+
+Classification
+
+NLP Image 
+
+Dataset
+ChemNLP+arXiv
+
+Tersoff-Hamann, 
+Convolution apprx., …
+
+2D mats., 
+Nanoparticles,…
+
+Bravais lattice
+
+Atom vs background,…
+
+ALIGNN, GAN,…
+
+Figure 1: A Schematic overview of the AtomVision library. AtomVision presents an integrated library of
+dataset and AI/ML tools for atomistic images. The tool can be used for generating and curating microscopy
+dataset in a systematic manner as well as apply machine learning tools on the image dataset.
+
+A schematic overview for AtomVision library is shown in Fig. 1. Usually any image analytic technique
+
+application would require a large dataset. In AtomVision, the dataset can be obtained from density functional
+
+theory, convolution approximation, natural language approximation, and experiments. For instance, STM
+
+images for 2D materials in both positive and negative biases were obtained from the Tersoff-Hamann approach
+
+as implemented in the JARVIS-Tools. The STM image consists of 1400 images for 2D materials in the
+
+JARVIS-DFT dataset. Although the application has been carried out for 2D materials, it can be applied to
+
+other non-2D systems as well. The STEM image dataset for 2D materials were obtained with the convolution
+
+approximation for systems in JARVIS-DFT, C2DB and 2DMatPedia computational datasets. While STM
+
+techniques require charge densities and wavefunctions to obtain integrated DOS values, the STEM dataset
+
+using the convolution approximation can be directly obtained with atomic types and coordinates information
+
+only.
+
+We also show some of the machine learning architectures adopted in AtomVision in Fig. 2. These models
+
+are based on well-known deep learning models such as convolution neural network (CNN), graph neural
+
+network (GNN), and generative models such as auto-encoders (AE) and generative adversarial networks
+
+5
+
+
+(a) DenseNet
+(b) U-Net
+(c) AE
+
+(d) ALIGNN
+(e) SRGAN
+
+Figure 2: A few example machine learning architectures for images available in the AtomVision library.
+a) DenseNet is based on convolutional neural networks, b) U-net is a fully convolutional neural network,
+c) autoencoder, d) atomistic line graph neural network, e) super-resolution generative adversarial neural
+network.
+
+(GAN). The applications of these architectures and their performances are discussed in detail below.
+
+3.1
+Validation of dataset
+
+We compare the STM and STEM simulated images of a few example 2D materials: graphene, FeTe and MoS2,
+
+with experimental images in Fig. 3. The left panel (panels a,e,i) show experimental STM images, while DFT
+
+based images are shown in the next column (in panels b,f,j). Similarly, we show the experimental STEM
+
+images for graphene, FeTe, and MoS2 in Fig, c,g,k and corresponding convolution approximation based
+
+images are shown in Fig. d,h,l. Clearly, we find excellent qualitative agreement between the simulated and
+
+experimental images. Furthermore, we note that theoretical image datasets are larger and can be generated
+
+in a very controlled way compares to experimental images. Hence, a comparison for a few samples gives
+
+a qualitative idea that computer vision techniques applied to a theoretical image dataset should indicate
+
+similar confidence with respect to experiments.
+
+3.2
+Clustering analysis
+
+Next, we apply a machine learning clustering technique: t-SNE (t-distributed stochastic neighbor embedding)
+
+for visualizing the five types of 2D Bravais lattices in the JARVIS-DFT-2D STEM dataset. We first apply the
+
+t-SNE visualization directly to the simulated 256x256 pixel-based STEM image data for the 2D materials.
+
+These image array values for all the 2D materials in the datasets are converted into two-dimensions and are
+
+visualized in Fig. 4. From this visualization, it is clear that hexagonal class 0), square (class 1), and rectangle
+
+(class 2) systems segregate into islands in the pixel space, while the rhombus (class 3) and parallelogram
+
+6
+
+
+(a)
+(b)
+(c)
+(d)
+
+(e)
+(f)
+(g)
+(h)
+
+(i)
+(j)
+(k)
+(l)
+
+STM
+STEM
+
+C
+
+FeTe
+
+MoS2
+
+4
+
+Figure 3: Comparison of our computational and previously reported experimental STM and STEM images
+for a few examples such as graphene, C (JVASP-667), FeTe (JVASP-6667), MoS2 (JVASP-664). Fig. a,e,i
+shows experimental STM images [71–73] while b,f,j shows our simulated STM images. Similarly, c,g,k shows
+experimental [74–76] and d,h,l shows simulated STEM images.
+Experimental images are reprinted with
+permission from American Physical Society and American Institute of Physics Publishing.
+
+(class 4) systems show greater overlap with other classes, suggesting more likely mis-classifications. We then
+
+perform a similar visualization using the graph-based features for the STEM image dataset. Here, the list of
+
+triplet graph features for each image, representing bond angle cosines, are encoded in a 200-bin histogram
+
+before applying the t-SNE operation to investigate clustering. Once again, we find noticeable clusters of the
+
+hexagonal and square systems, but noticeable overlap between the hexagonal and rhombus classes as well
+
+as the rectangle and parallelogram classes. Such analysis provides a visualization of large dimensional data
+
+in a compact way to suggest that both image pixel values and graph features contain information about the
+
+Bravais lattices.
+
+3.3
+U-Net and semantic segmentation
+
+Although, the clustering models are useful for identifying global features of images such as lattice system,
+
+more details can be obtained with pixelwise classification of images. We use U-Net to perform atom vs
+
+background classification task using the STEM datasets. U-net is a fully convolutional neural network with
+
+a U-shaped architecture consisting of a specific encoder-decoder scheme (as shown in Fig. 2). The encoder
+
+reduces the spatial dimensions in every layer and increases the channels. On the other hand, the decoder
+
+increases the spatial dimensions while reducing the channels. We use the pretrained U-Net model in the
+
+SMP library and fine tune with the STEM dataset generated in this work for pixelwise classification of
+
+atom vs background classes. We find that high accuracy of 93.0 % for the pixelwise classification of atom
+
+vs background task. As an application for this model, we first generate synthetic graphene STEM images
+
+7
+
+
+(a) Direct Pixel Data 
+(b) Triplet Graph Features 
+
+Figure 4: t-SNE visualization of the samples in the combined dataset including the JARVIS-DFT-2D and
+C2DB databases. In panel (a), the samples are featurized directly using the 256x256 pixel image intensity
+data. In contrast, in panel (b), the samples are featurized using their triplet (bond angle cosine) features
+in a graph construction. The distribution of triplet features are expressed as a 200-bin histogram ranging
+from -1 to 1. Here, we denote hexagonal, square, rectangle, rhombus and parallelogram classes as 0,1,2,3,4
+respectively. We observe clusters of individual classes in both t-SNE figures.
+
+with vacancies and use the semantic segmentation model on it as shown in Fig. 5. We find find that the
+model can accurately identify atom and background from the image. Later, using scikit-image [77] based
+
+blob detection we can find the number of atoms in the image. With scikit-image, we can also get various
+
+statistics of the blobs such as the maximum, minimum, mean intensities in the blob etc.
+
+3.4
+CNN Classifier
+
+Now, we use a supervised classification technique to classify images into the five 2D Bravais lattices:
+
+hexagonal, square, rectangular, rhombus (rectangular centered), and oblique (parallelogram) [50]. We use a
+
+well-known computer vision model: DenseNet to perform this task. In a DenseNet architecture, each layer
+
+is connected to every other layer, hence the name is given as Densely Connected Convolutional Network.
+
+For L layers, there are L(L+1)/2 direct connections. For each layer, the feature maps of all the preceding
+
+layers are used as inputs, and its own feature maps are used as input for each subsequent layers. DenseNet
+
+was developed to improve the vanishing gradient issues in deep convolutional neural networks. We fine-tune
+
+the DenseNet model [65] for 5 Bravais lattice classes using the STEM image dataset. We find that DenseNet
+
+provided an accuracy of 83.0 %. We note that the baseline model for such classification task in 1/5 = 20 %,
+
+so using machine vision techniques is clearly justified. In addition to overall accuracy of the model, confusion
+
+matrix of the classification task provide details for individual class performance as shown in Fig. 6a. Here,
+
+we denote hexagonal, square, rectangle, rhombus and parallelogram classes as 0,1,2,3,4 respectively. We find
+
+that the trained model is highly accurate for hexagonal and square lattice but less accurate for rhombus and
+parallelogram classes, which can be attributed to less training data and higher complexity for these classes.
+
+8
+
+
+(a)
+(b)
+(c)
+
+Figure 5: Application of semantic segmentation model to identify atoms and background from defective
+graphene system. In a) We generate synthetic graphene STEM images with vacancies and in b) use the
+semantic segmentation model. Finally, in c) we a blob detection algorithm to find number of atoms.
+
+3.5
+ALIGNN-based GNN classifier
+
+In the previous section, an image classifier was trained directly on the pixelated images. Here, we instead
+
+convert the image data into a non-Euclidean graph, which infers the connectivity of the objects in the image,
+allowing the usage of a graph neural network. Graph neural networks have been widely applied in the field
+
+of materials science as they allow for the structure of the material, along with composition-based features
+
+to be used in the prediction. Typically, graph neural networks are used to predict a material property from
+
+its structure, including both scalar quantities such as formation energy, bulk modulus, or band gap, or more
+
+recently, spectral quantities such as electron and phonon density-of-states or measured optical spectra (e.g.
+
+X-ray, infrared, Raman) [5]. To our knowledge, a graph neural network has not yet been applied to materials
+
+science image data, as it is in this work. The atomistic line graph neural network (ALIGNN) [68] was used,
+
+as it allows a hierarchy of structural features corresponding to single objects (i.e., atoms), pairs of objects
+
+(i.e., bond vectors), and pairs of bonds (i.e., bond angles). ALIGNN uses edge-gated graph convolution for
+
+updating nodes as well as edge features. One ALIGNN layer composes an edge-gated graph convolution
+
+on the bond graph with an edge-gated graph convolution on the line graph. The line graph convolution
+
+9
+
+
+Figure 6: Confusion matrix for classifying STEM images into five Bravais lattices using a) convolution neural
+network based Densenet, b) graph neural network based ALIGNN models.
+Here, we denote hexagonal,
+square, rectangle, rhombus and parallelogram classes as 0,1,2,3,4 respectively.
+
+produces bond messages that are propagated to the atomistic graph, which further update the bond features
+
+in combination with atom features.
+
+After the pixelwise classification, we can convert the data into graph that can capture non-Euclidean
+
+information of the images and can be used for advanced ML techniques such as the application of graph
+
+neural network. A example systems Pb2I, GaTe and Nb3Br8 are shown in Fig. 7. After the graph conversion
+
+we use the ALIGNN model for lattice classification and find a reasonable accuracy of 78 %. Note that unlike
+
+the original ALIGNN model which uses atomic attributes such as electronegativity as node features, we
+
+use the blob-statistics (such as maximum, minimum and mean intensities in a blob) as the node attributes.
+
+Therefore, knowledge of chemistry is not required to train and execute the model. The confusion matrix
+for the model is shown in Fig. 6b. Although, the GNN-based models do not beat CNN models such as
+
+DenseNet, the framework for applying GNNs on images could be a powerful alternative tool for futuristic
+
+materials design because GNN-based methods can incorporate additional relationships and parameters that
+
+are not strictly related to the appearance of the image. Additionally, from Fig. 6, we find that both the
+
+CNN and GNN models work well for hexagonal and square lattice but they are less accurate for rhombus
+
+lattices.
+
+3.6
+Autoencoders
+
+Autoencoders (AE) are a special kind of neural network used to perform dimensionality reduction. We can
+
+think of autoencoders as being composed of two networks, an encoder and a decoder. The encoder learns
+
+a non-linear transformation from the original high-dimensional input space to a lower-dimensional latent
+
+space. A decoder learns a non-linear transformation that projects the latent vectors back into the original
+
+10
+
+
+Figure 7: Computed STEM images (right) and overlaid graph construction (left) for three example materials
+in the hexagonal crystal system and (001) orientation.
+Although the lattices are visually diverse, the
+DenseNet and ALIGNN crystal system classifiers correctly categorize over 90 % of the class 0 samples.
+
+11
+
+
+Figure 8: Original vs autoencoder regenerated images for a few random samples in the test dataset including
+Tl2Se3, Al2O, ThF2, and CuF. The top 4 images are the original STEM images while the lower ones are
+generated after autoencoder regeneration operation.
+
+high-dimensional input space. We develop an auto-encoder to reduce the large pixel-dimension. Usually an
+
+image taken as 256x256 if flattened leads to 50176 (i.e., 256x256) dimension, which is quite high. According
+
+to manifold hypothesis, the underlying structure of the data can be sufficiently described using only a few
+
+dimensions. Auto-encoders are well-known for such dimensional reduction tasks. We take the 256x256 image,
+
+and use an auto-encoder of dimension 1120. In Fig. 8, we show the performance of the auto-encoders to
+
+reconstruct a few images in the test dataset. Clearly, the reconstructed images bears a lot of similarity to the
+
+original images suggesting that the autoencoders developed in this work can be used for AE-related tasks
+
+such as dimensionality reduction.
+
+3.7
+Super-resolution GAN
+
+Now, we use generative adversarial network (GAN) for enhancing the resolution of STEM images.
+We
+
+generate a dataset of 4-times low resolution (i.e., 64x64 instead of 256x256 size images) and using Super-
+
+Resolution Generative Adversarial Networks (SRGAN) [69] architecture, we develop a model to enhance
+
+resolution. We find a generator loss of 0.306 and discriminator loss of 0.458. Using this model, we generate a
+
+high-resolution image in the test set and show the results in Fig.9. The low-resolution image is shown as LR
+
+while the high-resolution image is shown as HR. SRGAN uses VGG19 (visual geometry group convolutional
+
+neural network that is 19 layers deep) [70] as feature extractor, however we notice that using shallow VGG19
+
+feature extractor such as 4th layer (Fig. c) is equivalent to deeper layers such as Fig. d. Hence, a lower level
+
+feature extractor in VGG19 should be enough for resolution enhancement purposes.
+
+3.8
+Extracting images from arXiv dataset
+
+Next, we use natural language processing with the open access arXiv dataset to curate datasets of STM and
+
+STEM images from the available literature. The arXiv dataset was previously used for ChemNLP project
+
+and has chemistry based information for the systems as well. We found more than 500 STM and 1500 STEM
+
+12
+
+
+Figure 9: SR-GAN for enhancing image resolution. Examples for a) LR (low resolution), b) actual HR
+(high-resolution), c) SR-GAN VGG19’s 18th layer prediction, d) SR-GAN VGG19’s 4th layer prediction.
+We observe shallower layers of VGG19 gives similar predictions in terms of resolution enhancement as that
+of deeper layers.
+
+images from a simple search of STM, STEM in abstracts for the condensed-matter physics articles in arXiv.
+
+We further searched for such entries in the figure captions of the dataset and found more than 1000 such
+
+images that can be useful for image analytics. We show a few of the images obtained from the arXiv dataset
+
+in Fig.10. We provide the list of links to the images and corresponding papers in the AtomVision library.
+
+13
+
+
+(a)
+(b)
+
+(c)
+
+(d)
+
+Figure 10:
+Example micrographs retrieved from the arXiv dataset.
+These figures are taken from:
+a)
+arXiv:0708.2306 for Dy [78], b) arXiv:0805.3416 for FeC32H16N8 [79] c) arXiv:0807.3875 for Si [80] d)
+arXiv:0902.0626 for La0.67Ca0.33MnO3 [81].
+
+3.9
+Experimental image dataset
+
+In addition to computational and NLP based microscopy image datasets, we also develop our own experimental
+
+image dataset in AtomVision. AtomVision provides a flexible and easy to use metadata capture template
+
+that can capture experimental set up across various microscopy instruments. This is motivated by previous
+
+works in this field such as refs. [16,82]. Such infrastructures provide frontend and backend meta-data capture
+
+schema and frameworks to capture and curate microscopy image data. Having an integrated framework for
+
+both experimental, computational and image based datasets in AtomVision will allow the investigation of
+
+several important challenges such as reproducibility, ground truth data and uncertainty in measurements.
+
+14
+
+
+Figure 11: TEM and corresponding HRTEM images of solution-synthesized nanostructures. (a,b) Fe3O4
+spherical nanoparticles, (e,f) Rh triangular nanoplates, and (i,j) SnS micron-sized nanoribbons. Regions of
+the HRTEM image indicated by dashed lines were magnified and analyzed by fast Fourier transform revealing
+crystallographic assignments of (c,d) Fe3O4 (311), (g,h) Rh (111), and α-SnS (400).
+
+We show a few examples of TEM image dataset of nanoparticles in Fig.11. These nanoparticles TEM images
+
+are labelled by their different facet orientations leading to a huge variability in the dataset for the same
+
+material. Currently, the experimental image dataset contain a few hundreds of TEM images for various
+
+materials and their facets including Pt, Pd, Rh, Au, Fe2O3, SnS etc. and we plan to continuously grow the
+
+dataset. We can integrate the AtomVision framework with NIST’s and other micorscopy measurement labs
+
+in the future to leverage several tools and datasets available in the library.
+
+In summary, we have developed an integrated and general-purpose machine-vision library especially for
+
+atomistic images. The dataset in AtomVision consists of both computational, experimental and literature
+
+based images providing a wide variety for general applications including machine/deep learning applications.
+
+The dataset mainly consists of scanning tunneling microscopy (STM) and scanning transmission electron
+
+microscopy (STEM) images and the framework would allow other atomic image datasets as well. There are
+
+numerous image machine learning techniques and we demonstrated applications of few of them including
+
+convolution neural network, graph neural network, fully convolution neural network, generative adversarial
+
+network etc.
+Especially, the application of graph neural network such as ALIGNN on atomistic images
+
+provide a new paradigm for atomistic image analysis. The well-curated image dataset from experiments as
+
+15
+
+
+well as the computational images can serve as reference for many scientific applications.
+
+4
+Data availability statement
+
+The data that support the findings of this study are openly available at the following URL: https://github.
+
+com/usnistgov/atomvision.
+
+5
+Acknowledgments
+
+We thank the National Institute of Standards and Technology for funding, computational, and data-management
+
+resources. K.C. thanks the computational support from Extreme Science and Engineering Discovery Environment
+
+(XSEDE) computational resources under allocation number TG-DMR 190095. Contributions from K.C.
+
+were supported by the financial assistance award 70NANB19H117 from the U.S. Department of Commerce,
+
+National Institute of Standards and Technology.
+
+References
+
+[1] Peter J Goodhew, John Humphreys, and Richard Beanland. Electron microscopy and analysis. CRC
+
+press, 2000.
+
+[2] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. Imagenet classification with deep convolutional
+
+neural networks. Communications of the ACM, 60(6):84–90, 2017.
+
+[3] Yaniv Taigman, Ming Yang, Marc’Aurelio Ranzato, and Lior Wolf. Deepface: Closing the gap to human-
+
+level performance in face verification. In Proceedings of the IEEE conference on computer vision and
+
+pattern recognition, pages 1701–1708, 2014.
+
+[4] Elizabeth A Holm, Ryan Cohn, Nan Gao, Andrew R Kitahara, Thomas P Matson, Bo Lei,
+
+and Srujana Rao Yarasi.
+Overview:
+Computer vision and machine learning for microstructural
+
+characterization and analysis. Metallurgical and Materials Transactions A, 51(12):5985–5999, 2020.
+
+[5] Kamal Choudhary, Brian DeCost, Chi Chen, Anubhav Jain, Francesca Tavazza, Ryan Cohn, Cheol Woo
+
+Park, Alok Choudhary, Ankit Agrawal, Simon JL Billinge, et al. Recent advances and applications of
+
+deep learning methods in materials science. npj Computational Materials, 8(1):1–26, 2022.
+
+[6] Rama K Vasudevan, Kamal Choudhary, Apurva Mehta, Ryan Smith, Gilad Kusne, Francesca Tavazza,
+
+Lukas Vlcek, Maxim Ziatdinov, Sergei V Kalinin, and Jason Hattrick-Simpers. Materials science in the
+
+artificial intelligence age: high-throughput library generation, machine learning, and a pathway from
+
+correlations to the underpinning physics. MRS communications, 9(3):821–838, 2019.
+
+[7] Mohammad Hadi Modarres, Rossella Aversa, Stefano Cozzini, Regina Ciancio, Angelo Leto, and
+
+Giuseppe Piero Brandino.
+Neural network for nanoscience scanning electron microscope image
+
+recognition. Scientific reports, 7(1):1–12, 2017.
+
+[8] Mengshu Ge, Fei Su, Zhicheng Zhao, and Dong Su. Deep learning analysis on microscopic imaging in
+
+materials science. Materials Today Nano, 11:100087, 2020.
+
+16
+
+
+[9] Michiel Larmuseau, Michael Sluydts, Koenraad Theuwissen, Lode Duprez, Tom Dhaene, and Stefaan
+
+Cottenier. Compact representations of microstructure images using triplet networks. npj Computational
+
+Materials, 6(1):1–11, 2020.
+
+[10] Zijiang Yang, Xiaolin Li, L Catherine Brinson, Alok N Choudhary, Wei Chen, and Ankit Agrawal.
+Microstructural materials design via deep adversarial learning methodology.
+Journal of Mechanical
+
+Design, 140(11), 2018.
+
+[11] Tim Hsu, William K Epting, Hokon Kim, Harry W Abernathy, Gregory A Hackett, Anthony D Rollett,
+
+Paul A Salvador, and Elizabeth A Holm. Microstructure generation via generative adversarial network
+
+for heterogeneous, topologically complex 3d materials. JOM, 73(1):90–102, 2021.
+
+[12] Sehyun Chun, Sidhartha Roy, Yen Thi Nguyen, Joseph B Choi, HS Udaykumar, and Stephen S
+
+Baek. Deep learning for synthetic microstructure generation in a materials-by-design framework for
+
+heterogeneous energetic materials. Scientific reports, 10(1):1–15, 2020.
+
+[13] Minyi Dai, Mehmet F Demirel, Yingyu Liang, and Jia-Mian Hu. Graph neural networks for an accurate
+
+and interpretable prediction of the properties of polycrystalline materials. npj Computational Materials,
+
+7(1):1–9, 2021.
+
+[14] Tiberiu Stan, Zachary T Thompson, and Peter W Voorhees. Optimizing convolutional neural networks
+
+to perform semantic segmentation on large materials imaging datasets: X-ray tomography and serial
+
+sectioning. Materials Characterization, 160:110119, 2020.
+
+[15] Ryan Cohn, Iver Anderson, Tim Prost, Jordan Tiarks, Emma White, and Elizabeth Holm. Instance
+
+segmentation for direct measurements of satellites in metal powders and automated microstructural
+
+characterization from image data. JOM, 73(7):2159–2172, 2021.
+
+[16] Joshua A Taillon, Thomas F Bina, Raymond L Plante, Marcus W Newrock, Gretchen R Greene,
+
+and June W Lau. Nexuslims: A laboratory information management system for shared-use electron
+
+microscopy facilities. Microscopy and Microanalysis, 27(3):511–527, 2021.
+
+[17] Brian L DeCost, Matthew D Hecht, Toby Francis, Bryan A Webler, Yoosuf N Picard, and Elizabeth A
+
+Holm. Uhcsdb: ultrahigh carbon steel micrograph database. Integrating Materials and Manufacturing
+
+Innovation, 6(2):197–205, 2017.
+
+[18] S Jesse, M Chi, A Belianinov, C Beekman, SV Kalinin, AY Borisevich, and AR Lupini. Big data analytics
+
+for scanning transmission electron microscopy ptychography. Scientific reports, 6(1):1–8, 2016.
+
+[19] Florian Schroff, Antonio Criminisi, and Andrew Zisserman. Harvesting image databases from the web.
+
+IEEE transactions on pattern analysis and machine intelligence, 33(4):754–766, 2010.
+
+[20] Xian-Sheng Hua and Jin Li. Prajna: Towards recognizing whatever you want from images without
+
+image labeling. In Twenty-Ninth AAAI Conference on Artificial Intelligence, 2015.
+
+[21] Angelo Ziletti, Devinder Kumar, Matthias Scheffler, and Luca M Ghiringhelli. Insightful classification
+
+of crystal structures using deep learning. Nature communications, 9(1):1–10, 2018.
+
+[22] Kamal Choudhary, Kevin F Garrity, Charles Camp, Sergei V Kalinin, Rama Vasudevan, Maxim
+
+Ziatdinov, and Francesca Tavazza.
+Computational scanning tunneling microscope image database.
+
+Scientific data, 8(1):1–9, 2021.
+
+17
+
+
+[23] Eric Schwenker, Weixin Jiang, Trevor Spreadbury, Nicola Ferrier, Oliver Cossairt, and Maria KY
+
+Chan.
+Exsclaim!–an automated pipeline for the construction of labeled materials imaging datasets
+
+from literature. arXiv preprint arXiv:2103.10631, 2021.
+
+[24] Jacob Madsen, Pei Liu, Jens Kling, Jakob Birkedal Wagner, Thomas Willum Hansen, Ole Winther, and
+
+Jakob Schiøtz. A deep learning approach to identify local structures in atomic-resolution transmission
+
+electron microscopy images. Advanced Theory and Simulations, 1(8):1800037, 2018.
+
+[25] Artem Maksov, Ondrej Dyck, Kai Wang, Kai Xiao, David B Geohegan, Bobby G Sumpter, Rama K
+
+Vasudevan, Stephen Jesse, Sergei V Kalinin, and Maxim Ziatdinov. Deep learning analysis of defect and
+phase evolution during electron beam-induced transformations in ws2. npj Computational Materials,
+
+5(1):1–8, 2019.
+
+[26] Sang-Hyeok Yang, Wooseon Choi, Byeong Wook Cho, Frederick Osei-Tutu Agyapong-Fordjour, Sehwan
+
+Park, Seok Joon Yun, Hyung-Jin Kim, Young-Kyu Han, Young Hee Lee, Ki Kang Kim, et al. Deep
+
+learning-assisted quantification of atomic dopants and defects in 2d materials.
+Advanced Science,
+
+8(16):2101099, 2021.
+
+[27] Graham Roberts, Simon Y Haile, Rajat Sainju, Danny J Edwards, Brian Hutchinson, and Yuanyuan
+
+Zhu. Deep learning for semantic segmentation of defects in advanced stem images of steels. Scientific
+
+reports, 9(1):1–12, 2019.
+
+[28] Lukas Vlcek, Maxim Ziatdinov, Artem Maksov, Alexander Tselev, Arthur P Baddorf, Sergei V Kalinin,
+
+and Rama K Vasudevan. Learning from imperfections: predicting structure and thermodynamics from
+
+atomic imaging of fluctuations. ACS nano, 13(1):718–727, 2019.
+
+[29] Maxim Ziatdinov, Artem Maksov, and Sergei V Kalinin. Learning surface molecular structures via
+
+machine vision. npj Computational Materials, 3(1):1–9, 2017.
+
+[30] Oleg S Ovchinnikov, Andrew O’Hara, Stephen Jesse, Bethany M Hudak, Shi-Ze Yang, Andrew R Lupini,
+
+Matthew F Chisholm, Wu Zhou, Sergei V Kalinin, Albina Y Borisevich, et al. Detection of defects in
+
+atomic-resolution images of materials using cycle analysis. Advanced Structural and Chemical Imaging,
+
+6(1):1–9, 2020.
+
+[31] Kevin de Haan, Zachary S Ballard, Yair Rivenson, Yichen Wu, and Aydogan Ozcan.
+Resolution
+
+enhancement in scanning electron microscopy using deep learning. Scientific reports, 9(1):1–7, 2019.
+
+[32] Jeffrey M Ede and Richard Beanland. Partial scanning transmission electron microscopy with deep
+
+learning. Scientific reports, 10(1):1–10, 2020.
+
+[33] Mohammad Rashidi and Robert A Wolkow.
+Autonomous scanning probe microscopy in situ tip
+
+conditioning through machine learning. Acs Nano, 12(6):5185–5189, 2018.
+
+[34] Sagi Eppel, Haoping Xu, Mor Bismuth, and Alan Aspuru-Guzik. Computer vision for recognition of
+
+materials and vessels in chemistry lab settings and the vector-labpics data set. ACS central science,
+
+6(10):1743–1752, 2020.
+
+[35] Luke Scime, Derek Siddel, Seth Baird, and Vincent Paquit.
+Layer-wise anomaly detection and
+
+classification for powder bed additive manufacturing processes: A machine-agnostic algorithm for real-
+
+time pixel-wise semantic segmentation. Additive Manufacturing, 36:101453, 2020.
+
+18
+
+
+[36] Ankit Agrawal and Alok Choudhary.
+Deep materials informatics: Applications of deep learning in
+
+materials science. Mrs Communications, 9(3):779–792, 2019.
+
+[37] John Bardeen. Tunnelling from a many-particle point of view. Physical review letters, 6(2):57, 1961.
+
+[38] Jerry Tersoff and Donald R Hamann. Theory and application for the scanning tunneling microscope.
+
+Physical review letters, 50(25):1998, 1983.
+
+[39] C Julian Chen and Walter F Smith. Introduction to scanning tunneling microscopy. American Journal
+
+of Physics, 62(6):573–574, 1994.
+
+[40] Aidan H Combs, Jason J Maldonis, Jie Feng, Zhongnan Xu, Paul M Voyles, and Dane Morgan. Fast
+
+approximate stem image simulations from a machine learning model. Advanced Structural and Chemical
+
+Imaging, 5(1):1–10, 2019.
+
+[41] Earl J Kirkland. Advanced computing in electron microscopy, volume 12. Springer, 1998.
+
+[42] Earl J Kirkland. Computation in electron microscopy. Acta Crystallographica Section A: Foundations
+
+and Advances, 72(1):1–27, 2016.
+
+[43] LJ Allen, SD Findlay, MP Oxley, and CJ Rossouw. Lattice-resolution contrast from a focused coherent
+
+electron probe. part i. Ultramicroscopy, 96(1):47–63, 2003.
+
+[44] JM Cowley and AF Moodie. Fourier images: I-the point source. Proceedings of the Physical Society.
+
+Section B, 70(5):486, 1957.
+
+[45] Jacob Madsen and Toma Susi. The abtem code: transmission electron microscopy from first principles.
+
+Open Research Europe, 1(24):24, 2021.
+
+[46] Maxim Ziatdinov, Ayana Ghosh, Tommy Wong, and Sergei V Kalinin.
+Atomai: a deep learning
+
+framework for analysis of image and spectroscopy data in (scanning) transmission electron microscopy
+
+and beyond. arXiv preprint arXiv:2105.07485, 2021.
+
+[47] Suhas Somnath, Chris R Smith, Stephen Jesse, and Nouamane Laanait. Pycroscopy-an open source
+
+approach to microscopy and microanalysis in the age of big data and open science. Microscopy and
+
+Microanalysis, 23(S1):224–225, 2017.
+
+[48] Colin Ophus.
+A fast image simulation algorithm for scanning transmission electron microscopy.
+
+Advanced structural and chemical imaging, 3(1):1–11, 2017.
+
+[49] Christoph Tobias Koch. Determination of core structure periodicity and point defect density along
+
+dislocations. Arizona State University, 2002.
+
+[50] Peter Moeck and P DeStefano. Accurate lattice parameters from 2d-periodic images for subsequent
+
+bravais lattice type assignments. Advanced Structural and Chemical Imaging, 4(1):1–33, 2018.
+
+[51] Kamal Choudhary, Kevin F Garrity, Andrew CE Reid, Brian DeCost, Adam J Biacchi, Angela R
+
+Hight Walker, Zachary Trautt, Jason Hattrick-Simpers, A Gilad Kusne, Andrea Centrone, et al. The
+
+joint automated repository for various integrated simulations (jarvis) for data-driven materials design.
+
+npj Computational Materials, 6(1):1–13, 2020.
+
+19
+
+
+[52] Georg Kresse and J¨urgen Furthm¨uller. Efficiency of ab-initio total energy calculations for metals and
+
+semiconductors using a plane-wave basis set. Computational materials science, 6(1):15–50, 1996.
+
+[53] Georg Kresse and J¨urgen Furthm¨uller. Efficient iterative schemes for ab initio total-energy calculations
+
+using a plane-wave basis set. Phys. Rev. B, 54(16):11169, 1996.
+
+[54] Shunsuke Yamashita, Jun Kikkawa, Keiichi Yanagisawa, Takuro Nagai, Kazuo Ishizuka, and Koji
+
+Kimoto.
+Atomic number dependence of z contrast in scanning transmission electron microscopy.
+
+Scientific reports, 8(1):1–7, 2018.
+
+[55] Kamal Choudhary, Irina Kalish, Ryan Beams, and Francesca Tavazza. High-throughput identification
+
+and characterization of two-dimensional materials using density functional theory. Scientific Reports,
+
+7(1):1–16, 2017.
+
+[56] Sten Haastrup, Mikkel Strange, Mohnish Pandey, Thorsten Deilmann, Per S Schmidt, Nicki F Hinsche,
+
+Morten N Gjerding, Daniele Torelli, Peter M Larsen, Anders C Riis-Jensen, et al. The computational 2d
+
+materials database: high-throughput modeling and discovery of atomically thin crystals. 2D Materials,
+
+5(4):042002, 2018.
+
+[57] Jun Zhou, Lei Shen, Miguel Dias Costa, Kristin A Persson, Shyue Ping Ong, Patrick Huck, Yunhao
+
+Lu, Xiaoyang Ma, Yiming Chen, Hanmei Tang, et al. 2dmatpedia, an open computational database of
+
+two-dimensional materials from top-down and bottom-up approaches. Scientific data, 6(1):1–10, 2019.
+
+[58] Kamal Choudhary and Mathew L Kelley. Chemnlp: A natural language processing based library for
+
+materials chemistry text data. arXiv preprint arXiv:2209.08203, 2022.
+
+[59] Adam J Biacchi, Lucas M Johnson, Ashley B Sweet, Luke J Barrante, Eric M Cal, Angela R
+
+Hight Walker, and Matthew R Buck.
+Polyoxovanadates as precursors for the synthesis of colloidal
+
+multi-metal oxide nanocrystals. Chemistry of Materials, 34(7):2907–2918, 2022.
+
+[60] Adam J Biacchi and Raymond E Schaak.
+Ligand-induced fate of embryonic species in the shape-
+
+controlled synthesis of rhodium nanoparticles. ACS nano, 9(2):1707–1720, 2015.
+
+[61] Adam J Biacchi, Son T Le, Brian G Alberding, Joseph A Hagmann, Sujitra J Pookpanratana, Edwin J
+
+Heilweil, Curt A Richter, and Angela R Hight Walker.
+Contact and noncontact measurement of
+
+electronic transport in individual 2d sns colloidal semiconductor nanocrystals. ACS nano, 12(10):10045–
+
+10060, 2018.
+
+[62] Fabian Pedregosa, Ga¨el Varoquaux, Alexandre Gramfort, Vincent Michel, Bertrand Thirion, Olivier
+
+Grisel, Mathieu Blondel, Peter Prettenhofer, Ron Weiss, Vincent Dubourg, et al. Scikit-learn: Machine
+
+learning in python. the Journal of machine Learning research, 12:2825–2830, 2011.
+
+[63] Pavel Iakubovskii.
+Segmentation models pytorch.
+https://github.com/qubvel/segmentation_
+
+models.pytorch, 2019.
+
+[64] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedical
+
+image segmentation. In International Conference on Medical image computing and computer-assisted
+
+intervention, pages 234–241. Springer, 2015.
+
+20
+
+
+[65] Gao Huang, Zhuang Liu, Laurens Van Der Maaten, and Kilian Q Weinberger.
+Densely connected
+
+convolutional networks.
+In Proceedings of the IEEE conference on computer vision and pattern
+
+recognition, pages 4700–4708, 2017.
+
+[66] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor
+
+Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al.
+Pytorch: An imperative style, high-
+
+performance deep learning library. Advances in neural information processing systems, 32, 2019.
+
+[67] Minjie Wang, Da Zheng, Zihao Ye, Quan Gan, Mufei Li, Xiang Song, Jinjing Zhou, Chao Ma, Lingfan
+
+Yu, Yu Gai, et al. Deep graph library: A graph-centric, highly-performant package for graph neural
+
+networks. arXiv preprint arXiv:1909.01315, 2019.
+
+[68] Kamal Choudhary and Brian DeCost.
+Atomistic line graph neural network for improved materials
+
+property predictions. npj Computational Materials, 7(1):1–8, 2021.
+
+[69] Christian Ledig, Lucas Theis, Ferenc Husz´ar, Jose Caballero, Andrew Cunningham, Alejandro Acosta,
+
+Andrew Aitken, Alykhan Tejani, Johannes Totz, Zehan Wang, et al. Photo-realistic single image super-
+
+resolution using a generative adversarial network. In Proceedings of the IEEE conference on computer
+
+vision and pattern recognition, pages 4681–4690, 2017.
+
+[70] Karen Simonyan and Andrew Zisserman.
+Very deep convolutional networks for large-scale image
+
+recognition. arXiv preprint arXiv:1409.1556, 2014.
+
+[71] Guohong Li, Adina Luican, and Eva Y Andrei. Scanning tunneling spectroscopy of graphene on graphite.
+
+Physical review letters, 102(17):176804, 2009.
+
+[72] Adam Mills, Yifei Yu, Chuanhui Chen, Bevin Huang, Linyou Cao, and Chenggang Tao. Ripples near
+
+edge terminals in mos2 few layers and pyramid nanostructures. Applied Physics Letters, 108(8):081601,
+
+2016.
+
+[73] Can-Li Song, Yi-Lin Wang, Peng Cheng, Ye-Ping Jiang, Wei Li, Tong Zhang, Zhi Li, Ke He, Lili Wang,
+
+Jin-Feng Jia, et al. Direct observation of nodes and twofold symmetry in fese superconductor. Science,
+
+332(6036):1410–1413, 2011.
+
+[74] Colum M O’Leary, Benedikt Haas, Christoph T Koch, Peter D Nellist, and Lewys Jones. Increasing
+
+spatial fidelity and snr of 4d-stem using multi-frame data fusion.
+Microscopy and Microanalysis,
+
+28(4):1417–1427, 2022.
+
+[75] Lixing Kang, Chen Ye, Xiaoxu Zhao, Xieyu Zhou, Junxiong Hu, Qiao Li, Dan Liu, Chandreyee Manas
+
+Das, Jiefu Yang, Dianyi Hu, et al. Phase-controllable growth of ultrathin 2d magnetic fete crystals.
+
+Nature communications, 11(1):1–9, 2020.
+
+[76] Guilherme Migliato Marega, Yanfei Zhao, Ahmet Avsar, Zhenyu Wang, Mukesh Tripathi, Aleksandra
+
+Radenovic, and Andras Kis. Logic-in-memory based on an atomically thin semiconductor. Nature,
+
+587(7832):72–77, 2020.
+
+[77] Stefan Van der Walt, Johannes L Sch¨onberger, Juan Nunez-Iglesias, Fran¸cois Boulogne, Joshua D
+
+Warner, Neil Yager, Emmanuelle Gouillart, and Tony Yu. scikit-image: image processing in python.
+
+PeerJ, 2:e453, 2014.
+
+21
+
+
+[78] D Wegner, A Bauer, and G Kaindl. Effect of impurities on tamm-like lanthanide-metal surface states.
+
+Physical Review B, 76(11):113410, 2007.
+
+[79] Christian Klinke and Klaus Kern. Iron nanoparticle formation in a metal–organic matrix: from ripening
+
+to gluttony. Nanotechnology, 18(21):215601, 2007.
+
+[80] Corsin Battaglia,
+Katalin Gaal-Nagy,
+Claude Monney,
+Clement Didiot,
+Eike Fabian Schwier,
+
+Michael Gunnar Garnier, Giovanni Onida, and Philipp Aebi. A new structural model for the si (331)-
+
+(12x1) reconstruction. arXiv preprint arXiv:0807.3875, 2008.
+
+[81] S Kelly, F Galli, I Komissarov, and J Aarts. Correlations between the morphology and the electronic
+
+structure at the surface of thin film manganites, investigated with stm. arXiv preprint arXiv:0902.0626,
+
+2009.
+
+[82] Phuong Nguyen, Steven Konstanty, Todd Nicholson, Thomas O’brien, Aaron Schwartz-Duval, Timothy
+
+Spila, Klara Nahrstedt, Roy H Campbell, Indranil Gupta, Michael Chan, et al.
+4ceed: Real-time
+
+data acquisition and analysis framework for material-related cyber-physical environments. In 2017 17th
+
+IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing (CCGRID), pages 11–20.
+
+IEEE, 2017.
+
+22
+
+

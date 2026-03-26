@@ -21,7 +21,17 @@ from tokenizers import Tokenizer
 # -----------------------------
 
 BASE_DIR = Path(__file__).resolve().parent # root directory.
-MODEL_DIR = BASE_DIR / "checkpoints/step_200000"  # path to trained model check point. 200000 should be the final check point.
+# path to trained model check point. 5000 should be the final check point.
+CHECKPOINT_DIR = BASE_DIR / "checkpoints"
+# Find latest checkpoint automatically
+checkpoints = sorted(
+    CHECKPOINT_DIR.glob("step_*"),
+    key=lambda x: int(x.name.split("_")[1])
+)
+if not checkpoints:
+    raise ValueError("No checkpoints found!")
+MODEL_DIR = checkpoints[-1]
+print("Loading from:", MODEL_DIR)
 TOKENIZER_PATH = BASE_DIR / "tokenizer/tokenizer.json" # path to tokenizer.
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # device selection.
@@ -96,6 +106,8 @@ generated_ids = output[0].tolist()
 # [1234, 5678, 9012, ...] → "The flexoelectric effect in two-dimensional..."
 generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 generated_text = generated_text.replace("Ġ", " ")
+#generated_text = generated_text.replace("Ċ", "\n")
+#generated_text = generated_text.replace("ï¿½", "")
 
 # The decoded text includes:
 #   - The original prompt (first ~15 tokens)

@@ -1,0 +1,1427 @@
+Optimal data generation for machine learned interatomic potentials
+
+Connor Allen1 and Albert P. Bartók1, 2
+
+1Department of Physics, University of Warwick, Coventry CV4 7AL, United Kingdom
+2Warwick Centre for Predictive Modelling, School of Engineering,
+University of Warwick, Coventry CV4 7AL, United Kingdom
+
+Machine learning interatomic potentials (MLIPs) are routinely used atomic simulations, but
+generating databases of atomic configurations used in fitting these models is a laborious process,
+requiring significant computational and human effort.
+A computationally efficient method is
+presented to generate databases of atomic configurations that contain optimal information on the
+small-displacement regime of the potential energy surface of bulk crystalline matter.
+Utilising
+non-diagonal supercell (NDSC)1, an automatic process is suggested for ab initio data generation.
+MLIPs were fitted for Al, W, Mg and Si, which very closely reproduce the ab initio phonon and
+elastic properties. The protocol can be easily adapted to other materials and can be inserted in the
+workflow of any flavour of MLIP generation.
+
+UK Ministry of Defence © British Crown Owned Copyright 2022/AWE
+
+I.
+INTRODUCTION
+
+Modern approaches to material discovery and charac-
+terisation include the use of ab initio modelling. While
+well-established methods, such as Density Functional
+Theory (DFT), reliably predict the electronic, mechanic
+and thermodynamic properties of materials2,3, most of
+these techniques are limited by the fact that computa-
+tional effort scales as O(N 3) or worse with the number of
+atoms (N). Although linear scaling implementations of
+DFT exist4,5, large prefactors prevent efficient sampling
+of atomic configurations, which are required, for example,
+to compute thermodynamic averages. In the past decade,
+data driven approaches emerged as possible solutions to
+realise ab initio accuracy at an affordable computational
+cost, even at large length and time scales6,7. Surrogate
+models of the Born-Oppenheimer potential energy sur-
+face (PES) can be generated in the form of MLIPs8–11.
+These are based on non-linear, non-parametric regression
+of the PES, fitted using databases of atomic configuration
+and their associated ab initio total energies and deriva-
+tives. Exploiting locality, or the nearsightedness of quan-
+tum mechanics12, fitting can be performed on configura-
+tions containing relatively few atoms, therefore keeping
+the computational cost of generating the database afford-
+able, while the resulting MLIP may be used in extended
+systems.
+Machine learning techniques in atomic mod-
+elling have evolved into a mature field, with a broad range
+of methods present, such as Schnet13, MTP14, ACE15,
+NN16, PhysNet17 and Gaussian Approximation Potential
+(GAP)18, among others. While the underlying principles
+of MLIPs can vary significantly, they all rely on carefully
+built databases that contain atomic configurations repre-
+sentative of a wide range of atomic environment that are
+relevant to the intended purpose of the model.
+
+Creating such databases of atomic configurations are
+time consuming, both in terms of human and computa-
+tional effort. Even though automated approaches, such
+as active learning19,20 can eliminate human intervention
+
+to a large extent, “hand-crafting” parts of the database
+is often necessary to include specific configurations, such
+as various known crystalline polymorphs, defects or sur-
+faces. Accurate modelling of the elastic and vibrational
+properties of bulk crystals is crucial in numerous appli-
+cations, such as the finite temperature stability of dif-
+ferent phases or defect formation energies. To provide
+targeted fitting data for the phonon spectrum, samples
+from molecular dynamics calculations21 or specifically
+perturbed configurations22 are employed routinely.
+In
+this work, we suggest a highly efficient approach based on
+NDSCs introduced by Lloyd-Williams and Monserrat1,
+which can be used to automatically generate small atomic
+configurations that contain optimal information to fit the
+PES in the small-displacment regime. As ab initio cal-
+culations only need to be performed on configurations
+containing only a handful of atoms each, data generation
+is efficient. We used the GAP framework23 to fit MLIPs
+of bulk crystals of metallic and semiconducting elements
+representing different crystal structures. In our bench-
+marks, we obtained highly accurate phonon dispersions
+and elastic properties when comparing to the underlying
+DFT model.
+
+II.
+BACKGROUND
+
+A.
+Gaussian Approximation Potential
+
+The machine learned potential framework we use is
+GAP9, although we emphasise that the database genera-
+tion workflow is easily transferable to other approaches.
+GAP can be formulated as a kernel based method that
+predicts the total energy of a given configuration X =
+{R1, R2, ...RI} as:
+
+E(X) =
+
+I
+�
+
+i
+
+M
+�
+
+s
+αsK(Ri, Rs)
+(1)
+
+arXiv:2207.11828v1  [cond-mat.mtrl-sci]  24 Jul 2022
+
+
+2
+
+where R represents an atomic environment, s is a sum-
+mation over a set of M representative environments,
+each associated with a weight αs. The kernel function,
+K(R, R′), may be regarded as a similarity measure be-
+tween two atomic environments R and R′. In this work,
+we describe atomic environments using the Smooth Over-
+lap of Atomic Positions (SOAP)24,25 descriptor, where
+a given atomic neighbourhood environment is initially
+characterised as a density:
+
+ρi(r) =
+�
+
+i′
+fcut(rii′)e−|r−rii′|2/2σ2
+atom
+(2)
+
+where a Gaussian with a width of σatom is centered on
+each atom up to a specified cutoff radius, whereby beyond
+this cutoff, fcut smoothly goes to zero. This density is
+then expressed in terms of radial and spherical harmonics
+basis functions
+
+ρi(r) =
+�
+
+nlm
+ci
+nlmYlm(ˆr)gn(r)
+
+which are defined up to a specified complexity controlled
+by nmax and lmax and m = −l, −l + 1, ... l. Rotationally
+invariant features are constructed from the power spec-
+trum elements as
+
+˜pi ≡
+
+l
+�
+
+m=−l
+ci∗
+nlmci
+n′lm
+
+which are normalised
+
+pi = ˜pi/|˜pi|.
+
+Finally, we obtain an expression for our covariance eval-
+uation between atomic neighbourhoods as
+
+K(R, R′) = δ2(p · p′)ζ
+(3)
+
+where δ and ζ are hyperparameters that control the en-
+ergy scaling of the descriptor and smoothness of the ker-
+nel, respectively.
+To obtain the weights αs, we minimise the loss function
+
+L =
+
+N
+�
+
+n=1
+
+[yn − ˜yn]2
+
+σ2n
++
+
+M
+�
+
+s,s′
+αsK(Rs, Rs′)αs′
+(4)
+
+where the quantity y can be the one of total energy, force
+or stress value of an atomic configuration, and σn is a
+hyperparameter, related to the weight or importance of
+each data point. yn represents the reference ab initio val-
+ues, whereas ˜yn is the GAP prediction of the total energy
+using equation 1 or the appropriate derivatives, with re-
+spect to atomic coordinates or lattice deformations. This
+definition allows us to fit using the total energy observa-
+tions, as well as the forces on atoms and the virial stress
+for each configuration. The second term in the loss func-
+tion acts as a regulariser.
+
+In algebraic form, the minimisation of this loss function
+with respect to α yields
+
+α = (KMM + KMNΣ−1KNM)−1KMNΣ−1y
+
+where Σ contains a diagonal matrix containing the values
+of σn and y = [y1, . . . , yN]. The kernel matrices K con-
+tain all pairwise evaluations of kernel functions between
+atomic environments, where M denotes the representa-
+tive set, and N refers to the reference database of atomic
+configurations.
+
+B.
+Non-diagonal supercells
+
+For an interatomic potential model to represent the
+PES near a stationary point, which in our case is the
+perfect bulk crystal, it needs to reproduce the force con-
+stant matrix (FCM) of an extended system, formulated
+as the Hessian of the Born-Oppenheimer total energy E
+with respect to Cartesian atomic coordinates
+
+Φiαjβ =
+∂2E
+
+∂riα∂rjβ
+
+where i, j denote atomic indices, and α, β represent
+Cartesian directions.
+Under the harmonic approxima-
+tion, the total energy is expressed as a Taylor expan-
+sion with terms higher than second order truncated.
+Most MLIP approaches rely on the assumption of local-
+ity of the atomic interactions, i.e. for any small number
+ε > 0 there exist an rcut such that all Φiαjβ < ε for
+|ri − rj| > rcut, corresponding to a truncated FCM. It
+should be noted that MLIP frameworks can be extended
+to represent long-range, such as Coulombic, interactions,
+but our current discussion is limited to the short-range
+term representing local, i.e. covalent or metallic, bond-
+ing.
+It is customary to express the elements of the FCM
+such that they are indexed by labels of the basis atoms i
+and j within their primitive unit cells, and the displace-
+ment vector Rp that translates the two primitive unit
+cells into each other:
+
+Φiαjβ(Rp) ≡ Φiαj′β
+
+such that rj′ = Rp + rj. Fitting MLIPs is ultimately
+data driven, therefore atomic configurations should ide-
+ally contain information on as many elements of the trun-
+cated FCM as possible. As fitting data is most commonly
+provided as atomic configurations with the correspond-
+ing ab initiototal energies, forces, and stresses, supercells
+capable of accommodating perturbations of distant atom
+pairs are highly desirable. A common approach is to use
+supercells generated such that their shape is as closely
+cubic as possible, as an attempt to include atom pairs
+isotropically. The lattice vectors as, bs, and cs of a su-
+percell s are related to the unit cell lattice vectors au,
+
+
+3
+
+bu, and cu as
+
+
+
+as
+bs
+cs
+
+
+
+ =
+
+
+
+
+S11 S12 S13
+S21 S22 S23
+S31 S32 S33
+
+
+
+
+
+
+
+
+au
+bu
+cu
+
+
+
+
+
+where elements of the supercell matrix Sij ∈ Z, and for a
+diagonal supercell (DSC) Sij = Siδij. For example, gen-
+erating DSC of the cubic unit cell of fcc or bcc crystals,
+or in case of hexagonal crystals, using the orthorhombic
+unit cell is a convenient choice, as the unit cell lattice
+vectors are orthogonal.
+Atoms need to be displaced in the supercell before
+computing the ab initio total energy and its deriva-
+tives. George et al22 suggested using randomly perturbed
+atomic coordinates as well as the displacement of a sin-
+gle atom in the supercell.
+Randomising displacements
+with a certain amplitude is expected to result in force
+observations that are dominated by terms containing the
+largest elements of the FCM, as the α component of force
+of atom i may be approximated as
+
+fiα ≈ −
+�
+
+jβ
+Φiαjβ(rjβ − rjβ,0)
+(5)
+
+where rj,0 denotes the equilibrium position of atom j in
+the supercell. Since fitting of MLIPs assumes some de-
+gree of uncertainty on each observation as described in
+Section II A, such dominance may have detrimental effect
+on the quality of the fit as small contributions will be in-
+distinguishable from noise.
+More terms in equation 5,
+corresponding to larger supercells, is expected to aggra-
+vate the situation, leading to poor fit of small elements
+of the FCM. Alternatively, the displacement of a single
+atom along a Cartesian direction results in the resolu-
+tion of each individual element of the FCM, but such
+configurations contain highly correlated atomic environ-
+ments and cannot be regarded as realistic examples of
+configurations sampled from finite temperature simula-
+tions. Samples from finite temperature simulations, such
+as molecular dynamics, are an optimal solution, but only
+if the sampling uses a sufficiently similar PES to that of
+the ab initio model, otherwise the configurations will be
+practically equivalent to those generated by randomisa-
+tion. The computational cost of the ab initio reference
+calculations when using DSC scales as (S1S2S3)3 if us-
+ing plane-wave DFT, therefore the size of the supercell,
+and the representable elements of the FCM is severely
+limited.
+Lloyd-Williams and Monserrat1 demonstrated that
+perturbations that require a DSC constituting S1 × S2 ×
+S3 primitive cells, may be represented by a NDSC with
+no more than the least common multiple of S1, S2, and
+S3 number of primitive cells. Lloyd-Williams and Mon-
+serrat suggested this method to sample the vibrational
+modes in the Brillouin zone (BZ) of a crystal uniformly
+on an N ×N ×N grid. When computing the FCM using
+finite differences, DSC of the size N ×N ×N are needed,
+whereas if using NDSCs, only supercells of size up to N
+
+are required. Even though more NDSCs have to be typ-
+ically considered, each individual calculation incurs sig-
+nificantly less computational cost, while the process can
+benefit from trivial parallelisation.
+Overall, significant
+reductions in the the computational cost associated with
+ab initio phonon dispersion calculations can be realised,
+and also allows one to consider more dense sampling of
+the BZ.
+
+C.
+Phonon dispersion
+
+With the force constants determined under the har-
+monic approximation, one method for finding the fre-
+quency of the allowed vibrational modes q ∈ BZ is done
+via finding the eigenvalues of the dynamical matrix D(q)
+whose elements are obtained via Fourier-transforming the
+mass-weighted FCM as
+
+Diαjβ(q) =
+1
+√mimj
+
+�
+
+Rp
+Φiαjβ(Rp)e−iq·Rp
+(6)
+
+where mi and mj are the masses of atoms i and j. The
+square root of the eigenvalues at each q vector are the
+phonon frequencies. Negative eigenvalues result in imag-
+inary frequencies, corresponding to dynamically unstable
+modes, along which displacements result in lowering the
+energy. As customary, we represent such imaginary fre-
+quencies as negative numbers on our phonon dispersion
+plots.
+
+III.
+METHODOLOGY
+
+A.
+Density Functional Theory calculations
+
+The underlying ab initio calculations that were used
+to train the interatomic potentials as well as benchmark
+them was preformed using the plane-wave DFT code,
+CASTEP26. On-the-fly ultrasoft pseudopotentials27 were
+generated for Mg, Al, Si, and W with the respective va-
+lence electronic structure: 2s22p63s2, 3s23p1, 3s23p2, and
+5s25p64f146s25d4.
+In all instances a generalized gradi-
+ent approximation28 exchange-correlation functional was
+used.
+The plane-wave energy cutoff (Ecut), density of
+the electronic BZ sampling of a Monkhorst-Pack grid29
+
+(k-spacing) and the self-consistent field energy tolerance
+for convergence was set for each system to find a con-
+verged result on the total energy and derivative quanti-
+ties. Geometry optimisations were then performed for all
+systems to find the relaxed lattice parameters for a given
+fixed crystal symmetry. The specific DFT parameter set
+and primitive cell information found from the geometry
+optimisations are presented in Table I.
+
+
+4
+
+Mg
+Al
+Si
+W
+
+DFT:
+Ecut (eV)
+520
+800
+400
+600
+
+k-spacing (Å−1) 0.012 0.010 0.030 0.015
+SCF tol. (eV)
+10−11 10−11 10−11 10−10
+
+Lattice:
+Structure
+hcp
+fcc
+dia.
+bcc
+
+a (Å)
+3.198 2.856 3.867 2.756
+
+c (Å)
+5.179
+-
+-
+-
+
+TABLE I. DFT parameter set (planewave cutoff energy, spac-
+ing of the k-point sampling of the BZ and tolerance of the self-
+consistent iterations) used to perform ab initio data genera-
+tion and benchmark comparison and the geometry optimised
+lattice information for each system.
+
+The elements of the FCM for the phonon dispersion cal-
+culations at the ab initio level were determined using the
+finite difference method30 as implemented in CASTEP, cor-
+responding to a 4×4×4 grid in the BZ. A displacement of
+0.05 Å from the ideal lattice site was used, and phonon
+dispersion curves were computed along high symmetry
+lines using Fourier interpolation.
+
+B.
+Database generation
+
+Our aim is to investigate a protocol that produces
+database configurations targeted to fit vibrational prop-
+erties of crystalline materials in a computationally op-
+timal way.
+We suggest basing the workflow on ND-
+SCs, which can represent long-range perturbation of crys-
+talline order using the configurations that contain the
+fewest possible atoms.
+To construct a database that can explores displace-
+ments around the pristine crystal geometry correspond-
+ing to an N × N × N supercell of the primitive unit cell,
+we generated NDSCs using the FORTRAN 90 program by
+Lloyd-Williams and Monserrat1 which contain supercells
+formed of up to N primitive unit cells. The NDSC con-
+figurations therefore contain information about the vi-
+brational modes corresponding to a N × N × N phonon
+q-vector grid. In addition, we introduced deformation of
+the cells by homogeneous scaling of the cell vectors to
+capture isotropic compression and expansion.
+To cap-
+ture the response of atoms displaced from ideal lattice
+sites within the different NDSC configurations, copies
+were made where atoms were randomly displaced via a
+normal distribution with standard deviation of 0.10 Å.
+Finally, to inform the fitting procedure on how the PES
+responds to anisotropic cell deformations, random shear-
+ing was applied on the NDSC configurations. The lattice
+vectors, contained in L were transformed by a symmet-
+rical strain matrix, ϵ, as:
+
+Lrand. = (I + ϵ)L
+
+where I is the identity matrix and each entry of the
+
+strain matrix is sample from a uniform distribution,
+ϵij ∼ U(−0.01, 0.01), such that ϵ is symmetric.
+To investigate the transferability of the proposed work-
+flow for database generation using NDSC, four differ-
+ent crystal structures were considered: hexagonal close-
+packed (hcp) Mg, diamond (dia) Si, body-centred cubic
+(bcc) W and face-centred cubic (fcc) Al.
+The NDSCs
+were generated were commensurate with a 4 × 4 × 4 grid
+sampling of the vibrational BZ of the relaxed primitive
+cell of each system. All configuration manipulations were
+done through the Atomic Simulation Environment31.
+
+C.
+Fitting MLIPs
+
+We used the GAP framework to generate MLIPs, but
+we stress that any other similar fitting approaches would
+benefit equally. For all models presented here we select
+1400 sparse points through a CUR decomposition and set
+δ = 2 eV and ζ = 4. Further GAP hyperparameters and
+details on the training data set are specified in Table II.
+For the Al Bain path model developed, additional data
+was included to capture the bcc phase and the half-way
+point on the Bain path as described by equation 7. This
+GAP was trained on 3751 atomic environments, for a to-
+tal of 1455 target energies, using 1400 sparse points. For
+the minimal data case on fcc Al, 74 atomic environments
+(24 target energies) constituted the training set for the
+NDSC model, whereas 65 atomic environments (2 tar-
+get energies) were considered for the DSC model. In the
+minimal data GAP for fcc Al, both the NDSC and DSC
+contained the geometry optimised primitive cell.
+Based on the work of George et al22, we employed
+adaptive regularisation, via adjusting the hyperparam-
+eter σ as described by the loss function in Equation 4. In
+addition to scaling σ corresponding to force components
+of the data, we implemented a similar adjustment algo-
+rithm for virial stress components. Throughout this work
+we use a constant regularisation on the total energy pre-
+dictions while the element wise viral regularisation and
+component wise force regularisation are implemented as
+
+σn
+
+energy
+0.001 eV
+
+force
+∆F |Fi|
+if ∆F |Fi| > σmin
+F
+
+σmin
+F
+else
+
+virial
+∆V |Vαβ| if ∆V |Vαβ| > σmin
+V
+
+σmin
+V
+else
+
+introducing σmin to define a minimum value for the regu-
+larisation and ∆ to scale the value for each component of
+the corresponding quantity. The choice of regularisation
+parameters are summarised in Table II.
+The FCM elements of the developed MLIPs were cal-
+culated using the finite difference method30 using the
+phonopy package32.
+We calculated phonon frequencies
+along the high symmetry lines suggested by Setyavan and
+
+
+5
+
+Mg
+Al
+Si
+W
+
+GAP:
+rcut (Å)
+8.0
+10.0
+6.0
+6.0
+
+nmax
+8
+10
+8
+8
+
+lmax
+6
+8
+6
+6
+
+σatom (Å)
+0.5
+0.5
+0.5
+0.5
+
+Regularisation:
+∆F
+10−2
+10−2
+10−2 10−2
+
+σmin
+F
+(eV/Å)
+10−3
+10−3
+10−3 10−3
+
+∆V
+10−2 5 × 10−3 10−2 10−2
+
+σmin
+V
+(eV)
+10−3 5 × 10−4 10−3 10−3
+
+Amount of Data:
+Natoms
+4276
+1683
+3300 1550
+
+Nenergy
+1004
+850
+936
+836
+
+Lattice
+Structure
+hcp
+fcc
+dia.
+bcc
+
+a (Å)
+3.194
+2.856
+3.867 2.757
+
+c (Å)
+5.181
+-
+-
+-
+
+TABLE II. GAP hyperparameter set for each system, and
+associated data used for training. Virial stresses (Nvirial =
+6Nenergy) and atomic forces (Nforce = 3Natoms) was also in-
+cluded on all configurations. Primitive cell vectors from a ge-
+ometry optimisation using each potential are also presented.
+
+Curtarolo33, and determined the phonon density of states
+based on a 40 × 40 × 40 q-vector grid.
+
+IV.
+RESULTS
+
+Having fitted a series of GAP models for W, Al, Si and
+Mg using databases consisting of NDSC configurations,
+we evaluated the accuracy of each model by comparing
+its vibrational and elastic properties to DFT values. Our
+reference DFT calculations show good agreement with
+the literature22,32,38–41. Overall, we find that all fitted
+models show excellent performance in our benchmarks.
+The summary of geometric and elastic parameters pre-
+dicted by the GAP models, and comparisons to DFT re-
+sults is presented in Table III. Excellent agreement with
+DFT may be observed across all our test systems, with
+the root mean squared error (RMSE) on phonon modes
+below 0.5 THz.
+We fitted a reduced model for Si that only contained
+the primitive unit cell configurations, in order to study
+the role of different elements of the database. Tabulated
+results in Table III show excellent agreement of elastic
+constants for both models. As the elastic moduli are re-
+lated to the slope of the acoustic phonon modes near the
+Γ-point42, portions of the dispersion of phonon modes are
+also in good agreement for the minimal model, as shown
+in Figure 1. However, at phonon modes corresponding
+to intermediate wavelengths the agreement for the min-
+imal model is poor, confirming that deformed unit cells
+provide information to the GAP fitting about the elastic
+
+E.C
+B
+C11
+C12
+C13 C33
+C44
+C66
+
+Mg
+
+GAP
+36.2
+65.6
+20.7 22.4 63.6 17.4 22.1
+
+DFT
+36.5
+64.2
+20.2 23.7 64.7 17.1 20.9
+
+Expr.34
+36.9
+63.5
+25.9 21.7 66.5 18.4 18.8
+
+Al
+
+GAP
+77.5 109.2 61.7
+-
+-
+31.9
+-
+
+DFT
+77.6 106.9 62.9
+-
+-
+33.3
+-
+
+Expr.35
+82.0 116.3 64.8
+-
+-
+30.9
+-
+
+Si
+
+GAP
+88.6 152.4 56.7
+-
+-
+72.4
+-
+
+GAP*
+89.7 155.8 56.7
+-
+-
+72.8
+-
+
+DFT
+88.6 152.7 56.6
+-
+-
+73.3
+-
+
+Expr.36
+99.1 167.5 64.9
+-
+-
+80.2
+-
+
+W
+
+GAP
+306.4 510.5 204.3
+-
+-
+136.9
+-
+
+DFT
+306.3 512.8 203.0
+-
+-
+135.9
+-
+
+Expr.37 314.7 533.9 205.1
+-
+-
+163.3
+-
+
+TABLE III. Comparison of elastic constant predictions for
+NDSC GAP developed for each system, the underlying DFT
+calculations and experiment.
+GAP∗ refers to the reduced
+model in Si that does not contain NDSC configurations.
+
+FIG. 1. Phonon dispersion and density of states calculations
+by GAPs trained using a minimal database only containing
+deformed primitive unit cells (red) and the full database con-
+taining NDSC configurations (blue). Reference DFT values
+are shown as black dashed lines.
+
+behaviour of a given material, but larger supercells are
+required to inform the fitting procedure on the full FCM.
+Indeed, adding NDSC configurations to the database, we
+recover the phonon dispersion across the BZ accurately.
+The GAP model reproduces the elastic and vibrational
+properties of bcc W to a great accuracy, although we note
+that the largest error compared to DFT in the phonon
+
+
+6
+
+FIG. 2. GAP models trained using NDSC structures (blue)
+versus commensurate DFT (black dashed) phonon dispersion
+calculations for bcc W (top panel) and fcc Al (bottom panel)
+with corresponding density of states.
+
+frequencies is at the H point, together with a discrepancy
+in the curvature along the P − H direction. Since the
+phonon mode at H corresponds to displacing oppositely
+the two atoms located on neighbouring corners of the
+cubic cell, the corresponding elements of the FCM can
+be regarded as well represented in our database.
+To illustrate the efficiency gains realised when using
+NDSC configurations in the training set, we compare
+the phonon dispersion curves corresponding to two GAP
+models, constructed to emphasise the advantage of us-
+ing configurations consisting of fewer atoms.
+The two
+models were based on two separate databases, both of
+which required the same amount of computational time
+to calculate the ab initio reference energies, forces and
+virial stresses. To generate the first database, we used
+DSC of size commensurate with the desired q-point sam-
+
+pling, where only a single atom is displaced from its ideal
+lattice site, as suggested by George et al22. The other
+database contained NDSC configurations generated us-
+ing the workflow described in Section III B, such that the
+same amount of computational effort was needed to com-
+pute the ab initio data as for the diagonal supercell. The
+comparison of the phonon dispersion of the two models
+is presented in Figure 3.
+
+FIG. 3. GAPs for Al based on NDSC (blue line, 66.1 CPU
+hours) and diagonal supercell (red line, 60.1 CPU hours) data
+as compared against underlying DFT (black dashed line) for
+a minimal amount of data.
+
+The model fitted on NDSC configurations performs no-
+ticeably better, with phonon modes in close agreement
+with the ab initio reference data. On the other hand,
+while the model fitted with diagonal supercells captures
+some of the phonon branches, it predicts unphysical dy-
+namical instabilities in fcc Al.
+To establish how the performance and accuracy of
+our MLIP models benefit from increasing the amount of
+training data, we fitted a series of GAP models for Al,
+using different size random subsets of the NDSC data.
+We present our learning curves as a series of phonon dis-
+persion diagrams in Figure 4, showing two approaches:
+(a) keeping the set of representative atomic environments
+(or sparse points, set M in equation 1) constant across
+the models, using the representative set selected from
+atomic environments in the largest data set; (b) selecting
+representative atomic environments from each of the fit-
+ting subset. As expected, increasing the data size leads to
+significant but diminishing improvements the accuracy of
+the model, measured as RMSE of the predicted phonon
+dispersion against the ab initio benchmark.
+However,
+it is interesting to observe that when the sparse points,
+which represent basis functions in the GAP framework,
+are selected from atomic environments not necessarily
+present in the training configurations, the accuracy is
+markedly improved even when using the same fitting tar-
+
+
+7
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+
+5
+
+10
+
+50
+
+1455
+
+0.192
+
+50
+
+89
+
+0.524
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+
+5
+
+10
+
+100
+
+1455
+
+0.112
+
+100
+
+178
+
+0.368
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+
+5
+
+10
+
+Frequency (THz)
+
+200
+
+1455
+
+0.126
+
+200
+
+326
+
+0.150
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+100
+200
+300
+400
+500
+600
+
+0
+
+5
+
+10
+
+400
+
+1455
+
+0.114
+
+400
+
+678
+
+0.125
+
+0
+100
+200
+300
+400
+500
+600
+
+Γ
+X
+W
+K
+Γ
+L
+U
+
+0
+
+5
+
+10
+
+850
+
+1455
+
+0.096
+
+850
+
+1455
+
+0.096
+
+Γ
+X
+W
+K
+Γ
+L
+U
+
+FIG. 4. Left and right: Phonon dispersion curves of fcc Al GAP models (blue) compared to the DFT reference (black dashed).
+The set of training configurations increases from the top to the bottom, with the number of atomic environments displayed as
+blue bars (with numbers) on the centre panel. The orange bars represent the number of representative (sparse) points in each
+of the GAP models, and the green bars show the RMSE of the phonon frequencies in THz units.
+
+gets. Therefore we suggest that GAP models may be im-
+proved by adding atomic configurations that do not need
+ab initio data associated with them, in order to increase
+the set of sparse points. The advantage of this approach
+is that significantly less computational effort is needed
+to generate the expensive ab initio data and it is possi-
+ble to make improvements without the need to calculate
+additional target quantities at the DFT level.
+
+We were also interested in studying how NDSC config-
+urations may assist fitting the PES at stationary points
+other than minima. Aluminium at ambient conditions
+is dynamically unstable in the body-centred cubic form,
+although at extreme pressures the bcc phase becomes
+energetically favourable43.
+We have collected training
+configurations along the Bain path that connects the bcc
+and fcc phases of Al. The lattice vectors of primitive unit
+
+cells were described as body-centred tetragonal,
+
+L =
+
+
+
+
+−a/2
+a/2
+c/2
+
+a/2
+−a/2
+c/2
+
+a/2
+a/2
+−c/2
+
+
+
+
+(7)
+
+where the rows of L represent the cell vectors, and a and
+c change as
+
+a = a0(1 − η + 2
+1/3η)
+
+c =
+a0
+�
+
+1 − η + 2
+1/3η
+
+with 0 ≤ η ≤ 1, such that the volume of the cell | det L|
+is conserved. With this definition, the cases η = 0 and
+η = 1 correspond to the bcc and fcc lattices, respectively.
+We fitted a GAP model based on perturbed NDSC config-
+urations that were generated using primitive unit cells at
+
+
+8
+
+η = 0, 1/2 and 1. We benchmarked the phonon dispersion
+curves obtained with our model considering intermediate
+η values, as shown in Figure 6. We found excellent agree-
+ment with DFT overall, with instabilities at the N-point
+reproduced highly accurately.
+
+FIG. 5. GAPs trained using NDSC (blue) with component
+wise regularisation as informed by the force on each atom
+and virial stress on each configuration compared to a model
+where the regularisation is set to a constant value (red line)
+as well as DFT (black dashed) phonon dispersion curves.
+
+We have also included a non-cubic crystalline sys-
+tem, magnesium, in our benchmarks, whose ground state
+structure at ambient condition is hexagonal close packed.
+Using NDSC configurations to train a GAP model, we
+find excellent agreement between the GAP and the ab
+initio phonon dispersion curves.
+
+While accurate phonon spectra on acoustic modes near
+the Γ-point indicate that the elastic properties of the
+crystal are well represented42, it is insightful to directly
+examine the numerical values of the elastic constants of
+the MLIP models for additional benchmarking purposes.
+Table III and Figure 7 summarise the elastic moduli com-
+puted at the relaxed geometries both using DFT and the
+GAP models, showing excellent agreement with up to 6%
+error.
+
+We illustrate the effect of adaptive regularisation of
+individual virial stress components, introduced in Sec-
+tion III B, by comparing two Mg GAP models, one of
+which uses a static regularisation of 0.01 eV for each
+virial component, while the other employing the adap-
+tive scheme. As shown in Figure 8, some of the elastic
+constants are only reproduced to an error of up to 7%,
+while introducing the adaptive virial regularisation, accu-
+racy is significantly improved across all elastic constants
+without any deterioration of the quality of the phonon
+dispersion curves depicted in Figure 5.
+
+FIG. 6. GAP (blue) trained using NDSC structures compared
+to commensurate DFT (black dashed) phonon dispersion cal-
+culations for in Al, where the lattice was transformed from
+the stable fcc structure (bottom) to the dynamically unstable
+bcc structure (top) along the Bain path.
+
+V.
+CONCLUSIONS
+
+In conclusion, we explored a computationally efficient
+approach using the NDSC method introduced by Lloyd-
+Williams and Monserrat to generate database configura-
+tions for fitting MLIP models based on ab initio data.
+We found that NDSC configurations provide sufficient
+data to fit MLIPs reproducing the FCM near station-
+ary points of bulk crystalline materials, while costing sig-
+nificantly less computational effort than diagonal super-
+cells. We have also suggested an adaptive scheme to regu-
+larise virial stress components of ab initio databases and
+demonstrated improvements of the elastic behaviour of
+MLIPs. The procedure described in this work can be fully
+automated and integrated into existing database gener-
+ating workflows, allowing to save computational cost or
+include a greater variety of representative structures, re-
+
+
+9
+
+FIG. 7. Relative error of elastic constants of GAP models of
+Mg (blue), Al (orange), Si (green) and W (red) compared to
+DFT results.
+
+alising savings on cost and carbon emissions associated
+with high-performance computations, or improved qual-
+ity MLIPs. We also envisage further use of NDSC con-
+figurations in databases used to inform models for alloy
+materials, as an addition or alternative to semi quasi-
+random structures, where the substitution of elemental
+species may be regarded as alchemical perturbations.
+
+VI.
+SOFTWARE AND DATA AVAILABILITY
+
+All ab initio training data and the scripts used to gen-
+erate the configurations are made available in a dedi-
+cated repository44.
+We used the QUIP software pack-
+age with the GAP plugin45, available under the General
+Public License and the Academic Source License, respec-
+tively. The Atomic Simulation Environment46 was used
+to manipulate atomic configurations and we employed
+the phonopy package47 to calculate the phonon disper-
+sion curves of the GAP models. Our workflow greatly
+benefited from using GNU parallel48.
+
+VII.
+ACKNOWLEDGMENTS
+
+We thank Noam Bernstein and Keith Refson for fruit-
+ful discussions. We acknowledge support from the NO-
+MAD Centre of Excellence, funded by the European
+Commission under grant agreement 951786. CA is sup-
+ported by a studentship jointly by the UK Engineering
+and Physical Sciences Research Council–supported Cen-
+
+FIG. 8. Errors of elastic constants of GAP models of Mg rela-
+tive to DFT values in the hcp crystal structure. GAP models
+were fitted using static force and virial regularisation (orange
+bars and figures) and adaptive force and virial regularisation
+(blue bars and figures), as described in section III C.
+
+tre for Doctoral Training in Modelling of Heterogeneous
+Systems, Grant No.
+EP/S022848/1 and the Atomic
+Weapons Establishment.
+ABP acknowledges funding
+from CASTEP-USER funded by UK Research and Inno-
+vation under the grant agreement EP/W030438/1. Cal-
+culations were performed using the Sulis Tier 2 HPC
+platform hosted by the Scientific Computing Research
+Technology Platform at the University of Warwick. Sulis
+is funded by EPSRC Grant EP/T022108/1 and the HPC
+Midlands+ consortium. We acknowledge the University
+of Warwick Scientific Computing Research Technology
+Platform for assisting the research described within this
+study.
+
+1 J. H. Lloyd-Williams and B. Monserrat, Phys. Rev. B 92,
+184301 (2015).
+
+2 C. J. Pickard and R. J. Needs, Phys. Rev. Lett. 97, 45504
+(2006).
+
+3 C. J. Pickard and R. J. Needs, J. Phys. Condens. Matter
+23, 053201 (2011), 1101.3987.
+
+4 P. Ordejón et al, Phys. Rev. B 51, 1456 (1995).
+
+5 J. C. A. Prentice, J. Aarons, J. C. Womack, A. E. A.
+Allen, L. Andrinopoulos, L. Anton, R. A. Bell, A. Bhan-
+dari, G. A. Bramley, R. J. Charlton, R. J. Clements, D. J.
+Cole, G. Constantinescu, F. Corsetti, S. M. M. Dubois,
+K. K. B. Duff, J. M. Escartín, A. Greco, Q. Hill, L. P. Lee,
+E. Linscott, D. D. O’Regan, M. J. S. Phipps, L. E. Ratcliff,
+A. R. Serrano, E. W. Tait, G. Teobaldi, V. Vitale, N. Ye-
+
+
+10
+
+ung, T. J. Zuehlsdorff, J. Dziedzic, P. D. Haynes, N. D. M.
+Hine, A. A. Mostofi, M. C. Payne, and C.-K. Skylaris, J.
+Chem. Phys. 152, 174111 (2020).
+
+6 V. L. Deringer, N. Bernstein, G. Csányi, C. Mahmoud,
+M. Ceriotti, M. Wilson, D. A. Drabold, and S. R. Elliott,
+Nature 589, 59 (2020).
+
+7 B. Cheng, E. A. Engel, J. Behler, C. Dellago, and M. Ce-
+riotti, Proc. Natl. Acad. Sci. 116, 1110 (2019).
+
+8 T. B. Blank et al, J. Chem. Phys. 103, 4129 (1995).
+9 A. P. Bartók et al, Phys. Rev. Lett. 104, 136403 (2010).
+
+10 A. Seko et al, Phys. Rev. B 92, 054113 (2015).
+11 V. L. Deringer, A. P. Bartók, N. Bernstein, D. M. Wilkins,
+M. Ceriotti,
+and G. Csányi, Chem. Rev. 121, 10073
+(2021).
+
+12 E. Prodan and W. Kohn, Proc. Natl. Acad. Sci. 102, 11635
+(2005).
+
+13 K.
+T.
+Schütt,
+P.-J.
+Kindermans,
+H.
+E.
+Sauceda,
+S. Chmiela, A. Tkatchenko,
+and K.-R. Müller, in Pro-
+ceedings of the 31st International Conference on Neural
+Information Processing Systems, NIPS’17 (Curran Asso-
+ciates Inc., Red Hook, NY, USA, 2017) p. 992.
+
+14 A. V. Shapeev, Multiscale Model. Simul. 14, 1153 (2016),
+1512.06054.
+
+15 R. Drautz, Phys. Rev. B 99, 014104 (2019).
+16 J. Behler, Angew. Chem. 56, 12828 (2017).
+17 O. T. Unke and M. Meuwly, J. Chem. Theory Comput.
+15, 3678 (2019), 1902.08408.
+
+18 A. P. Bartók and G. Csányi, Int. J. Quantum Chem. 115,
+1051 (2015).
+
+19 V. L. Deringer and G. Csányi, Phys. Rev. B 95, 094203
+(2017).
+
+20 V. L. Deringer, M. A. Caro, and G. Csányi, Nature Com-
+munications 11, 5461 (2020).
+
+21 A. P. Bartók, J. Kermode, N. Bernstein, and G. Csányi,
+Phys. Rev. X 8, 041048 (2018).
+
+22 J. George et al, J. Chem. Phys. 153, 044104 (2020).
+23 A. P. Bartók, M. C. Payne, R. Kondor,
+and G. Csányi,
+Phys. Rev. Lett. 104, 136403 (2010).
+
+24 A. P. Bartók et al, Phys. Rev. B 87, 184115 (2013).
+25 F. Musil, A. Grisafi, A. P. Bartók, C. Ortner, G. Csányi,
+and M. Ceriotti, Chem. Rev. 121, 9759 (2021).
+
+26 S. J. Clark et al, Z. Kristallogr. Cryst. Mater. 220, 567
+(2005).
+
+27 D. Vanderbilt, Phys. Rev. B 41, 7892 (1990).
+28 J. P. Perdew et al, Phys. Rev. Lett. 77, 3865 (1996).
+29 H. J. Monkhorst and J. D. Pack, Phys. Rev. B 13, 5188
+(1976).
+
+30 K. Kunc and R. M. Martin, Phys. Rev. Lett. 48, 406
+(1982).
+
+31 A. Hjorth Larsen et al, J. Phys.: Condens. Matter 29,
+273002 (2017).
+
+32 A. Togo and I. Tanaka, Scr. Mater. 108, 1 (2015).
+33 W. Setyawan and S. Curtarolo, Comput. Mater. Sci. 49,
+299 (2010).
+
+34 L. J. Slutsky and C. W. Garland, Phys. Rev. 107, 972
+(1957).
+
+35 J. Vallin, M. Mongy, K. Salama, and O. Beckman, J. Appl.
+Phys. 35, 1825 (1964).
+
+36 J. J. Hall, Phys. Rev. 161, 756 (1967).
+37 J. H. Stathis and D. I. Bolef, J. Appl. Phys. 51, 4770
+(1980).
+
+38 A. Debernardi et al, Phys. Rev. B 63, 064305 (2001).
+39 W. J. Szlachta et al, Phys. Rev. B 90, 104108 (2014).
+40 D. Jiang et al, Int. J. Quantum Chem. 120, e26231 (2020).
+41 H. Zhuang et al, Phys. Rev. Appl. 5, 064021 (2016).
+42 K. W. Böer and U. W. Pohl, Semiconductor Physics
+(Springer, Cham, Switzerland, 2018).
+
+43 G. V. Sin’ko and N. A. Smirnov, J. Phys.: Condens. Matter
+14, 6989 (2002).
+
+44 https://github.com/ConnorSA/ndsc_tut.
+45 https://github.com/libAtoms/QUIP.
+46 A. H. Larsen, J. J. Mortensen, J. Blomqvist, I. E. Castelli,
+R. Christensen, M. Dułak, J. Friis, M. N. Groves, B. Ham-
+mer, C. Hargus, E. D. Hermes, P. C. Jennings, P. B.
+Jensen, J. Kermode, J. R. Kitchin, E. L. Kolsbjerg,
+J. Kubal, K. Kaasbjerg, S. Lysgaard, J. B. Maronsson,
+T. Maxson, T. Olsen, L. Pastewka, A. Peterson, C. Rost-
+gaard, J. Schiøtz, O. Schütt, M. Strange, K. S. Thygesen,
+T. Vegge, L. Vilhelmsen, M. Walter, Z. Zeng, and K. W.
+Jacobsen, J. Phys. Condens. Matter 29, 273002 (2017).
+
+47 A. Togo and I. Tanaka, Scr. Mater. 108, 1 (2015).
+48 O. Tange, “Gnu parallel 20220322 (‘Mar�´upol�’),” https:
+//doi.org/10.5281/zenodo.6377950 (2022).
+
+

@@ -1,0 +1,1345 @@
+RAPID PRODUCTION OF ACCURATE EMBEDDED-ATOM
+METHOD POTENTIALS FOR METAL ALLOYS
+
+A PREPRINT
+
+Elan J. Weiss
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+Logan Ward
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+Christian Oberdorfer
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+Travis Withrow
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+David C. Riegner
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+Anupriya Agrawal
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 weiss.443@osu.edu
+
+Wolfgang Windl
+Department of Materials Science and Engineering
+The Ohio State University
+Columbus, OH 43201 windl.1@osu.edu
+
+August 4, 2022
+
+ABSTRACT
+
+A critical limitation to the wide-scale use of classical molecular dynamics for alloy design is the
+limited availability of suitable interatomic potentials. Here, we introduce the “Rapid Alloy Method
+for Producing Accurate General Empirical Potentials” or RAMPAGE, a computationally economical
+procedure to generate binary embedded-atom model potentials from already-existing single-element
+potentials that can be further combined into multi-component alloy potentials. We present the quality
+of RAMPAGE calibrated Finnis-Sinclair type EAM potentials using binary Ag-Al and ternary Ag-
+Au-Cu as case studies. We demonstrate that RAMPAGE potentials can reproduce bulk properties and
+forces with greater accuracy than that of other alloy potentials. In some simulations, it is observed the
+quality of the optimized cross interactions can exceed that of the original ‘off-the-shelf’ elemental
+potential inputs.
+
+Keywords Interatomic potential fitting · Embedded-atom method · Molecular dynamics
+
+1
+Introduction
+
+Classical molecular dynamics (MD) simulations have become ubiquitous tools for simulating complex behavior in
+materials systems on the atomic level for increasingly larger systems. Classical MD simulations are based on interatomic
+potentials, which approximate complex interatomic interactions using computationally efficient functions in analytical
+or tabulated form. These functions range from simple pair interactions to more complex formulations involving a
+gamut of other terms, e.g. bond-order or embedding terms that correct the energy of an atom based on its coordination,
+
+arXiv:2208.02223v1  [cond-mat.mtrl-sci]  3 Aug 2022
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+three-body terms that stabilize bond angles, or four-atom terms that control torsion. More recent work has proposed to
+substitute these physically motivated functions by data-driven machine learning formulations. MD simulations can
+achieve simulation sizes and times orders of magnitude larger than more rigorous ab initio methods such as density
+functional theory (DFT) due to the fast energy and force evaluation paired with linear O(N) scaling of computational
+cost with respect to number of particles N, reaching on modern GPU implementations a performance of 100 million
+atom timesteps per node and second [1].
+
+Despite the computational advantage of using classical MD, the limited availability of suitable interatomic potentials
+(IAPs) remains a substantial barrier to its widespread deployment. The NIST Interatomic Potential Repository [2, 3],
+now integrated with OpenKIM [4], represents one of the most reliable databases of interatomic potentials for use with
+MD. Of the 28 transition metal elements (excluding Hg and all heavier elements), there are 24 available elemental
+potentials more advanced than a Lennard-Jones model. When considering multi-component potentials, there are 157
+available binaries out of a possible 378, and 85 ternaries out of a possible 3,376. This trend of limited multi-component
+potentials continues into 4 and 5 component potentials with 47 out of 20,475 and 15 out of 98,280 available potentials
+respectively [2, 3, 4]. As engineered alloys may contain over ten elements, the limited availability of multi-component
+interatomic potentials continues to pose a substantial bottleneck [5, 6].
+
+This is further complicated by the necessary compromises between computational efficiency and modeling accuracy, as
+well as conscious choices by a potential developer to optimize an interatomic potential to a given system or property.
+Not only do different potential forms excel at modelling different materials systems, but computational costs may limit
+the use of some types of potentials. For example, potentials with highly complex functional forms or machine learning
+formulations such as, SNAP [7], ReaxFF [8], GAP [9], and other ML potentials may have a wide degree of accuracy
+and applicability to many different materials classes, but their computational expense, which can be easily two to three
+orders of magnitude higher than traditional potentials, limits the time and length scales that can be probed [10]. For
+metals, embedded atom method (EAM) potentials have been used widely because of their low computational cost and
+ability to accurately model bulk properties and defects for many elemental metals and alloy systems [11]. Despite the
+simplicity of the model and more recent advancements in MD potentials, EAM potentials remain widely used by the
+community [10, 12, 13].
+
+Here we introduce the Rapid Alloy Method for Producing Accurate General Empirical (RAMPAGE) potentials, with
+the goal of bridging the gap between available multi-component IAPs and real engineering alloys, specifically, by using
+published elemental potentials as model inputs and fitting only the needed cross interaction terms. While an even
+simpler way has been previously proposed to produce alloy potentials, the Johnson Alloy Model (JAM) [12, 13, 14],
+where the cross terms are averaged from the elemental potentials, the lack of control over the enthalpy of mixing
+through a separate term is often too restrictive to reproduce observed alloying and compound formation behavior as we
+will discuss below.
+
+In the next section, we introduce the RAMPAGE framework where a separate cross term is introduced to overcome the
+JAM shortcomings. We then discuss two case studies of fitted Finnis-Sinclair RAMPAGE potentials for systems with
+starkly contrasting alloying behavior, a binary Ag-Al potential and a ternary Ag-Au-Cu potential and benchmark them
+against the corresponding JAM potentials. The fitted RAMPAGE potentials are then benchmarked against DFT data
+for a problem outside of the fitting input set (which are all based on bulk systems) to gauge their transferability, for
+which we chose desorption from a (100) surface. This is an important problem requiring fast potentials, since recent
+advances in combining a finite-element Poisson solver with an MD code have shown that field-evaporation from a
+realistic-size atom-probe tomography (APT) sample allows to understand, analyze and uncertainty-quantify APT results
+to an unprecedented degree, taking 3D atomic-scale characterization to a completely new level [15, 16, 17, 18].
+
+2
+Embedded Atom Method
+
+The embedded atom method was first introduced by Daw and Baskes in 1984 [11, 19], and shortly after that Finnis and
+Sinclair [20] proposed a similar model composed of the same constituent components. These models expanded on the
+earlier pair potential (PP) approach,
+
+EPP = 1
+
+2
+
+�
+
+i̸=j
+φαβ (rij) ,
+(1)
+
+where φαβ (rij) is the interaction or bond energy as a function of distance r for all atom pairs ij in the system and
+α (β) denotes the element type of atom i (j), by correcting it with the help of a many-body correction term F, the
+
+2
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+embedding function, which depends on pairwise density functions ρ,
+
+EFS,EAM = 1
+
+2
+
+�
+
+i̸=j
+φαβ (rij) +
+�
+
+i
+Fα
+
+
+
+�
+
+j̸=i
+ρ[α]β (rij)
+
+
+
+ ,
+(2)
+
+where adding the bracketed index α to the electron density switches the type from EAM to Finnis Sinclair (FS) [20].
+In the original interpretation by Daw and Baskes, ρ was thought of as an electron density function, which gives the
+elemental or pair-wise contribution of an atom to the surrounding electron cloud, and the embedding function F
+described the potential energy that resulted from embedding an atom into that electron cloud [21]. Later interpretations
+note that ρ can also be thought of as an effective bond-counting function and F as a bond-energy correction term, since
+more bonds formed by the same number of electrons would result in weaker strength per bond [22]. This interpretation
+is also the basis for the functionally identical glue model [23], where less electron “glue” per bond leads to weaker
+bonding.
+
+Originally, in EAM the electron density terms are solely elemental, ρβ(r), assuming an atom of type β would always
+dump the same amount of electron density on a neighbor at a given distance r irrespective of that neighbor’s type
+and size, thus the only cross-term is the pair potential φAB. This assumption is removed within the Finnis-Sinclair
+(FS) formulation allowing for different functions for different types α and β, which introduces another cross element
+function, the electron density ρα̸=β, besides the pair potential.
+
+The EAM formulation relies solely on interactions between two atoms. Therefore arbitrary multi-component alloy
+potentials can be generated by concatenating compatible binary EAM potentials. Likewise, binary EAM potentials can
+be built from pre-existing elemental potentials by reusing the element specific terms and fitting only cross interaction
+term(s). However, as the EAM framework makes no constraints on the form of the embedding function or electron
+densities, and the electron density term is on an arbitrary unit axis, re-using any pre-existing potentials requires these
+terms be mutually compatible. This is often a natural outcome when the elemental potentials are fitted by the same
+author [24]. Otherwise, when developing binary potentials, compatibility can only be accomplished by starting from a
+single pre-existing elemental potential and fitting second-element and cross-interaction term(s) based on that [25].
+
+One of the most common methods for rapidly developing new multi-component alloy potentials is the Johnson Alloy
+Model (JAM) [12, 13, 14]. JAM uses the EAM alloy formulation with φAB = φα̸=β as only cross term and determines
+it from a weighted average of the elemental pair functions,
+
+φAB(r) = 1
+
+2
+
+�ρB(r)
+
+ρA(r)φA(r) + ρA(r)
+
+ρB(r)φB(r)
+�
+.
+(3)
+
+The weighting factors ρB(r)/ρA(r) and ρA(r)/ρB(r) ensure that the resulting pair potential is well balanced; however,
+if one electron density is much larger than the other, one weight factor will approach zero while the other becomes
+very large, leading to an unbalanced pair potential. In addition, this method is still subject to the constrains of mutual
+compatibility, and the density function ρA and ρB need to be defined on ranges compatible with both embedding
+functions FA and FB.
+
+This makes JAM most practical when a set of compatible elemental and binary functions is developed by the same
+research teams, resulting in publications of comprehensive alloys libraries. In 2001, Zhou et al. published a database of
+EAM potentials for 16 metals [12], and in 2011, Sheng et al. published a collection of 14 metal EAM potentials [13].
+While JAM potentials are easily constructed, the simplicity of the model with lacking control of the mixing enthalpy can
+lead to predictions of inaccurate alloying behavior. As an example, Figure 1 shows results for the simulated structure of
+a Cu45Zr45Al10 metallic glass, where the vitrification has been simulated with both JAM and RAMAPGE potentials
+based on Sheng’s elemental potentials from [13]. Whereas the RAMPAGE potential shows a uniform distribution
+of aluminum in agreement with experimental expectation [26], the JAM potential predicts a distinct demixing of the
+aluminum.
+
+In order to have good control over the mixing enthalpy, the potentials discussed in this work use the FS formulation.
+With the extra degrees of freedom provided by the cross-element densities, FS potentials have been shown to produce
+accurate fits in a variety of systems [26, 28, 29, 30]. This added accuracy and flexibility comes at no significant
+additional computational cost at simulation run-time.
+
+An EAM-FS model of a binary system requires nine functions φAA, φBB, φAB, FA, FB, ρAA, ρBB, ρAB, and ρBA.
+Of the nine functions in a binary EAM-FS potential, six describe bonding between atoms of the same element. As
+online interatomic potential repositories [4, 2, 13] provide large libraries of published elemental potentials, the task
+of creating a binary EAM-FS potential can be simplified by using those fitted functions. This reduces the scope of
+the fitting problem to three remaining cross interaction terms. With these, since Eq. 2 only contains pair interactions,
+multi-component FS potentials can be built by combining the constituent elemental and binary cross interaction terms.
+
+3
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Figure 1: Aluminum distribution in Cu45Zr45Al10 metallic glass at 0 K in 16000-atom models generated by simulating
+a rapid quench from the liquid state using potentials made by (a) RAMPAGE, (b) Sheng [27], and (c) the Johnson alloy
+model [12].
+
+3
+Method
+
+RAMPAGE operates by creating binary EAM Finnis-Sinclair (EAM-FS) potentials from elemental EAM potentials
+from the literature, and fitting cross interaction functions to a DFT computed training set consisting of a strategically-
+selected set of special quasi-random (SQS) and intermetallic structures. Within RAMPAGE several analytical functions
+for pair potential and electron density are implemented and are selected by the user during binary fitting. The free
+parameters of the chosen models are then fitted by using an elitist genetic algorithm. Regardless of the chosen
+models, RAMPAGE binary potentials constructed using the same elemental potentials can then be assembled into
+multi-component interatomic potentials with no additional fitting required.
+
+3.1
+Standardizing Elemental Potentials
+
+As a consequence of using published elemental potentials, the complexity of fitting a binary EAM-FS potential is
+limited to three cross interaction functions; however, fitting can only be performed if the elemental potentials are
+compatible. There are no requirements within the EAM-FS formulation that enforce consistency across potentials.
+Individual authors make choices on cutoff radius, grid spacing and size. In addition, the ranges of electron density
+and embedding functions, which lie on arbitrary unit axes, and the form of the pair potential are all chosen based on
+individual reasoning.
+
+4
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+To ensure compatibility, the single-element potentials are initially scaled using Voter’s invariant transformations
+
+Fi (ρ) −→ Fi
+�ρi
+
+s
+
+�
+,
+
+ρi (r) −→ s · ρi (r) .
+(4)
+
+The embedding functions, which take the sum of local electron densities as input, are transformed to a consistent
+maximum ρ value. In this work, a value of 400 was chosen. The electron densities are likewise scaled in order to
+preserve the original energetics and forces of the elemental systems using the appropriate value for s.
+
+The pair potentials are likewise scaled to have their minimum at 0.04% of the cohesive energy using the following
+transformations:
+
+Fi (ρ) −→ Fi (ρi) + g · ρi (r) ,
+φi (r) −→ φi(r) − 2g · ρi (r) .
+(5)
+
+Finally, for each case study, the largest cutoff radius among the constituent elemental potentials was applied to all
+functions. As EAM potentials are distributed in tabulated format with each function defined on discrete intervals, a
+cubic spline interpolation evaluates each component function for values not specified in the original elemental tables.
+
+3.2
+EAM Cross Interaction Models
+
+Within RAMPAGE there are several functions for pair potential and electron density implemented. A full list of the
+functions within RAMPAGE is detailed in the supplemental information. Both RAMPAGE potential examples discussed
+in this paper use the same pair potential model. The pair interaction function is fitted to a standard Morse potential [31],
+
+VAB(r) = D (exp (−2α (r − req)) − 2 exp (−α (r − req))) .
+(6)
+
+The Morse function was chosen in lieu of other functions because of its simplicity. With only three fitting parameters,
+D, α, and req, Morse potentials have been shown to reliably model a number of metallic systems [31, 12, 13]. To
+ensure that the function and its first derivative approach zero at the cutoff distance rcut, the cutoff function
+
+φAB(r) = VAB(r) − VAB(rcut) +
+�rcut
+
+m
+
+� �
+1 −
+� r
+
+rcut
+
+�m� �dVAB
+
+dr
+
+�
+
+r=rcut
+(7)
+
+was applied with m = 20 as suggested by Voter [32].
+
+Each case study was fitted using a different electron density model. For the Ag-Au-Cu potential, the electron density
+functions were fitted as a linear combination of the original elemental functions, where
+
+ρBA(r) = ρBB(r) + SA [ρAA(r) − ρBB(r)] ,
+ρAB(r) = ρAA(r) + SB [ρBB(r) − ρAA(r)] ,
+(8)
+
+with 0 ≤ SA,B ≤ 1. In this form, SA and SB are fitting parameters, and the effective shape of the density clouds is
+assumed to be related to the elemental functions. The key advantage of this assumption is that describing the electron
+density now requires just two fitting parameters, and no knowledge of the original functional forms of either the
+electron density or embedding function to which ρ acts as an input. When 0 ≤ SA, SB ≤ 1, equation 8 acts as a linear
+interpolation. For the potentials shown in this investigation, these values were allowed to exceed the elemental limits;
+however, the fitted results were within these limits for all potentials except Ag-Cu.
+
+The interpolated electron density model produced low quality Ag-Al potentials, thus the case study presented here
+adopted an electron density model of the form
+
+ρ(r) = 1 + a1 cos(a0r) + a2 sin(a0r)
+
+rb
+,
+(9)
+
+which was proposed by Chantasiriwan and Milstein [33]. This model requires 4 fitting parameters per element: a0, a1,
+a2, and b. The additional degrees of freedom associated with the larger number of parameters created fits that balanced
+the three properties in the training set to a far greater extent than the interpolated electron density model.
+
+3.3
+Density Functional Theory Training Set
+
+For the test cases investigated here, the training set for a binary system is generated from DFT calculations of 32-atom
+SQS cells consisting of a 2x2x2 FCC supercell, along with B2 and L12 intermetallics. These calculations provide
+
+5
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+the equilibrium lattice parameters, mixing enthalpies, and bulk moduli; the three quantities of interest (QOIs) that
+the resulting EAM potential aims to reproduce. Here, these calculations are conducted using VASP [34, 35] with
+projector augmented wave (PAW) pseudopotentials [36, 34, 35], Perdew-Burke-Ernzerhoff (PBE) exchange-correlation
+functional [37, 38], and k-point grid spacing of 0.1 Å−1.
+
+To compensate for the difference between standardized elemental potential and DFT-predicted lattice parameters and
+bulk moduli, a “rule-of-mixtures” approach is used. For each element, correction factors for the lattice parameters and
+bulk modulus are determined using
+
+clattice = 1
+
+3
+
+� aMD
+
+aDFT
++ bMD
+
+bDFT
++ cMD
+
+cDFT
+
+�
+,
+
+cbulk = KMD
+
+KDFT
+,
+(10)
+
+where a, b, and c are the three lattice parameters and K is the bulk modulus. The moduli and lattice parameters
+calculated for intermetallics are multiplied with an effective correction factor, which is an average of the elemental
+correction factors weighted by composition. For a binary system, this would correspond to
+
+cA1−xBx = (1 − x)cA + xcB,
+(11)
+where cA1−xBx is the correction factor for a given property with elemental correction factors cA and cB and alloy
+stoichiometry given by x. This normalization of the training set data is required as elemental potentials may be fitted to
+experimental properties at a given temperature, ab initio calculations at 0 K, or may not include any properties and
+be fitted exclusively with force matching. Thus, without normalization, the training set data may exceed the bounds
+imposed by a given pair of elemental potentials. This creates an intractable fitting problem that can be rectified with the
+normalization procedure described above.
+
+3.4
+Fitting Procedure
+
+The optimum values of all free parameters (five per Ag-Au-Cu binary, and eleven for the Ag-Al binary) are determined
+by minimizing the difference between the mixing enthalpy, bulk modulus, and lattice parameters for the training set
+structures as calculated within RAMPAGE by using the LAMMPS library interface versus corrected DFT [39]. A
+genetic algorithm optimizes an objective function F, which we define as the weighted sum over all structures in the
+training set of total error in mixing enthalpy, and fractional errors in bulk modulus and lattice parameter between EAM
+and the corrected DFT values calculated using the relationship
+
+1
+F =
+�
+
+i
+
+�
+wH∆ (∆Hm,i) + wK
+∆Ki
+
+Ki,DF T
++ wa
+∆ai
+
+ai,DF T
+
+�
+wi,
+(12)
+
+where F represents the fitness of the potential with respect to matching the corrected ab initio values. The weight factor
+wi is associated with a given structure and is used in Section4.2 to bias a fits towards specific compositions. The weight
+factors wH, wK, and wa can in principle be freely chosen and can be used to preferentially skew behavior towards a
+given property in the final fit.
+
+Since their values however can drastically alter the behavior of the resulting potential, we have chosen a test set-based
+validation method which makes the weights part of the optimization problem. Equally, for some alloys, inclusion of the
+intermetallic phases into the training set can have significant effect on the optimization outcome. In order to have a
+data-driven selection of both weights and training structures, a matrix of weights and training data sets was developed
+and separate fits performed for each matrix point. The performance of these potentials was then assessed against a
+validation set of 17 SQSs. More details of the procedure are described in the supplemental information. In an extension
+of this approach, a Bayesian calibration framework was also developed to optimize and understand the limits of the
+parameter space, their correlations with each other, and the general performance of RAMPAGE potentials better, which
+can be found in Ref. [40].
+
+4
+Case Studies
+
+The process discussed above was used within the RAMPAGE code package to fit potentials for the ternary Ag-Au-Cu
+and binary Ag-Al alloy systems. The Ag-Au-Cu system was selected as it is one of the few test systems that can
+closely approximate an ideal solid solution. This should provide the best case scenario for JAM potentials, which rely
+on a model that is predicated on the assumption of ideal mixing. The second case study applies RAMPAGE to fit
+
+6
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Ag-Al binary potentials. Unlike, the first case study, Ag-Al is an immiscible system with extended low temperature
+solubility of aluminum in silver up to 20 atomic percent. Silver exhibits a maximum solubility of 23.5 atomic percent
+aluminum at 840 K, but the solubility limit rapidly becomes negligible as temperature decreases [41]. This system
+provides a challenging test case for interatomic potential fitting in a near ’real-world’ context. We benchmark the
+resulting RAMPAGE potentials against desorption simulations not included in the training or validation sets to show
+transferability of the resulting potentials. Both cases use elemental potentials fitted by Zhou et al. [12], which allows a
+consistent comparison to cross interactions modeled by the JAM, for which they were originally developed.
+
+4.1
+Ag-Au-Cu
+
+The silver, gold, copper alloy system provides a close approximation of ideal behavior for benchmarking RAMPAGE
+potentials. This system can be well described by simple models such as JAM and even within RAMPAGE, a simple
+interpolated electron density model was chosen due to its ease of optimization and favorable performance.
+
+The procedure for creating a ternary RAMPAGE potential requires one additional step after the three constituent
+binaries: Ag-Au, Ag-Cu, and Au-Cu are fit. Those three binaries are concatenated into a ternary potential. The only
+modifications that need to be made to the constituent binary potentials are insuring compatible cutoff radii and grid
+spacing for the numeric tables. However, before the fitting of the cross terms can begin, it is important to benchmark
+the accuracy of the elemental potentials, as elemental interactions remain unchanged through the fitting procedure.
+Therefore the quality of any RAMPAGE multi-component potential will be limited by the quality of the elemental
+potentials selected.
+
+Equilibrium properties of elemental copper, gold, silver, and aluminum from both DFT and MD are shown in Table 1.
+There is good agreement between the DFT calculations, MD and experiment for the aluminum and copper potentials,
+where still the bulk modulus differs at most by 7% between DFT and experiment. However, larger discrepancies are
+found between DFT and MD/experiment for silver and gold, sized to 15% for the bulk modulus and 23% for the
+cohesive energy. The variance between the DFT data and experiment closely follows known trends in DFT error and
+uncertainty quantification [42]. The original authors state that these potentials were fitted to lattice constants, elastic
+constants, bulk moduli, vacancy formation energies, and sublimation energies, but do not report the source of the fitting
+data. This comparison clearly implies that the elemental potentials are fitted to experimental data, and thus illustrates
+the need for scaling DFT training set data as described in Section 3.3.
+
+Element
+Property
+DFT
+MD
+Exp. [43]
+
+ECoh [eV]
+2.519
+2.850
+2.95
+Ag
+a [Å]
+4.145
+4.093
+4.09
+K [GPa]
+90.581
+102.880
+100.7
+
+ECoh [eV]
+3.548
+3.580
+3.39
+Al
+a [Å]
+4.041
+4.053
+4.05
+K [GPa]
+77.712
+72.590
+72.2
+
+ECoh [eV]
+3.035
+3.930
+3.81
+Au
+a [Å]
+4.156
+4.084
+4.08
+K [GPa]
+139.315
+165.640
+173.2
+
+ECoh [eV]
+3.485
+3.540
+3.49
+Cu
+a [Å]
+3.635
+3.612
+3.61
+K [GPa]
+138.392
+135.163
+137
+
+Table 1: Computed cohesive energy, lattice constant, and bulk modulus of elemental Ag, Al, Au, and Cu using DFT and
+MD with the standardized Zhou potentials used in RAMPAGE fitting.
+
+The combined ternary RAMPAGE Ag-Au-Cu potential is compared to JAM using equilibrium properties calculated
+across ternary composition space in the pairs plots in Figure 2. The error weights and optimal training sets used for
+fitting the three required Ag-Au-Cu binaries is presented in the supplemental information. Across all three properties
+the RAMPAGE potential is able to closely reproduce the validation set DFT data. Recall that only binary properties
+are included in the training set, therefore these ternary structures may be considered part of the validation set. The
+lattice constant, which for solid solution typically follows linear behavior with some bowing, performs best for both
+RAMPAGE with a Pearson’s correlation coefficient of 0.999 (JAM Pr=0.997). The mixing enthalpy and bulk modulus
+show similar trends. Mixing enthalpy, in particular is often tricky to accurately reproduce due to the quantity’s small
+absolute value. As mixing enthalpy determines a system’s tendency to form ordered intermetallics or phase separate, it
+is most important to ensure that the sign is accurately reproduced, which is seen in the RAMPAGE data. RAMPAGE
+
+7
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+is able to accurately reproduce DFT data throughout composition space root mean square errors (RMSEs) uniformly
+lower than that produced by JAM potentials. The strong agreement between DFT and the RAMPAGE potential despite
+the deviation in elemental properties point to successful scaling of the training set data.
+
+Figure 2: Parity plots of lattice constant (top left), mixing enthlapy (top right), and bulk modulus (bottom) MD
+calculations versus DFT. Data is sampled across ternary composition space for Ag-Au-Cu RAMPAGE potentials (blue)
+and JAM (orange). The diagonal line corresponds to perfect matching between MD and DFT results.
+
+RAMPAGE potentials are fitted with 3 quantities: lattice parameter, which determines minimum energy atomic
+separation, the mixing enthalpy, which informs the depth of that energy well, and bulk modulus, which is dependant
+on the second derivative of the bottom of the energy well. The first derivative of the energy well, which corresponds
+to force is used in this work as a validation set. Force sets were generated by performing DFT-MD on an equiatomic
+108 atom FCC SQSs thermalized to 300 K using an NVT-ensemble. The parity plots in Figure 3 compare forces
+for RAMPAGE and JAM potentials against DFT. The RAMPAGE ternary is able to reproduce forces with a 27%
+improvement in RMSE over JAM.
+
+Next we present results for the RAMPAGE potential when applied to the task of ripping atoms off (100) surface. The
+values of the computed energy barriers are presented in in Table 2. The elemental potentials included sublimation
+energies in the training set; however, with the exception of gold, DFT more closely matches experiment [43, 44]. The
+elemental sublimation energies have some of the largest deviation between MD and DFT ranging from 1.3 eV for silver
+to 0.2 eV for copper.
+
+Regardless of the surface, the largest deviations are observed from gold adsorbates, with a deviation of 0.2 eV for
+a silver surface and 0.5 eV for a copper surface. All other cross energy deviations are less than 0.1 eV. This would
+indicate that the selected gold elemental potential is relatively ill suited for simulations of sublimation or deposition,
+illustrating the need for careful selection of the constituent elemental potentials with respect to the target application.
+However, the cross interaction desorption energy deviations (with the exception of Au on Cu) are less than that of the
+elemental potentials and the sublimation energy deviation for adsorbates not including gold are sufficiently low, thus we
+can conclude that the energies are well fitted within the limits of the elemental potential for this ternary case study.
+
+8
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Figure 3: Parity plots of forces computed with classical MD using (left) RAMPAGE potential and (right) JAM potential
+compared against DFT-MD. 108 atom cells were thermalized at 300 K. Data is shown for 500 time steps.
+
+Energy [eV]
+Adsorbate
+Surface
+MD
+DFT
+Exp. [44]
+
+Ag
+-2.226
+-3.589
+2.96
+Ag
+Au
+-2.524
+-2.514
+—
+Cu
+-2.476
+-2.543
+—
+
+Ag
+-3.165
+-2.931
+—
+Au
+Au
+-3.535
+-3.050
+3.78
+Cu
+-3.861
+-3.354
+—
+
+Ag
+-2.511
+-2.551
+—
+Cu
+Au
+-3.120
+-3.103
+—
+Cu
+-2.751
+-2.976
+3.50
+
+Table 2: Energy barriers for ripping an atom from a 100 surface computed using RAMPAGE potentials and DFT-MD.
+
+4.2
+Ag-Al
+
+The Ag-Al system provides a significant challenge for simple interatomic potential models such as EAM due to its
+peculiar phase diagram. While there is an extended solubility of aluminium in silver, there is very limited solubility
+on the Al-rich end [45]. Nucleation and pre-nucleation in Al-rich Al-Ag alloys have attracted scientific interest for a
+significant time, and were one of the first systems in which Guinier found Guinier-Preston (GP) zones in 1942 [46].
+Questions about these GP zones in Al-Ag such as their shape or faceting kept being discussed in the literature for
+many decades [47]. Alloys with somewhat higher Ag concentrations also show peculiar dealloying behavior which can
+even be used to create nanostructured silver [48]. These factors provide a difficult real-world test case to evaluate the
+performance of RAMPAGE potentials.
+
+Since the lattice constants of Ag and Al are very similar to within 1%, considering the Hume-Rothery (HR) rules, all
+these solubility effects should stem from the different valency (Al: +3, Ag: +1) and electronegativity (Ag: 1.93, Al:
+1.61), and are thus chemical rather than geometrical effects. The different solubilities also follow the HR rule that
+a metal is more likely to dissolve a metal of higher valency, than vice versa. This can be quantified using ab initio
+calculations. Figure 4 shows the partial density of states (PDOS) at the Fermi level of the 17 cell validation set. Below
+65% aluminum, bonding is dominated by the Ag-d orbital, and above that point the bonding environment is primarily
+dominated by p-shell electrons.
+
+It was observed in the process of fitting potentials for the Ag-Al system that producing a single binary potential to
+describe both sides of composition space results in unacceptable compromises in the resulting QOIs. A simple model
+such as EAM-FS is unable to account for the change in bonding environment from d- to p-shell electrons. Thus, two
+RAMPAGE potentials were generated, each optimized to Ag- and Al-rich alloys. The training sets consisted of SQSs
+of 0.03125, 0.125 0.4375, 0.5625, 0.75, 0.88, and 0.96875 atomic fraction Al. A logistic function using the atomic
+fractions as input and set with an inflection point at 0.5 was used to generate error weights wi : (0, 1) in Eqn. 12. With
+the objective functions biased towards either Al-rich or Ag-rich alloys, the fitting and selection procedure remains
+
+9
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Figure 4: Partial density of states of Ag-Al 2x2x2 FCC SQS
+
+largely unchanged from that discussed in Sec. 3.4 and the supplemental information. We find that the best fits was
+achieved by excluding intermetallic structures from the training set.
+
+The optimum Ag-focued fit was produced with an error weight set of wH = 1.6, wK = 1.2, and wa = 1.6 which
+biases the objective function away from bulk modulus, whereas the error weights that produced the best Al-focued fit
+put the greatest emphasis on lattice constant and least on bulk modulus with wH = 1.0, wK = 0.8, and wa = 1.2. The
+QOIs calculated by DFT, JAM, and the two RAMPAGE fits are shown in Figure 5. Each fit is designed to reproduce
+the QOIs to within 0.2 atomic fraction solubility. When considering only these regions, the RAMPAGE fits produce
+RMSEs an order of magnitude lower (0.37 and 0.31) than JAM (2.55 and 4.13) for Ag- and Al-rich alloys respectively.
+Both fits are well optimized and reproduce the validation set within their intended composition ranges.
+
+To appropriately assess the forces resulting from the fitted cross interactions, and minimize contributions from the
+elemental potentials, forces are computed at the limits of solubility: using 108-atom Ag75Al25 and Ag22Al78 cells
+at 840 K. The elemental silver and aluminum potentials are well behaved with respect to DFT computed forces
+producing correlation coefficients of 0.997 and 0.990 and RMSEs of 0.031 and 0.091 respectively. These can be taken
+as the upper limits for force accuracy for the potentials in this case study. The pairs plots in Figure 6 show that the
+Al-focused RAMPAGE fit is well calibrated with respect to forces when compared to JAM. The Ag-focused fit produces
+a correlation coefficient of 0.938 and RMSE of 0.352 for Ag75Al25. The RMSE is a factor of two larger than the
+Al-focused fit. While while the Al-focused fit reproduces forces of Ag-rich alloys, the large deviation in bulk modulus at
+high Ag concentrations makes it ill-suited in that concentration rage. The intended target of this case study is simulating
+atomic-probe tomography simulations, and the process of ripping atoms from a surface is dependant on the elastic
+response of the material.
+
+To benchmark the quality of the fitted potential for use in APT simulations, the desorption energies are computed and
+sown in Table 3. As discussed in the previous section, the largest discrepancy between the RAMPAGE potential and
+DFT comes from the elemental interactions in removing a silver atom from a silver surface. Each RAMPAGE potential
+is capable of describing the bonding environment of its associated training set with a deviation of 5.6% for an Ag
+adsorbate on an Al surface using the Al-focused fit and 0.2% for an Al adsorbate on an Ag surface with the Ag-focused
+fit. The RAMPAGE fits also show acceptable agreement with DFT when used in the bonding environment not included
+in the training set, albeit with understandably higher errors (16% for the Ag-focused fit and 12% for the Al-focused fit).
+
+The reproduction of this validation set data leads us to conclude that RAMPAGE fit is able to successfully model
+Al-rich Ag-Al alloys. A truly qualitative data-driven understanding of the model error and quality of the resulting
+interatomic potential requires a far more advanced statistical framework than that presented here. The complexity
+associated with a rigorous uncertainty quantification put it outside the scope of this work. A Bayesian framework for
+evaluating uncertainty in interatomic potentials can be found in ref. [40]. However, within the this property driven
+framework, the validation evidence points to a well calibrated model.
+
+10
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Figure 5: Lattice constant, mixing enthalpy, and bulk modulus for Ag-Al alloys computed using DFT, MD with
+RAMPAGE a fitted potential, and MD with a JAM potential.
+
+Energy [eV]
+Adsorbate
+Surface
+Ag-focus
+Al-Focus
+DFT
+Exp. [44]
+
+Ag
+Ag
+-2.226
+-2.226
+-3.589
+-2.96
+Al
+-2.437
+-2.893
+-2.899
+—
+
+Al
+Ag
+-3.148
+-3.750
+-3.337
+—
+Al
+-3.049
+-3.049
+-3.099
+-3.34
+
+Table 3: Energy for sublimating an adsorbate from a 100 surface. Computed using RAMPAGE potentials and DFT-MD.
+The Ag-Ag data is unchanged from Table 2.
+
+11
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+Figure 6: Parity plots of computed forces using (left) RAMPAGE Al-focus and (right) JAM potentials against DFT for
+solid solutions (top) Ag81Al27 and (bottom) Ag24Al84 at 840 K.
+
+5
+Conclusions
+
+In this work, we present and describe the RAMPAGE code package for fitting multi-component interatomic potentials
+from published elemental potentials. Within the RAMPAGE framework, off-the-shelf elemental potentials are used
+as model inputs to efficiently fit cross interactions for multi-component alloy potentials. Binary Ag-Al and ternary
+Ag-Au-Cu case studies are used to present and benchmark the resulting fitted potentials. RAMPAGE potentials are
+fitted and compared against JAM potentials to show the performance of RAMPAGE potentials in predicting equilibrium
+properties and forces. It is demonstrated that for both well behaved, and immiscible alloy systems, RAMPAGE
+potentials are capable of reproducing equilibrium properties and forces. Due to the differing valances of silver and
+aluminum, two potentials are required to sufficiently model each solid-solution region. It was shown that RAMPAGE
+was able to bias the objective function to fit composition dependant potentials with a general training set.
+
+We then apply the RAMPAGE potentials to the problem of atomic evaporation on a (100) surface to benchmark the
+utility of RAMPAGE potentials in simulating APT and PVD processes. It was demonstrated that RAMPAGE potentials
+are able to model such processes with accuracy that exceeds that of the elemental potential inputs. Thus, RAMPAGE
+potentials are able to successfully capture cross interaction behavior for alloy systems with simulations not included in
+the training set of either the binary or elemental potentials. Therefore we conclude that the RAMPAGE fitting procedure
+is able to produce functional high efficiency EAM interatomic potentials and enable the modeling of multi-component
+systems which currently suffer from a lack of suitable potentials.
+
+12
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+6
+Acknowledgements
+
+This work was funded by the Air Force Office of Scientific Research (AFOSR) under Grant No. FA9550-19-1-0378.
+Simulations were performed at the Ohio Supercomputer Center (Grant No PAS0072).
+
+References
+
+[1] Sikandar Mashayak, Mike Brown, Carl Ponder, Christian Trott, Paul Crozier, Fiona Reid, and Courtenay Vaughan.
+LAMMPS Benchmarks, 2016.
+
+[2] Chandler A. Becker, Francesca Tavazza, Zachary T. Trautt, and Robert A. Buarque de Macedo. Considerations for
+choosing and using force fields and interatomic potentials in materials science and engineering. Current Opinion
+in Solid State and Materials Science, 17(6):277–283, December 2013.
+
+[3] Lucas M. Hale, Zachary T. Trautt, and Chandler A. Becker. Evaluating variability with atomistic simulations: the
+effect of potential and calculation methodology on the modeling of lattice and elastic constants. Modelling and
+Simulation in Materials Science and Engineering, 26(5):055003, May 2018. Publisher: IOP Publishing.
+
+[4] Ellad B Tadmor, Ryan S Elliott, James P Sethna, Ronald E Miller, and Chandler A Becker. The potential of
+atomistic simulations and the knowledgebase of interatomic models. JOM, 63(7):17, 2011.
+
+[5] Leroy Gardner. The use of stainless steel in structures. Progress in Structural Engineering and Materials,
+7(2):45–55, 2005. _eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1002/pse.190.
+
+[6] Mary P. Ryan, David E. Williams, Richard J. Chater, Bernie M. Hutton, and David S. McPhail. Why stainless
+steel corrodes. Nature, 415(6873):770–774, February 2002. Number: 6873 Publisher: Nature Publishing Group.
+
+[7] Aidan P Thompson, Laura P Swiler, Christian R Trott, Stephen M Foiles, and Garritt J Tucker. Spectral neighbor
+analysis method for automated generation of quantum-accurate interatomic potentials. Journal of Computational
+Physics, 285:316–330, 2015.
+
+[8] Kimberly Chenoweth, Adri C. T. van Duin, and William A. Goddard. ReaxFF Reactive Force Field for Molecular
+Dynamics Simulations of Hydrocarbon Oxidation. The Journal of Physical Chemistry A, 112(5):1040–1053,
+February 2008. Publisher: American Chemical Society.
+
+[9] Albert P Bartók, Mike C Payne, Risi Kondor, and Gábor Csányi. Gaussian approximation potentials: The accuracy
+of quantum mechanics, without the electrons. Physical review letters, 104(13):136403, 2010.
+
+[10] Steven J. Plimpton and Aidan P. Thompson. Computational aspects of many-body potentials. MRS Bulletin,
+37(5):513–521, May 2012. Publisher: Cambridge University Press.
+
+[11] Murray S. Daw and M. I. Baskes. Embedded-atom method: Derivation and application to impurities, surfaces,
+and other defects in metals. Physical Review B, 29(12):6443–6453, June 1984.
+
+[12] X. W. Zhou, R. A. Johnson, and H. N. G. Wadley. Misfit-energy-increasing dislocations in vapor-deposited
+CoFe/NiFe multilayers. Physical Review B, 69(14):144113, April 2004.
+
+[13] H. W. Sheng, M. J. Kramer, A. Cadien, T. Fujita, and M. W. Chen. Highly optimized embedded-atom-method
+potentials for fourteen fcc metals. Physical Review B, 83(13):134118, April 2011.
+
+[14] R. A. Johnson. Alloy models with the embedded-atom method. Physical Review B, 39(17):12554–12559, June
+1989.
+
+[15] S. Parviainen, F. Djurabekova, S. P. Fitzgerald, A. Ruzibaev, and K. Nordlund. Atomistic simulations of field
+assisted evaporation in atom probe tomography. Journal of Physics D: Applied Physics, 49(4):045302, December
+2015. Publisher: IOP Publishing.
+
+[16] Lan Yao, Travis Withrow, Oscar D. Restrepo, Wolfgang Windl, and Emmanuelle A. Marquis. Effects of the local
+structure dependence of evaporation fields on field evaporation behavior. Applied Physics Letters, 107(24):241602,
+December 2015. Publisher: American Institute of Physics.
+
+[17] C. Oberdorfer, T. Withrow, L. J. Yu, K. Fisher, E. A. Marquis, and W. Windl. Influence of surface relaxation on
+solute atoms positioning within atom probe tomography reconstructions. Materials Characterization, 146:324–335,
+December 2018.
+
+[18] Jiayuwen Qi, Christian Oberdorfer, Emmanuelle A. Marquis, and Wolfgang Windl. Ab-Initio Simulation of Field
+Evaporation, July 2022. arXiv:2207.03958 [cond-mat].
+
+[19] Murray S. Daw and M. I. Baskes. Semiempirical, Quantum Mechanical Calculation of Hydrogen Embrittlement
+in Metals. Physical Review Letters, 50(17):1285–1288, April 1983.
+
+13
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+[20] M. W. Finnis and J. E. Sinclair. A simple empirical N-body potential for transition metals. Philosophical Magazine
+A, 50(1):45–55, July 1984.
+
+[21] H. N. G Wadley, X Zhou, R. A Johnson, and M Neurock. Mechanisms, models and methods of vapor deposition.
+Progress in Materials Science, 46(3):329–377, January 2001.
+
+[22] Arthur F Voter. The embedded atom method. Intermetallic Compounds: Principles, 1:77, 1994.
+[23] F Ercolessi, E Tosatti, and M Parrinello. Au (100) surface reconstruction. Physical review letters, 57(6):719, 1986.
+[24] G. P. Purja Pun and Y. Mishin. Development of an interatomic potential for the Ni-Al system. Philosophical
+Magazine, 89(34-36):3245–3267, December 2009.
+
+[25] P. L. Williams, Y. Mishin, and J. C. Hamilton. An embedded-atom potential for the Cu–Ag system. Modelling
+and Simulation in Materials Science and Engineering, 14(5):817, 2006.
+
+[26] M.I. Mendelev, M.J. Kramer, R.T. Ott, D.J. Sordelet, D. Yagodin, and P. Popel. Development of suitable interatomic
+potentials for simulation of liquid and amorphous Cu–Zr alloys. Philosophical Magazine, 89(11):967–987, April
+2009. Publisher: Taylor & Francis _eprint: https://doi.org/10.1080/14786430902832773.
+
+[27] Y. Q. Cheng, E. Ma, and H. W. Sheng. Atomic Level Structure in Multicomponent Bulk Metallic Glass. Physical
+Review Letters, 102(24):245501, June 2009.
+
+[28] A. Landa, P. Wynblatt, A. Girshick, V. Vitek, A. Ruban, and H. Skriver. Development of Finnis–Sinclair type
+potentials for Pb, Pb–Bi, and Pb–Ni systems: application to surface segregation. Acta Materialia, 46(9):3027–3032,
+May 1998.
+
+[29] D. D. Koleske and S. J. Sibener. Molecular dynamics simulations of the basal planes of Ni and Cu using
+Finnis-Sinclair potentials. Surface Science, 290(1):179–194, June 1993.
+
+[30] Katsutoshi Hyodo, Shinji Munetoh, Toshihiro Tsuchiyama, and Setsuo Takaki. Empirical interatomic potential for
+Fe-N binary system based on Finnis–Sinclair potential. Computational Materials Science, 174:109500, March
+2020.
+
+[31] Arthur F. Voter and Shao Ping Chen. Accurate Interatomic Potentials for Ni, Al and Ni3Al. MRS Online
+Proceedings Library Archive, 82, 1986.
+
+[32] Arthur F Voter. Embedded atom method potentials for seven fcc metals: Ni, pd, pt, cu, ag, au, and al. Los Alamos
+Unclassified Technical Report# LA-UR, pages 93–3901, 1993.
+
+[33] Somchart Chantasiriwan. Higher-order elasticity of cubic metals in the embedded-atom method. Physical Review
+B, 53(21):14080–14088, 1996.
+
+[34] G. Kresse and J. Hafner. Ab initio molecular dynamics for liquid metals. Physical Review B, 47(1):558–561,
+January 1993. Publisher: American Physical Society.
+
+[35] G. Kresse and J. Hafner. Ab initio molecular-dynamics simulation of the liquid-metal–amorphous-semiconductor
+transition in germanium. Physical Review B, 49(20):14251–14269, May 1994. Publisher: American Physical
+Society.
+
+[36] P. E. Blöchl. Projector augmented-wave method. Physical Review B, 50(24):17953–17979, December 1994.
+Publisher: American Physical Society.
+
+[37] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized Gradient Approximation Made Simple.
+Physical Review Letters, 77(18):3865–3868, October 1996. Publisher: American Physical Society.
+
+[38] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized Gradient Approximation Made Simple.
+Physical Review Letters, 78(7):1396–1396, February 1997.
+
+[39] Steve Plimpton. Fast Parallel Algorithms for Short-Range Molecular Dynamics. Journal of Computational
+Physics, 117(1):1–19, March 1995.
+
+[40] Arun Hegde, Cosmin Safta, Habib Najm, Elan Weiss, and Wolfgang Windl. Bayesian calibration of interatomic
+potential models for binary alloys. Accepted and pending publication in Computational Materials Science, 2022.
+
+[41] H. Okamoto, M.E. Schlesinger, and E.M. Mueller. Alloy Phase Diagrams. ASM International, 04 2016.
+[42] K. Lejaeghere, V. Van Speybroeck, G. Van Oost, and S. Cottenier. Error Estimates for Solid-State Density-
+Functional Theory Predictions: An Overview by Means of the Ground-State Elemental Crystals. Critical
+Reviews in Solid State and Materials Sciences, 39(1):1–24, January 2014. Publisher: Taylor & Francis _eprint:
+https://doi.org/10.1080/10408436.2013.772503.
+
+[43] Charles Kittel. Introduction to Solid State Physics. Wiley, Hoboken, NJ, 8 edition edition, November 2004.
+[44] T. T. Tsong. Field ion image formation. Surface Science, 70(1):211–233, January 1978.
+
+14
+
+
+Rapid Production of Accurate Embedded-Atom Method Potentials for Metal Alloys
+A PREPRINT
+
+[45] S. S. Lim, P. L. Rossiter, and J. E. Tibballs. Assessment of the Al-Ag binary phase diagram. Calphad, 19(2):131–
+141, June 1995.
+
+[46] André Guinier. Le mécanisme de la précipitation dans un cristal de solution solide métallique.-cas des systèmes
+aluminium-cuivre et aluminium-argent. J. Phys. Radium, 3(7):124–136, 1942.
+
+[47] KB Alexander, FK LeGoues, HI Aaronson, and DE Laughlin. Faceting of gp zones in an al-ag alloy. Acta
+Metallurgica, 32(12):2241–2249, 1984.
+
+[48] Xiaoguang Wang, Zhen Qi, Changchun Zhao, Weimin Wang, and Zhonghua Zhang. Influence of alloy composition
+and dealloying solution on the formation and microstructure of monolithic nanoporous silver through chemical
+dealloying of al- ag alloys. The Journal of Physical Chemistry C, 113(30):13139–13150, 2009.
+
+15
+
+
+Supplemental Information
+A PREPRINT
+
+1
+RAMPAGE Input File Format
+
+The RAMPAGE fitting process for multicomponent EAM potentials can be broken down into three steps. First,
+elemental potentials are standardized, transformed, and then combined into baseline binary potentials. Second, the
+RAMPAGE fitting engine is employed to fit cross interactions to equilibrium properties. Third, the fitted binaries are
+assembled into multicompoent potentials. For example, to fit a four component A-B-C-D potential, the four chosen
+elemental potentials must be standardized, then binary systems A-B, A-C, A-D, B-C, B-D, and C-D must be fitted and
+combined. The pre and post processing steps are handled by scripts, and the fitting is handled by a compiled fitting
+engine that takes in an input file. What follows is a sample input file to the RAMPAGE fitting engine for a hypothetical
+A-B Finnis-Sinclair system.
+
+27 # Number of parallel processes
+Finnis # EAM model to use: [Finnis] or [Alloy]
+Morse # Pair potential function
+Interpolate # Electron density function (line ignored for EAM Alloy)
+2 # Number of components
+A -3.00 # [Element] and [Energy of atom in equilibrium structure]
+B -6.00
+8 # Number of training structures
+# [Name] [#Atoms] [#A] [#B] [#Cells] [Error Weight]
+B2
+2
+1
+1 343 1.0
+L1_2
+4
+3
+1 125 1.0
+L1_2i 4
+1
+3 125 1.0
+sqs03 32 31
+1
+27 1.0
+sqs25 32 24
+8
+27 1.0
+sqs50 32 16 16
+27 1.0
+sqs75 32
+8 24
+27 1.0
+sqs97 32
+1 31
+27 1.0
+# Data for each structure [Lat. Constant] [H mix] [Bulk Mod.]
+#B2#
+#L1_2#
+#L1_2i#
+#sqs03#
+#sqs25#
+#sqs50#
+#sqs75#
+#sqs97#
+# [guess] [max step] [lower bound] [upper bound]
+5.0e-1 2.0e-1 0.0e+0 1.0e+0 # S_a
+5.0e-1 2.0e-1 0.0e+0 1.0e+0 # S_b
+2.5e-1 1.0e-1 0.0e+0 1.0e+1 # D_e
+1.5e+0 6.8e-1 1.0e-1 1.0e+2 # alpha
+2.9e+0 1.3e+0 0.0e+0 1.0e+2 # r_e
+1.0 # weight factor for mixing enthalpy
+1.0 # weight factor for bulk modulus
+1.0 # weight factor for lattice constant
+101
+# Number of batches
+75 # Number of samples per batch
+EGenetic # Algorithm
+1000 # Initial pool size
+50 # Pool size
+40 # Number Top
+0.90 # Mutation Prob Start
+0.003 # Mutation Prob Decay (Linear)
+0.50 # Mutation Prob Minimum
+4
+# FOM Exaggeration Factor
+9
+# Number of pressure states for bulk modulus (values given in next line)
+20000 15000 10000 5000 0 -5000 -10000 -15000 -20000
+
+The first line of the input file is the number of secondary processes to be run in parallel, and may take on a maximum
+value of one minus the number of processors available. At least one processor must be held in reserve for main
+RAMAPGE instance. The following three lines define the EAM model to be used and the functional form of the cross
+interactions. The next lines define the number of elements in the fit, followed by a line for each element defining the
+element symbol and the cohesive energy of the equilibrium structured given by the elemental potential in eV.
+
+1
+
+arXiv:2208.02223v1  [cond-mat.mtrl-sci]  3 Aug 2022
+
+
+Supplemental Information
+A PREPRINT
+
+The next block defines the number of training structures as well as a line containing information on each structure.
+Immediately after the structure information is a block for the training set data. In the example above, placeholders are
+used. When running RAMPAGE, these placeholders must be replaced by the lattice constant in Angstroms, mixing
+enthalpy in eV, and bulk modulus in GPa. These three numbers are separated by white-space. The structures are defined
+in a ‘./TEMPLATE/’ directory, which must be located in the current working directory. Standard LAMMPS input
+structure is expected with a naming convention of ‘data.template_#NAME#’ where ‘#NAME#’ is the structure label to
+be used in the input file.
+
+The initial guess, max step size, and bounds for the fitting parameters follow the training set data block. The number of
+fitting parameters and their order are defined as part of the selected pair potential and electron density functional forms.
+These are listed in 2. The three error weight factors act on Equation 12. Their selection is non-trivial and discussed in 3.
+The remaining lines in the input file define options for the fitting algorithm and typically do not need to be changed.
+
+2
+Pair Potential and Electron Density Functions
+
+Within RAMPAGE, one of several functional forms for the pair potential and electron density may be selected on
+lines three and four of the input file. Here we list the functions currently implemented within RAMPAGE and their
+parameters.
+
+2.1
+Pair Potential Functions
+
+Pair potential functions are selected with the 3rd line of the RAMPAGE input file. The following are the available
+options.
+
+“Morse" selects a standard 3 parameter Morse function, which is shown in Equation 6 in the main text and is repeated
+below. The input file expects the parameters to be in the following order: De, α, re.
+
+VAB(r) = De (exp (−2α (r − re)) − 2 exp (−α (r − re))) .
+(1)
+
+“GenMorse" selects a more generalized form of the Morse function with 5 fitting parameters. The general Morse
+function reduces to the standard Morse function when β = 2 and δ = 0. The ordering of parameters in the input file is:
+De, α, β ,re, δ.
+VAB(r) = De (exp (−βα (r − re)) − β exp (−α (r − re))) + δ
+(2)
+
+“RosenMorse" selects a 3 parameter Rosen-Morse function, where the parameters in order are: V1, V2, and α
+
+VAB(r) = V1 tanh
+� r
+
+α
+
+�
+− V1 sech2 � r
+
+α
+
+�
+(3)
+
+“ModRMorse" selects a 5 parameter modified Rosen-Morse function which takes the following form:
+
+VAB(r) = De
+
+�
+1 − exp(α(re − rij)) + 1
+
+exp(α(r − rij)) + 1
+
+�
+,
+(4)
+
+where rij = re −
+�
+
+(KDe)/ke. K is a dimensionless constant, and ke is the equilibrium harmonic vibrational force
+constant between two species which may be treated as a free parameter or explicitly computed and fixed by limiting the
+upper and lower bounds. The parameter ordering is: ke, K, De, α, re“DCIModRMorse" selects the 3 parameter Doug
+Cruz-Irrison modified Rosen-Morse potential with parameters V1, V2, and a. The form of the potential is,
+
+VAB(r) = −V1 − V2 sinh(r/α)
+
+cosh2(r/α)
+.
+(5)
+
+2.2
+Electron Density Functions
+
+The form of the electron density function is chosen in line 4 of the input file. If fitting an EAM/alloy potential, this line
+is ignored. For EAM/FS potentials, parameters denoted with the subscript ‘A’ determine ρAB parameters with subscript
+‘B’ fit ρBA. The parameters of the electron density function always preceded those of the pair potential in the input file
+when choosing initial starting guesses, max step size, and bounds for fitting.
+
+The keyword “Scaled” selects an electron density form where cross interactions are given by scaling the elemental
+electron densities. This model contains two free parameters: SA and SB, and takes the following form
+
+ρAB(r) = SAρAA(r).
+(6)
+
+2
+
+
+Supplemental Information
+A PREPRINT
+
+“Interpolated" selects a 2 parameter model where cross-species electron densities are determined by linear interpola-
+tion/extrapolation of the elemental electron densities as shown in Equation 7. When the free parameters SA and SB are
+between 0 and 1, the resulting electron density is a linear interpolation between the two elemental electron densities.
+Beyond that range, the electron densities are extrapolated.
+
+ρAB(r) = ρAA(r) + SA(ρAA − ρBB),
+(7)
+
+“Voter" selects an analytical form for the electron density based on the hydrogenic 4s orbital as suggested by Voter in
+1986. This model contains 2 free parameters, aA and aB, and takes the following form
+
+ρAB(r) = r6 �
+exp(−aAr) + 29 exp(−2aAr)
+�
+.
+(8)
+
+“GenVoter" is a modified more general form of the Voter electron density with an additional scaling parameter S. The
+parameters for this model take the order SA, SB, aA, aB in the RAMPAGE input file.
+
+ρAB(r) = SAr6 �
+exp(−aAr) + 29 exp(−2aAr)
+�
+(9)
+
+“GenVoter2" takes a form similar to that above, but now has free parameters SA, SB, aA, aB, bA, bB
+
+ρAB(r) = SAr6 �
+exp(−aAr) + 29 exp(−bAr)
+�
+(10)
+
+“CSW" selects an 4 parameter function from Chantasiriwan and Milstein, with fitting parameters a, a1, a2, b:
+
+ρAB(r) = 1 + a1 cos(a0r) + a2 sin(a0r)
+
+rb
+,
+(11)
+
+3
+Selecting Error Weights and Training Set
+
+RAMPAGE uses a weighted sum construction to balance the three training set properties, and the weight factors wH,
+wK, wa, and wi in Equation 12 are left to user input. By altering the weight factors, the objective function is biased
+towards a given property or structure, allowing users to decide what structures, compositions, or features of the energy
+landscape are most important. In this work, a simple data-driven approach was used to optimize the values for wH, wK,
+and wa to generate well behaved test-case potentials.
+
+Within this approach, the validation set consisted of DFT calculations of the QOIs for 17 FCC SQS given by AnB32−n
+with n ∈ {1, 2, 4, . . . , 28, 30, 31}. And a test matrix of 64 QOI error weight vectors was constructed of the form:
+
+WQOI =
+
+�wH
+wK
+wa
+
+�
+
+: for wH, wK, wa ∈ {0.8, 1.0, 1.2, 1.4, 1.6}.
+(12)
+
+RAMPAGE fits were run with each weight factor vector in WQOI, and for each of the 64 resulting potentials, the QOIs
+for the validation set are recomputed using LAMMPS. The distribution of binary potentials are evaluated by the sum
+of root mean square errors of the QOIs with respect to DFT calculations. For the potentials discussed in Section 4.2,
+the RMSE vectors associated with each validation set structure were multiplied by an error weight consistent with the
+logistic function used to weight the training sets to silver and aluminum rich.
+
+The need for sensible choice of of training set and error weights is indicated in Figure 2, which shows the lattice
+constant and mixing enthalpy results for two preliminary Ag-Au error weight tests. One was produced using a training
+set consisting of 5 SQSs at composition intervals of 0.03125, 0.25, 0.5, 0.75, and 0.03125 atomic percent aluminum.
+The other was fitted with the 5 SQSs along with the L12, and B2 intermetallic structures. The Ag-Au system is fully
+miscible with no stable intermetallics; however, restricting the training set to only alloy structures results in potentials
+that uniformly over-predict lattice constant and fail to match DFT mixing enthalpy for Ag rich compositions. Including
+non-ground state intermetallic structures resulted in fits that better captured the DFT data for both properties.
+
+As no general trend was found to guide the selection of training sets, the error weight optimization scheme discussed
+above was applied to several candidate training sets to find the training set that best reproduced the QOIs with the
+minimum number of structures. The final error weights and training sets for potentials used in the main text are shown
+in Table 1
+
+3
+
+
+Supplemental Information
+A PREPRINT
+
+Figure 1: Candidate training set structures consisting of 5 FCC special quasi-random structures and three additional
+intermetallic structures with L12 and B2 ordering.
+
+Figure 2: Ag-Au property calculations for 64 different RAMPAGE fits with DFT computed properties in black.
+Computed lattice constants (top) and mixing enthalpies (bottom) is compared for fits with training sets that only
+included only SQS structures (left) and those that included SQS structures and ordered intermetallics (right).
+
+System
+wH
+wK
+wa
+Training Set
+
+Ag-Al : Ag Focus
+1.6
+1.2
+1.6
+8 SQS structures
+Ag-Al : Al Focus
+1.0
+0.8
+1.2
+8 SQS structures
+Ag-Au
+1.6
+1.6
+0.8
+5 SQS structures with L12 and B2
+Ag-Cu
+1.2
+1.0
+1.0
+5 SQS structures with L12 and B2
+Au-Cu
+0.8
+1.2
+0.8
+5 SQS structures
+
+Table 1: Optimized error weights used for the potentials discussed in Section 4.
+
+4
+
+

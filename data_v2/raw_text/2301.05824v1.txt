@@ -1,0 +1,967 @@
+DISCOVERY OF 2D MATERIALS USING TRANSFORMER
+NETWORK BASED GENERATIVE DESIGN ∗
+
+Rongzhi Dong
+Department of Computer Science and Engineering
+University of South Carolina
+Columbia, SC 29201
+
+Yuqi Song
+Department of Computer Science and Engineering
+University of South Carolina
+Columbia, SC 29201
+
+Edirisuriya M. D. Siriwardane
+Department of Physics
+University of Colombo
+Colombo 00300, Sri Lanka
+
+Jianjun Hu *
+Department of Computer Science and Engineering
+University of South Carolina
+Columbia, SC 29201
+jianjunh@cse.sc.edu
+
+ABSTRACT
+
+Two-dimensional (2D) materials have wide applications in superconductors, quantum, and topologi-
+cal materials. However, their rational design is not well established, and currently less than 6,000
+experimentally synthesized 2D materials have been reported. Recently, deep learning, data-mining,
+and density functional theory (DFT)-based high-throughput calculations are widely performed to
+discover potential new materials for diverse applications. Here we propose a generative material
+design pipeline, namely material transformer generator(MTG), for large-scale discovery of hypo-
+thetical 2D materials. We train two 2D materials composition generators using self-learning neural
+language models based on Transformers with and without transfer learning. The models are then
+used to generate a large number of candidate 2D compositions, which are fed to known 2D materials
+templates for crystal structure prediction. Next, we performed DFT computations to study their
+thermodynamic stability based on energy-above-hull and formation energy. We report four new
+DFT-verified stable 2D materials with zero e-above-hull energies, including NiCl4, IrSBr, CuBr3, and
+CoBrCl. Our work thus demonstrates the potential of our MTG generative materials design pipeline
+in the discovery of novel 2D materials and other functional materials.
+
+Keywords deep learning · transformer network · materials discovery · 2D materials · crystal structure prediction
+
+1
+Introduction
+
+Two-dimensional (2D) materials have been emerging as a promsing functional materials with wide applications due to
+the novel fundamental physics with the reduced dimension[1] The systematic discovery and synthesis of functional
+2D materials has been the focus of many studies[2, 3, 4, 5, 6, 7, 8]. Having exceptional and tunable properties,
+2D materials hold strong promise in semiconductor, energy, and health applications[9, 10]. Since the 2010 Nobel
+prize-winning discovery of graphenes[11] with a simple 2D structure of carbon atoms but with attractive and complex
+physics, only a few thousands of distinct 2D materials have been successfully synthesized[5]. The isolation of single
+graphene sheets, which proves that 2D systems can exist, gives rise to the discovery of many 2D materials with unique
+superconducting[12], electronic[13], magnetic[14], and topological properties[15]. In addition to being test beds for
+studying the behavior of systems in reduced dimensions, 2D materials hold great promise for various applications in
+optoelectronics[16], catalysis[17], and the energy sector[18]. The research effort has been mainly concentrated on the
+systems which have bulk counterparts representing anisotropic crystals with layers held together by van der Waals
+(vdW) forces, with the most prominent example being the graphene and graphite. The weak interlayer interaction leads
+
+∗Citation: Authors. Title. Pages.... DOI:000000/11111.
+
+arXiv:2301.05824v1  [cond-mat.mtrl-sci]  14 Jan 2023
+
+
+2D materials discovery
+
+to a natural structural separation of the 2D subunits in the crystals, therefore making the mechanical or liquid-phase
+exfoliation possible.
+
+Currently, there are three approaches for generating 2D materials: the top-down exfoliation method starts with a bulk
+material and exfoliates to make it thinner and peel the layers to obtain 2D materials; the bottom-up approach instead
+starts with existing 2D materials and uses element substitution to generate new materials. The third one is the de
+novo structure generation approach[3] based on deep learning generative models such as CDVAE[19]. To get new 2D
+materials through the exfoliation method, we need to judge whether the 3D bulk material is layered so that it can be
+exfoliated. The layer screening process first checks the distance between atoms to identify whether these atom pairs are
+bonded. It then calculates the bonded atom clusters both in a 3x3x3 supercell and the unit cell. If the number of clusters
+in the supercell is three times that in the unit cell, the structure is tagged as layered[20]. 2D materials are theoretically
+exfoliated by extracting one cluster in the standard conventional unit cell of the screened layered bulk structures. In the
+element substitution method, all the elements of the periodic table are categorized into different groups according to
+their column number. Elements with the same column (group) number share the same number of electrons in their
+outermost orbit, and elements with the same row (period) number share the same number of electronic layers, which
+means that elements in the same group or neighbor share some similar chemical properties. The substitution method
+starts with the structure of a known 2D material and replaces one or more element in this material with other elements
+either in the same group or its neighbor elements.
+
+Both the element substitution method and the de novo generation method start with known 2D crystal structures.
+Currently, there are several open-source 2D material databases generated through exfoliation, substitution, or de novo
+generation methods. The Computational 2D Materials Database (C2DB)[21, 5] uses both exfoliation and substitution
+methods to organize a wealth of computed properties for 4038 (checked in October 2022) atomically thin 2D materials.
+The materials in the C2DB comprise both experimentally known and not previously synthesized structures. They have
+been generated in a systematic fashion by the combinatorial decoration of different 2D crystal lattices. Starting from
+108,423 unique, experimentally known 3D compounds, MC2D[6] uses only the exfoliation method to identify a subset
+of 5,619 compounds that appear layered according to robust geometric and bonding criteria (checked in October 2022).
+High-throughput calculations using van der Waals density functional theory (DFT) validated against experimental
+structural data and calculating random phase approximation binding energies further allowed the identification of
+1,825 compounds that can be either easily or potentially be exfoliated. 2D Materials Encyclopedia (2DMatPedia)
+database[22, 2] screened all bulk materials in the database of Materials Project for layered structures by a topology-
+based detection algorithm and theoretically exfoliated them into monolayers. Then, new 2D materials are generated
+by applying chemical substitution of elements in known 2D materials by other elements from the same group in the
+periodic table. There are a total of 6351 materials in the current 2DMatPedia database (checked in December 2022),
+whereas 2940 were obtained by exfoliating existing layered materials (top-down approach), 3409 were obtained by
+the chemical substitution of 2D materials (bottom-up approach), and 2 were obtained from the literature via neither a
+top-down or bottom-up approach. The bottom-up approach starts from the 35 unary and 755 binary compounds obtained
+from the top-down approach. Only the same-column elements are used for substitution. By employing 22 different 2D
+crystal prototypes and 52 different chemical elements from the periodic table, Virtual 2D Materials Database (V2DB)[4]
+applied a brute-force substitution method to generate a systematic library of more than 72 million 2D compounds. Next,
+symmetry, neutrality, and stability sequential filtering layers are applied to identify 316,505 likely stable 2D materials.
+
+Materials Cloud[23] provides a practical yet straightforward approach to assessing whether any 3D compound can be
+exfoliated into 2D layers. The multistep procedure starts by pre-screening layered structures based on geometrical
+criteria requiring only the atomic positions of the atoms in the structure. The resulting filtered structures are featurized,
+and finally, an ML model based on a random forest classifier is applied to assess whether the material can be exfoliated
+or, instead, has high binding energy (HBE). Friedrich et al.[24] outlined a new set of non-vdW 2D materials by
+employing data-driven concepts and extensive calculations. By filtering the AFLOW-ICSD database according to the
+structural prototype of the two experimentally realized systems Fe2O3 and FeTiO3, they have obtained 8 binary and 20
+ternary 2D material candidates. The most recent approach for 2D material generation is based on the deep learning
+generative model. Lyngby et al.[3] use a crystal diffusion variational autoencoder (CDVAE)[19] to generate new 2D
+structures of high chemical and structural diversity and with formation energies mirroring the training structures. They
+also use the element substitution method to generate new possible 2D materials based on the newly generated 2D
+structures. In total, they find 11630 predicted new 2D materials, where 3073 are generated by CDVAE and 8,599 come
+from element substitution of these 3073 structures. They find that 2,004 of their generated 2D candidates are within 50
+meV of the convex hull and could potentially be synthesised. In order to capture all these structural features of 2D and
+quasi-2D materials, Wang et al.[25] developed a new 2D structure search module in CALYPSO code that is based on
+2D PSO algorithm but allows the relaxation of atomic coordinates in the perpendicular direction. They predicted a new
+family BxNy with different chemical compositions that have layered structures.
+
+2
+
+
+2D materials discovery
+
+Here we propose a computational pipeline, material transformer generator(MTG), for generative discovery of new 2D
+materials (and other crystal materials). Our method is based on combining a 2D composition generator trained with
+known 2D material compositions, two template based crystal structure predictors, two machine learning potential-based
+structure relaxers, and DFT relaxation. Extensive experiments show that our MTG pipeline can be used discover a large
+number of hypothetical 2D materials.
+
+2
+Method
+
+Figure 1: Architecture of our material transformer generator(MTG) pipeline. BLMM is a tranformer neural network
+based composition generator. TCSP and CSPML are template based crystal structure prediction algorithms; and
+BOWSR and M3GNET are machine learning potential based structure relaxing algorithms. DFT relaxation is a
+first-principles calculation method.
+
+Figure1 (a) shows how the framework of our MTG pipeline for 2D material generation. We collected known 2D
+formulas and their structures from open datasets C2DB, MC2D, 2DMatPedia, and V2DB. We then train a set of BLMM
+(blank language models for materials) composition generators with known 2d formulas to generate new 2D formulas.
+Next, we use known 2D structures as templates for structure prediction of these candidate 2D formulas using two crystal
+structure prediction algorithms TCSP and CSPML. TCSP is a template-based crystal structure prediction algorithm
+based on oxidation state patterns. CSPML is a machine learning-based crystal structure prediction method using a
+machine learning model to select templates. For a given new 2D formula such as SrTiO3, both models will first select all
+template structures with prototype ABC3, but they are very different when sorting all these templates. TCSP calculates
+the element mover distance score and elements oxidation states, which focus on element distance. However, CSPML
+selects candidates using structural similarity. This structure similarity measure uses only the topological features of the
+atomic coordinates and does not use any information about the elemental composition. After choosing the appropriate
+templates and generating new 2D structures, we use two machine learning potential-based relaxation algorithms to
+optimize the structures. The first one is BOWSR which is a Bayesian optimization with symmetry relaxation. The
+second one is M3GNET, which uses materials graph neural networks with 3-body interactions as energy estimation
+model for structure relaxation. The BOWSR algorithm relaxes each structure by changing the independent lattice
+parameters and atomic coordinates to obtain lower potential energy. During relaxation, the M3GNET algorithm takes
+all atom coordinates and the 3X3 lattice matrix into consideration. The attributes of the bond, atom, and state are
+updated in order. For each attribute update, all previous attributes of these three parameters are considered. After all
+these operations, for all generated 2D formulas, we obtain near-equilibrium relaxed structures. After the fast machine
+learning potential-based relaxation, we further apply the DFT-based relaxation procedure to optimize the structures.
+Finally, we calculate the formation energy and e-above-hull energy of top structures to evaluate the final performance.
+
+2.1
+BLMM: Transformer based 2D material composition generation
+
+The material composition can be mapped into a sequence generation problem as a composition such as SiTiO3 can be
+conveniently expanded into a specific sequence (e.g. Si Ti O O O) sorted by the electronegativities of the elements.
+The BLMM model is a composition generator built on the latest transformer deep neural network models, shown to be
+excellent on sequence learning and sequence generation. By adopting the self-attention mechanism to weighting the
+significance of all tokens in the input sequence, the transformer model[26] has been proved as the state-of-the-art in
+
+3
+
+
+2D materials discovery
+
+the fields of natural language processing and computer vision. Based on the traditional transformer, Shen et.al.[27]
+proposed a blank language model (BLM) which could generate sequences by dynamically creating and filling in blanks.
+Our BLMM composition generator[28] is developed based on the BLM blank-filling model. All material formulas can
+be rewritten as sequences (e.g., SiTiO3 to Si Ti O O O) composed of a vocabulary with 118 or fewer elements. We
+then train a BLMM based 2D composition generator using our 2D materials dataset. The architecture of the BLMM
+algorithm is shown in Figure2. Generation starts with a single blank and ends when there is no blank. In each step, the
+model selects a blank, predicts a word w, and replaces the blank with the word w and possibly adjoining blanks. By
+repeating this blank selecting and filling process, a blank can be expanded to any number of words. Then we use this
+well-trained BLMM model to generate new 2D compositions. After getting the generated compositions, we first remove
+duplicate compositions that are already included in known 2D datasets and then take the nonredundant formulas as our
+new 2D material candidates to be fed to the step of template-based 2D material structure prediction.
+
+Figure 2: BLMM architecture [28].
+
+2.2
+Template based 2D material structure prediction
+
+Currently, generic crystal structure prediction is still an unsolved problem despite that global optimization-based
+algorithms such as USPEX and CALYPSO can be applied to solve structures for small systems. On the other hand,
+we find that, similar to bulk materials[29, 30, 31], most existing 2D material structures can be categorized into a
+very limited number of structure prototypes, which implies that their structures can be obtained using template-based
+elemental substitution.
+
+After composition generation and duplicate checking, we obtain a 2D material composition candidates dataset. To gain
+the probable structures of all candidates, we use two different template-based element substitution methods to select the
+most similar structure template and then use element substitution to generate target structures. The crystal structure
+generated by these two methods has the same lattice parameters and atomic coordinates as the template structure and
+needs to be further relaxed.
+
+(a)
+
+(b)
+
+Figure 3: Template-based CSP algorithms. (a) TCSP architecture.[32]. (b) CSPML architecture[33]
+
+4
+
+
+2D materials discovery
+
+TCSP: is a template-based crystal structure prediction algorithm.
+The architecture of the TCSP algorithm is
+shown in Figure3 (a). For a given candidate 2D material formula, the TCSP algorithm first searches all known 2D
+material structure templates that share the same composition prototype as this formula (e.g., SiTiO3 has prototype
+ABC3). The Element’s mover distance(ElMD)[34] is used to measure the compositional similarity between the query
+formula and compositions of all possible template structures. It then picks the top 5 structures with the smallest
+compositional distances as the candidate templates . For each of these candidate templates, we use the Pymatgen[35]
+package to check whether it has the same oxidation states as the query formula. Templates with identical oxidation
+states are then added to the final template list. If no such templates are found, all five of the top structures are taken as
+the final templates. Pymatgen’s StructureMatcher module is then used to reduce the redundant template structures. For
+each structure cluster, only one of these structures can be kept, which can significantly reduce the number of similar
+structure templates. After the templates of the query formula are designated, the algorithm then enumerates all of the
+possible element substitution pairs between the query and template formulas as Algorithm A2 in Ref[32]. It is possible
+that there are several element pair substitutions in one template to get the target formula. A replacement quality score
+is then calculated by summing the ElMD of all element pairs’ substitution arrangements. This score represents how
+similar the substitution element pairs are. A lower score means higher similarity and thus higher quality.
+
+CSPML is a machine learning-based crystal structure prediction algorithm.
+CSPML relies on metric
+learning[36] for crystal structure prediction, which can select template structures from known structure databases
+with high similarity to the given composition. Metric learning uses a binary classifier to distinguish whether two
+given compositions have similar structures as defined by a similarity threshold of local structure order parameters
+(LoStOPs)[37]. The architecture of the CSPML algorithm is shown in Figure3 (b). For a given 2D formula, CSPML
+first restricts the candidates to structures with the same compositional ratio (e.g., SiTiO3 has a composition ratio of
+1:1:3). The compositional descriptor of query formula and templates is then calculated by XenonPy[38]. XenonPy
+provides 58 physicochemical features for each element. For a given composition, by calculating the weighted mean,
+weighted sum, weighted variance, min-pooling, and max-pooling of all elements, XenonPy generates a 290-dimensional
+(58x5) descriptor vector. A traditional multi-layer perceptron (MLP) is used to figure out how similar the template
+structure and the query formula are. The absolute difference between two compositional descriptors is used as the
+input. We pick the top five template structures with the biggest similarity scores with the query formula as the template
+candidates. The structure of the query formula is then generated by replacing the atoms in the templates with atoms in
+the query composition. When two or more elements have the same composition ratio, the substitution element pairs
+are not uniquely determined. In such cases, we substitute a pair of elements with the most similar physicochemical
+properties, as described in Ref[33].
+
+2.3
+Structure relaxation
+
+Accurately predicting novel stable crystal structures and their properties is a fundamental goal in computation-guided
+materials discovery. While ab initio approaches such as density functional theory (DFT) have been phenomenally
+successful in this regard, their high computational cost and poor scalability have limited their broad application across
+the vast chemical and structural spaces. To circumvent this limitation, machine learning has emerged as a new paradigm
+for developing efficient surrogate models for predicting material properties at scale. In this paper, after gaining basic
+structures from template-based element substitution methods, we apply and compare two different machine-learning
+potential-based structure relaxation methods.
+
+BOWSR: Bayesian optimization with symmetry relaxation algorithm
+BOWSR is a graph-based neural network-
+based structure relaxation algorithm that uses Bayesian optimization as an optimizer. Bayesian optimization is an
+adaptive strategy for the global optimization of functions. In the crystal structure relaxation problem, the target function
+that needs to be optimized is the potential energy surface, which describes the energy of the crystal structure. During
+the relaxation process of the BOWSR algorithm, the symmetry of the lattice and the Wyckoff positions of the atoms are
+limited. Only the independent lattice parameters and atomic coordinates are allowed to change. The BOWSR algorithm
+sets parameters for each structure based on these changeable, independent lattice parameters and atomic coordinates.
+The potential energy surface of each training observation is calculated by a graph neural network (MEGNet) energy
+model, which is trained with 12,277 stable structures with DFT-calculated formation energies. Bayesian optimization is
+then used to relax structures iteratively towards states with lower energies.
+
+The geometry relaxation of a structure of N atoms requires optimizing 3N + 6 variables, 3 fractional coordinates for
+each atom, and 6 lattice parameters in total. By keeping the symmetry the same during the relaxation process, it can
+reduce the number of independent variables. New structures are generated by Bayesian optimization, which minimizes
+the formation energy, and the changed variables are then used as inputs to predict new energy. The previous step is
+
+5
+
+
+2D materials discovery
+
+then repeated multiple times until the formation energy reaches the lowest point or reaches the maximum number of
+iterations. The final structure is the BOWSR relaxation results.
+
+M3GNET: materials graph neural networks with 3-body interactions
+M3GNet (M3GNET) is a new materials
+graph neural network architecture that incorporates 3-body interactions for formation energy prediction. It combines
+graph-based deep learning interatomic potential (IAP) and many-body features of traditional IAPs with those of
+flexible graph material representations. The inputs of the M3GNet model are position-included graphs. The atomic
+numbers of elements and the pair bond distance in the input graph are embedded as graph features. The three-body and
+many-body interaction atom indices and angles are calculated by the many-body computation module. The bond and
+atom information is then updated through a graph convolution module.
+
+A key difference with prior materials graph implementations such as MEGNet is the addition of the coordinates for
+atoms and the 3x3 lattice matrix in crystals, which are necessary for obtaining tensorial quantities such as forces and
+stresses via auto-differentiation. The difference of M3GNet with BOWSR’s GNN potential is that it is trained with both
+stable structures and unstable structures. The M3GNet-based relaxation algorithm [39] is also different from BOWSR’s
+Bayesian optimization. It uses an algorithm named FIRE, which is derived from molecular dynamics with additional
+velocity modifications and adaptive time steps and inertia to achieve fast inertial relaxation engine. The ability of a
+M3GNet-based relaxing algorithm to accurately and rapidly relax arbitrary crystal structures and predict their energies
+makes it ideal for large-scale materials discovery.
+
+2.4
+DFT calculations
+
+We carried out the first-principles calculations based on the density functional theory (DFT) using the Vienna ab initio
+simulation package (VASP)[40, 41, 42, 43] to optimize the candidate structures suggested by the machine learning
+models. The projected augmented wave (PAW) pseudopotentials were used to treat the electron-ion interactions[44, 45]
+with 520 eV plane-wave cutoff energy. The generalized gradient approximation (GGA) based Perdew-Burke-Ernzerhof
+(PBE) method was considered for the exchange-correlation functions [46, 47]. The energy convergence criterion was
+10−5 eV and the force convergence criterion was 10−2 eV/Å for all the DFT calculations. The Brillouin zone integration
+for the unit cells was performed employing the Γ-centered Monkhorst-Pack k-meshes. The formation energies (in
+eV/atom) of the materials were determined employing the formula in Eq. 1, where E[Material] is the total energy per
+unit formula of the target structure, E[Ai] is the energy of ith element of the material, xi indicates the number of Ai
+atoms in a unit formula, and n is the total number of atoms in a unit formula(n = �
+
+i xi). The Pymatgen code[35] was
+used to compute the energy above hull values of the materials with negative formation energies.
+
+Eform = 1
+
+n(E[Material] −
+�
+
+i
+xiE[Ai])
+(1)
+
+2.5
+Evaluation criteria
+
+We use a series of performance metrics to evaluate our 2D material generation pipeline. To evaluate the BLMM 2D
+material composition generator, we calculate the validity, uniqueness, recovery rate, and novelty. Formation energy is
+used as an indicator to evaluate the template-based 2D structure generator and relaxer. To further verify the structures,
+we use VASP to calculate the energy-above-the-hull.
+
+Validity. For all formulas generated by the BLMM algorithm, we use Semiconducting Materials by Analogy and
+Chemical Theory(SMACT)[48] to check whether they obey the charge neutrality and electronegativity (CNEN) rules.
+
+Uniqueness. Uniqueness percentage is calculated by using the number of unique samples divided by the total generated
+samples. The uniqueness indicator shows the BLMM model’s ability to generate diverse samples.
+
+Recovery Rate and Novelty. To check the BLMM model’s capability to generate novel materials, we calculate the
+recovery rate and novelty of generated formulas. The recovery rate shows the percentage of training samples that have
+been rediscovered. Novelty shows how many new samples have been generated.
+
+Formation energy. The way to evaluate the structure generation models is to check the stability of generated structures.
+For structures generated and relaxed through our pipeline, we calculate their formation energy using M3GNET.
+
+Energy above convex hull. The energy convex hull [49] is generated based on existing stable structures. Structures
+with energy lying on the convex hull are thermodynamically stable, and the ones above it are either metastable or
+unstable. For all structures with negative formation energy, we use the energy above convex hull as a further filter to
+select more stable structures.
+
+6
+
+
+2D materials discovery
+
+2.6
+Hyperparameters and training
+
+For 2D formula generation, each BLMM model trained on 2D datasets generates 100,000 samples. After generation,
+we use the TCSP and CSPML methods separately to generate structure candidates for these samples. BOWSR and
+M3GNET are then used to relax generated structures. Table1 shows the hyperparameters used in the BLMM, TCSP,
+CSPML, BOWSR, and M3GNET models. In the BLMM model, we use an element vocabulary with size 130, and
+the generated formula sequence length is limited to 205. The maximum number of tokens per batch is set to 40,000,
+and the number of training steps is set to 200,000. The candidate template structure number of both the TCSP and
+CSPML models is set to 10. And only the top 5 candidates, sorted by ElMD and XenenPy, respectively, can be used as
+real templates. Relax method BOWSR uses a Bayesian optimizer with initial points 1000, iteration steps 1000, and
+seed number 42. The M3GNET relax method uses FIRE[50] optimizer with a 0.1 total force tolerance for relaxation
+convergence and 500 relax steps.
+
+Table 1: Hyperparameters used in models.
+
+TCSP
+CSPML
+BLMM
+
+candidate
+10
+candidate
+10
+data workers
+32
+
+top
+5
+top
+5
+max steps
+200000
+
+sort
+ElMD
+sort
+XenonPy
+max token
+40000
+
+filter
+ratio
+filter
+ratio
+vocab size
+130
+
+filter
+oxidation
+max len
+205
+
+BOWSR
+M3GNET
+
+optimizer
+Bayesian Optimizer
+optimizer
+FIRE
+
+initial points
+100
+force tolerance
+0.1
+
+iteration steps
+100
+relax steps
+500
+
+seed
+42
+
+3
+Results
+
+3.1
+Datasets
+
+As shown in Table2, our template-based 2D materials generation models are trained using the materials downloaded
+from the C2DB[21, 5], MC2D[6], 2DMatPedia[22, 2], and V2DB[4] databases with a total of 328,719 formula samples
+and 12,214 structures. The C2DB dataset was initially generated by decorating an experimentally known crystal
+structure prototype with atoms chosen from a (chemically reasonable) subset of the periodic table. The MC2D dataset
+starts from experimentally known 3D compounds and finds 1,825 compounds that are either easily or potentially
+exfoliate. The 2DMatPedia dataset is searched from the Materials Project database[51] and uses exfoliate first to find
+possible 2D structures, and new structures generated by exfoliation are then used as templates of element substitution.
+The generation of the V2DB dataset employs the brute-force element substitution method. This method generated
+72,522,240 possible combinations of 2D materials and only 0.4% of these passed the symmetry, neutrality, and stability
+validation.
+
+In this work, we separated these 2D samples into two datasets. The first one is an experimental dataset (exp2d for short)
+with 4,023 formulas and corresponding structures from the C2DB and MC2D datasets. The second dataset (all2d for
+short) contains the all the samples in the above-mentioned our known 2D databases with a total of 302,174 unique
+formulas and 8,019 structures.
+
+Table 2: Open source datasets used in 2D material discovery.
+
+Dataset
+Formula
+Structure
+Type
+From
+Exfoliation
+Substitution
+
+C2DB
+4038
+4038
+experimental
+known 2D crystal structure prototype
+N/A
+all
+
+MC2D
+1825
+1825
+experimental
+known 3D compounds
+all
+N/A
+
+2DMatPedia
+6351
+6351
+calculate
+Material Project
+2940
+3409
+
+V2DB
+316505
+N/A
+calculate
+22 known 2D crystal prototypes
+N/A
+all
+
+7
+
+
+2D materials discovery
+
+3.2
+Composition generation performance
+
+We use the BLMM algorithm to generate new 2D material compositions based on two different datasets, the experimental
+2D dataset, exp2d, and an all 2D dataset, all2d. For each dataset, we train a generation model using these formulas and
+then use these well-trained models to generate new formulas. We also use transfer learning to train BLMM models on
+the materials project database and then fine-tune these pre-trained models using our two datasets, which are named
+all2d-transfer and exp2d-transfer, respectively. Four composition generation models are trained to generate 100,000
+formulas separately. The generated results are shown in Table3. Furthermore, to check whether generated formulas
+are chemically valid, we employ two filters to check their charge neutrality (CN) and electronegativity (EN), this
+checking step is called CNEN for short. The results are shown in Table3, 93.3%, 67.1%, 93.2%, and 67.0% generated
+compositions passed the CNEN check. Besides, we remove duplicate composition in each model, and they achieve
+65.8%, 26.5%, 69.4%, and 21.0% uniqueness respectively. We also calculate the recovery rate and novelty of these
+generational models. As we can see in the Table 3, their recovery rates are 0.6%, 9.2%, 0.6%, and 11.2% while the
+novelties are 63.7%, 24.6%, 67.5%, and 18.8%. This evaluation demonstrates that our methods have the ability to
+generate stable and innovative compositions that form stable 2D structures. Since the exp2d dataset is smaller than
+the all2d dataset, the BLMM model trained with the exp2d dataset has much fewer samples to learn from and use
+for interpolation. Thus, the BLMM model trained with the exp2d dataset has lower validity, uniqueness, and novelty
+percentages than the BLMM model trained with the all2d dataset. However, the recovery rate of the BLMM model
+trained with fewer samples is higher because the interpolation space is smaller and the interpolated results generated by
+the BLMM model are more likely to be the same as the training samples. The composition generator pre-trained with
+the materials project database and fine-tuned with the all2d dataset achieves higher uniqueness and novelty compared
+with the generator only trained with the all2d dataset. However, due to the lack of sufficient transfer learning samples,
+the BLMM model fine-tuned with the exp2d dataset has lower uniqueness and novelty compared with the BLMM
+model trained with the exp2d dataset.
+
+Table 3: Composition generation results.
+
+all2d
+exp2d
+all2d-transfer
+exp2d-transfer
+
+Generated results
+100000
+100000
+100000
+100000
+
+Validity
+93.3%
+67.1%
+93.2%
+67.0%
+
+Uniqueness
+65.8%
+26.5%
+69.4%
+21.0%
+
+Recover rate
+0.6%
+9.2%
+0.6%
+11.2%
+
+Novelty
+63.7%
+24.6%
+67.5%
+18.8%
+
+3.3
+Distribution of generated candidate 2D compositions
+
+To check the composition generation performance of BLMM, we plot the element distribution of compositions in
+the 2DMatPedia dataset and our generated samples in Figure4, where (a) and (b) show the element frequency in
+compositions in the 2DMatPedia dataset and the BLMM model generated dataset, respectively. Here we take the
+BLMM model trained with the exp2d dataset as an example. The top 5 most frequent elements in the 2DMatpedia
+dataset are O, S, F, Te, and Cl. Out of the total 6,351 formulas, element O has appeared 1,642 times, or about 26% of
+the 2Dmatpedia dataset. The occurrences of the elements S, F, Te, and Cl are 653, 598, 586, and 584, respectively. The
+top 5 most frequent elements in our generated dataset are Se, O, S, Te, and Cl. The element Se has shown 13,294 times
+out of the whole set of 67,103 formulas, which is about 20% of the whole generated dataset. The elements O, S, Te,
+and Cl appear 12,591, 11,440, 9,546, and 8,829 times respectively. Overall, we find that four out of the top five most
+common elements in these two datasets are the same, and six in the top ten most common elements are also the same,
+indicating that the BLMM generator has learned the key composition preferences of 2D materials.
+
+We also analyze the distribution of element pairs in the known 2D dataset and our generation results. To count the
+frequencies of element pairs, we take each of the possible 2-element combinations from the element set and count the
+number of compositions that contain this pair (we ignore the order of the two elements in the pair). The distribution of
+the top 50 element pairs in the 2DMatPedia and our generation datasets are shown in Figure5 (a) and (b), respectively.
+The top 5 most frequent element pairs in the 2DMatpedia dataset are H-O, P-O, Li-O, V-O, and Bi-O. However, only
+the H-O element pair is shown in the top 5 of our generation results. The other 4 element pairs in our generation results
+are C-O, N-O, Cl-O, and H-C. These two datasets only share 2 common element pairs in the top 10 most frequent ones.
+
+To verify whether our newly generated compositions share a similar distribution with the known 2D compositions, we
+use the t-distributed Stochastic Neighbor Embedding(t-SNE)[52] technique to map the one-hot matrix of compositions
+to their corresponding formation energy. Each point in Figure6 corresponds to one formula and the colors represent the
+
+8
+
+
+2D materials discovery
+
+(a)
+(b)
+
+Figure 4: Elements distribution in training and generating samples. (a)Element distribution in the 2DMatPedia dataset.
+(b)Element distribution in BLMM model generated samples.
+
+(a)
+(b)
+
+Figure 5: Top 50 element pairs distribution in training and generating samples. (a)Element pairs distribution in
+2DMatPedia dataset. (b) Element pairs distribution in generated samples by BLMM model trained with exp2d dataset.
+
+formation energy levels. Figure6 (a) shows the formation energy distribution of the 2DMatPedia samples. It can be
+found that most samples have formation energy between 0 and -3 eV/atom. Figure6 (b) displays the formation energy
+distribution of our generated compositions by BLMM-exp2d, which are developed through the following pipeline:
+firstly, we train the BLMM model using the exp2d dataset and generate compositions; next, we generate candidate
+structures using the TCSP method and then relax these structures using the M3GNET model; thirdly, the formation
+energies of these structures are predicted by the M3GNET method. As the BLMM model is trained by adding and
+filling in blanks in existing materials, it has a strong interpolation capability when generating new samples. Therefore,
+the newly generated samples are always located around known samples.
+
+3.4
+Stability distribution of generated samples
+
+Another way to check the quality of samples generated by our pipeline is to measure their formation energies and
+compare their distribution to that of the training set. We use formation energies predicted by the ML potentials M3GNET
+of both training samples and generated results.
+
+We first check the formation energy distribution of a special material family AB2, which is the most frequent prototype
+in all existing 2D datasets: C2DB, MC2D, and 2DMatPedia. There are 1,288 AB2 samples in the exp2d dataset,
+and 1,928 AB2 samples in our generated structures. The distributions of energies of these two datasets are shown in
+Figure7(a).
+
+Next, we check the structure-based formation energy distribution of the whole exp2d dataset samples and compare it
+with those of our generated samples. Figure7(b) shows that these two set of structures have similar formation energy,
+which means that new structures generated through our MTG pipeline are of high quality.
+
+Figure7(c) compares the energy distribution of samples in the exp2d training set with samples generated through
+out MTG pipeline. These compositions are generated by the BLMM model trained with four different datasets, as
+introduced in section 3.1. The energy distributions of formulas generated by BLMM trained with the all2d dataset
+
+9
+
+
+2D materials discovery
+
+(a)
+(b)
+
+Figure 6: Formation energy distributions in the training (2DMatPedia) and generated samples(BLMM-exp2d). (a)
+Formation energy distribution in the 2DMatPedia dataset. (b) Formation energy distribution in generated samples.
+
+and trained with the MP dataset but finetuned using the all2d dataset are very similar to each other. Same situation in
+BLMM models trained and finetuned with the exp2d dataset.
+
+10
+
+
+2D materials discovery
+
+(a)
+(b)
+
+(c)
+
+Figure 7: Formation energy per atom distribution. (a) Formation energy distribution of AB2 type structures in the
+exp2d dataset and generated through our MTG pipeline (predicted by M3GNET). (b) Formation energy distribution of
+structures in the exp2d dataset and structures generated by our MTG-exp2d pipeline (formation energy predicted by
+M3GNET). (c) Formation energy distribution of compositions in the exp2d dataset and structures generated by our
+MTG pipelines (BLMM models trained by all four datasets, formation energies predicted by M3GNET).
+
+3.5
+Discovery results
+
+Our MTG pipeline generates 148,563 candidate 2D formulas. For each formula, we generate 10 structures using TCSP
+and CSPML and then we do M3GNET based structure relaxation and we pick the top 1 structure with the lowest energy.
+Then we conduct DFT-based relaxation to generate final structures.
+
+Figure8 shows how we generated new structures based on specific template structures and how to relax newly generated
+structures to make them more stable. For formula K4Cr2Ge4Te2 generated by the BLMM algorithm, we first select the
+structure templates for predicting its crystal structure. As shown in Figure8 (a), TCSP picked Na4Ti2S4O2, a layered
+material, as the template structure. Figure8 (b) is then created through the TCSP algorithm. After relaxing by M3GNET,
+we get a more stable structure as shown in Figure8 (c). This relaxed structure is then sent to VASP to do further DFT
+relaxation and energy calculations. We can find that Figure8 (a) and (b) are more similar as in (b) only elemental
+substitutions are applied in the structure (a) with no atomic coordinate fine-tuning. Figure8 (c) changed the coordinates
+based on atom sizes and bond types to make this structure more structurally stable. A similar procedure is applied to
+discover the structure of K4Cr2Sn4, via the three steps as shown in Figure 8 (d,e,f).
+
+Figure9 shows four new 2D structures discovered through our MTG pipeline that have 0 e-above-hull energy (See cif
+information in Supplementary file). All the structures show a layered structure with each layer forming a compact 2D
+structure, demonstrating that they have passed the DFT stability check and the capability of our generative 2D materials
+design pipeline to find new 2D materials.
+
+11
+
+
+2D materials discovery
+
+(a) Template structure Na4Ti2S4O2
+(b) Generated structure K4Cr2Ge4Te2
+(c) Relaxed structure K4Cr2Ge4Te2
+
+(d) Template structure Na2Cl2O4
+(e) Generated structure K4Cr2Sn4
+(f) Relaxed structure K4Cr2Sn4
+
+Figure 8: Illustration of the structure generation and relaxation process of our MTG pipeline. (a) to (c) shows the
+template structure, structure upon element substitution, and the fine-tuned structure after ML potential based relaxation
+for predicting the structure of K4Cr2Ge4Te2. (d) to (f) shows the similar process for K4Cr2Sn4.
+
+(a) NiCl4
+(b) IrSBr
+(c) CuBr3
+(d) CoBrCl
+
+Figure 9: Four new 2D structures discovered by our MTG pipeline with 0 E-above-hull energy.
+
+12
+
+
+2D materials discovery
+
+4
+Conclusion
+
+Two-dimensional materials have wide applications due to their unique properties. Here we propose a generative
+design pipeline for 2D materials discovery by integrating a transformer-based 2D material composition generator, two
+template-based crystal structure predictors, and a graph neural network potential-based structure relaxation algorithm. It
+is found that the transformer composition generator can capture the composition preference which allows it to generate
+chemically valid potential 2D materials. We have applied our 2D generator pipeline to discover four hypothetical 2D
+materials with e-above-hull energy less than 0. Our pipeline is generic and can be used to train other types of materials’
+generative design models.
+
+5
+Code Availability
+
+The BLMM material composition generator is accessible at https://github.com/usccolumbia/blmm. The TCSP template-
+based structure predictor can be accessed at http://materialsatlas.org/crystalstructure. The CSPML template-based
+structure predictor can be found at https://github.com/Minoru938/CSPML. The BOWSR structure relaxation algorithm
+can be found at https://github.com/materialsvirtuallab/maml. M3GNet relaxation module can be downloaded from
+https://github.com/materialsvirtuallab/m3gnet.
+
+6
+Data Availability
+
+The
+V2DB
+database
+is
+available
+at
+Harvard
+Dataverse
+https://doi.org/10.7910/DVN/SNCZF4.
+The
+C2DB database is available at https://cmrdb.fysik.dtu.dk/c2db/.
+The MC2D database is available at
+https://www.materialscloud.org/discover/mc2d/dashboard/ptable.
+The 2DMatPedia database is available at
+http://www.2dmatpedia.org/.
+
+7
+Contribution
+
+Conceptualization, J.H.; methodology,R.D., J.H. Y.S.,E.S.; software, R.D., Y.S. ; resources, J.H.; writing–original draft
+preparation, R.D., E.S., J.H.; writing–review and editing, J.H; visualization, R.D. and E.S.; supervision, J.H.; funding
+acquisition, J.H.
+
+Acknowledgement
+
+The research reported in this work was supported in part by National Science Foundation under the grant and 1940099
+and 1905775. The views, perspectives, and content do not necessarily represent the official views of the NSF.
+
+References
+
+[1] Nicholas R Glavin, Rahul Rao, Vikas Varshney, Elisabeth Bianco, Amey Apte, Ajit Roy, Emilie Ringe, and
+Pulickel M Ajayan. Emerging applications of elemental 2d materials. Advanced Materials, 32(7):1904302, 2020.
+
+[2] Lei Shen, Jun Zhou, Tong Yang, Ming Yang, and Yuan Ping Feng. High-throughput computational discovery
+and intelligent design of two-dimensional functional materials for various applications. Accounts of Materials
+Research, 2022.
+
+[3] Peder Lyngby and Kristian Sommer Thygesen. Data-driven discovery of 2d materials by deep generative models.
+npj Computational Materials, 8(1):1–8, 2022.
+
+[4] Murat Cihan Sorkun, Séverin Astruc, JM Koelman, and Süleyman Er. An artificial intelligence-aided virtual
+screening recipe for two-dimensional materials discovery. npj Computational Materials, 6(1):1–10, 2020.
+
+[5] Morten Niklas Gjerding, Alireza Taghizadeh, Asbjørn Rasmussen, Sajid Ali, Fabian Bertoldo, Thorsten Deilmann,
+Nikolaj Rørbæk Knøsgaard, Mads Kruse, Ask Hjorth Larsen, Simone Manti, et al. Recent progress of the
+computational 2d materials database (c2db). 2D Materials, 8(4):044002, 2021.
+
+[6] Nicolas Mounet, Marco Gibertini, Philippe Schwaller, Davide Campi, Andrius Merkys, Antimo Marrazzo,
+Thibault Sohier, Ivano Eligio Castelli, Andrea Cepellotti, Giovanni Pizzi, et al. Two-dimensional materials
+from high-throughput computational exfoliation of experimentally known compounds. Nature nanotechnology,
+13(3):246–252, 2018.
+
+13
+
+
+2D materials discovery
+
+[7] Kevin M Wyss, Duy Xuan Luong, and James M Tour. Large-scale syntheses of 2d materials: Flash joule heating
+and other methods. Advanced Materials, 34(8):2106970, 2022.
+
+[8] Pablo Ares and Kostya S Novoselov. Recent advances in graphene and other 2d materials. Nano Materials Science,
+4(1):3–9, 2022.
+
+[9] Natalie Briggs, Shruti Subramanian, Zhong Lin, Xufan Li, Xiaotian Zhang, Kehao Zhang, Kai Xiao, David
+Geohegan, Robert Wallace, Long-Qing Chen, et al. A roadmap for electronic grade 2d materials. 2D Materials,
+6(2):022001, 2019.
+
+[10] Shuang Li, Lang Ma, Mi Zhou, Yuanqi Li, Yi Xia, Xin Fan, Chong Cheng, and Hongrong Luo. New opportunities
+for emerging 2d materials in bioelectronics and biosensors. Current Opinion in Biomedical Engineering, 13:32–41,
+2020.
+
+[11] Kostya S Novoselov, Andre K Geim, Sergei V Morozov, De-eng Jiang, Yanshui Zhang, Sergey V Dubonos,
+Irina V Grigorieva, and Alexandr A Firsov. Electric field effect in atomically thin carbon films. science,
+306(5696):666–669, 2004.
+
+[12] Yuan Cao, Valla Fatemi, Shiang Fang, Kenji Watanabe, Takashi Taniguchi, Efthimios Kaxiras, and Pablo Jarillo-
+Herrero. Unconventional superconductivity in magic-angle graphene superlattices. Nature, 556(7699):43–50,
+2018.
+
+[13] Sajedeh Manzeli, Dmitry Ovchinnikov, Diego Pasquier, Oleg V Yazyev, and Andras Kis. 2d transition metal
+dichalcogenides. Nature Reviews Materials, 2(8):1–15, 2017.
+
+[14] Yu Li Huang, Wei Chen, and Andrew TS Wee. Two-dimensional magnetic transition metal chalcogenides.
+SmartMat, 2(2):139–153, 2021.
+
+[15] Liangzhi Kou, Yandong Ma, Ziqi Sun, Thomas Heine, and Changfeng Chen. Two-dimensional topological
+insulators: Progress and prospects. The journal of physical chemistry letters, 8(8):1905–1919, 2017.
+
+[16] Qing Hua Wang, Kourosh Kalantar-Zadeh, Andras Kis, Jonathan N Coleman, and Michael S Strano. Electronics
+and optoelectronics of two-dimensional transition metal dichalcogenides. Nature nanotechnology, 7(11):699–712,
+2012.
+
+[17] Dehui Deng, KS Novoselov, Qiang Fu, Nanfeng Zheng, Zhongqun Tian, and Xinhe Bao. Catalysis with two-
+dimensional materials and their heterostructures. Nature nanotechnology, 11(3):218–230, 2016.
+
+[18] Babak Anasori, Maria R Lukatskaya, and Yury Gogotsi. 2d metal carbides and nitrides (mxenes) for energy
+storage. Nature Reviews Materials, 2(2):1–17, 2017.
+
+[19] Tian Xie, Xiang Fu, Octavian-Eugen Ganea, Regina Barzilay, and Tommi Jaakkola. Crystal diffusion variational
+autoencoder for periodic material generation. arXiv preprint arXiv:2110.06197, 2021.
+
+[20] Peter Mahler Larsen, Mohnish Pandey, Mikkel Strange, and Karsten Wedel Jacobsen. Definition of a scoring
+parameter to identify low-dimensional materials components. Physical Review Materials, 3(3):034003, 2019.
+
+[21] Sten Haastrup, Mikkel Strange, Mohnish Pandey, Thorsten Deilmann, Per S Schmidt, Nicki F Hinsche, Morten N
+Gjerding, Daniele Torelli, Peter M Larsen, Anders C Riis-Jensen, et al. The computational 2d materials database:
+high-throughput modeling and discovery of atomically thin crystals. 2D Materials, 5(4):042002, 2018.
+
+[22] Jun Zhou, Lei Shen, Miguel Dias Costa, Kristin A Persson, Shyue Ping Ong, Patrick Huck, Yunhao Lu, Xiaoyang
+Ma, Yiming Chen, Hanmei Tang, et al. 2dmatpedia, an open computational database of two-dimensional materials
+from top-down and bottom-up approaches. Scientific data, 6(1):1–10, 2019.
+
+[23] Mohammad Tohidi Vahdat, Kumar Agrawal Varoon, and Giovanni Pizzi. Machine-learning accelerated identifica-
+tion of exfoliable two-dimensional materials. Machine Learning: Science and Technology, 2022.
+
+[24] Rico Friedrich, Mahdi Ghorbani-Asl, Stefano Curtarolo, and Arkady V Krasheninnikov. Data-driven quest for
+two-dimensional non-van der waals materials. Nano Letters, 22(3):989–997, 2022.
+
+[25] Yanchao Wang, Maosheng Miao, Jian Lv, Li Zhu, Ketao Yin, Hanyu Liu, and Yanming Ma. An effective structure
+prediction method for layered materials based on 2d particle swarm optimization algorithm. The Journal of
+chemical physics, 137(22):224108, 2012.
+
+[26] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and
+Illia Polosukhin. Attention is all you need. Advances in neural information processing systems, 30, 2017.
+
+[27] Tianxiao Shen, Victor Quach, Regina Barzilay, and Tommi Jaakkola. Blank Language Models. In Proceedings of
+the 2020 Conference on Empirical Methods in Natural Language Processing, Online, November 2020. Association
+for Computational Linguistics.
+
+14
+
+
+2D materials discovery
+
+[28] Lai Wei, Qinyang Li, Yuqi Song, Stanislav Stefanov, Edirisuriya Siriwardane, Fanglin Chen, and Jianjun Hu.
+Crystal transformer: Self-learning neural language model for generative and tinkering design of materials. arXiv
+preprint arXiv:2204.11953, 2022.
+
+[29] Michael J Mehl, David Hicks, Cormac Toher, Ohad Levy, Robert M Hanson, Gus Hart, and Stefano Curtarolo.
+The aflow library of crystallographic prototypes: part 1. Computational Materials Science, 136:S1–S828, 2017.
+
+[30] Chuanxun Su, Jian Lv, Quan Li, Hui Wang, Lijun Zhang, Yanchao Wang, and Yanming Ma. Construction of crystal
+structure prototype database: methods and applications. Journal of Physics: Condensed Matter, 29(16):165901,
+2017.
+
+[31] Sean D Griesemer, Logan Ward, and Chris Wolverton. High-throughput crystal structure solution using prototypes.
+Physical Review Materials, 5(10):105003, 2021.
+
+[32] Lai Wei, Nihang Fu, Edirisuriya MD Siriwardane, Wenhui Yang, Sadman Sadeed Omee, Rongzhi Dong, Rui Xin,
+and Jianjun Hu. Tcsp: a template-based crystal structure prediction algorithm for materials discovery. Inorganic
+Chemistry, 2022.
+
+[33] Minoru Kusaba, Chang Liu, and Ryo Yoshida. Crystal structure prediction with machine learning-based element
+substitution. Computational Materials Science, 211:111496, 2022.
+
+[34] Cameron J Hargreaves, Matthew S Dyer, Michael W Gaultois, Vitaliy A Kurlin, and Matthew J Rosseinsky. The
+earth mover’s distance as a metric for the space of inorganic compositions. Chemistry of Materials, 32(24):10610–
+10620, 2020.
+
+[35] Shyue Ping Ong, William Davidson Richards, Anubhav Jain, Geoffroy Hautier, Michael Kocher, Shreyas Cholia,
+Dan Gunter, Vincent L. Chevrier, Kristin A. Persson, and Gerbrand Ceder. Python materials genomics (pymatgen):
+A robust, open-source python library for materials analysis. Computational Materials Science, 68:314–319, 2013.
+
+[36] Brian Kulis et al. Metric learning: A survey. Foundations and Trends® in Machine Learning, 5(4):287–364, 2013.
+[37] Nils ER Zimmermann and Anubhav Jain. Local structure order parameters and site fingerprints for quantification
+of coordination environment and crystal structure similarity. RSC advances, 10(10):6063–6081, 2020.
+
+[38] Chang Liu, Erina Fujita, Yukari Katsura, Yuki Inada, Asuka Ishikawa, Ryuji Tamura, Kaoru Kimura, and
+Ryo Yoshida. Machine learning to predict quasicrystals from chemical compositions. Advanced Materials,
+33(36):2102507, 2021.
+
+[39] Chi Chen and Shyue Ping Ong. A universal graph deep learning interatomic potential for the periodic table. arXiv
+preprint arXiv:2202.02450, 2022.
+
+[40] G. Kresse and J. Hafner. ab initio. Phys. Rev. B, 47:558–561, Jan 1993.
+[41] G. Kresse and J. Hafner. ab initio. Phys. Rev. B, 49:14251–14269, May 1994.
+[42] J. Furthmüller G. Kresse. Efficiency of ab initio total energy calculations for metals and semiconductors using a
+plane-wave basis set. Comput. Mater. Sci., 6:15–50, jul 1996.
+
+[43] G. Kresse and J. Furthmüller. Efficient iterative schemes for ab initio total-energy calculations using a plane-wave
+basis set. Phys. Rev. B, 54:11169–11186, Oct 1996.
+
+[44] P. E. Blöchl. Projector augmented-wave method. Phys. Rev. B, 50:17953–17979, Dec 1994.
+[45] G. Kresse and D. Joubert. From ultrasoft pseudopotentials to the projector augmented-wave method. Phys. Rev. B,
+59:1758–1775, Jan 1999.
+
+[46] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized gradient approximation made simple. Phys.
+Rev. Lett., 77:3865–3868, Oct 1996.
+
+[47] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized gradient approximation made simple [phys.
+rev. lett. 77, 3865 (1996)]. Phys. Rev. Lett., 78:1396–1396, Feb 1997.
+
+[48] Daniel W Davies, Keith T Butler, Adam J Jackson, Jonathan M Skelton, Kazuki Morita, and Aron Walsh. Smact:
+Semiconducting materials by analogy and chemical theory. Journal of Open Source Software, 4(38):1361, 2019.
+
+[49] Miao Liu, Ziqin Rong, Rahul Malik, Pieremanuele Canepa, Anubhav Jain, Gerbrand Ceder, and Kristin A Persson.
+Spinel compounds as multivalent battery cathodes: a systematic evaluation based on ab initio calculations. Energy
+& Environmental Science, 8(3):964–974, 2015.
+
+[50] Erik Bitzek, Pekka Koskinen, Franz Gähler, Michael Moseler, and Peter Gumbsch. Structural relaxation made
+simple. Physical review letters, 97(17):170201, 2006.
+
+[51] Anubhav Jain, Shyue Ping Ong, Geoffroy Hautier, Wei Chen, William Davidson Richards, Stephen Dacek, Shreyas
+Cholia, Dan Gunter, David Skinner, Gerbrand Ceder, and Kristin a. Persson. The Materials Project: A materials
+genome approach to accelerating materials innovation. APL Materials, 1(1):011002, 2013.
+
+15
+
+
+2D materials discovery
+
+[52] Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of Machine Learning Research,
+9(86):2579–2605, 2008.
+
+16
+
+

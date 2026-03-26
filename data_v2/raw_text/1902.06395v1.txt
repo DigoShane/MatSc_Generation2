@@ -1,0 +1,1758 @@
+arXiv:1902.06395v1  [cond-mat.mtrl-sci]  18 Feb 2019
+
+phq: a Fortran code to compute phonon quasiparticle properties and
+dispersions
+
+Z. Zhanga, D.-B. Zhangb,c,∗, T. Sund, R. M. Wentzcovitcha,e,∗
+
+aDepartment of Applied Physics and Applied Mathematics, Columbia University, New York, New York 10027,
+USA
+bBeijing Computational Science Research Center, Beijing 100193, China
+cCollege of Nuclear Science and Technology, Beijing Normal University, Beijing 100875, China
+dKey Laboratory of Computational Geodynamics, Chinese Academy of Sciences, Beijing 100049, China
+eDepartment of Earth and Environmental Sciences, Lamont-Doherty Earth Observatory, Columbia University,
+New York, New York 10964, USA
+
+Abstract
+
+We here introduce a Fortran code that computes anharmonic free energy of solids from first-
+principles based on our phonon quasiparticle approach. In this code, phonon quasiparticle prop-
+erties, i.e., renormalized phonon frequencies and lifetimes, are extracted from mode-projected
+velocity auto-correlation functions (VAF) of modes sampled by molecular dynamics (MD) trajec-
+tories. Using renormalized frequencies as input, the code next constructs an effective harmonic
+force constant matrix to calculate anharmonic phonon dispersions over the whole Brillouin zone
+and thus the anharmonic free energy in the thermodynamic limit (N → ∞). We illustrate the
+use of this code to compute ab initio temperature-dependent anharmonic phonons of Si in the
+diamond structure.
+
+Keywords:
+Velocity auto-correlation function; Anharmonic phonon dispersion; Phonon
+quasiparticle; First-principles molecular dynamics; Lattice dynamics
+
+PROGRAM SUMMARY
+Program title: phq
+Licensing provisions: GPLv3
+Programming language: Fortran 90
+Operating system: Linux, macOS, Windows
+Nature of problem:
+Accurate free energy calculations deliver predictive thermodynamic properties of solids. Although the
+quasi-harmonic approximation (QHA) has been widely used for various materials, its validity at very high
+temperatures is not guaranteed because of intrinsic anharmonic effects. The QHA cannot be used even at
+low temperatures for strongly anharmonic systems, e.g., those that are stabilized by anharmonic fluctu-
+ations. When anharmonicity is non-negligible, phonon frequencies display a pronounced dependence on
+temperature, which impacts thermodynamic properties. Therefore, the calculation of anharmonic phonon
+dispersions is critical for an accurate estimation of the free energy.
+Solution method:
+We calculate phonon quasiparticle properties, i.e., renormalized phonon frequencies and lifetimes, by
+combing molecular dynamics (MD) trajectories and harmonic normal modes (HNM). MD velocities are
+
+∗Corresponding author.
+E-mail address: dbzhang@csrc.ac.cn; tsun@ucas.ac.cn; rmw2150@columbia.edu
+
+Preprint submitted to Computer Physics Communications
+February 19, 2019
+
+
+projected into HNMs and the mode-projected velocity auto-correlation functions (VAF) are then calcu-
+lated. Quasiparticle properties are then obtained by analyzing the VAFs, if they are well defined. Using
+the renormalized phonon frequencies and HNMs we build an effective (temperature-dependent) harmonic
+force constant matrix from which the anharmonic phonon dispersions can be obtained.
+Unusual features:
+(i) Because MD captures anharmonic effects to infinite order, this approach to compute renormalized
+phonon frequencies and lifetimes is expected to be more appropriate than lowest-order perturbation the-
+ory for strongly anharmonic systems or for weakly anharmonic systems at very high temperatures. (ii)
+By characterizing phonon quasiparticles, this approach provides a validity check of the phonon concept,
+a fundamental procedure missing in other approaches to compute anharmonic dispersions, e.g., the self-
+consistent phonon method.
+
+1. Introduction
+
+The phonon gas model (PGM) [1, 2, 3, 4] provides an excellent paradigm for calculating ther-
+modynamics properties of materials. For weakly anharmonic systems, anharmonic effects reflecting
+the intrinsic temperature dependence of phonon frequencies are negligible. Thus, the quasihar-
+monic approximation (QHA) [5, 6] offers predictive free energies and thermodynamics properties.
+Note that the QHA accounts for the extrinsic temperature dependence of the phonon frequencies
+caused by volume changes (thermal expansion). However, in strongly anharmonic systems, in-
+trinsic anharmonic effects are key to structural stabilization and must be properly accounted for.
+Therefore, anharmonic phonon dispersions are required for estimations of free energy and related
+thermodynamic properties.
+Here we introduce a code of a hybrid approach which fully accounts for anharmonic effects. In
+this approach, we describe a phonon quasiparticle of normal mode (q, s) by the mode-projected
+velocity autocorrelation functions (VAF) [7],
+
+⟨Vqs(0) · Vqs(t)⟩ = lim
+τ→∞
+1
+τ
+
+� τ
+
+0
+V ∗
+qs(t′)Vqs(t′ + t)dt′.
+(1)
+
+where,
+
+Vqs(t) =
+
+N
+�
+
+i=1
+V (t) · eiq·ri · ˆeqs
+(2)
+
+is the s-th branch of q-projected velocity. ˆeqs is the harmonic phonon polarization vector of mode
+(q, s).
+V (t) = V (
+�
+
+M1v1(t), ...,
+�
+
+MNvN(t))
+(3)
+
+is the weighted velocity with 3N components. vi(t)(i = 1, ..., N) are atomic velocities calculated
+from MD trajectories of an N-atom supercell.
+Mi is the atomic mass of the ith atom in the
+supercell.
+For a well-defined phonon quasiparticle, its power spectrum,
+
+Gqs(ω) =
+����
+
+� ∞
+
+0
+⟨Vqs(0) · Vqs(t)⟩eiωtdt
+����
+
+2
+.
+(4)
+
+should have a Lorentzian line shape with a peak at �ωqs and a linewidth of 1/(2τqs), where τqs is
+the lifetime of mode (q, s) in the relaxation time approximation [2, 3, 8]. In principle, a complete
+
+2
+
+
+decay of ⟨Vqs(0) · Vqs(t)⟩ is required to obtain a reliable Gqs. However, very long MD runs are
+needed to satisfy this condition for phonons with long lifetimes. This is inconvenient for ab initio
+MD simulations.
+Here, we extract �ωqs and τqs from ⟨Vqs(0) · Vqs(t)⟩ phenomenologically from
+relatively shorter MD runs. For a well-defined phonon quasiparticle of mode (q, s), one can simply
+fit ⟨Vqs(0) · Vqs(t)⟩ to the expression,
+
+Aqscos(�ωqst)e−t/(2τqs)
+(5)
+
+where, Aqs is the vibrational amplitude. In practice, to obtain reliable �ωqs and τqs, the fitting
+needs only the numerical data of ⟨Vqs(0) · Vqs(t)⟩ for the first few oscillation periods.
+With �ωqs of those modes sampled by the MD run, an effective harmonic dynamical matrix can
+be constructed,
+�D(q) = ˆeqΩqˆe†
+q,
+(6)
+
+where,
+Ωq = diag[�ω2
+q1, �ω2
+q2, ..., �ω2
+q3N].
+(7)
+
+and ˆeq is the harmonic eigenvector matrix:
+
+ˆeq = [ˆeq1, ˆeq2, ..., ˆeq3N].
+(8)
+
+The effective harmonic force constant matrix �Φ(r) can be obtained from the Fourier transformation
+of �D(q), from which,
+�D(q′) =
+�
+
+r
+�Φ(r) · e−iq′·r
+(9)
+
+the effective harmonic dynamical matrix at arbitrary wave vector q′ is obtained. This way, �ωq′s at
+any q′ in the Brillouin zone are calculated by diagonalizing �D(q′).
+This approach gives anharmonic phonon dispersions that are useful to study thermodynamic
+and lattice thermal transport properties of materials, especially at extreme conditions. It also of-
+fers a means of checking the existence of feasible vibrational modes even in the presence of strong
+anharmonicity. For example, we can witness the emergence of the cubic phase of CaSiO3 perovskite
+at high temperature and high pressure [9]. The concept of phonon quasiparticle also helps to easily
+resolve mode frequencies in the vibrational spectrum that overlap in energy even in the presence
+of crystal structure complexity. This advantage has been demonstrated on MgSiO3 perovskite, a
+typical non-trivial crystal structure with Pbnm symmetry and 20 atoms/cell. The obtained subtle
+and irregular frequency shifts with temperature are in good agreement with experiments [10]. Re-
+cently, we applied this approach to beryllium metal to address phase transitions at temperatures
+near melting. Our calculations confirmed that the long-debated and controversial hcp→bcc transi-
+tion occurs at very high temperatures, just before melting [11]. While the hcp structure was shown
+to be dynamically stable at all temperatures up to the transition temperature, the bcc phase was
+dynamically stabilized by anharmonic fluctuations just below the transition temperatures. At the
+phase boundary, both structures had phonon quasiparticles well defined and that was sufficient
+to enable free energy and phase boundary computations at those high temperatures. In addition,
+phonon lifetimes obtained this way allow us to study lattice thermal conductivity using the Boltz-
+mann transport equation (BTE) approach. For instance, we demonstrated for the first time the
+breakdown of the well-known phonon minimal mean free theory in MgSiO3 perovskite [12], a result
+later confirmed by lowest-order perturbation theory [13].
+The procedure to compute quasiparticle properties consists of four key steps. Step 1, atomic
+velocities are calculated by carrying out MD simulations and recording velocities [Eq. (3)]. Step 2,
+
+3
+
+
+projecting instantaneous atomic velocities into the harmonic normal modes (HNM) [Eq. (2)]. Step
+3, computing mode-projected velocity auto-correlation functions (VAF) and extracting quasipar-
+ticle frequencies and lifetimes from VAFs [Eq. (1)(4)(5)]. Step 4, constructing effective harmonic
+dynamical matrices using the renormalized phonon frequencies and HNMs and using them to
+obtain anharmonic phonon dispersions [Eq. (6)(7)(8)(9)].
+In Step 3, three numerical techniques are provided to obtain quasiparticle properties: (i) Fitting
+the VAFs to an analytical function, Eq. (5), (ii) Fourier transforming (FT) Appendix A [14] VAFs,
+and (iii) using the maximum entropy method (MEM) Appendix B [14]. Also, we note that Step
+4, critical to obtaining anharmonic phonon dispersions and free energies, is missing from a similar
+work [15].
+
+2. Description of the program
+
+The phq package folder is contained in the compressed phq.zip file. Inside the folder, there
+are LICENSE file, README.md file and three sub-folders. There is an example of diamond Si in the
+example sub-folder. Four makefiles are in the system sub-folder. makefile linux is for Linux or
+macOS operating systems and makefile windows is for Windows operating system. Makefiles for
+both gfortran and ifort compilers are also prepared. ifort compiler is recommended for faster
+running speed and smaller memory requirement. One can modify properly the FC flag to enable
+other compilers.
+The source code is in the src sub-folder with three Fortran90 files: configure.f90 contains
+three auxiliary modules, which configure the physical quantities, parameters and text read in
+settings. main.f90 is the main module where: (i) the mode-projected velocities are calculated
+from the MD trajectory; (ii) renormalized phonon frequencies and lifetimes are extracted from
+the mode-projected VAFs; (iii) effective harmonic force constants and thus anharmonic phonon
+dispersions are obtained. phq.f90 runs the program and records the running time. A detailed
+description of subroutines used in the main.f90 file is listed in Table 1.
+After making the file, users need to put the phq executable into the same folder of those four
+input files in order to run the code. Run command ./phq < input to perform the calculation.
+The input files will be introduced in the Input files section. The code workflow is shown in Fig.
+1.
+
+3. Input files
+
+There are 4 input files for the phq program: input, scf.out, dyn.out and md.out, which
+provide the general settings, structure, harmonic phonon, and MD information separately. Users
+can prepare the input files according to the example provided within the code package.
+The
+instructions for preparing the input files are as following:
+
+3.1. input
+input provides general settings for the calculation. The values of the parameters should be set
+by the user. The details of the parameters are described in Table 2.
+
+3.2. scf.out
+scf.out provides structure information of the primitive cell from self-consistent calculations.
+The values of the parameters should be same as those used in first-principles calculations. The
+details of the parameters are described in Table 3.
+
+4
+
+
+Table 1: A description of subroutines in main.f90
+
+Subroutine name
+Description
+
+control
+General control of the program.
+
+read scf
+Read in structural information of the primitive cell.
+
+read md
+Read in MD information and compute atomic displacements from their
+static positions.
+
+properties
+Compute the heat capacity via heat fluctuation. If no information other
+than atomic coordinates is provided in the md.out file, comment out this
+subroutine in the control subroutine.
+
+read dyn
+Read in harmonic phonon information, compute eigenmodes of the su-
+percell and the primitive cell at different q-point and check the orthog-
+onality.
+
+harmonic matrix
+Compute the harmonic force constant matrix from harmonic frequencies
+and harmonic eigenmodes.
+
+harmonic force
+Compute the interatomic harmonic forces.
+
+frequency
+Compute the atomic velocities and perform velocity eigenmode projec-
+tion, according to Eq. (2)(3).
+
+equipartition
+Compute the ionic kinetic energy from equipartition theorem.
+
+correlation
+Compute the VAFs, accourding to Eq. (1).
+
+correlation fit
+Fit the VAFs to Eq. (5) and obtain quasiparticle properties [2].
+
+corr fourier
+Perform FT of VAFs according to Eq. (4) and obtain quasiparticle prop-
+erties.
+
+corr fit fourier
+Perform FT of the fitted curves. Avoid calling this subroutine if shorter
+running time is desired.
+
+maximum entropy
+Perform MEM calculation and obtain the quasiparticle properties.
+
+linear response
+Obtain MEM power spectrum via linear prediction method.
+
+lorentzian
+Obtain quasiparticle properties by performing a fitting of the MEM
+power spectrum to a Lorentzian function.
+
+gamma matrix
+Compute the effective harmonic force constant matrix from renormalized
+frequencies and harmonic eigenmodes.
+
+gamma force
+Compute the interatomic anharmonic forces.
+
+dynamics matrix
+Compute the harmonic dynamical matrices from harmonic frequencies
+and harmonic eigenmodes. Comment out this subroutine if the effective
+harmonic dynamical matrices are desired.
+
+dynamics matrix md
+Compute the effective harmonic dynamical matrices from renormalized
+frequencies and harmonic eigenmodes, according to Eq. (6)(7)(8).
+
+write dym
+Write down the effective harmonic dynamical matrices or the har-
+monic dynamical matrices with the same format of ph.x executable’s
+output, which can be read in by q2r.x executable in the Quantum
+ESPRESSO [16] suite to perform Eq. (9).
+
+5
+
+
+Table 2: Parameters used in the input
+
+Parameter name
+Description
+
+dt
+MD time step in atomic unit. If 1 fs time step is used, simply enter dt =
+20.67055273.
+
+step md use
+Number of MD steps needed for the calculation of mode-projected VAFs.
+
+correlation time
+Desired decay time for VAFs in unit of dt.
+
+pole
+Parameter used in the MEM. It is used to filter high-frequency components.
+Usually a reasonable range of pole (200 ∼ 2000) can yield smooth spectrum.
+
+supercell
+Supercell used in MD related to the primitive cell. 3 integers are required
+to enter.
+
+temperature
+MD temperature in unit of Kelvin.
+
+method
+Enter one of the integer number 0, 1 or 2 to select renormalized frequencies
+obtained by which method to compute the effective harmonic force con-
+stants and dynamical matrices. 0 represents the fitting approach (Eq. (5)).
+1 represents the Fourier transformation. 2 represents the maximum entropy
+method.
+
+Table 3: Parameters used in the scf.out
+
+Parameter name
+Description
+
+ntype
+Number of different elements in the primitive cell.
+
+natom
+Number of atoms in the primitive cell.
+
+mass
+Atomic mass of each element following the symbol of the element.
+
+lattice parameter
+Scale of lattice vectors in unit of Bohr radius.
+
+cell parameters
+Lattice vectors in cartesian cooradinate in unit of lattice parameter.
+
+atomic positions
+Atomic positions of atoms in the primitive cell in reduced coordinates.
+
+6
+
+
+!"##$%&
+"#'&(#&)%(&
+!" *+,&#$
+
+-(*.(
+
+/%*,&0+12(
+
+/%*,&$345#2(
+
+!#612(%&&708.*(0#+*9
+%0)%+6#,%$
+
+/%*,&6,5#2(
+/%*,&,:+5#2(
+
+!#612(%&&*(#603&
+7%9#30(0%$
+
+;%.4#.6&7%9#30(:&
+%0)%+6#,% 1.#<%3(0#+
+
+=8(*0+&7%9#30(:&
+*2(#3#..%9*(0#+&42+3(0#+$
+
+!2.7%&40((0+)
+>*?0626&
+%+(.#1:&6%("#,
+
+!#612(%&4#.3%&
+3#+$(*+($&*+,&
+,:+*603*9&6*(.03%$
+
+#2(12(
+
+%+,
+
+@#2.0%.&
+(.*+$4#.6*(0#+
+
+Figure 1: Flow chart of the phq program
+
+3.3. dyn.out
+dyn.out provides harmonic phonon information. The format follows the ph.x executable’s
+output of the Quantum ESPRESSO [16] suite. Quantum ESPRESSO users can simply obtain the
+dyn.out file by: (i) Turn off the symmetry in the self-consistent calculations by pw.x. (ii) Do the
+harmonic phonon calculations by ph.x. (iii) Concatenate dynmat1, ..., dynmatnq together, where
+nq is the total number of the q-point. The details of the parameters are described in Table 4.
+If other harmonic phonon calculation program is used, the dyn.out file should be prepared
+according to Table 4. It is further illustrated in Fig. 2, where the harmonic phonon information of
+the first q-point (Γ point) of diamond silicon is shown as an example. The yellow and blue parts
+are required and optional respectively as the program input while the green part is not required
+as input. Parameters that are required or optional need to be prepared by users, while parameters
+that are not required can be left blank. Note that the character strings Dielectric, Effective,
+Diagonalizing, q and freq are arguments that will be read in by the phq program and therefore
+should not be modified.
+Dielectric Tensor and Effective Charges are only needed to be
+provided in the harmonic phonon information of the first q-point.
+
+3.4. md.out
+md.out provides MD information. The initial atomic coordinates of the supercell before the
+MD run and the instantaneous atomic coordinates during the MD simulation need to be recorded.
+The details of the parameters are described in Table 5. Note that for either atomic positions
+or atomic md positions, atoms in each one primitive cell should be together instead of atoms
+of the same element being together. It is further illustrated in Fig. 3, which shows an example
+md.out file of 3 × 3 × 3 supercell of Pbnm MgSiO3 in two formats. Fig. 3(a) takes the convention
+of Quantum ESPRESSO where atoms in one primitive cell are put together, while in Fig. 3(b), all
+Mg atoms, Si atoms and O atoms are put together. Here, format demonstrated in Fig. 3(a) should
+
+7
+
+
+Table 4: Parameters used in the dyn.out
+
+Parameter name
+Description
+
+q
+q-point in cartesian coordinates in unit of 2π/lattice parameter. This
+parameter is required.
+
+freq
+Harmonic phonon frequencies. This parameter in unit of THz is required
+as program input as well as the following six columns of eigenvectors.
+Eigenvector of each atom has x, y and z components and each component
+has a real part and an imaginary part. The order of atoms should be the
+same as that of the atoms entered in atomic positions in scf.out.
+
+Dielectric Tensor
+Dielectric Tensor, which is a 3×3 matrix of real numbers. This parameter
+is optional, depending on whether LO-TO splitting needs to be considered
+in the system.
+
+Effective Charges
+Effective Charges, which are 3 × 3 matrices of real numbers for each of
+the atom.
+This parameter is optional, depending on whether LO-TO
+splitting needs to be considered in the system.
+
+!"#$%&%%%%'
+()*)+,-..//'0.,%%%%%%%%%%,*,,,,,))01.11%%%%%%%%%%,*,,,,,,'+22'+
+,*,,,,,))121')%%%%%%%%%()*)+,-..+/-1-.%%%%%%%%%(,*,,,,,)',1/01
+,*,,,,,,)-,++'%%%%%%%%%(,*,,,,,,2-)2/.%%%%%%%%%()*)+,-.2/110+/
+
+34456"785%9:!;<5=%>(3?%@AB=C!DE:!FBG5"!F
+
+!"#$%&%%%%)
+(,*))102'2,-))+3H,)%%%%%%,*/2.00'.2',2'3(,-%%%%%(,*)--0))2',.+.3(,-
+,*)02,1,+,0+,+3(,-%%%%%(,*))102'''.)-23H,)%%%%%(,*)'-,2+)++2/23(,/
+(,*')2/))/''-/+3(,-%%%%%(,*),0.,1-++)'+3(,/%%%%%(,*))102'212'-)3H,)
+!"#$%&%%%%'
+(,*))+,-010'/0)3H,)%%%%%%,*0+)1'/0+021+3(,-%%%%%(,*)1+0..1+)),13(,-
+,*012+)1,'/,-+3(,-%%%%%(,*))+,-22--.2.3H,)%%%%%(,*))/2/0)+..+'3(,/
+(,*-/-/.'-+,.,,3(,.%%%%%(,*),./0+/2+--+3(,/%%%%%(,*))+,-0+1/,.03H,)
+
+I7!<#J!D7K7J< ":5%LMJ!$76!D%$!";7N
+
+O%P%Q%%%%,*,,,,,,,,,%%%,*,,,,,,,,,%%%,*,,,,,,,,,%R%
+
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+4;5O Q%%%%)R%P%%%%%%%,*'1,'1)%TUVKW%P%%%%%%%.*-.0-.,%T6$()W
+Q%%,*-0),)2%%,*,,,,,,%%,*),./--%%,*,,,,,,%(,*),1')'%%,*,,,,,,%R
+Q%%,*-0)101%%,*,,,,,,%%,*),.-'+%%,*,,,,,,%(,*),1'-2%%,*,,,,,,%R
+4;5O Q%%%%'R%P%%%%%%%,*'1,/02%TUVKW%P%%%%%%%.*-0)0)'%T6$()W
+Q%(,*)).+2.%%,*,,,,,,%%,*,0)-0.%%,*,,,,,,%(,*-0),'-%%,*,,,,,,%R
+Q%(,*)).//)%%,*,,,,,,%%,*,0).+.%%,*,,,,,,%(,*-0)+,)%%,*,,,,,,%R
+4;5O Q%%%%1R%P%%%%%%%,*'1,202%TUVKW%P%%%%%%%.*.,)0',%T6$()W
+Q%(,*,0).-,%%,*,,,,,,%%,*-0'-+,%%,*,,,,,,%%,*),./)'%%,*,,,,,,%R
+Q%(,*,0)2),%%,*,,,,,,%%,*-01,)-%%,*,,,,,,%%,*),./.)%%,*,,,,,,%R
+4;5O Q%%%%+R%P%%%%%%)/*)11--/%TUVKW%P%%%%%/,+*2,+.)1%T6$()W
+Q%%,*)22-12%%,*,,,,,,%%,*-)12'-%%,*,,,,,,%(,*'0-+2.%%,*,,,,,,%R
+Q%(,*)22/1-%%,*,,,,,,%(,*-)1+01%%,*,,,,,,%%,*'0-1'-%%,*,,,,,,%R
+4;5O Q%%%%/R%P%%%%%%)/*)11---%TUVKW%P%%%%%/,+*2,+.-'%T6$()W
+Q%(,*'12,00%%,*,,,,,,%%,*1+./2+%%,*,,,,,,%%,*/-2)'/%%,*,,,,,,%R
+Q%%,*'1.0.,%%,*,,,,,,%(,*1+.10/%%,*,,,,,,%(,*/-.2)-%%,*,,,,,,%R
+4;5O Q%%%%-R%P%%%%%%)/*)11--2%TUVKW%P%%%%%/,+*2,+2))%T6$()W
+Q%(,*-12.+/%%,*,,,,,,%%,*,/).)1%%,*,,,,,,%(,*'0011/%%,*,,,,,,%R
+Q%%,*-12100%%,*,,,,,,%(,*,/)-2/%%,*,,,,,,%%,*'00).'%%,*,,,,,,%R
+SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+
+IMJ!$76!D%$!";7N%47D5
+
+)%%%%'%%,%),*1.,2).,%%,*,,,,,,,%%,*,,,,,,,%%,*,,,,,,,%%,*,,,,,,,%%,*,,,,,,,
+X!=7=%856"#;=
+,*,,,,,,,,,%%%%,*/,,,,,,,,%%%%,*/,,,,,,,,
+,*/,,,,,,,,%%%%,*,,,,,,,,,%%%%,*/,,,,,,,,
+,*/,,,,,,,,%%%%,*/,,,,,,,,%%%%,*,,,,,,,,,
+)%%YZ7%%Y%%%%'//02*1-.'-'+,/0%%%%%
+)%%%%)%%%%%%,*,,,,,,,,,,%%%%%%,*,,,,,,,,,,%%%%%%,*,,,,,,,,,,
+'%%%%)%%%%%%,*'/,,,,,,,,%%%%%%,*'/,,,,,,,,%%%%%%,*'/,,,,,,,,
+
+IMJ!$76!D%%[!";7N%7J%6!;"5=7!J !N5=
+
+O%P%Q%%%%,*,,,,,,,,,%%%,*,,,,,,,,,%%%,*,,,,,,,,,%R%
+
+)%%%%)
+,*'.),/++0%%,*,,,,,,,,%%%%,*,,,,,,,,%%,*,,,,,,,,%%%%,*,,,,,,,0%%,*,,,,,,,,
+,*,,,,,,,,%%,*,,,,,,,,%%%%,*'.),/+.+%%,*,,,,,,,,%%%%,*,,,,,,,/%%,*,,,,,,,,
+,*,,,,,,,0%%,*,,,,,,,,%%%%,*,,,,,,,/%%,*,,,,,,,,%%%%,*'.),/+-/%%,*,,,,,,,,
+)%%%%'
+(,*'.,.2'),%%,*,,,,,,,,%%%(,*,,,,,,,+%%,*,,,,,,,,%%%%,*,,,,,,,,%%,*,,,,,,,,
+(,*,,,,,,,1%%,*,,,,,,,,%%%(,*'.,.2)-2%%,*,,,,,,,,%%%%,*,,,,,,,)%%,*,,,,,,,,
+(,*,,,,,,,,%%,*,,,,,,,,%%%%,*,,,,,,,)%%,*,,,,,,,,%%%(,*'.,.2)2.%%,*,,,,,,,,
+'%%%%)
+(,*'.,.2'),%%,*,,,,,,,,%%%(,*,,,,,,,1%%,*,,,,,,,,%%%(,*,,,,,,,,%%,*,,,,,,,,
+(,*,,,,,,,+%%,*,,,,,,,,%%%(,*'.,.2)-2%%,*,,,,,,,,%%%%,*,,,,,,,)%%,*,,,,,,,,
+,*,,,,,,,,%%,*,,,,,,,,%%%%,*,,,,,,,)%%,*,,,,,,,,%%%(,*'.,.2)2.%%,*,,,,,,,,
+'%%%%'
+,*'.,.-,/.%%,*,,,,,,,,%%%(,*,,,,,,)1%%,*,,,,,,,,%%%%,*,,,,,,,'%%,*,,,,,,,,
+(,*,,,,,,)1%%,*,,,,,,,,%%%%,*'.,.-,2+%%,*,,,,,,,,%%%%,*,,,,,,,+%%,*,,,,,,,,
+,*,,,,,,,'%%,*,,,,,,,,%%%%,*,,,,,,,+%%,*,,,,,,,,%%%%,*'.,.-,.)%%,*,,,,,,,,
+
+I75D56";76%U5J=#;?
+
+'1*1/-/0,/1-00.%%%%%%%%%(,*,,,,),)0'.+0%%%%%%%%%%,*,,,,,',2-122
+(,*,,,,),)12)/)%%%%%%%%%'1*1/-/0,-..'/,%%%%%%%%%%,*,,,,)+'+,02+
+,*,,,,,',2,1/)%%%%%%%%%%,*,,,,)+'2./--%%%%%%%%%'1*1/-/0+')-+,1
+
+34456"785%9:!;<5=%3(>?%@AB!DE:!FB=CG5"!F
+
+!"#$%&%%%%)
+()*)102)'1)'.)/%%%%%%%%%%,*,,,,,,),1./+%%%%%%%%%(,*,,,,,,+),1+/
+,*,,,,,,10+)+0%%%%%%%%%()*)102)'//20..%%%%%%%%%(,*,,,,,),1+'+'
+(,*,,,,,,+021.1%%%%%%%%%(,*,,,,,))2',2-%%%%%%%%%()*)102)'2.).0'
+
+Figure 2: Harmonic phonon information at Γ point of diamond silicon appears at the beginning of dyn.out file.
+The yellow part is required and the blue part is optional as phq program input, while the green part is not required
+and will not be read in by the program.
+
+8
+
+
+Table 5: Parameters used in the md.out
+
+Parameter name
+Description
+
+total step
+Total actual MD steps. In practice, recorded MD steps should be con-
+figurations after reaching thermal equilibrium and therefore less than
+this number.
+
+atomic positions
+Initial atomic positions in reduced coordinates of the supercell lattice
+vectors.
+
+md step
+Integer numbers of recorded MD steps, followed by the instantaneous
+atomic md positions in the MD simulation.
+
+atomic md positions
+Atomic positions in reduced coordinates of the supercell lattice vectors
+during the MD simulation.
+
+be taken for md.out. Also, the order of atoms in each of the primitive cell should be in the same
+order as provided in scf.out. The way to extend the primitive to generate the supercell for the
+MD simulation can be determined by the users.
+
+4. Ouput files
+
+A detailed description of all the output files of phq program are summarized in Table 6. The
+main output files are frequency.freq, which records the renormalized frequencies, and dynmatmd1,
+..., dynmatmdnq, which record the effective harmonic phonon information with the same format of
+ph.x executable’s output and can be read in by the q2r.x executable in the Quantum ESPRESSO
+suite. Anharmonic force constants, renormalized phonon dispersions, anharmonic entropy and free
+energy can be obtained from q2r.x executable’s output. If other Fourier interpolation program is
+used, either use the effective harmonic dynamical matrices file dynamical matrix md.mat or use
+the effective harmonic force constant matrix file gamma matrix.mat to fit the format.
+
+5. Example
+
+Here we illustrate the performance of the phq code using diamond Si as an example. Anhar-
+monic phonon dispersion, vibrational density of states, and anharmonic free energy are obtained.
+We use the density-functional theorem based Vienna ab initio simulation package (VASP) [17, 18]
+to carry out MD simulations on 4 × 4 × 4 supercells (128 atoms) of Si. We employ the generalized
+gradient approximation of Perdew, Burke, and Ernzerhof [19] and the projector-augmented wave
+method [20] with an associated plane-wave basis set energy cutoff of 320 eV. Simulations are car-
+ried out at the volume with a zero static pressure. Temperatures ranging from 300 K to 1500 K
+are controlled through the Nos´e dynamics [21]. The MD runs for 50 ps with a time step of 1 fs.
+Harmonic phonons are calculated using density-functional perturbation theory (DFPT) [22].
+
+5.1. Obtaining VAFs
+The mode-projected VAFs, ⟨Vqs(0)Vqs(t)⟩, are given by corr.vaf file. Fig. 4(a) displays the
+calculated ⟨Vqs(0)Vqs(t)⟩ at several temperatures of the LA/LO mode at q = W ([1/4, 3/4, 1/2]).
+At each temperature, the VAF amplitude decays exponentially. Accordingly, its power spectrum
+obtained via a Fourier transformation (FT) of VAFs has a Lorentzian line shape with a main single
+peak, Fig. 4(c). This behavior demonstrates the validity of the concept of phonon quasiparticle
+
+9
+
+
+!
+"#$%&'(%)(*$+&#&$,+
+-.////////01022023024//// 01025466237////01088327249
+-.////////01286046:39//// 0128:890:79////01053374559
+-.///////;010044378:4///;010232676:8///;01078752976
+-.///////;01248:36982///;01272527468///;01073862458
+<&/////// ;0100332507:////012408:46:6///;01000:30365
+<&//////// 0128993:070////01009875464///;01003962764
+<&/////// ;01002822:63////01264027746////01244476867
+<&//////// 01283524749///;0100:75:5:7////0128299:784
+=//////// 0104475504:////01046623495///;01030275927
+=///////
+01398958672////0120067:578////01029943645
+=//////// 012087062:7////01398076373///;0102:023724
+=///////
+01384:550:8////0134:256886////010390:7:05
+=//////// 010406:6736////01044670643////01274:55985
+=//////// 01398:36706////0105720787:////01268247087
+=//////// 01202586956////013358942:6////012740:75:2
+=//////// 01382447489////0134047:033////012:6292944
+=//////// 01099275::4////01263576247////01074:06576
+=//////// 01263489357////01009::5679////0107:6:60:2
+=//////
+;0109747:676///;012450496:0///;01073492009
+=//////// 01259487599////0100:609237///;010725879:0
+-.////////01935:00:45////0103440805:////010740:7529
+-.////////01622276:68////01253:04450////0105:433595
+-.////////019976:575:///;01008600770///;01084:50008
+-.////////0126:395942///;012505:6843///;01072:83087
+<&//////// 01999387838////012829697:4////0100725224:
+<&///////
+01:54649255///;01005385777////01003967:78
+!
+
+!"#
+
+2+# *>&%&#&?@
+'@AA
+
+3,) *>&%&#&?@
+'@AA
+
+!
+"#$%&'(%)(*$+&#&$,+
+-.////////01022023024// 01025466237////01088327249
+-.////////01286046:39// 0128:890:79////01053374559
+-.///////;010044378:4///;010232676:8///;01078752976
+-.///////;01248:36982///;01272527468///;01073862458
+-.////////01935:00:45////0103440805:////010740:7529
+-.////////01622276:68////01253:04450////0105:433595
+!
+
+<&//////////;0100332507:////012408:46:6///;01000:30365
+<&///////////0128993:070////01009875464///;01003962764
+<&//////////;01002822:63////01264027746////01244476867
+<&///////////01283524749///;0100:75:5:7////0128299:784
+<&///////////01999387838////012829697:4////0100725224:
+<&///////////01:54649255///;01005385777////01003967:78
+!
+
+=///////////0104475504:////01046623495///;01030275927
+=///////////01398958672////0120067:578////01029943645
+=///////////012087062:7////01398076373///;0102:023724
+=///////////01384:550:8////0134:256886////010390:7:05
+=///////////010406:6736////01044670643////01274:55985
+=///////////01398:36706////0105720787:////01268247087
+=///////////01202586956////013358942:6////012740:75:2
+=///////////01382447489////0134047:033////012:6292944
+=///////////01099275::4////01263576247////01074:06576
+=///////////01263489357////01009::5679////0107:6:60:2
+!
+
+!$#
+
+BAA = "#$%+
+
+BAA -. "#$%+
+
+BAA <& "#$%+
+
+Figure 3: Atomic positions of 3 × 3 × 3 supercell of Pbnm MgSiO3 are displayed in two formats: (a) Atoms that
+belong to the same primitive cell are put together. (b) Atoms of the same element are put together. md.out should
+take format (a) as phq program input.
+
+10
+
+
+Table 6: Output files of the phq program
+
+Output
+Description
+
+corr.vaf
+VAF of each eigenmode of the supercell. The VAF of each eigen-
+mode lies on each column following the correlation time on the
+first column.
+
+corr fit.vaf
+Fitted exponentially decaying cosine functions (Eq. (5)) of cor-
+relation functions according to Green’s function from molecular
+dynamics [2]. The fitted curve of VAF of each eigenmode of the
+supercell lies on each column following the correlation time on the
+first column.
+
+corr fit fourier.vaf
+FT of the fitted VAF curves. The FT of fitted VAF curve of each
+eigenmode of the supercell lies on each column following their
+common frequency range lies on the first column.
+
+corr fourier.vaf
+FT of VAFs. The FT of VAF of each eigenmode of the supercell
+following its frequency range lie on every two columns.
+
+dynamical matrix md.mat
+Effective harmonic dynamical matrices. It is an assemble of all
+the effective harmonic dynamical matrices from dynmatmd1, ...,
+dynmatmdnq.
+
+dynmatmd0
+q-point list with the same format of ph.x executable’s output in
+the Quantum ESPRESSO suite. They are in cartesian coordinates
+in unit of 2π/lattice parameter.
+
+dynmatmd1, ..., dynmatmdnq
+Renormalized phonon information with the same format of ph.x
+executable’s output in the Quantum ESPRESSO suite. nq is the
+total number of the q-points. They share the same set of param-
+eters of dyn.out.
+
+frequency.freq
+Harmonic, fitted renormalized, FT renormalized and MEM renor-
+malized phonon frequencies lie on the second, third, fourth and
+fifth column separately while the first column labels different
+eigenmodes of the supercell.
+
+gamma matrix.mat
+Effective harmonic force constant matrix, which are 3×3 matrices
+of real numbers between each pair of atoms in the supercell.
+
+harmonic matrix.mat
+Harmonic force constant matrix, which are 3 × 3 matrices of real
+numbers between each pair of atoms in the supercell.
+
+msd.out
+Mean square displacement of each atom in the supercell.
+
+tau fit.tau
+Phonon quasiparticle’s lifetime of each eigenmode of the supercell
+obtained by fitting the VAFs to Eq. (5).
+
+tau fourier.tau
+Phonon quasiparticle’s lifetime extracted from the FT of VAF of
+each eigenmode of the supercell.
+
+tau mem.tau
+Phonon quasiparticle’s lifetime extracted from the MEM power
+spectrum of each eigenmode of the supercell.
+
+vector.out
+Eigenmodes of the supercell.
+
+vector q.out
+Eigenmodes of the primitive cell at each q-point.
+
+11
+
+
+0
+1
+2
+3
+4
+5
+6
+7
+
+  -300
+
+0
+
+300
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+(a)
+
+300 K
+
+0
+1
+2
+3
+4
+  -600
+
+0
+
+600
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+600 K
+
+0
+0⟩5
+1
+1⟩5
+2
+
+  -900
+
+0
+
+900
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+900 K
+
+0
+0⟩5
+1
+1⟩5
+2
+2⟩5
+
+-1200
+
+0
+
+1200
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+1200 K
+
+0
+0⟩5
+1
+1⟩5
+  ⟨ps)
+
+-1500
+
+0
+
+1500
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+1500 K
+
+0
+1
+2
+3
+4
+5
+6
+7
+
+  -300
+
+0
+
+300
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+300 K
+
+(b)
+
+VAF
+Curve fi  ing
+
+0
+1
+2
+3
+4
+  -600
+
+0
+
+600
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+600 K
+
+VAF
+Curve fi  ing
+
+0
+0⟩5
+1
+1⟩5
+2
+
+  -900
+
+0
+
+900
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+900 K
+
+VAF
+Curve fi  ing
+
+0
+0⟩5
+1
+1⟩5
+2
+2⟩5
+
+-1200
+
+0
+
+1200
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+1200 K
+
+VAF
+Curve fi  ing
+
+0
+0⟩5
+1
+1⟩5
+  ⟨ps)
+
+-1500
+
+0
+
+1500
+
+⟨V⟨0)V⟨ )⟩qs/kB⟨K) 
+
+1500 K
+
+VAF
+Curve fi  ing
+
+    200
+300
+400           500          
+
+  
+
+Gqs
+
+(c)
+
+300 K
+
+    200
+300
+400
+500
+
+  
+
+Gqs
+
+600 K
+
+    200
+300
+400
+500
+
+  
+
+Gqs
+
+900 K
+
+    200
+300
+400
+500
+
+  
+
+Gqs
+
+1200 K
+
+200
+300
+400
+500
+ω ⟨cm−1)
+
+  
+
+Gqs
+
+1500 K
+
+Figure 4: Mode-projected velocity autocorrelation functions (VAF) (grey) of the LA/LO mode at q = W of diamond
+silicon at 300, 600, 900, 1200 and 1500 K respectively are shown in (a) and (b). The corresponding power spectra
+(blue) are shown in (c). (b) shows in red the curves fitted with Eq. (5) for comparison.
+
+and allows us to identify the renormalized phonon frequency (�ωqs) and line width (�Γqs) of the
+phonon mode. Note that the file recording the FT is corr fourier.vaf.
+In practice, however, it is not a optimal way to find �ωqs and �Γqs directly from the power
+spectrum obtained from FT. Instead, we fit the VAFs to an exponentially decaying cosine function
+[2, 3, 11, 8] to extract �ωqs and �Γqs, Eq. (5). From our previous work [10, 12, 11], �ωqs and �Γqs can
+be obtained by performing the fitting only for the first few oscillation periods of VAFs. Therefore,
+to do the fitting, one only needs to calculate VAFs for a relatively short correlation time. Note
+that the file recording the fitting is corr fit.vaf.
+The fitted curve at each temperature is shown in Fig. 4(b), matching the VAF very well.
+Our code also offers a way to obtain �ωqs by maximum entropy method (MEM) [15]. A list of
+�ωqs obtained by different methods can be found in the frequency.freq file. Users can choose
+renormalized frequencies obtained by fitting approach, FT or MEM to obtain the effective force
+constants and dynamical matrices by specifying 0, 1 or 2 for the method in the input file.
+
+12
+
+
+5.2. Obtaining frequency shifts
+As a demonstration of the validity of the present approach, we compare the calculated thermal
+frequency shifts given by frequency.freq file with experimental measurements. Fig. 5(a)-5(c)
+display frequency shifts ∆ωqs = �ωqs|V =Veq − ωqs of a TO/LO mode at the Γ point, TA and TO
+modes at the X point ([0, 1/2, 1/2]), and at the L point ([1/2, 1/2, 1/2]) at the equilibrium
+volume of zero static pressure. Because experiments were conducted under ambient pressure, the
+renormalized phonon frequencies obtained under constant volume conditions have to be corrected.
+We indicate that such correction can be properly captured by considering the thermal shifts caused
+by the temperature induced volume expansion [10],
+
+�ωqs(T)|P =0 = �ωqs(T)|V =Veq + ωqs[exp(−γqs¯αT) − 1],
+(10)
+
+where γqs is the mode Gr¨uneisen parameter and ¯α is the temperature averaged thermal expansion
+coefficient:
+
+¯α(T) = 1
+
+T
+
+� T
+
+0
+α(T ′)dT ′.
+(11)
+
+The mode Gr¨uneisen parameter connects the phonon frequency variation with the volume expan-
+sion and can be obtained by DFPT [22]. It is defined as [23]:
+
+γqs = −dlnωqs(T)
+
+dlnV (T) .
+(12)
+
+In practice the weak temperature dependence can be ignored [24]:
+
+γqs = −dlnωqs(0)
+
+dlnV (0) ,
+(13)
+
+where ωqs(0) is the harmonic phonon frequency at volume V (0). α(T) is the thermal expansion
+coefficient which can be obtained by QHA. It is defined as:
+
+α(T) =
+1
+
+V (T)
+dV
+dT .
+(14)
+
+With this, according to Eq. (11), the temperature averaged thermal expansion coefficient can be
+onbtained:
+
+¯α(T) = 1
+
+T lnV (T)
+
+V (0) .
+(15)
+
+Overall, our calculated ∆ωqs|P =0 = �ωqs|P =0−ωqs are in good agreement with experiments [25, 26],
+Fig. 5(d)-5(f). We note that at the X point, TA and TO modes have similar frequency shifts at
+constant volume. After the incorporation of the volume expansion, i.e., at constant pressure, their
+frequency shifts differ significantly. This is essentially caused by the different Gr¨uneisen parameters
+of these two modes.
+
+5.3. Obtaining temperature dependent phonon dispersion
+Temperature dependent renormalized phonon frequencies obtained as such are only for those
+few q-points sampled by MD simulations, which are not sufficient to converge the calculation of
+thermal properties. Nevertheless, these frequencies provide a basis to obtaining phonon frequencies
+at q-points throughout the Brillouin zone. Here, we rely on an effective harmonic dynamic matrix,
+
+13
+
+
+-60
+
+-40
+
+-20
+
+0
+
+Δωqs (cm−1)
+
+Γ Point
+(a)
+
+TO/LO
+-30
+
+-20
+
+-10
+
+0
+
+X Point
+(b)
+
+TA
+TO
+
+-40
+
+-30
+
+-20
+
+-10
+
+0
+
+L Point
+(c)
+
+TA
+TO
+
+300
+600
+900
+1200
+1500
+T (K)
+
+-60
+
+-40
+
+-20
+
+0
+
+Δωq |P = 0 (cm−1)
+
+(d)
+
+TO/LO
+Experimental
+
+300
+600
+900
+1200
+1500
+T (K)
+
+-40
+
+-30
+
+-20
+
+-10
+
+0
+(e)
+
+TA
+TO
+Experimental TA
+Experimental TO
+
+300
+600
+900
+1200
+1500
+T (K)
+
+-50
+
+-40
+
+-30
+
+-20
+
+-10
+
+0
+(f)
+
+TA
+TO
+Experimental TA
+Experimental TO
+
+Figure 5: Temperature dependent frequency shifts ∆ωqs of diamond Si with a volume where the static pressure is
+zero of: (a) TO/LO mode at Γ, (b) TA and TO mode at X, and (c) TA and TO mode at L high-symmetry point.
+(d)-(f) show the corresponding corrected frequency shifts at zero pressure, ∆ωqs|P =0, at different temperatures.
+Experimental results obtained by Raman spectra [25, 26] are shown for comparison.
+
+Eq. (6), and the derived effective harmonic force constants, Eq. (7), which give us the effective
+harmonic dynamic matrix at arbitrary q-points via a Fourier interpolation, Eq. (8) [10].
+To construct the effective harmonic dynamic matrix along this line, users first find files of
+dynmatmd0, dynmatmd1, ..., dynmatmd64 given by phq, and copy them to the phq/example/Si/postprocessing
+sub-folder. Files q2r.in, dispersion.in and plotband.in files are also there. Next run:
+q2r.x < q2r.in > q2r.out
+matdyn.x < dispersion.in > dispersion.out
+plotband.x < plotband.in > plotband.out
+to calculate anharmonic phonon dispersion of diamond silicon, where matdyn.x and plotband.x
+are also Quantum ESPRESSO executables.
+Fig. 6 (a) displays the obtained anharmonic phonon dispersions at 600 K and 1200 K. The
+harmonic phonon dispersions calculated by DFPT at static zero-pressure equilibrium volume is
+also shown for comparison. It can be seen that the temperature effect on phonon frequencies is
+discernible, and the overall trend is that phonon frequencies decrease as temperature increases [28].
+Accordingly, the major peaks of the obtained vibrational density of states (VDoS) shift to lower
+frequencies with increasing temperature, Fig. 6 (b). Note that the VDoSs are calculated with a
+20 × 20 × 20 q-point grid, equivalent to a supercell of 16000 atoms in a direct MD simulation,
+which is well beyond the capability of ab initio methods.
+
+5.4. Obtaining anharmonic vibrational entropy and free energy
+With the renormalized phonon frequencies, the entropy is obtained by an integration over the
+whole Brillouin zone [6],
+
+S = kB
+�
+
+qs
+[(nqs + 1)ln(nqs + 1) − nqslnnqs],
+(16)
+
+14
+
+
+Γ
+X
+W
+K
+Γ
+L
+U
+W
+L
+K
+0
+
+100
+
+200
+
+300
+
+400
+
+500
+
+̃
+ωqs (cm−1)
+
+(a)
+
+0
+100
+200
+300
+400
+500
+ω (cm−1)
+
+0
+
+0.01
+
+0.02
+
+0.03
+
+0.04
+
+0.05
+
+0.06
+
+0.07
+
+0.08
+
+VDoS (cm)
+
+(b)
+
+DFPT (0 K)
+600 K
+1200 K
+
+Figure 6: (a) Anharmonic phonon dispersions at 600 K (blue solid curve) and 1200 K (red solid curve) compared
+with harmonic phonon dispersion calculated by density functional perturbation theory (DFPT) (black dashed curve)
+of diamond Si at the volume with a zero static pressure. (b) Temperature dependent vibrational density of states
+(VDoS) of diamond Si obtained on 20 × 20 × 20 q-point grid at 600 K (blue solid curve), 1200 K (red solid curve).
+The VDoS at 0 K obtained with DFPT (black dashed curve) is shown for comparison.
+
+where nqs = [exp(ℏ�ωqs/kBT) − 1]−1. The free energy is obtained by numerical integration [10]:
+
+F(T) = E0 + 1
+
+2
+
+�
+
+qs
+ℏωqs −
+� T
+
+0
+S(T ′)dT ′,
+(17)
+
+where E0 is the static ground state energy and ωqs is the harmonic phonon frequency.
+It can be seen that ωqs is key quantity to calculate S and F. To obtain ωqs over the whole
+Brillouin zone, users copy the dynmatmd0, dynmatmd1, ..., dynmatmd64 files obtained from phq to
+the phq/example/Si/postprocessing/vdos sub-folder. q2r.in and vdos.in files are also there.
+Then, run:
+q2r.x < q2r.in > q2r.out
+matdyn.x < vdos.in > vdos.out
+to calculate anharmonic VDoS of diamond silicon on a 20 × 20 × 20 q-point grid. S and F can be
+readily obtained from output VDoS file vdos according to Eq. (16)(17).
+Fig. 7 compares S and F obtained with different q-grids: 4 × 4 × 4 and 20 × 20 × 20. The
+discernible differences ∆S, Fig. 7(a), and thus ∆F, Fig. 7(b) reveal that it is necessary to use a
+sufficiently large number of q-point in order to converge thermal properties.
+
+15
+
+
+0
+300
+600
+900
+1200
+1500
+T (K)
+
+    0
+
+    1
+
+    2
+
+    3
+
+    4
+
+    5
+
+    6
+
+    7
+
+S (kB/atom)
+
+(a)
+
+4 × 4 × 4
+20 × 20 × 20
+
+300
+600
+900
+1200
+1500
+
+5
+
+6
+
+7
+
+8
+
+9
+
+ΔS (10−2 kB/atom)
+
+0
+300
+600
+900
+1200
+1500
+T (K)
+
+-0.7
+
+-0.6
+
+-0.5
+
+-0.4
+
+-0.3
+
+-0.2
+
+-0.1
+
+0.0
+
+0.1
+
+F (eV/atom)
+
+(b)
+
+4 × 4 × 4
+20 × 20 × 20
+
+0
+300
+600
+900
+1200
+1500
+
+-8
+
+-6
+
+-4
+
+-2
+
+0
+
+ΔF (10−3 eV/atom)
+
+Figure 7: (a) Vibrational entropy (S) and (b) vibrational free energy (F) of diamond Si at volume with zero static
+pressure calculated with different q-grids: 4 × 4 × 4 and 20 × 20 × 20. Inserts: (a) Differences in vibrational entropy
+(∆S) and (b) vibrational free energy (∆F) obtained with 4 × 4 × 4 and 20 × 20 × 20 q-grids.
+
+16
+
+
+6. Conclusion
+
+In this communication we report phq, a code for extracting phonon quasiparticle properties, ob-
+taining temperature dependent renormalized phonon dispersions, and calculating anharmonic free
+energies from harmonic phonon calculations and MD simulations. The program can be installed
+on Linux, macOS and Windows operating systems. Outputs from VASP [17, 18] and Quantum
+ESPRESSO [16] are both accepted as inputs here. Extension of compatibility with ABINIT [29],
+LAMMPS [30], Phon [31] and Phonon [32] for phonon dispersions processing are planned for the
+near future.
+
+Acknowledgments
+
+This work was supported primarily by NSF grant EAR-1503084. This work used the Extreme
+Science and Engineering Discovery Environment (XSEDE), which is supported by National Sci-
+ence Foundation grant number TG-DMR170058. DBZ acknowledges support from NSFC grant
+11874088 and U1530401. TS is supported by NSFC 41474069. Computations are performed at
+the Stampede2 (the flagship supercomputer at the Texas Advanced Computing Center (TACC),
+University of Texas at Austin) and at Beijing Computational Science Research Center.
+
+Appendix A
+Fourier transformation
+
+The Fourier transformation (FT) of function c(t) (t ≥ 0),
+
+C(ω) =
+� ∞
+
+0
+c(t)eiωtdt
+(18)
+
+is done by mapping the N consecutive evenly sampled points in the time domain to the frequency
+domain
+
+Dk =
+
+N−1
+�
+
+j=0
+cjωjei2πjk/N
+k = 0, ..., N − 1,
+(19)
+
+where ωj is the window function. Then the discrete power spectrum is defined at N nonnegative
+frequencies as
+
+P(fk) =
+1
+
+N �N−1
+j=0 ω2
+j
+|Dk|2 .
+(20)
+
+fk is defined only for the zero and positive frequencies
+
+fk =
+k
+
+N∆ = fc
+k
+N
+k = 0, ..., N − 1,
+(21)
+
+where fc is the upper limit of the frequency, known as Nyquist frequency. The actual frequency
+range considered in the calculation is limited by the window function. In phq program, by default
+the upper limit of the window function of each mode is set to be integral period where the amplitude
+of the velocity autocorrelation function (VAF) drop to 0.75 of its maximum. This value can be
+modified by users in subroutine correlation of the main.f90 file. By default, rectangular window
+function is used
+ωj = 1
+j = 0, ..., N − 1,
+(22)
+
+17
+
+
+which is ready to obtain power spectrum of Lorentzian line shape. To avoid frequency leakage into
+neighboring bins, Hann window is also provided
+
+ωj = sin
+�π(N − j)
+
+2N
+
+�2
+j = 0, ..., N − 1.
+(23)
+
+Users can enable Hann window in subroutine corr fourier.
+
+Appendix B
+Maximum entropy method
+
+Maximum entropy method (MEM) is also known as all-poles model, autoregressive model,
+which is used to obtain smooth power spectrum in signal processing. Here we assume that the
+power spectrum of each mode follows the approximation
+
+P(f) =
+a0
+���1 + �N
+j=1 ajei2πf∆j
+���
+2,
+(24)
+
+where a0 as well as aj is a set of coefficients of this approximation and ∆ is the sampling interval
+in the time domain. a0 and aj can be obtained from linear prediction method (LP) [14]
+
+yn =
+
+M
+�
+
+j=1
+ajyn−j + xn
+(25)
+
+where yn are a series of input and also predicted values by the LP, xn is the discrepancy between
+the data and the predicted value.
+Here we use the polarized velocities as the input of LP. A
+recursive procedure called Burg method [14] is adopted to minimize the discrepancy xn, which is
+performed in subroutine linear response of the main.f90 file. Regarding it to take input xn into
+output yn, LP has a filter function
+
+H(f) =
+1
+
+1 − �M
+j=1 djei2πf∆j
+(26)
+
+Thus, the power spectrum of the yn equals the power spectrum of the xn multiplied by |H(f)|2.
+Therefore, the coefficients a0 and aj can be related to the LP coefficients by
+
+a0 = xms,
+aj = −d(j)
+j = 1, ..., N.
+(27)
+
+Then the MEM power spectrum can be obtained from Eq. (24). Phonon quasiparticle properties
+are extracted from the power spectrum, which is done in subroutine maximum entropy. A fitting
+of the MEM power spectrum of each mode to a Lorentzian line shape performed in subroutine
+lorentzian also give quasiparticle properties for comparison.
+
+References
+
+References
+
+[1] L. D. Landau, E. M. Lifshitz, Statistical Physics (Butter-worth-Heinemann, London, 1980).
+
+[2] T. Sun, X. Shen, P. B. Allen, Phys. Rev. B 82, 224304 (2010).
+
+18
+
+
+[3] A. J. C. Ladd, B. Moran, W. G. Hoover, Phys. Rev. B 34, 5058 (1986).
+
+[4] J. E. Turney, E. S. Landry, A. J. H. McGaughey, C. H. Amon, Phys. Rev. B 79, 064301
+(2009).
+
+[5] M. Born, K. Huang, Dynamical Theory of Crystal Lattices, International Series of Monographs
+on Physics (Oxford at the Clarendon Press, Hong Kong, 1956).
+
+[6] D. C. Wallace, Thermodynamics of Crystals (Wiley, New York, 1972).
+
+[7] C. Z. Wang, C. T. Chan, K. M. Ho, Phys. Rev. B 42, 11276 (1990).
+
+[8] A. M. Hofmeister, Science 283, 1699 (1999).
+
+[9] T. Sun, D.-B. Zhang, R. M. Wentzcovitch, Phys. Rev. B 89, 094109 (2014).
+
+[10] D.-B. Zhang, T. Sun, R. M. Wentzcovitch, Phys. Rev. Lett 112, 058501 (2014).
+
+[11] Y. Lu, T. Sun, Ping Zhang, P. Zhang, D.-B. Zhang, R. M. Wentzcovitch, Phys. Rev. Lett
+118, 145702 (2017).
+
+[12] D.-B. Zhang, P. B. Allen, T. Sun, and R. M. Wentzcovitch, Phys. Rev. B 96, 100302(R)
+(2017).
+
+[13] N. Ghaderi, D.-B. Zhang, H. Zhang, J. Xian, R. M. Wentzcovitch, and T. Sun, Sci. Rep 7,
+5417 (2017).
+
+[14] W. H. Press, B. P. Flannery, S. A. Teukolsky, and W. T. Vetterling, Numerical Recipes in
+Fortran 77, 1st ed., Numerical Recipes: The Art of Scientific Computing Vol. 1 (Cambridge
+University, Cambridge, 1986).
+
+[15] A. Carreras, A. Togo, I. Tanaka, Comput. Phys. Comm. 221, 221 (2017).
+
+[16] P. Giannozzi, et al., J. Phys.: Condens. Matter 21, 395502 (2009).
+
+[17] G. Kresse, J. Furthm¨uller, Phys. Rev. B 54, 11169 (1996).
+
+[18] G. Kresse, J. Hafner, Phys. Rev. B 49, 14251 (1994).
+
+[19] J. P. Perdew, K. Burke, M. Ernzerhot, Phys. Rev. Lett 77, 3865 (1996).
+
+[20] P. E. Bl¨ochl, Phys. Rev. B 50, 17953 (1994).
+
+[21] W. G. Hoover, Phys. Rev. A 31, 1695 (1985).
+
+[22] S. Baroni, S. de Gironcoli, A. D. Corso, P. Giannozzi, Rev. Mod. Phys. 73, 515 (2001).
+
+[23] K. Umemoto, R. Wentzcovitch, Y. Yu, and R. Requist, Earth Planet. Sci. Lett. 276, 198
+(2008).
+
+[24] T. Lan, X. Tang, and B. Fultz, Phys. Rev. B 85, 094305 (2012).
+
+[25] M. Balkanski, R. Wallis, E. Haro, Phys. Rev. B 28, 1928 (1983).
+
+19
+
+
+[26] R. Tsu, J. G. Hernandez, Appl. Phys. Lett 41, 1016 (1982).
+
+[27] D. Alf´e, G. A. de Wijs, G. Kresse, M. J. Gillan, Int. J. Quantum Chem. 77, 871 (2000).
+
+[28] D. S. Kim, H. L. Smith, J. L. Niedziela, C. W. Li, D. L. Abernathy, and B. Fultz, Phys. Rev.
+B 91, 014307 (2015).
+
+[29] X. Gonze, et al., Comput. Phys. Comm. 180, 2582 (2009).
+
+[30] S. Plimpton, J. Comp. Phys. 117, 1 (1995).
+
+[31] D. Alf´e, Comput. Phys. Comm. 180, 2622 (2009).
+
+[32] K. Parlinski, AIP Conf. Proc. 479, 121 (1999).
+
+20
+
+

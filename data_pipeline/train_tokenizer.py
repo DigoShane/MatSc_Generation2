@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 #BASE_DIR -> Contains path to MatSc_Gen folder.
 
 # Directory containing cleaned text files (input data for training tokenizer)
-clean_dir = BASE_DIR / "data/cleaned_text"
+clean_dir = BASE_DIR / "data_v2/cleaned_text"
 
 # Directory where the trained tokenizer will be saved
 output_dir = BASE_DIR / "tokenizer"
@@ -45,11 +45,12 @@ tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
 trainer = trainers.BpeTrainer(
     # vocab_size: size of final vocabulary (number of unique tokens in the final vocabulary)
     # Larger vocab = more precise tokenization, but more memory usage
-    vocab_size=32000,
+    vocab_size=50000,
     # min_frequency: Minimum times a subword must appear to be included
     min_frequency=2,
     # special_tokens: Reserved tokens with special meanings
     # These are added to the vocabulary and NOT learned from data
+    initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
     special_tokens=[
         "<s>",      # Start of sequence/sentence (marks beginning of text)
         "<pad>",    # Padding token (used to make sequences same length in batches)

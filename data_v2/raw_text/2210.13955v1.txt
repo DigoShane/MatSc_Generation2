@@ -1,0 +1,1592 @@
+General framework for E(3)-equivariant neural network representation of density
+functional theory Hamiltonian
+
+Xiaoxun Gong,1, 2 He Li,1, 5 Nianlong Zou,1 Runzhang Xu,1 Wenhui Duan,1, 3, 4, 5, 6, ∗ and Yong Xu1, 3, 4, 7, †
+
+1State Key Laboratory of Low Dimensional Quantum Physics and
+Department of Physics, Tsinghua University, Beijing, 100084, China
+2School of Physics, Peking University, Beijing 100871, China
+3Tencent Quantum Laboratory, Tencent, Shenzhen, Guangdong 518057, China
+4Frontier Science Center for Quantum Information, Beijing, China
+5Institute for Advanced Study, Tsinghua University, Beijing 100084, China
+6Beijing Academy of Quantum Information Sciences, Beijing 100193, China
+7RIKEN Center for Emergent Matter Science (CEMS), Wako, Saitama 351-0198, Japan
+
+Combination of deep learning and ab initio calculation has shown great promise in revolutionizing
+future scientific research, but how to design neural network models incorporating a priori knowledge
+and symmetry requirements is a key challenging subject.
+Here we propose an E(3)-equivariant
+deep-learning framework to represent density functional theory (DFT) Hamiltonian as a function
+of material structure, which can naturally preserve the Euclidean symmetry even in the presence
+of spin-orbit coupling. Our DeepH-E3 method enables very efficient electronic-structure calculation
+at ab initio accuracy by learning from DFT data of small-sized structures, making routine study of
+large-scale supercells (> 104 atoms) feasible. Remarkably, the method can reach sub-meV prediction
+accuracy at high training efficiency, showing state-of-the-art performance in our experiments. The
+work is not only of general significance to deep-learning method development, but also creates new
+opportunities for materials research, such as building Moir´e-twisted material database.
+
+I.
+INTRODUCTION
+
+It has been well recognized that deep learning methods
+could offer a potential solution to the accuracy-efficiency
+dilemma of ab initio material calculations. Deep-learning
+potential [1, 2] and a series of other neural network
+models [3–7] are capable of predicting the total energies
+and atomic forces of given material structures, enabling
+molecular dynamics simulation at large length and time
+scales.
+The paradigm has been used for deep-learning
+research of various kinds of physical and chemical prop-
+erties [8–19].
+Remarkably, a deep neural network rep-
+resentation of density functional theory (DFT) Hamil-
+tonian (named DeepH) was developed by employing the
+locality of electronic matter, localized basis, and local
+coordinate transformation [20]. By the DeepH approach
+the computationally demanding self-consistent field it-
+erations could be bypassed and all the electron-related
+physical quantities in the single-particle picture can in
+principle be derived very efficiently. This opens oppor-
+tunities for the electronic-structure calculation of large-
+scale material systems.
+Introducing physical insights and a priori knowledge
+into neural networks is of crucial importance to the deep-
+learning approaches. Specifically, the deep-learning po-
+tential takes advantage of the invariance of the total en-
+ergy under rotation, translation and spatial inversion as
+well as permutation of atoms. For DeepH, the property
+that the Hamiltonian matrix changes covariantly (i.e.
+
+∗ duanw@tsinghua.edu.cn
+† yongxu@mail.tsinghua.edu.cn
+
+equivariantly) under rotation or gauge transformations
+should be preserved by the neural network model for effi-
+cient learning and accurate prediction (Fig. 1). A strat-
+egy is developed to apply local coordinate transformation
+which changes the rotation covariant problem into an in-
+variant one and thus the transformed Hamiltonian matri-
+ces can be learned flexibly via rotation-invariant neural
+networks [20].
+Nevertheless, the large amount of local
+coordinate information seriously increases the computa-
+tional load, and the model performance depends critically
+on a proper selection of local coordinates, which relies
+on human intuition and is not easy to optimize. Alter-
+natively, one may get rid of the local coordinate trans-
+formation by applying the equivariant neural network
+(ENN) [21–24]. The key innovation of ENN is that all
+the internal features transform under the same symmery
+group with the input, thus the symmetry requirements
+are explicitly treated and exactly satisfied, as shown by
+a series of neural network models for various material
+properties [6, 7, 13–15], including PhiSNet [25] for pre-
+dicting the Hamiltonian of molecules with fixed system
+size. However, the key capability of DeepH that learns
+from DFT results on small-sized material systems and
+predicts the electronic structures of much larger ones has
+not been demonstrated by ENN models. More critically,
+the existing ENN models have neglected the equivari-
+ance in the spin degrees of freedom, although the elec-
+tronic spin and spin-orbit coupling (SOC) play a key role
+in modern condensed matter physics and materials sci-
+ence. With SOC, one should take care of the spin-orbital
+Hamiltonian, whose spin and orbital degrees of freedom
+are coupled and transform together under change of co-
+ordinate system or basis set, as illustrated in Fig. 1. This
+would raise critical difficulties in designing ENN models
+
+arXiv:2210.13955v1  [physics.comp-ph]  25 Oct 2022
+
+
+2
+
+a1
+
+a2
+
+b1
+
+b2
+
+a1
+a2
+b1
+b2
+
+Electronic Structure Calculation
+
+Atomic orbital basis
+
+Nucleus
+Spin-orbital wavefunction
+
+Electron spin
+
+Neglecting SOC
+Including SOC
+
+FIG. 1. Equivarience in electronic structure calculations. Schematic wavefunctions and Hamiltonian matrices are shown for
+the systems neglecting or including spin-orbit coupling (SOC). Structures a1 and a2 are related to each other by a 90◦ rotation,
+whose hopping parameters (i.e., Hamiltonian matrix elements) between px orbitals are related by a unitary transformation.
+This equivariant property of Hamiltonian must be preserved in all electronic structure calculations. When the SOC are taken
+into account, the spin and orbital degrees of freedom are coupled and must transform together under global rotations, as shown
+for structures b1 and b2.
+
+due to a fundamental change of symmetry group. In this
+context, the incorporation of ENN models into DeepH is
+essential but remains elusive.
+
+In this work, we propose DeepH-E3, a universal E(3)-
+equivariant deep-learning framework to represent the
+spin-orbital DFT Hamiltonian ˆHDFT as a function of
+atomic structure {R} by neural networks, which enables
+very efficient electronic structure calculations of large-
+scale materials at ab initio accuracy. A general theoreti-
+cal basis is developed to explicitly incorporate covariance
+transformation requirements of {R} �→ ˆHDFT into neu-
+ral network models that can properly take the electronic
+spin and SOC into account, and a code implementation
+of DeepH-E3 based on message passing neural network
+is also presented. Since the principle of covariance is au-
+tomatically satisfied, efficient learning and accurate pre-
+diction become feasible via the DeepH-E3 method. Our
+systematic experiments demonstrate state-of-the-art per-
+formance of DeepH-E3, which shows sub-meV accuracy
+in predicting DFT Hamiltonian. The method works well
+for various kinds of material systems, such as magic-angle
+twisted bilayer graphene or twisted van der Waals ma-
+terials in general, and the computational costs are re-
+duced by several orders of magnitude compared to direct
+DFT calculations.
+Benefiting from the high efficiency
+and accuracy as well as the good transferability, there
+could be promising applications of DeepH-E3 in elec-
+tronic structure calculations.
+Also we expect that the
+proposed neural-network framework can be generally ap-
+plied to develop deep-learning ab initio methods and that
+the interdisciplinary developments would eventually rev-
+olutionize future materials research.
+
+II.
+REALIZATION OF EQUIVARIANCE
+
+It has long been established as one of the fundamen-
+tal principles of physics that all physical quantities must
+transform equivariantly between reference frames. For-
+mally, a mapping f : X → Y is equivariant for vector
+spaces X and Y with respect to group G if DY (g) ◦ f =
+f ◦ DX(g), ∀g ∈ G, where DX, DY are representations
+of group G over vector spaces X, Y , respectively. The
+problem considered in this work is the equivariance of
+a mapping from the material structure {R} including
+atom types and positions to the DFT Hamiltonian ˆHDFT
+with respect to the E(3) group. The E(3) group is the
+Euclidean group in three-dimensional (3D) space which
+contains translations, rotations and inversion. Transla-
+tion symmetry is manifest since we only work on the
+relative positions between atoms, not their absolute po-
+sitions.
+Rotations of coordinates introduce non-trivial
+transformations which should be carefully investigated.
+Suppose the same point in space is specified in two coor-
+dinate systems by r and r′. If the coordinate systems are
+related to each other by a rotation, the transformation
+rule between the coordinates of the point is r′ = Rr,
+where R is a 3 × 3 orthogonal matrix.
+
+In order to take advantage of the nearsightedness of
+electronic matter [26], the Hamiltonian operator is ex-
+pressed in the picture of localized atomic orbital basis.
+The basis is separated into radial and angular parts,
+having the form φiα(r) = Ripl(r)Ylm(ˆr). Here i is the
+site index, α ≡ (plm), where p is the multiplicity index,
+Ylm is the spherical harmonics having angular momen-
+tum quantum number l and magnetic quantum number
+m, r ≡ |r − ri| and ˆr ≡ (r − ri) / |r − ri|. The transfor-
+mation rule for the Hamiltonian matrix between the two
+
+
+3
+
+Elemental
+embedding
+...
+
+Gaussian
+basis
+...
+
+Spherical
+harmonics
+...
+Equivariant neural network
+
+Including
+SOC
+
+Neglecting
+SOC
+
+Wigner-
+Eckart
+layer
+
+FIG. 2. Method of constructing an equivariant mapping {R} �→ ˆHDFT. Take the Hamiltonian matrix between l = 1 and
+l = 2 orbitals for example. The atomic numbers Zi and interatomic distances |rij| are used to construct the l = 0 vectors,
+and the unit vectors of relative positions ˆrij are used to construct vectors of l = 1, 2, . . . . These vectors are passed to the
+equivariant neural network. If neglecting spin-orbit coupling (SOC), the output vectors of the neural network are converted to
+the Hamiltonian using the rule 1 ⊕ 2 ⊕ 3 = 1 ⊗ 2 via the Wigner-Eckart layer. If including SOC, the output consists of two
+sets of real vectors which are combined to form complex-valued vectors. These vectors are converted to the spin-orbital DFT
+Hamiltonian according to a different rule (1 ⊕ 2 ⊕ 3) ⊕ (0 ⊕ 1 ⊕ 2) ⊕ (1 ⊕ 2 ⊕ 3) ⊕ (2 ⊕ 3 ⊕ 4) =
+�
+1 ⊗ 1
+
+2
+�
+⊗
+�
+2 ⊗ 1
+
+2
+∗�
+.
+
+coordinate systems described above is
+
+�
+H′
+ip1,jp2
+�l1l2
+m1m2 =
+
+l1
+�
+
+m′
+1=−l1
+
+l2
+�
+
+m′
+2=−l2
+
+Dl1
+m1m′
+1(R)Dl2
+m2m′
+2(R)∗ (Hip1,jp2)l1l2
+m′
+1m′
+2 ,
+(1)
+
+where Dl
+mm′(R) is the Wigner D-matrix. The equivari-
+ance of the mapping {R} �→ ˆHDFT requires that, if the
+change of coordinates causes the positions of the atoms to
+transform, the corresponding Hamiltonian matrix must
+transform covariantly according to Eq. (1). If we further
+consider the spin degrees of freedom, the transformation
+rule for the Hamiltonian becomes
+
+�
+H′
+ip1,jp2
+�l1 1
+
+2 l2 1
+
+2
+m1σ1m2σ2 =
+
+l1
+�
+
+m′
+1=−l1
+
+l2
+�
+
+m′
+2=−l2
+
+�
+
+σ′
+1=↑,↓
+
+�
+
+σ′
+2=↑,↓
+Dl1
+m1m′
+1(R)D
+
+1
+2
+σ1σ′
+1(R)
+
+Dl2
+m2m′
+2(R)∗D
+
+1
+2
+σ2σ′
+2(R)∗ (Hip1,jp2)
+l1 1
+
+2 l2 1
+
+2
+m′
+1σ′
+1m′
+2σ′
+2 ,
+(2)
+
+where σ1, σ2 are the spin indices (spin up or down).
+ENN is applied to construct the mapping {R} �→
+ˆHDFT in order to preserve equivariance. The input, out-
+put and internal features of ENNs all belong to a special
+set of vectors which have the form xl = (xl,l, . . . , xl,−l)
+
+and transform according to the following rule:
+
+x′
+lm =
+
+l
+�
+
+m′=−l
+Dl
+mm′(R)xlm.
+(3)
+
+This vector is said to carry the irreducible representation
+of the SO(3) group of dimension 2l + 1. If the input vec-
+tors are transformed according to Eq. (3), then all the
+internal features and the output vectors of the ENN will
+also be transformed accordingly. Under this constraint,
+the ENN incorporates learnable parameters in order to
+model equivariant relationships between inputs and out-
+puts.
+The method of constructing the equivariant mapping
+{R} �→ ˆHDFT is illustrated in Fig. 2. The atomic num-
+bers Zi and interatomic distances |rij| are used to con-
+struct the l = 0 input vectors (scalars). Spherical har-
+monics acting on the unit vectors of relative positions
+ˆrij constitute input vectors of l = 1, 2, . . . .
+The out-
+put vectors of the ENN are passed through the Wigner-
+Eckart layer before representing the final Hamiltonian.
+This layer exploits the essential concept of the Wigner-
+Eckart theorem:
+
+l1 ⊗ l2 = |l1 − l2| ⊕ · · · ⊕ (l1 + l2).
+(4)
+
+“⊕” and “⊗” signs stand for direct sum and tensor prod-
+uct of representations, respectively. “=” denotes equiva-
+lence of representations, i.e., they differ from each other
+
+
+4
+
+by a change of basis. The coefficients in the change of ba-
+sis is exactly the celebrated Clebsch-Gordan coefficients.
+The representation l1 ⊗ l2 is carried by the tensor xl1l2,
+which transforms according to the rule
+
+x′
+l1l2m1m2 =
+
+l1
+�
+
+m′
+1=−l1
+
+l2
+�
+
+m′
+2=−l2
+Dl1
+m1m′
+1(R)Dl2
+m2m′
+2(R)xl1l2m′
+1m′
+2.
+(5)
+
+Notice that Eq. (5) has the same form as Eq. (1), so the
+tensor xl1l2 can exactly represent the output Hamiltonian
+satisfying the equivariant requirements.
+The construction of the spin-orbital DFT Hamiltonian
+is a far more complicated issue. Electron spin has angu-
+lar momentum l = 1/2, so it seems that tedious coding
+and debugging are unavoidable because we have to intro-
+duce complex-valued half-integer representations into the
+neural network which typically only supports real-valued
+integer representations for the time being. Furthermore,
+a 2π rotation brings a vector in 3D space to itself, but
+introduces a factor -1 to the spin-1/2 vector. This means
+that any mapping from 3D input vectors to l = 1/2 out-
+put vectors will be discontinued and cannot be modeled
+by neural networks, which poses a serious threat to our
+approach since we only have 3D vectors as input to the
+neural network (Fig. 2).
+Fortunately, we observe that l = 1/2 appearing in the
+DFT Hamiltonian does not necessarily mean that half-
+integer representations must be inserted everywhere into
+the neural network. In fact, they can be restricted to the
+final output layer, as soon as we employ the transforma-
+tion rule:
+�
+l1 ⊗ 1
+
+2
+
+�
+⊗
+�
+l2 ⊗ 1
+
+2
+
+�
+= (l1 ⊗ l2) ⊗ (0 ⊕ 1).
+(6)
+
+There is no half-integer representation on the right hand
+side, thus it can be further decomposed into integer rep-
+resentations by repeatedly applying Eq. (4).
+Another problem is associated with the introduction of
+complex numbers. Generally, the spin-orbital Hamilto-
+nian matrix elements have complex values, and the ENN
+cannot simply predict its real and imaginary parts sep-
+arately because this will violate equivariance. Ordinary
+neural networks of complex numbers are mostly still un-
+der their experimental and developmental stage, so the
+use of complex-valued ENN is practically difficult, if not
+impossible. Nevertheless, we have discovered a way to
+sidestep this problem. Under the bases which are eigen-
+vectors of the time-reversal operator, the D-matrices of
+integer l will become purely real.
+Consequently, for a
+vector with integer l under that basis, its complex and
+real part will never mingle with each other when the vec-
+tor is multiplied by a real transformation matrix. Then
+one complex vector can be technically treated as two real
+vectors while preserving equivariance. Note that this is
+not true for half-integer representations, for that we must
+add up the real and imaginary parts before the integer
+
+representations are converted to half-integer representa-
+tions in the Wigner-Eckart layer (Fig. 2).
+Yet another subtle issue arises in Eq. (2). It is not ex-
+actly the same as Eq. (5) in that two of the D-matrices
+in the former equation are taken complex conjugate, but
+those in the latter are not. In fact, instead of construct-
+ing a vector with representation
+�
+l1 ⊗ 1
+
+2
+�
+⊗
+�
+l2 ⊗ 1
+
+2
+�
+, we
+
+must construct
+�
+l1 ⊗ 1
+
+2
+�
+⊗
+�
+l∗
+2 ⊗ 1
+
+2
+∗�
+to represent the spin-
+
+orbital Hamiltonian described in Eq. (2).
+Here l∗ de-
+notes the representation whose representation matrix is
+replaced by its complex conjugate. This is not a prob-
+lem for integer l, but is critical for l = 1/2.
+If not
+treated properly, the overall equivariance will be violated.
+In order to solve this problem, we first notice that the
+representation l∗ is still a representation of the SU(2)
+group with dimension 2l + 1. In fact, it is guaranteed to
+be equivalent with the representation l without complex
+conjugate.
+In other words, there must exist a unitary
+matrix Pl for each integer or half-integer l satisfying
+
+Dl(g)∗ = PlDl(g)(Pl)†, ∀g ∈ SU(2).
+(7)
+
+Indeed, this is guaranteed by the fact that the quantum
+rotation operator ˆU(g) commutes with the time-reversal
+operator T :
+⟨lm| ˆU(g)|lm′⟩ = ⟨lm|T † ˆU(g)T |lm′⟩ =
+(−1)m−m′⟨l, −m| ˆU(g)|l, −m′⟩∗. The matrix P in Eq. (7)
+is thus given by
+
+P l
+mm′ = (−1)l−mδm,−m′.
+(8)
+
+Therefore, we only need to apply a change of basis to con-
+vert a vector carrying representation l to a vector carry-
+ing l∗. Notice that this property holds even for material
+systems without time reversal symmetry.
+The workflow of constructing the DFT Hamiltonian is
+summarized and illustrated in Fig. 2. In order to con-
+struct a Hamiltonian with SOC, the output vectors from
+the ENN are first separated into two real components,
+then combined together into complex vectors and passed
+to the Wigner-Eckart layer.
+The Wigner-Eckart layer
+uses the rules in Eq. (4) and Eq. (6) to convert these
+vectors to tensors of the form in Eq. (5), except that the
+tensors here have rank 4 instead of 2. After that, the last
+spin index is converted to the complex conjugate coun-
+terpart by the change-of-basis using Eq. (8) for l = 1/2.
+The output tensors follow the same transformation rule
+under coordinate rotation as the DFT Hamiltonian in
+Eq. (2), and thus could be used to represent the DFT
+Hamiltonian matrix.
+Finally, we discuss two remaining issues. To include
+parity, we will consider E(3) = SE(3) ⊗ {E, I}, where E
+is the identity and I is the spatial inversion. Under a co-
+ordinate transform, the vector is multiplied by -1 if it has
+odd parity and the coordinate transform involves spatial
+inversion. The parity of the Hamiltonian is determined
+by (−1)l1+l2. In addition, there is a possible ambiguity
+in Eq. (2), since the mapping from a classical rotation R
+to a quantum rotation D
+1
+2 is not single-valued. However,
+
+
+5
+
+the possible factor −1 will always be canceled between
+the two D-matrices in that equation, which eliminates
+the potential problem.
+
+III.
+NEURAL NETWORK ARCHITECTURE OF
+DeepH-E3
+
+Here we present the neural network architecture of the
+DeepH-E3 method.
+The general structure is based on
+the message passing neural network [9, 27] that has been
+widely used in materials research [6, 7, 14–20]. The mate-
+rial structure is represented by a graph, where each atom
+is associated with a vertex (or node).
+Edges are con-
+nected between atom pairs with nonzero inter-site hop-
+ping, and self-loop edges are included to describe intra-
+site coupling.
+Every vertex i is associated with a fea-
+ture vi and every edge ij with eij. These features are
+composed of several vectors defined in Eq. (3). The ini-
+tial feature v(0)
+i
+of vertex i is the trainable embedding
+of the atomic number Zi, and the initial eij is the inter-
+atomic distance |rij| expanded using the Gaussian basis
+eB(|rij|) as defined in Eq. (B1). The features of vertices
+and edges are iteratively updated using features of their
+neighborhood as incoming messages.
+Finally, the final
+edge feature eij is passed through a linear layer and used
+to construct the Hamiltonian matrix block Hij between
+atoms i and j, as illustrated in Fig. 2. It is worth men-
+tioning that, under the message passing scheme, the out-
+put Hamiltonian is only influenced by the information
+of its neighborhood environment. The nearsightedness
+property [26] ensures efficient linear-scaling calculations
+as well as good generalization ability [20].
+The equivariant building blocks of the neural network
+are implemented using the scheme provided by Tensor-
+Field Networks [22]. The feature vectors x(l)
+cm processed
+by these nerual network blocks are implemented as dic-
+tionaries with key l, an integer which is the order of rep-
+resentation of the SO(3) group. c is the “channel index”
+ranging from 1 to n(l), where n(l) is the number of chan-
+nels at order l, and each channel refers to a vector defined
+in Eq. (3).
+The E3Linear layer defined in Eq. (B2) possesses learn-
+able weights and biases, which is similar to linear layers
+in conventional neural networks, but only connects vec-
+tors of the same representation to preserve equivariance.
+The gate layer introduces equivariant nonlinearity as pro-
+posed in Ref. [23], where nonlinearly activated l = 0 vec-
+tors (i.e. scalars) are used as scaling factors (“gates”) to
+the norms of l ̸= 0 vectors.
+We propose a normalization scheme, E3LayerNorm,
+that normalizes the feature vectors using mean and vari-
+ance obtained from the layer statistics while preserving
+equivariance:
+
+E3LayerNorm(vi)(l)
+cm = g(l)
+c
+(vi)(l)
+cm − µ(l)
+m
+
+σ(l) + ϵ
++ b(l)
+c ,
+(9)
+
+where ϵ is introduced to maintain numerical stabil-
+ity, g(l)
+c , b(l)
+c
+are learnable affine parameters, the mean
+µ(l)
+m =
+1
+
+Nn(l)
+�N
+i=1
+�n(l)
+
+c=1(vi)(l)
+cm, the variance (σ(l))2 =
+
+1
+
+Nn(l)
+�N
+i=1
+�n(l)
+
+c=1
+�l
+m=−l
+���(vi)(l)
+cm − µ(l)
+m
+���
+2
+, N is the total
+number of vertices.
+Here only the E3LayerNorm for
+vertex update blocks is described.
+The corresponding
+E3LayerNorm for edge update blocks is similar with the
+mean and variance obtained from edge features instead
+of vertex features.
+The previously discussed blocks do not include cou-
+pling between different l’s. This problem is resolved by
+the tensor product layer:
+
+z(l)
+cm =
+�
+
+l1l2
+
+�
+
+c1c2
+Clm
+l1m1;l2m2
+�
+U (l1)
+cc1 x(l1)
+c1m1
+� �
+V (l2)
+cc2 y(l2)
+c2m2
+�
+,
+
+(10)
+where
+Cl1m1
+l2m2;l3m3
+are
+Clebsch-Gordan
+coefficients,
+U l
+cc′, V l
+cc′ are learnable weights. This is abbreviated as
+z = (Ux) ⊗ (Vy).
+The neural network structure is illustrated in Fig. 3.
+The equivariant convolution block (EquiConv) encodes
+the information of an edge and the vertices connected
+to that edge. The core component of equivariant con-
+volution is the tensor product (Eq. (10)) of the vertex
+and edge features (vi||vj||eij) and the spherical harmon-
+ics of the edge ij (Y (ˆrij)). The tensor product intro-
+duces directional information of material structure into
+the neural network. Propagating directional information
+into neural networks is important as emphasized by pre-
+vious works [12, 14], which is realized in an elegant way
+here via the tensor product. The interatomic distance
+information is also encoded in neural network using the
+Gaussian basis expansion and fed into a fully connected
+neural network, whose output is multiplied element-wise
+to the output of gate nonlinearity.
+The vertex update block aggregates information from
+neighboring environment. Every edge connected to the
+vertex of interest contributes a “message” generated by
+the equivariant convolution (EquiConv) block. All the
+“messages” are summed and normalized to update the
+vertex feature. This is similar for the edge update layer,
+except that only the output of EquiConv on edge ij is
+used for updating eij. After several updates, the final
+edge feature vectors will serve as the neural network out-
+put and are passed into the Wigner-Eckart layer to con-
+struct the Hamiltonian matrix blocks as illustrated in
+Fig. 2. More details are described in the appendix.
+
+IV.
+CAPABILITY OF DeepH-E3
+
+The incorporation of global Euclidean symmetry as a
+priori knowledge provided to the message-passing deep-
+learning framework in the DeepH-E3 model has led to its
+outstanding performance in terms of efficiency and accu-
+racy. A remarkable capability of DeepH-E3 is to learn
+
+
+6
+
+Gaussian
+basis
+
+Spherical
+harmonics
+
+EquiConv
+
+E3Linear
+
+E3LayerNorm
+
+Vertex update
+
+E3Linear
+
+E3Linear
+
+EquiConv
+
+E3Linear
+
+E3LayerNorm
+
+Edge update
+
+EquiConv
+
+Gate
+
+MLP
+
+Elemental
+embedding
+
+Vertex update
+Edge update
+
+Vertex update
+Edge update
+
+E3Linear
+
+FIG. 3. Neural network architecture of DeepH-E3. Elemental embeddings and Gaussian expansions serve as initial vertex and
+edge features, respectively. The vertex and edge features are updated L times by update blocks, which encode the interatomic
+distances and directional information through equivariant convolutions. The “·” sign stands for channel-wise multiplication and
+|| for vector concatenation. Ni is the neighborhood of vertex i. The final edge vectors {e(L)
+ij } is passed into the Wigner-Eckart
+layer depicted in Fig. 2 to represent the DFT Hamiltonian.
+
+from DFT data on small structures and make predic-
+tions on varying structures of different sizes without hav-
+ing to perform further DFT calculations. This enables
+highly efficient electronic structure calculations of large-
+scale material systems at ab initio accuracy. After exam-
+ple studies on monolayer graphene and MoS2 datasets,
+we will first demonstrate the capability of DeepH-E3 by
+investigating twisted bilayer graphene (TBG), especially
+the well-known magic-angle TBG whose DFT calculation
+is important but quite challenging due to its huge Moir´e
+supercell. Next, we will apply DeepH-E3 to study twisted
+van der Waals (vdW) materials with strong SOC, includ-
+ing bilayers of bismuthene, Bi2Se3 and Bi2Te3 for demon-
+strating the effectiveness of our equivariant approach to
+construct the spin-orbital DFT Hamiltonian. Finally, we
+will use our model to illustrate the SOC-induced topolog-
+ical quantum phase transition in twisted bilayer Bi2Te3,
+giving an example of exploring exotic physical properties
+in large-scale material systems.
+Before going to large-scale materials, we first validate
+our method on the datasets used by Ref. [20] to bench-
+mark DeepH-E3’s performance. The datasets are com-
+prised of DFT supercell calculation results of monolayer
+graphene and MoS2, and different geometric configura-
+tions are sampled from ab initio molecular dynamics.
+The test results are summarized in Tab. I and compared
+with those of the original DeepH method [20] which, in-
+stead of using an explicitly equivariant approach, applied
+the local coordinate technique in handling the covariant
+transformation property of the Hamiltonian. Our exper-
+iments show that the mean absolute errors (MAEs) of
+Hamiltonian matrix elements averaged over atom pairs
+are all within a fraction of a meV, which are reduced
+approximately by a factor of 2 or more in all prediction
+targets compared with DeepH. Benefiting from the high
+accuracy of deep-learning DFT Hamiltonian, band struc-
+
+tures predicted by DeepH-E3 can accurately reproduce
+DFT results (supplementary Fig. S1).
+
+TABLE I. MAEs of DFT Hamiltonian matrix elements aver-
+aged over atom pairs for monolayer graphene and MoS2, all
+in units of meV. a
+
+Graphene
+MoS2
+
+C-C
+Mo-Mo Mo-S S-Mo S-S
+
+DeepH
+2.1
+1.3
+1.0
+0.8
+0.7
+DeepH-E3
+0.40
+0.51
+0.46 0.45 0.37
+
+a The best result of each target is marked as bold. For MoS2
+there are four different types of atom pairs, whose MAEs are
+listed separately.
+
+Our deep learning method is particularly useful for
+studying electronic structure of twisted vdW materials.
+This class of materials have attracted great interest for
+research and applications, since their Moir´e super period-
+icity offers a new degree of freedom to tune many-body
+interactions and brings in emergent quantum phenom-
+ena, such as correlated states [29], unconventional super-
+conductivity [30] and higher-order band topology [31].
+Traditionally, it is challenging to perform computation-
+ally demanding DFT calculations on large Moir´e struc-
+tures.
+However, this challenge could be largely over-
+come by DeepH-E3. One may train the neural network
+models by DFT data on small, non-twisted, randomly
+perturbed structures and predict DFT Hamiltonian of
+arbitrarily twisted structures bypassing DFT via deep
+learning, as illustrated in Fig. 4a. Typically, only a few
+hundreds of DFT training calculations are needed. This
+demonstrates the exceptionally high data efficiency of our
+method, making it even more cost-effective.
+Once the model is trained, it can be applied to study
+TBGs of varying twist angles. The performance is com-
+
+
+7
+
+structure 1
+
+Twisted
+
+Generalization
+
+a
+b
+c
+
+structure 2
+
+Non-twisted DFT dataset
+
+FIG. 4. Application of DeepH-E3 to study twisted bilayer graphene (TBG). (a) Workflow of DeepH-E3. The neural network
+model is first trained on DFT data of small, non-twisted, randomly perturbed structures, and then generalized to study
+arbitrarily twisted structures without invoking DFT anymore. (b) Performance of DeepH-E3 vs. the original DeepH method [20]
+on studying TBGs of varying twist angle θ. The averaged MAEs of DFT Hamiltonian are displayed for Moir´e supercells of
+varied sizes. (c) Band structure of the magic-angle TBG (θ = 1.08◦, 11,164 atoms per supercell, structure relaxed by previous
+work [28]) computed by DeepH-E3, DFT and continuum model [28]. Here the DFT benchmark calculations were performed
+with a different code using plane-wave basis instead of atomic-like basis and different pseudopotential, which could introduce
+numerical differences with respect to DeepH-E3.
+
+pared with that of DeepH. Test data includes DFT re-
+sults for systems containing up to more than one thou-
+sand atoms per supercell.
+As summarized in Fig. 4b,
+DeepH-E3 significantly reduces the averaged MAEs of
+DFT Hamiltonian matrix elements by more than a fac-
+tor of 2 as compared to DeepH, consistent with the above
+conclusion. Moreover, the MAEs reach ultralow values
+of 0.2–0.3 meV and gradually decrease with increasing
+Moir´e supercell size (or decreasing twist angle).
+This
+demonstrates good generalizability of DeepH-E3.
+The
+method is thus expected suitable for studying TBGs with
+small twist angles that are of current interest [28].
+We take the magic-angle TBG with θ = 1.08◦ and
+11,164 atoms per supercell as a special example.
+The
+discoveries of novel physics relevant to flat bands in this
+system have triggered enormous interest in investigat-
+ing twisted vdW materials. Due to the large supercell,
+DFT study of magic-angle TBG is a formidable task, but
+DeepH-E3 can routinely study such kind of material sys-
+tems in a very accurate and efficient way. As shown in
+Fig. 4c, the electronic bands of magic-angle TBG with re-
+laxed structure computed by DeepH-E3 agrees well with
+the published results obtained by DFT and low-energy
+effective continuum model [28]. The flat-bands near the
+Fermi level are well reproduced. Some minor discrepan-
+cies appear away from the Fermi level, which could be
+partially explained by the methodological difference: the
+benchmark work uses the plane-wave basis, whereas our
+work employs the atomic-like basis, and the pseudopo-
+tential used is also different.
+Most remarkably, DeepH-E3 has the capability to re-
+duce the computational cost to study these large material
+systems by several orders of magnitude. The DFT cal-
+culation (including structural relaxation) on magic angle
+
+TBG performed by Ref. [28] took around one month on
+about five thousand CPU cores. In contrast, the major
+computational cost of DeepH-E3 comes from the neural-
+network training which takes tens of GPU hours but is
+only required to be done once. After that, DFT Hamil-
+tonian matrices can be constructed very efficiently via
+neural-network inference. The process time is on the or-
+der of minutes by one GPU for magic-angle TBG, which
+grows linearly with Moir´e supercell size.
+Generalized
+eigenvalue problems are solved for 60 bands near the
+Fermi level to obtain the band dispersion, which only re-
+quires about 8 minutes per k-point for magic-angle TBG
+using 64 CPU cores. The unprecedentedly low computa-
+tional cost and high accuracy of DeepH-E3 demonstrate
+its potential power in resolving the accuracy-efficiency
+dilemma of ab initio calculation methods, and it would
+be highly favorable to future scientific research.
+Furthermore,
+we have tested the performance of
+DeepH-E3 on studying twisted vdW materials with
+strong SOC, including twised bilayers of bismuthene,
+Bi2Se3 and Bi2Te3. The latter two materials are more
+complicated, which includes two quintuple layers and
+two kinds of elements (Fig. 5a for Bi2Te3). The strong
+SOC introduces additional complexity in their electronic
+structure problems. Despite all these difficulties, the ca-
+pability of DeepH-E3 is not influenced at any extent.
+Our method reaches sub-meV accuracy in predicting
+DFT Hamiltonian of test material samples, including un-
+twisted and twisted structures of bismuthene, Bi2Se3 and
+Bi2Te3 bilayers. Impressively, the band structures pre-
+dicted by DeepH-E3 match well with those obtained from
+DFT (supplementary Fig. S2). Moreover, we observe re-
+markable ability of our model to fit a tremendous amount
+of data with moderate model capacity and relatively
+
+
+8
+
+1
+Twisted Bi2Te3
+a
+b
+c
+
+d
+
+Bi
+Te
+
+FIG. 5. Application of DeepH-E3 to study SOC effects of twisted vdW materials. (a) Schematic structure of twisted bilayer
+Bi2Te3. (b, c) Band structures of bilayer Bi2Te3 with twist angle θ = 21.8◦ predicted by DeepH-E3 without SOC (λ = 0) and
+with full SOC (λ = 1), compared to DFT results. (d) Evolution of band structure as a function of SOC strength predicted by
+DeepH-E3. A closing and reopening of band gap at the Γ point is visualized, indicating a topological quantum phase transition
+from Z2 = 0 to Z2 = 1 driven by SOC.
+
+small computational complexity. For instance, the neural
+network model is able to fit 2.8 × 109 nonzero complex-
+valued Hamiltonian matrix elements in the dataset with
+about 105 real parameters. The training time is about
+one day on a single GPU in order to reach sub-meV ac-
+curacy. More details are presented in the Supplementary
+Note 1.
+Through these experiments, the capability of
+DeepH-E3 on representing the spin-orbital DFT Hamil-
+tonian is well demonstrated.
+In physics, the SOC can induce many exotic quan-
+tum phenomena, leading to emergent research fields of
+spintronics, unconventional superconductivity, topologi-
+cal states of matter, etc. Investigation of SOC effects is
+thus of fundamental importance to the research of con-
+densed matter physics and materials science. The func-
+tionality of analyzing SOC effects is easily implemented
+by DeepH-E3. Specifically, we apply two neural network
+models to learn DFT Hamitonians with full SOC ( ˆH1)
+and without SOC ( ˆH0) separately for the same material
+system. Then, we define a virtual Hamiltonian as a func-
+tion of SOC strength (λ):
+ˆHλ = ˆH0 + λ ˆHSOC, where
+ˆHSOC = ˆH1 − ˆH0. By studying the virtual Hamiltonian
+at different λ, we can systematically analyze the influence
+of SOC effects on material properties.
+As an example application, we employ the approach
+to investigate topological properties of twisted bilayer
+
+Bi2Te3.
+DeepH-E3 can accurately predict the DFT
+Hamitlonian for both cases with or without SOC, as con-
+firmed by band-structure calculations using the predicted
+ˆHDFT (Figs. 5b and 5c). Herein the SOC is extremely
+strong as caused by the heavy elements in the material.
+Consequently, the band structure changes considerably
+when SOC is turned on. The evolution of band struc-
+ture as a function of SOC strength (Fig. 5d) provides
+rich information on the SOC effects. Importantly, the
+band gap closes and reopens when increasing the SOC
+strength, indicating a topological quantum phase transi-
+tion from Z2 = 0 to Z2 = 1. This is further confirmed
+by applying symmetry indicators based on Kohn-Sham
+orbital analysis and by performing Brillouin-zone integra-
+tion of Berry connection and curvature over all occupied
+states via the Fukui-Hatsugai-Suzuki formalism [32]. The
+topological invariant Z2 turns out to be nonzero for the
+spin-orbital coupled system, suggesting that the twisted
+bilayer Bi2Te3 (θ = 21.8◦) is topologically nontrivial. As
+DeepH-E3 works well for varying twist angle, the depen-
+dence of band topology on twist angle can be systemati-
+cally computed, which will enrich the research of twisted
+vdW materials.
+
+
+9
+
+V.
+DISCUSSION
+
+Since the DFT Hamiltonian ˆHDFT transforms covari-
+antly between reference frames, it is natural and advan-
+tageous to construct the mapping from crystal structure
+{R} to ˆHDFT in an explicitly equivariant manner.
+In
+this context, we have developed a general framework to
+represent ˆHDFT with a deep neural network DeepH-E3
+that fully respects the principle of covariance even in
+the presence of SOC. We have presented the theoretical
+basis, code implementation, and practical applications
+of DeepH-E3.
+The method enables accurate and effi-
+cient electronic structure calculation of large-scale ma-
+terial systems beyond the scope of traditional ab ini-
+tio approaches, opening possibilities to investigate rich
+physics and novel material properties at unprecedentedly
+low computational cost.
+However, as the structure become larger, it becomes in-
+creasingly difficult to diagonalize the Hamiltonian matrix
+in order to obtain wavefunction-related physical quanti-
+ties. This difficulty, instead of the limitations of DeepH-
+E3 method itself, will eventually become the bottleneck
+of accurate electronic structure predictions.
+Neverthe-
+less, benefiting from the sparseness of the DFT Hamilto-
+nian matrix under localized atomic-orbital basis, many
+efficient O(N) algorithms with high parallel efficiency
+are available for studying large-scale systems (e.g., su-
+percells including up to 107 atoms [33]). Combination of
+the DeepH-E3 method with such efficient linear algebra
+algorithms will be a promising direction for future study.
+The unique abilities of DeepH-E3 together with the
+general framework of incorporating symmetry require-
+ments and physical insights into neural-network model
+design might find wide applications in various directions.
+For example, the method can be applied to build mate-
+rial database for a diverse family of Moir´e-twisted mate-
+rials. For each kind of material, only one trained neural
+network model will be needed for all the twisted struc-
+tures in order to have full access to their electronic prop-
+erties, which is a great advantage for high throughput
+material discovery.
+Moreover, since the deep-learning
+method does not rely on periodic boundary conditions,
+2D materials with incommensurate twist angles can also
+be investigated, making ab initio study of quasi-crystal
+phases possible. In addition, we could go one step further
+by calculating the derivative of the electronic Hamilto-
+nian with respect to atomic positions via automatic dif-
+ferentiation techniques.
+This enables deep-learning in-
+vestigation of the physics of electron-phonon coupling in
+large-scale materials, which has the potential to outper-
+form the computationally expensive traditional methods
+of frozen phonon or density functional perturbation the-
+ory [34]. Furthermore, one may combine the deep learn-
+ing method with advanced methods beyond the DFT
+level, such as hybrid functionals, many-body perturba-
+tion theory, time-dependent DFT, etc. These important
+generalizations, if any of them are realized, would greatly
+enlarge the research scope of ab initio calculation.
+
+Appendix A: Datasets
+
+The monolayer graphene and MoS2 datasets are taken
+from Ref. [20].
+The datasets were generated by ab
+initio molecular dynamics performed by the Vienna
+ab initio simulation package (VASP) [35], using the
+projector-augmented wave pseudopotentials [36, 37] and
+the PBE [38] exchange-correlation functional.
+For the
+graphene dataset with 6×6 supercells, 5000 frames were
+obtained at 300K with time step 1fs, then one frame was
+taken out every 10 frames starting from the 500th frame,
+thus there are 450 structures in the dataset.
+Among
+them, 270 were used for training, 90 for validation and
+90 for testing. For the MoS2 dataset with 5×5 super-
+cells, 1000 frames were taken at 300K with time step
+1fs, and the first 500 unequilibrated structures were dis-
+carded. 300, 100, 100 structures were taken from the re-
+maining 500 frames and used for training, validating and
+testing, respectively. The Hamiltonians of these struc-
+tures were calculated using the OpenMX code [39, 40]
+with the PBE exchange-correlation functional and the
+norm-conserving pseudopotentials distributed alongside
+the OpenMX package. The localized pseudo-atomic or-
+bital basis used are C6.0-s2p2d1, Mo7.0-s3p2d2 and S7.0-
+s2p2d1, where the number behind the chemical symbol is
+the cutoff radius in a.u., s2p2d1 means there are 2×1 = 2
+s-orbitals, 2 × 3 = 6 p-orbitals and 1 × 5 = 5 d-orbitals.
+The non-twisted bilayer graphene dataset is also taken
+from Ref. [20]. Altogether 300 structures with 4 × 4 su-
+percells were generated. The sizes of training, validation
+and test sets are 180, 60, and 60, respectively.
+Non-
+twisted bilayer bismuthene, Bi2Se3 and Bi2Te3 datasets
+are all generated using a similar method in Ref. [20]. The
+bilayer unit cells of the latter two materials are relaxed
+using VASP [35] with vdW interaction corrected by DFT-
+D3 method with Becke-Jonson damping [41]. Supercells
+of 3 × 3 are prepared with uniform shift of interlayer
+stacking and random coordinate perturbation on each
+ions (within 0.1 ˚A along three directions), giving totally
+576 structures. The localized pseudo-atomic orbital ba-
+sis of Bi8.0-s3p2d2, Se7.0-s3p2d1 and Te7.0-s3p2d2 are
+used. The sizes of training, validation and test sets are
+231, 113, 113, respectively, for bismuthene and Bi2Se3,
+and 346, 115, 115 for Bi2Te3.
+
+Appendix B: Details of neural network models
+
+All the neural network models presented in this arti-
+cle are trained by directly minimizing the mean-squared
+errors of the model output compared to the Hamiltonian
+matrices computed by DFT packages, and the reported
+MAEs are also obtained from comparing model output
+to the DFT results. All physical quantities of materials
+are derived from the output Hamiltonian matrix.
+Some details of neural network building blocks are de-
+scribed here. The Gaussian basis is adopted from Ref. [4],
+
+
+10
+
+which is defined as:
+
+eB(|rij|)n = exp
+
+�
+
+−(|rij| − rn)2
+
+2∆2
+
+�
+
+,
+(B1)
+
+where rn, n = 0, 1, . . . are evenly spaced, with intervals
+equal to ∆. The E3Linear layer is defined as:
+
+E3Linear(x)(l)
+cm =
+
+n(l)
+�
+
+c′=1
+W (l)
+cc′x(l)
+c′m + b(l)
+c ,
+(B2)
+
+where W (l)
+cc′, b(l)
+c
+are learnable weights and biases, b(l)
+c
+= 0
+for l ̸= 0. In the gate layer, the l = 0 part of the input
+feature is separated into two parts, denoted as x(0)
+1c and
+x(0)
+2c . Notice that for l = 0 so the index m is omitted.
+The output feature is calculated by
+
+Gate(x)(l)
+cm =
+
+�
+φ1(x(0)
+1c ),
+l = 0
+φ2(x(0)
+2c )x(l)
+cm,
+l ̸= 0 .
+(B3)
+
+Here φ1 and φ2 are activation functions. In this work,
+we use φ1=SiLU and φ2=Sigmoid following Ref. [7].
+The ENN is implemented with the e3nn library [42] in
+version 0.3.5 and PyTorch [43] in version 1.9.0. Our neu-
+ral network consists of 3 vertex update blocks and 3 edge
+update blocks. The representation of the initial edge and
+vertex features are both 64 × 0e. The intermediate edge
+and vertex features are 64 × 0e + 32 × 1o + 16 × 2e +
+8 × 3o + 8 × 4e + 4 × 5o. Here 32 × 1o denotes 32 vec-
+tors carrying the l = 1 representation with odd parity,
+
+16 × 2e denotes 16 vectors carrying the l = 2 representa-
+tion with even parity. Spherical harmonics with l = 0 to
+5 are used. The Gaussian basis expansion used as input
+to the EquiConv layer has a length of 128. The fully con-
+nected neural network in the EquiConv layer is composed
+of two hidden layers, each with 64 hidden neurons, using
+the SiLU function as nonlinear activation and a linear
+layer as output. The batch size during all trainings is al-
+ways set to 1. The initial learning rate is 0.003 for mono-
+layer graphene and bilayer graphene, 0.005 for monolayer
+MoS2, bilayer Bi2Se3 and bilayer bismuthene, and 0.004
+for bilayer Bi2Te3. Learning rate is decreased by a factor
+of 0.5 when the loss plateaus, and the training is termi-
+nated when significant improvement cannot be reached.
+For the model with reduced number of parameters men-
+tioned in the example study on Bi2Se3, the edge and ver-
+tex features used 32×0e+16×1o+8×2e+4×3o+4×4e
+and spherical harmonics has maximum l = 4.
+
+ACKNOWLEDGMENTS
+
+This work was supported by the Basic Science Cen-
+ter Project of NSFC (grant no. 51788104), the National
+Science Fund for Distinguished Young Scholars (grant
+no. 12025405), the National Natural Science Foundation
+of China (grant no. 11874035), the Ministry of Science
+and Technology of China (grant nos. 2018YFA0307100
+and 2018YFA0305603), the Beijing Advanced Innovation
+Center for Future Chip (ICFC), and the Beijing Ad-
+vanced Innovation Center for Materials Genome Engi-
+neering.
+R.X. was funded by the China Postdoctoral
+Science Foundation (grant no. 2021TQ0187).
+X.G. and H.L. contributed equally to this work.
+
+[1] J. Behler and M. Parrinello, Generalized neural-network
+representation of high-dimensional potential-energy sur-
+faces, Phys. Rev. Lett. 98, 146401 (2007).
+
+[2] L. Zhang, J. Han, H. Wang, R. Car, and W. E, Deep
+potential molecular dynamics: a scalable model with the
+accuracy of quantum mechanics, Phys. Rev. Lett. 120,
+143001 (2018).
+
+[3] J. S. Smith, O. Isayev, and A. E. Roitberg, ANI-1: an ex-
+tensible neural network potential with DFT accuracy at
+force field computational cost, Chem. Sci. 8, 3192 (2017).
+
+[4] K.
+T.
+Sch¨utt,
+H.
+E.
+Sauceda,
+P.-J.
+Kindermans,
+A. Tkatchenko, and K.-R. M¨uller, SchNet - A deep learn-
+ing architecture for molecules and materials, J. Chem.
+Phys. 148, 241722 (2018).
+
+[5] O. T. Unke, S. Chmiela, M. Gastegger, K. T. Sch¨utt,
+H. E. Sauceda, and K.-R. M¨uller, Spookynet: Learning
+force fields with electronic degrees of freedom and nonlo-
+cal effects, Nat. Commun. 12, 7273 (2021).
+
+[6] J. Gasteiger, F. Becker, and S. G¨unnemann, Gem-
+net:
+Universal directional graph neural networks for
+molecules, in Advances in Neural Information Process-
+ing Systems, Vol. 34, edited by M. Ranzato, A. Beygelz-
+
+imer, Y. Dauphin, P. Liang, and J. W. Vaughan (Curran
+Associates, Inc., 2021) pp. 6790–6802.
+
+[7] S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P.
+Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and
+B. Kozinsky, E(3)-equivariant graph neural networks for
+data-efficient and accurate interatomic potentials, Nat.
+Commun. 13, 2453 (2022).
+
+[8] D. K. Duvenaud, D. Maclaurin, J. Iparraguirre, R. Bom-
+barell, T. Hirzel, A. Aspuru-Guzik, and R. P. Adams,
+Convolutional networks on graphs for learning molecular
+fingerprints, in Advances in Neural Information Process-
+ing Systems, Vol. 28, edited by C. Cortes, N. Lawrence,
+D. Lee, M. Sugiyama, and R. Garnett (Curran Asso-
+ciates, Inc., 2015).
+
+[9] J. Gilmer, S. S. Schoenholz, P. F. Riley, O. Vinyals, and
+G. E. Dahl, Neural message passing for quantum chem-
+istry, in Proceedings of the 34th International Conference
+on Machine Learning, Proceedings of Machine Learning
+Research, Vol. 70, edited by D. Precup and Y. W. Teh
+(PMLR, 2017) pp. 1263–1272.
+
+[10] A. Chandrasekaran,
+D. Kamal,
+R. Batra,
+C. Kim,
+L. Chen, and R. Ramprasad, Solving the electronic struc-
+
+
+11
+
+ture problem with machine learning, npj Comput. Mater.
+5, 22 (2019).
+
+[11] K. T. Sch¨utt, M. Gastegger, A. Tkatchenko, K.-R.
+M¨uller, and R. J. Maurer, Unifying machine learning and
+quantum chemistry with a deep neural network for molec-
+ular wavefunctions, Nat. Commun. 10, 5024 (2019).
+
+[12] J. Klicpera, J. Groß, and S. G¨unnemann, Directional
+message passing for molecular graphs, in International
+Conference on Learning Representations (2020).
+
+[13] B. Anderson, T. S. Hy, and R. Kondor, Cormorant: Co-
+variant molecular neural networks, in Advances in Neu-
+ral Information Processing Systems, Vol. 32, edited by
+H. Wallach, H. Larochelle, A. Beygelzimer, F. d'Alch´e-
+Buc, E. Fox, and R. Garnett (Curran Associates, Inc.,
+2019).
+
+[14] K. Sch¨utt, O. Unke, and M. Gastegger, Equivariant mes-
+sage passing for the prediction of tensorial properties and
+molecular spectra, in Proceedings of the 38th Interna-
+tional Conference on Machine Learning, Proceedings of
+Machine Learning Research, Vol. 139, edited by M. Meila
+and T. Zhang (PMLR, 2021) pp. 9377–9388.
+
+[15] Z. Qiao, A. S. Christensen, M. Welborn, F. R. Manby,
+A. Anandkumar, and T. F. Miller, Informing geomet-
+ric deep learning with electronic interactions to acceler-
+ate quantum chemistry, Proc. Natl. Acad. Sci. USA 119,
+e2205221119 (2022).
+
+[16] P. B. Jørgensen, K. W. Jacobsen, and M. N. Schmidt,
+Neural message passing with edge updates for predict-
+ing properties of molecules and materials, arXiv preprint
+arXiv:1806.03146 (2018).
+
+[17] T. Xie and J. C. Grossman, Crystal graph convolutional
+neural networks for an accurate and interpretable predic-
+tion of material properties, Phys. Rev. Lett. 120, 145301
+(2018).
+
+[18] O. T. Unke and M. Meuwly, Physnet: A neural network
+for predicting energies, forces, dipole moments, and par-
+tial charges, J. Chem. Theory Comput. 15, 3678 (2019).
+
+[19] M. Su, J.-H. Yang, H.-J. Xiang, and X.-G. Gong, Efficient
+prediction of density functional theory hamiltonian with
+graph neural network, arXiv preprint arXiv:2205.05475
+(2022).
+
+[20] H. Li, Z. Wang, N. Zou, M. Ye, R. Xu, X. Gong,
+W. Duan, and Y. Xu, Deep-learning density functional
+theory hamiltonian for efficient ab initio electronic-
+structure calculation, Nat. Comput. Sci. 2, 367 (2022).
+
+[21] T. Cohen and M. Welling, Group equivariant convolu-
+tional networks, in Proceedings of The 33rd International
+Conference on Machine Learning, Proceedings of Ma-
+chine Learning Research, Vol. 48, edited by M. F. Balcan
+and K. Q. Weinberger (PMLR, 2016) pp. 2990–2999.
+
+[22] N. Thomas, T. Smidt, S. Kearnes, L. Yang, L. Li,
+K.
+Kohlhoff,
+and
+P.
+Riley,
+Tensor
+field
+networks:
+Rotation-and translation-equivariant neural networks
+for 3D point clouds, arXiv preprint arXiv:1802.08219
+(2018).
+
+[23] M. Weiler, M. Geiger, M. Welling, W. Boomsma, and
+T. S. Cohen, 3D steerable CNNs: Learning rotationally
+equivariant features in volumetric data, in Advances in
+Neural Information Processing Systems, Vol. 31 (Curran
+Associates, Inc., 2018).
+
+[24] R. Kondor, Z. Lin, and S. Trivedi, Clebsch–Gordan
+nets: a fully fourier space spherical convolutional neu-
+ral network, in Advances in Neural Information Pro-
+cessing Systems, Vol. 31, edited by S. Bengio, H. Wal-
+
+lach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and
+R. Garnett (Curran Associates, Inc., 2018).
+
+[25] O. T. Unke, M. Bogojeski, M. Gastegger, M. Geiger,
+T. Smidt, and K. R. M¨uller, SE(3)-equivariant predic-
+tion of molecular wavefunctions and electronic densities,
+in Advances in Neural Information Processing Systems,
+edited by A. Beygelzimer, Y. Dauphin, P. Liang, and
+J. W. Vaughan (2021).
+
+[26] E. Prodan and W. Kohn, Nearsightedness of electronic
+matter, Proc. Natl. Acad. Sci. USA 102, 11635 (2005).
+
+[27] P. W. Battaglia, J. B. Hamrick, V. Bapst, A. Sanchez-
+Gonzalez, V. Zambaldi, M. Malinowski, A. Tacchetti,
+D. Raposo, A. Santoro, R. Faulkner, et al., Relational in-
+ductive biases, deep learning, and graph networks, arXiv
+preprint arXiv:1806.01261 (2018).
+
+[28] P. Lucignano, D. Alf`e, V. Cataudella, D. Ninno, and
+G. Cantele, Crucial role of atomic corrugation on the flat
+bands and energy gaps of twisted bilayer graphene at the
+magic angle θ ∼ 1.08◦, Phys. Rev. B 99, 195419 (2019).
+
+[29] Y. Cao, V. Fatemi, A. Demir, S. Fang, S. L. Tomarken,
+J. Y. Luo, J. D. Sanchez-Yamagishi, K. Watanabe,
+T. Taniguchi, E. Kaxiras, R. C. Ashoori, and P. Jarillo-
+Herrero, Correlated insulator behaviour at half-filling
+in magic-angle graphene superlattices, Nature 556, 80
+(2018).
+
+[30] Y. Cao, V. Fatemi, S. Fang, K. Watanabe, T. Taniguchi,
+E. Kaxiras, and P. Jarillo-Herrero, Unconventional super-
+conductivity in magic-angle graphene superlattices, Na-
+ture 556, 43 (2018).
+
+[31] B. Liu, L. Xian, H. Mu, G. Zhao, Z. Liu, A. Rubio, and
+Z. F. Wang, Higher-order band topology in twisted Moir´e
+superlattice, Phys. Rev. Lett. 126, 066401 (2021).
+
+[32] T. Fukui, Y. Hatsugai, and H. Suzuki, Chern numbers in
+discretized brillouin zone: Efficient method of comput-
+ing (spin) hall conductances, J. Phys. Soc. Jpn. 74, 1674
+(2005).
+
+[33] T. Hoshi, S. Yamamoto, T. Fujiwara, T. Sogabe, and S.-
+L. Zhang, An order-N electronic structure theory with
+generalized eigenvalue equations and its application to a
+ten-million-atom system, J. Phys.: Condens. Matter 24,
+165502 (2012).
+
+[34] F. Giustino, Electron-phonon interactions from first prin-
+ciples, Rev. Mod. Phys. 89, 015003 (2017).
+
+[35] G. Kresse and J. Furthm¨uller, Efficient iterative schemes
+for ab initio total-energy calculations using a plane-wave
+basis set, Phys. Rev. B 54, 11169 (1996).
+
+[36] P. E. Bl¨ochl, Projector augmented-wave method, Phys.
+Rev. B 50, 17953 (1994).
+
+[37] G. Kresse and D. Joubert, From ultrasoft pseudopoten-
+tials to the projector augmented-wave method, Phys.
+Rev. B 59, 1758 (1999).
+
+[38] J. P. Perdew, K. Burke, and M. Ernzerhof, Generalized
+gradient approximation made simple, Phys. Rev. Lett.
+78, 1396 (1997).
+
+[39] T. Ozaki, Variationally optimized atomic orbitals for
+large-scale electronic structures, Phys. Rev. B 67, 155108
+(2003).
+
+[40] T. Ozaki and H. Kino, Numerical atomic basis orbitals
+from H to Kr, Phys. Rev. B 69, 195113 (2004).
+
+[41] A. D. Becke and E. R. Johnson, A density-functional
+model of the dispersion interaction, J. Chem. Phys. 123,
+154101 (2005).
+
+[42] M. Geiger, T. Smidt, A. M., B. K. Miller, W. Boomsma,
+B. Dice, K. Lapchevskyi, M. Weiler, M. Tyszkiewicz,
+
+
+12
+
+S. Batzner, M. Uhrin, J. Frellsen, N. Jung, S. Sanborn,
+J. Rackers, and M. Bailey, e3nn/e3nn: 2021-08-27 (2021).
+
+[43] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury,
+G. Chanan, T. Killeen, Z. Lin, N. Gimelshein, L. Antiga,
+A. Desmaison, A. Kopf, E. Yang, Z. DeVito, M. Rai-
+son, A. Tejani, S. Chilamkurthy, B. Steiner, L. Fang,
+
+J. Bai, and S. Chintala, Pytorch: An imperative style,
+high-performance deep learning library, in Advances in
+Neural Information Processing Systems 32, edited by
+H. Wallach, H. Larochelle, A. Beygelzimer, F. d'Alch´e-
+Buc, E. Fox, and R. Garnett (Curran Associates, Inc.,
+2019) pp. 8024–8035.
+
+

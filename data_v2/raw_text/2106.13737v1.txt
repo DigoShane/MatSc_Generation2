@@ -1,0 +1,1344 @@
+A Time-domain Approach to the Design of
+
+Coupled-Resonator Microstrip Filters
+
+Andrés Altieri
+
+Abstract
+
+Coupled-resonator microstrip filters are among the most versatile filter topologies. A known design
+
+approach uses full-wave electromagnetic simulations to determine the coupling coefficient between
+
+resonators as a function of their relative position. This could be done using time-domain simulations
+
+using a fast Fourier transform (FFT) to extract the couplings from the S parameters obtained from time-
+
+domain signals. However, this approach has a poor performance in terms of resolution and specially
+
+for weak couplings, leading to unreasonably long simulation times. To overcome this, we introduce a
+
+technique to obtain the couplings directly from time signals, without moving to the frequency domain.
+
+This procedure works for strong and weak couplings, with much shorter simulation times and a reduced
+
+simulation domain over the FFT approach. This technique is used to design coupled resonator filter
+
+efficiently from time domain simulations. We implement this procedure using the finite-difference time-
+
+domain framework using an open source solver and discuss our implementation. We show that its results
+
+are very similar to previously published ones obtained from frequency domain simulations, even in the
+
+case of very weak couplings. Finally, we design and measure a filter to show the good performance of
+
+the proposed approach.
+
+Index Terms
+
+Bandpass filter (BPF), hairpin filter, resonator, coupling coefficient, microstrip filter design, finite-
+
+difference time-domain.
+
+I. INTRODUCTION AND MAIN CONTRIBUTIONS
+
+Coupled resonator filters [1] are one of the most compact and efficient topologies for microwave
+
+bandpass filter designs of small and moderate bandwidths. For this reason, they have been an active area
+
+A. Altieri is with Universidad de Buenos Aires and CSC-CONICET, Buenos Aires, Argentina (email: aaltieri@fi.uba.ar,
+
+andres.altieri@conicet.gov.ar).
+
+This work was partially supported by the Grant PICT 2016-1925 and the International Cooperation Project CNRS-CONICET
+
+MOSIME.
+
+arXiv:2106.13737v1  [eess.SP]  25 Jun 2021
+
+
+0
+
+of research for the last decades. A usual synthesis approach is to start with the desired filter response
+
+and obtain the required coupling coefficients that yield this response. These include the inner coupling
+
+coefficients [2] between the resonators which compose the filter, and the coupling between the feeding
+
+circuitry and the resonators, characterized by the external quality factor. Then, the dimension of the
+
+coupled resonators and their separation is chosen such that the prescribed couplings are obtained. The
+
+most complex procedure in the design is the sizing of the filter, that is, determining the dimensions
+
+and separation of the resonators to achieve the required couplings. Although for some filter topologies
+
+there exist approximate closed-form expressions [3]–[5], in recent years numerical approaches to extract
+
+couplings using full-wave been developed [6]–[8] which are valid for many topologies. These techniques
+
+permit a fast and accurate design of filters with minimal tune-up.
+
+In Fig. 1a we show a representation of the circuit to extract the coupling between two resonators. One
+
+of the resonators is excited via a weakly-coupled input circuit. This resonator elicits a coupled response
+
+on the other one, and this response is measured at an output port, weakly coupled to the resonator. In Fig.
+
+1b, an example of such a circuit can be seen for the case of two microstrip hairpin resonators. Neglecting
+
+long range couplings, the input and output feed lines are coupled each to its adjacent resonator and the
+
+resonators are coupled to each other. The level of coupling between adjacent elements increases as the
+
+separations s and ˜s decrease. This circuit can be interpreted as two-port circuit like Fig. 1c. Assuming that
+
+both resonators are equal, to extract the coupling coefficient in the frequency domain, the S2,1 parameter
+
+of the circuit is obtained. If the feed circuitry is weakly coupled to the resonators (s ≪ ˜s in the example
+
+of Fig. 1b), two peaks would be observed in |S2,1| near the resonance frequency f0 of each resonator. In
+
+Fig. 2 a typical plot of the obtained |S2,1| with to peaks at frequencies f− and f+. Then, the coupling
+
+coefficient between the resonators can be obtained as [1], [7]:
+
+K = f2
++ − f2
+−
+
+f2
++ + f2
+−
+.
+(1)
+
+It is important to mention that, as the coupling decreases, the frequencies f− and f+ become closer
+
+to each other. This means that the frequency resolution required to extract these couplings becomes
+
+increasingly large as the couplings decrease. Another important observation is that (1) is very sensitive
+
+to small variations in f+ and f−, meaning that a small error in estimating them, will produce a large
+
+variation of the coupling coefficient K.
+
+The procedure described in the previous paragraph can be used to experimentally measure the coupling
+
+coefficient of microstrip resonators. It can also be used to extract the coupling coefficient in frequency
+
+domain simulators. Depending on the simulator used, the downside of a frequency domain approach is
+
+that it requires the simulation of a large number of discrete frequencies near the resonance frequency
+
+
+1
+
+Resonator
+Resonator
+
+Coupling
+Weakly
+coupled
+input port
+(excitation)
+
+Output
+port
+
+(a) General setup for extracting the coupling coefficient.
+
+Output
+Port 2
+
+s
+˜s
+
+Input
+Port 1
+
+Coupled resonators
+
+(b) Example of implementation using hairpin resonators.
+
+Coupled
+resonator
+circuit
+
+Input
+Port 1
+
+Output
+Port 2
+
+(c) Interpretation as a 2 port-network of the above circuit.
+
+Fig. 1: Circuit for extraction of the coupling coefficient between resonators.
+
+f−
+f0
+f+
+
+f
+
+|S2,1|
+
+Fig. 2: Example of S2,1 obtained near the resonance frequency of the circuit in Fig. 1 near the resonance
+
+frequency f0 of the resonators.
+
+or relying on an effective interpolation of the spectrum. Implementing this procedure from time domain
+
+simulations, however, will introduce several complications. A straightforward approach would be to obtain
+
+an estimate of the S2,1 parameter using the Fast Fourier Transform (FFT) of the input and output signals.
+
+However, it is well known that the frequency resolution attainable when using periodogram-type estimators
+
+depends on the total number of samples available. In fact, the theoretical frequency resolution of the
+
+
+2
+
+periodogram is 1/N, where N is the number of samples of the time signal. This resolution is poor
+
+compared to other approaches which achieve a much better resolution with a substantially smaller number
+
+of samples. Furthermore, it provides biased and inconsistent frequency estimations Finally, to estimate the
+
+transfer function we must perform the quotient of two inconsistent estimators, which further increases the
+
+final estimator variance [9]. This means that extracting the coupling coefficients from the time-domain
+
+simulations through a standard FFT approach is not practical or is sometimes unfeasible because it
+
+requires very long simulation times and leads to poor estimates.
+
+In this paper we propose a technique to extract the coupling coefficient between microstrip resonators
+
+using time-domain simulations, which overcomes many of the difficulties mentioned in the previous
+
+paragraph. This technique will work for both strong couplings and weak couplings, where using the FFT
+
+is impractical. In addition, in the strong coupling regime, where using the FFT approach is possible,
+
+the proposed technique will require much shorter simulation times and a reduced simulation domain.
+
+In principle it is possible to apply this technique to many resonator topologies, specially those which
+
+are built from half-wavelength resonators, such as, hairpin resonators, square and rectangular open-loop
+
+resonators, among others (see [1] for examples). Our tests with hairpin and square resonators show good
+
+agreement with other works and measurements. Finally, although we discuss the approach using equal
+
+resonators, the case for unequal resonators [7] can also be considered.
+
+In the proposed technique, one of the resonators is excited directly by injecting a current pulse at
+
+one of its edges. Then, the voltage time signal on the other resonator is measured by integrating the
+
+electric field between the ground plane and the resonator. After processing the measured voltage, the
+
+resonant frequencies are extracted from the signal by applying a super-resolution technique [9], in our
+
+case ESPRIT [10]. This approach provides consistent frequency estimates with short simulation times. In
+
+addition, the absence of feeding circuitry will shorten simulation times and the computational resources
+
+by reducing the size of the computation domain, and will mitigate the disturbance introduced by the
+
+feeding circuitry coupling. We implement the procedure using the finite-difference time-domain method
+
+(FDTD) [11] and compare the results obtained with previously published results from other authors. In
+
+addition, we also design and build a hairpin filter to validate the technique through measurements. All
+
+our simulations are carried out using gprMax [12], an open-source FDTD simulator, which means that
+
+the results are easily reproducible. To this end, we also discuss details of our implementation.
+
+In the past, there have been works which use super-resolution techniques for the extraction of frequency
+
+domain information from time-domain simulations, but to the best of our knowledge they have not been
+
+applied to the analysis of resonant microstrip circuits or microstrip filter design. For example, in [13], [14],
+
+the authors use super-resolution techniques on FDTD signals to extract frequency-dependent equivalent-
+
+
+3
+
+circuit parameters of microstrip multiconductor transmission lines. Other approaches to extract frequency
+
+domain information from FDTD signals are for example [15], [16]. In [15], the authors propose two
+
+approaches to extract models from FDTD signals: in one they treat the signals as random processes
+
+and construct spectral estimators based on autoregressive models. In the second one they construct a
+
+signal model based on a nonlinear fitting of the time-domain signals. In [16], the authors propose an
+
+iterative approach to generate an autoregressive moving-average model (ARMA) from a short time-
+
+domain simulation by minimizing the norm of the aproximation error. These models, however, are better
+
+suited for continuous spectra and are more sensitive to perturbations in the time signals. Super-resolution
+
+techniques, on the other hand, are better estimators for line spectra and they are more robust to noise and
+
+perturbation than time-fitting approaches because they are specifically tailored for this application [9].
+
+The rest of the paper is organized as follows. In Section II we discuss the proposed approach to extract
+
+the couplings. We also review the procedure to extract the external quality factor, which is also required
+
+to design filters. In Section III we compare the proposed approach to previously published results by
+
+others authors and to measurements. Finally, in Section IV we present some closing remarks.
+
+II. PROCEDURE TO DESIGN THE RESONATOR FILTERS
+
+A. Extraction of the coupling coefficient between resonators
+
+In this section we describe the procedure to extract the coupling coefficient between two identical
+
+microstrip resonators which have a resonance frequency f0. The coupling strength is controlled by how
+
+the resonators are laid out relative to each other. To elicit a resonant response, one of the resonators is
+
+excited injecting a current pulse between the ground plane and the microstrip resonator. This is done via
+
+a planar current source on one of the edges of the resonator. By directly injecting the excitation in the
+
+resonator, the feed lines are avoided, reducing the simulation domain size and avoiding the perturbation
+
+of the feed lines. In Fig. 3 a representation of the current feed model can be seen for our FDTD
+
+implementation. We assume that the cell is perfectly aligned with the microstrip width, and the planar
+
+current is injected at the microstrip center. In gprMax this type of feed is achieved using the hertzian
+
+dipole source, which specifies a current density term at an electric field location. In our implementation,
+
+we use a Gaussian current pulse p given by:
+
+p(t) = e−2πf 2
+p
+�
+t− 1
+
+fp
+
+�2
+(t > 0),
+(2)
+
+where fp is a parameter which controls the time duration/bandwidth of the pulse. It is required that
+
+fp ≫ f0 if the resonant behavior is to be excited. The excitation of the input resonator will couple with
+
+the output resonator generating an oscillatory response from where the two characteristic frequencies
+
+
+4
+
+Microstrip
+resonator
+(top)
+
+Vertical planar
+feed current
+
+Ground 
+plane 
+(bottom)
+
+Substrate 
+cross-section
+
+Fig. 3: Microstrip resonator edge feed model. If the microstrip has an even number of cells, the feed
+
+current width is doubled to achieve simmetry.
+
+Substrate
+
+Input
+resonator
+Output
+resonator
+
+Voltage
+measurement
+
+Vertical edge
+feed  current
+
+(a) Hairpin resonator exhibiting mixed mode cou-
+
+pling.
+.
+
+Substrate
+
+Input
+resonator
+Output
+resonator
+
+Voltage
+measurement
+Vertical edge
+feed  current
+
+(b) Square open loop resonator exhibiting mixed
+
+mode coupling.
+
+Fig. 4: Current excitation and voltage measurement example for two typical microstrip resonators using
+
+the proposed approach.
+
+required to obtain the coupling coefficient can be extracted. To do this, the voltage is measured at the
+
+center of the other resonator by numerical integration of the vertical field between the ground plane
+
+and the microstrip. Since the excitation pulse will have an approximately flat frequency content in the
+
+range of interest, the resonant peaks in |S2,1| will be present in the raw voltage signal measured at the
+
+output resonator. Hence, it is not necessary to compute any S parameters, we can extract the frequencies
+
+directly from the voltage signal measured at the output resonator. In Fig. 4 the location of the feed current
+
+and voltage measurement can be seen for two types of common resonators, namely, hairpin and square
+
+open-loop.
+
+Using the voltage signal, the spectral peaks are extracted. In short, the time signal is downsampled
+
+
+5
+
+::
+:
+
+/
+
+/
+
+↓ DS
+With AAF
+
+fs = 4f0
+
+↓ DS
+No AAF
+
+fs = 10fp
+
+Super-Res
+estimator
+
+Output
+pulse
+
+fs = fCFL
+
+Gaussian
+2B ≤ ˜f ≤ 5B
+Central frec f0
+
+ˆK
+
+Fig. 5: Overview of the algorithm for extracting the coupling coefficient from the time-domain simulated
+
+output pulse. fs is the sampling frequency of the signal after each processing block. DS: downsampling
+
+block. AAF: anti-aliasing filter. The Gaussian bandpass filter has impulse response given by (5).
+
+and filtered in several stages, and then the resonance frequencies are extracted using a super-resolution
+
+technique, in our case, ESPRIT. The filtering problem is not a trivial one. This is because one of the most
+
+important steps in the implementation of a super-resolution algorithm is the determination of the model
+
+order, that is, the number of frequencies that are to be estimated. There are different criteria involved [17],
+
+[18] and a poor order choice can be very detrimental to the performance of the algorithm. In our case, the
+
+careful filtering procedure performed will eliminate all other multiple frequency resonances and additional
+
+spurious frequencies that may appear, leading to accurate estimates of the desired frequencies.
+
+The resonance extraction procedure, which we now describe, is summarized in Fig. 5. We assume that
+
+the voltage output signal is sampled at a time-step that achieves equality in the Courant–Friedrichs–Lewy
+
+(CFL) stability condition of the FDTD algorithm [11]. That is, the maximum frequency component
+
+represented in the signal is fCFL/2 where fCFL is the CFL frequency. Also we assume that the excitation
+
+current pulse is given by (2). A similar analysis can be carried out for other pulse shapes or starting
+
+sampling frequencies. In a first step, the output signal of the simulator is downsampled without an anti-
+
+aliasing filter. In general it is not necessary to use an antialiasing filter because the sampling frequency
+
+fCFL is much larger than the baseband bandwidth of the output signal, which is controlled by fp. To find
+
+a reasonable downsampling factor, we note that the absolute value of the Fourier transform of p(t) is:
+
+|P(f)| =
+1
+�
+
+2f2p
+e− 1
+
+2
+
+�
+f
+fp
+
+�2
+.
+(3)
+
+Thus, the amplitude of the input pulse normalized by its zero frequency value is:
+
+20 log10
+
+�|P(f)|
+
+|P(0)|
+
+�
+= −10 log10(e)
+� f
+
+fp
+
+�2
+[dB].
+(4)
+
+From (4) it can be seen that the power content of the input signal above 5fp will be more than 108dB below
+
+the zero frequency value. Thus, choosing a downsampling factor such that a new sampling frequency
+
+
+6
+
+of 10fp is achieved is a reasonable choice. In a second stage, the signal is downsampled again, this
+
+time using a low-pass filter, to a new sampling frequency of 4f0. After this downsampling stage, the
+
+maximum frequency present in the signal is therefore 2f0, that is, twice the resonance frequency of
+
+a single resonator. In a final filtering stage, a bandpass filter is applied to reduce noise and to further
+
+attenuate the resonance peaks which appear around 2f0. In our case, we use a Gaussian bandpass filter,
+
+because it is straightforward to design in the time domain and to parameterize. Its impulse response is:
+
+h(t) = cos
+�
+2πf0
+
+�
+t − 1
+
+˜f
+
+��
+e−2π ˜f 2�
+t− 1
+
+˜
+f
+
+�2
+,
+(5)
+
+where f0 is the resonance frequency of the resonators and ˜f is a parameter which controls the bandwidth
+
+of the filter. The requirement for ˜f is that it provide sufficient attenuation of the remains of the resonant
+
+peaks that are present near 2f0. In our examples we parameterize ˜f in terms of the bandwidth of the
+
+filter to be designed B as:
+
+˜f = αB,
+(6)
+
+where 2 ≤ α ≤ 5 are reasonable values. This is because the coupling values required are related to
+
+the bandwidth of the filter. For stronger couplings, the frequencies f+ and f− which appear around f0
+
+will be separated from f0. This means that the double frequency resonances which appear around 2f0
+
+will be closer to f0 and will have a large chance of interfering with the estimation. For this reason,
+
+smaller values of α are more convenient for stronger couplings. On the contrary, for weak couplings,
+
+the peaks will be very close to f0 and a larger value of α will be better to make sure that the bandpass
+
+filter does not suppress one of the peaks, if there is a small error in the estimation of the resonance
+
+frequency f0. Finally, once the signal is properly filtered, the frequencies of the two resonant peaks are
+
+found by using a super-resolution algorithm. To estimate the frequency peaks we use ESPRIT based on
+
+the correlation matrix implementation using the forward-backward approach [9, Sec. 4.7]. In all cases
+
+we chose a correlation matrix of size 24 and extract 4 complex frequencies, which correspond to the
+
+two real frequency peaks that we want to estimate. As mentioned before, this can be done accurately
+
+thanks to the filtering procedure outlined before. Finally, the coupling coefficient is computed from the
+
+frequency estimates using (1).
+
+B. Extraction of the External Quality Factor
+
+To extract the external quality factor it is more efficient to use the scattering parameters obtained from
+
+the FFT of the transient time signals. For completeness, we briefly review the procedure here and discuss
+
+our implementation in gprMax. To extract the external coupling coefficient a single resonator is excited
+
+
+7
+
+PML
+
+Feed
+line
+
+Vertical edge
+feed  current
+
+Voltage
+measurement
+
+Measured
+incident wave
+
+Additional
+back wave
+
+(a) Setup to obtain the incident voltage. Top view
+
+of the substrate.
+
+PML
+
+Single
+Resonator
+Feed
+line
+
+Vertical edge
+feed  current
+
+Voltage
+measurement
+
+(b) Setup for the obtain the total voltage. Top view
+
+of the substrate.
+
+Fig. 6: Setups to extract the external quality factor of a single resonator with its feed line.
+
+using the chosen feed method for the filter topology. Then, the S1,1 parameter of this circuit is obtained
+
+and, from there, the external quality factor is obtained using the group delay as [1]:
+
+Qe,gd = ω0τg(ω0)
+
+4
+,
+(7)
+
+where ω0 is the resonance angular frequency of the resonator. Now, to extract the S1,1 parameter we
+
+proceed in two stages. In the first stage, we extract an incident voltage Vinc by using the setup in Fig. 6a.
+
+In this setup, a short microstrip segment is excited in the middle using the feed model in Fig. 3 which
+
+we used for the internal coupling coefficient. The microstrip and the substrate extend on both sides into
+
+the perfectly matched layer (PML) which means that the microstrip will be matched on both ends. When
+
+the current is injected, there will be an incident wave, whose voltage is measured, and a backwards
+
+wave, which is useless. Once the incident voltage is measured, we implement the setup in Fig. 6b. The
+
+resonator is connected to its feed line, and both the substrate and the feedline extend into the PML. The
+
+feed scheme is the same as before. When the current is injected, again there will be an incident wave
+
+which in this case moves towards the resonator and a backwards wave which vanishes in the PML. The
+
+voltage measurement Vtot will include the superposition of the incident and reflected waves to and from
+
+the resonator, but will not include the backwards wave which moves toward the PML. Finally, the S1,1
+
+parameter is obtained from the FFT of the voltage waves as [19]:
+
+S1,1(f) = F(Vtot − Vinc)
+
+F(Vinc)
+,
+(8)
+
+where F is the Fourier Transform of the time signals.
+
+
+8
+
+III. SIMULATION AND MEASUREMENT COMPARISONS
+
+A. General remarks and simulation setup
+
+In this section we study the performance the proposed approach using time domain simulations. In
+
+Section III-B we compare our results for high and low couplings to simulations presented in other papers.
+
+Then in Section III-C we design and build a filter to validate the procedure using real measurements.
+
+All the examples are presented for hairpin filters which are one of the most representative examples,
+
+but other resonators could also be considered with similar results. For both sections we parameterize the
+
+shape of the hairpin resonators according to Fig. 7.
+
+As mentioned before, all our FDTD simulations were carried out in gprMax [12] v3.1.5 using the
+
+GPU engine [20] which allows for substantial improvement in computation speed. In all the simulations,
+
+the z direction of the coordinates is assumed to be normal to the PCB plane, which is aligned with the
+
+x/y plane. The simulation domain is always terminated in a PML with a thickness of 10 cells using the
+
+standard PML formulation of gprMax [21]. In all the simulations to extract the coupling coefficients,
+
+there is a clearance of 40 cells in every direction of the x/y plane, and a vertical clearance above the
+
+PCB of 95 cells, including the PML (see Fig. 8 for an example).
+
+For the extraction of the external quality factor, the procedure outlined in Section II-B is used (see
+
+Fig. 6 for the layout). The feed line length is always 50 cells (including the 10 cells of the PML), the
+
+current source is located 5 cells away from the PML and the voltage is measures 15 cells away from the
+
+PML (10 from the current source). The vertical and additional horizontal clearances are the same as for
+
+the extraction of the coupling coefficients.
+
+All the simulations were done using the dielectric smoothing option enabled, which is fundamental
+
+for accurate results. All microstrips are modeled as zero-thickness perfect electric conductor (PEC) strips
+
+except for the measured filter, where copper is used.
+
+B. Example of comparison to other works
+
+We now apply the proposed procedure to extract the four different types of couplings of hairpin
+
+resonators which can be seen in Fig. 9. All of the coupling modes will become increasingly harder to
+
+extract as they become weaker, since the spectral peaks will become very close and will be harder to
+
+separate. We compare our results with the ones presented in [22], Fig. 3. The goal there is to design
+
+a cross-coupled hairpin filter with central frequency fc = 965MHz and a bandwidth B = 20MHz. The
+
+hairpin parameters are L = 27.5mm, g = 2.5mm and w = 1.5mm, and a substrate of height h = 1.27mm
+
+and dielectric constant ϵr = 10.8 is used. For our simulations, the FDTD cell sizes were chosen to be
+
+
+9
+
+w
+
+L
+
+g
+
+s
+
+(a) Size parameterization of two resonators.
+
+w
+
+˜L
+
+g
+Wf
+
+t
+
+(b) Size parameterization of a resonator with a feed line.
+
+Fig. 7: Parameterization of the hairpin resonators for simulations.
+
+PML 10 cells
+
+40 cells
+
+40 cells
+
+PML 10 cells
+
+x
+y
+5 cells
+
+85 cells
+
+z
+
+PCB
+
+Fig. 8: Example layout for extraction of type 1 mixed coupling.
+
+∆x = ∆y = 0.125mm and ∆z = 0.127mm. Thus, the substrate height will fit in an integer number of
+
+cells. The simulations are run for a total of 100ns (413236 time steps) and the resonators are excited
+
+using a Gaussian pulse with fp = 5GHz. To extract the coupling coefficients, we use the procedure
+
+outlined in Section II-A. We use a Gaussian bandpass filter given by (5) with ˜f = 5B, which from (4)
+
+gives an attenuation more than 400dB at 2fc. In Fig. 10 we can see the comparison of our approach
+
+with the simulations from Fig. 3 in [22], which were obtained with the method of moments. We can see
+
+that the proposed approach provides a very good fit to previously published results in all the cases. For
+
+a prescribed coupling coefficient, the difference in separation provided by each approach is very similar.
+
+The largest difference appears in the case of type 2 mixed couplings, where the worst difference is around
+
+0.25mm for a coupling of K ≈ 0.014.
+
+
+10
+
+s
+
+(a) First type of mixed coupling.
+
+s
+
+(b) Second type of mixed coupling.
+
+s
+
+(c) Electric coupling.
+
+s
+
+(d) Magnetic coupling.
+
+Fig. 9: Different type of couplings for microstrip hairpin resonators, depending on the separation s.
+
+C. Measured filter
+
+In this section we build a filter using the proposed approach and we compare the simulation of the built
+
+filter with the measurements. We chose a 5th order Butterworth filter of center frequency fc = 3.75GHz,
+
+a bandwidth B = 350MHz, and with 50Ω tapped-line feed [23]. The layout for this type of filter and
+
+the couplings to be found can be seen in Fig. 13a. For this design, a Rogers RO4350 substrate with a
+
+dielectric constant ϵr = 3.48, thickness h = 1.524mm is chosen. The normalized elements of the desired
+
+response are:
+
+g0, g6
+g1, g5
+g2, g4
+g3
+
+1
+0.618
+1.618
+2
+.
+
+These values are converted to the required couplings via the following equations [5]:
+
+Qe,1 = g0g1
+
+∆ ,
+Qe,n = gngn+1
+
+∆
+,
+(9)
+
+Ki,i+1 =
+∆
+√gigi+1
+i = 1, . . . , n − 1.
+(10)
+
+This leads to the following required coupling coefficients:
+
+Qe,1, Qe,5
+K1,2, K3,4
+K2,3, K4,5
+
+6.62
+0.093
+0.052
+
+
+11
+
+1
+1.2
+1.4
+1.6
+1.8
+2
+2.2
+2.4
+2.6
+2.8
+3
+
+0.000
+
+0.020
+
+0.040
+
+0.060
+
+0.080
+
+0.100
+
+s [mm]
+
+K
+
+[22] Fig. 3
+Proposed TD approach
+
+(a) First type of mixed coupling (Fig. 9(a)) as a function of the separation s.
+
+0.5
+1
+1.5
+2
+2.5
+3
+
+0.000
+
+0.005
+
+0.010
+
+0.015
+
+0.020
+
+s [mm]
+
+K
+
+[22] Fig. 3
+Proposed TD approach
+
+(b) Second type of mixed coupling (Fig. 9(b)) as a function of the separation s.
+
+0.5
+1
+1.5
+2
+2.5
+3
+
+0.000
+
+0.010
+
+0.020
+
+0.030
+
+s [mm]
+
+K
+
+[22] Fig. 3
+Proposed TD approach
+
+(c) Electrical coupling (Fig. 9(c)) as a function of the separation s.
+
+0.5
+1
+1.5
+2
+2.5
+3
+
+0.00
+
+0.01
+
+0.01
+
+0.02
+
+0.02
+
+s [mm]
+
+K
+
+[22] Fig. 3
+Proposed TD approach
+
+(d) Magnetic coupling coupling factor (Fig. 9(d) as a function of the separation s.
+
+Fig. 10: Example of extraction of electrical coupling between hairpin resonators. Substrate with ϵr = 10.8,
+
+h = 1.27mm. L = 27.5 mm, w = 1.5mm, g = 2.5mm. Reference curves are taken from [22] Fig. 3,
+
+obtained using the method of moments.
+
+The width of the resonator is chosen to be w = 1.5mm (characteristic impedance around 75Ω) and
+
+g = 2w. The resonator length L was chosen to be L = 9.9mm. For all the simulations the cell size are
+
+
+12
+
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+2
+
+0.00
+
+0.05
+
+0.10
+
+0.15
+
+s [mm]
+
+K
+
+Fig. 11: Internal coupling factor K as a function of separation distance. Substrate with ϵr = 3.52,
+
+h = 1.524mm. L = 9.9mm, w = 1.5mm, g = 3mm.
+
+5
+6
+7
+8
+9
+10
+
+0.00
+
+2.00
+
+4.00
+
+6.00
+
+t [mm]
+
+Qe
+
+Fig. 12: External coupling factor Qe as a function of the tapping point t from (7) using the group delay.
+
+Substrate with ϵr = 3.66, h = 1.524mm. L = 9.9mm, w = 1.5mm, g = 3mm.
+
+w
+g
+L
+s1
+s2
+t
+˜L
+
+Design value
+1.5
+3
+9.9
+1.1
+1.9
+5.35
+9.9
+
+Final value
+1.5
+3
+9.9
+1.1
+1.9
+5.35
+9.4
+
+TABLE I: Initial and final filter dimensions for the filter designed in Section III-C.
+
+chosen as ∆x = ∆y = 0.1mm, ∆z = 0.1524mm, and a Gaussian pulse with fp = 10GHz is used. To
+
+extract the coupling coefficient the Gaussian bandpass filter is chosen to have ˜f = 2B, to minimize the
+
+effect of the double frequency resonances which are closer to fc in this case. The coupling coefficient as
+
+a function of separation is then obtained by running each configuration for a total of 10ns. The obtained
+
+results can be seen in Fig. 11.
+
+To extract the external quality factor, we simulated the feed line and the first resonator from Fig. 13a
+
+using the procedure indicated in Section II-B. Each simulation was run for 10ns, and we extracted the
+
+external quality factor as a function of the tapping point t. The results can be seen in Fig. 12.
+
+Using Figs. 11 and 12 the hairpin separation and tapping points were selected. In order to simulate the
+
+
+13
+
+Qe,1
+K1,2
+K2,3
+K3,4
+K4,5
+Qe,2
+
+10mm
+
+s1
+s2
+
+(a) Layout of a symmetrical 5th order bandpass filter with tapped-line feed.
+
+(b) Manufactured linear hairpin filter on a RO4350 substrate.
+
+Fig. 13: Layout for the designed filter and photograph of the constructed prototype. The filter parame-
+
+terization can be seen in Fig. 7 and its relevant dimensions in Table I.
+
+filters, we needed to set the loss model for the substrate. Since we cannot choose a constant loss tangent
+
+model for gprMax, we used a second order Debye model which we tuned so that the dielectric constant
+
+and loss tangent were close to the values of the substrate in the prescribed frequency range. The model
+
+for the permittivity used is therefore:
+
+ϵ(ω) = ϵinf +
+
+2
+�
+
+m=1
+
+∆ϵi
+
+1 + jωτm
+,
+(11)
+
+where τ1 = 9.8 × 10−11s, τ2 = 1.56 × 10−11s, ∆ϵ1 = ∆ϵ2 = 0.0164, ϵinf = 3.5. Using this loss model,
+
+the value of ˜L was adjusted by numerical simulations to optimize the response of the filter, starting
+
+from the initial value ˜L = L. The feed model used for the filter was the same as for the extraction of
+
+the external quality factor. The feed line length and horizontal clearance around the filter was 100 cells
+
+(including the PML) and the position of the current source and voltage sensor was the same as for the
+
+external quality factor. The initial and final values after this optimization can be seen in Table I. As
+
+can be seen, the only difference between the initial parameters is that the first and last hairpins were
+
+shortened by 0.5mm. A picture of the manufactured filter can be seen in Fig. 13b. Finally, the comparison
+
+between the simulated and measured values can be seen in Fig. 14. It can be seen that the simulation
+
+and measurements are in good agreement. The simulated filter has a passband loss of 1.1dB, while the
+
+measured filter has an additional 0.6dB of loss.
+
+
+14
+
+3
+3.2
+3.4
+3.6
+3.8
+4
+4.2
+4.4
+
+−40
+
+−20
+
+0
+
+f [GHz]
+
+[dB]
+
+S1,1 FDTD
+S2,1 FDTD
+
+S1,1 Measured
+S2,1 Measured
+
+Fig. 14: Measured filter, compared to final filter design after tuning of ˜L.
+
+IV. CONCLUSIONS
+
+In this journal we have presented a procedure to extract the coupling coefficient between microstrip
+
+resonators for the design of filters by using time domain simulations and super-resolution techniques.
+
+We have shown through examples that this technique produces results which are very similar to those
+
+obtained through frequency domain approaches. This was shown to be true even in the case of very low
+
+couplings, where a naive FFT approach from time domain signals would require extremely long and
+
+unrealistic simulation times. This procedure is simple, requiring a minimal adjustment of parameters, and
+
+provides a substantial reduction in simulation times compared to the FFT approach. Also we have shown
+
+that it provides a good performance compared to measurements.
+
+REFERENCES
+
+[1] J.-S. Hong, Microstrip Filters for RF / Microwave Applications.
+Wiley, 2011.
+
+[2] V. Tyurnev, “Coupling coefficients of resonators in microwave filter theory,” Progress In Electromagnetics Research B,
+
+vol. 21, pp. 47–67, 1 2010.
+
+[3] E. G. Cristal and S. Frankel, “Hairpin-line and hybrid hairpin-line/half-wave parallel-coupled-line filters,” IEEE Transactions
+
+on Microwave Theory and Techniques, vol. 20, no. 11, pp. 719–728, Nov 1972.
+
+[4] U. H. Gysel, “New theory and design for hairpin-line filters,” IEEE Transactions on Microwave Theory and Techniques,
+
+vol. 22, no. 5, pp. 523–531, May 1974.
+
+[5] G. Matthaei, L. Young, and E. Jones, Microwave Filters, Impedance-Matching Networks, and Coupling Structures. Artech
+
+House Publishers, 1980.
+
+[6] J.-S. Hong and M. Lancaster, “Couplings of microstrip square open-loop resonators for cross-coupled planar microwave
+
+filters,” IEEE Transactions on Microwave Theory and Techniques, vol. 44, no. 11, pp. 2099–2109, 1996.
+
+[7] J. Hong, “Coupling of asynchronously tuned coupled microwave resonators,” Microwaves, Antennas and Propagation, IEE
+
+Proceedings -, vol. 147, pp. 354 – 358, 11 2000.
+
+[8] C.-F. Chen, T.-Y. Huang, and R.-B. Wu, “Design of microstirp bandpass filter with multiorder spurious-mode suppression,”
+
+Microwave Theory and Techniques, IEEE Transactions on, vol. 53, pp. 3788 – 3793, 01 2006.
+
+[9] P. Stoica and R. Moses, Spectral Analysis of Signals.
+Pearson Prentice Hall, 2005.
+
+
+15
+
+[10] R. Roy, A. Paulraj, and T. Kailath, “Esprit–a subspace rotation approach to estimation of parameters of cisoids in noise,”
+
+IEEE Transactions on Acoustics, Speech, and Signal Processing, vol. 34, no. 5, pp. 1340–1342, 1986.
+
+[11] A. Taflove and S. C. Hagness, Computational electrodynamics: the finite-difference time-domain method, 3rd ed. Norwood:
+
+Artech House, 2005.
+
+[12] C. Warren, A. Giannopoulos, and I. Giannakis, “gprMax: Open source software to simulate electromagnetic wave
+
+propagation for Ground Penetrating Radar,” Computer Physics Communications, vol. 209, pp. 163–170, 2016. [Online].
+
+Available: https://www.sciencedirect.com/science/article/pii/S0010465516302533
+
+[13] Y. Wang, L. Trintinalia, and H. Ling, “Parameter extraction for microstrip components via FDTD and superresolution
+
+techniques,” in IEEE Antennas and Propagation Society International Symposium 1997. Digest, vol. 4, 1997, pp. 2152–
+
+2155 vol.4.
+
+[14] F. Liu, J. Schutt-Aine, and J. Chen, “Full-wave analysis and modeling of multiconductor transmission lines via 2-D-FDTD
+
+and signal-processing techniques,” IEEE Transactions on Microwave Theory and Techniques, vol. 50, no. 2, pp. 570–577,
+
+2002.
+
+[15] J. Chen, C. Wu, T. Lo, K.-L. Wu, and J. Litva, “Using linear and nonlinear predictors to improve the computational efficiency
+
+of the fd-td algorithm,” IEEE Transactions on Microwave Theory and Techniques, vol. 42, no. 10, pp. 1992–1997, 1994.
+
+[16] A. Shaw and K. Naishadham, “ARMA-based time-signature estimator for analyzing resonant structures by the FDTD
+
+method,” IEEE Transactions on Antennas and Propagation, vol. 49, no. 3, pp. 327–339, 2001.
+
+[17] P. Stoica and Y. Selen, “Model-order selection: a review of information criterion rules,” IEEE Signal Processing Magazine,
+
+vol. 21, no. 4, pp. 36–47, 2004.
+
+[18] J. P. C. L. d. Costa, A. Thakre, F. Roemer, and M. Haardt, “Comparison of model order selection techniques for
+
+high-resolution parameter estimation algorithms,” Information technology and electrical engineering devices and systems,
+
+materials and technologies for the future, vol. 54, 2009, p. Session 2.3, Nov 2009.
+
+[19] D. Sheen, S. Ali, M. Abouzahra, and J. Kong, “Application of the three-dimensional finite-difference time-domain method
+
+to the analysis of planar microstrip circuits,” IEEE Transactions on Microwave Theory and Techniques, vol. 38, no. 7, pp.
+
+849–857, 1990.
+
+[20] C. Warren, A. Giannopoulos, A. Gray, I. Giannakis, A. Patterson, L. Wetter, and A. Hamrah, “A CUDA-based GPU
+
+engine for gprMax: Open source FDTD electromagnetic simulation software,” Computer Physics Communications, vol.
+
+237, pp. 208–218, 2019. [Online]. Available: https://www.sciencedirect.com/science/article/pii/S0010465518303990
+
+[21] A. Giannopoulos, “Unsplit implementation of higher order pmls,” IEEE Transactions on Antennas and Propagation, vol. 60,
+
+no. 3, pp. 1479–1485, 2012.
+
+[22] J.-S. Hong and M. J. Lancaster, “Cross-coupled microstrip hairpin-resonator filters,” IEEE Transactions on Microwave
+
+Theory and Techniques, vol. 46, no. 1, pp. 118–122, Jan 1998.
+
+[23] J. Wong, “Microstrip tapped-line filter design,” IEEE Transactions on Microwave Theory and Techniques, vol. 27, no. 1,
+
+pp. 44–50, 1979.
+
+

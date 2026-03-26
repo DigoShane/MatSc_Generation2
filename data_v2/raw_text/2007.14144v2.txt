@@ -1,0 +1,999 @@
+Temperature-transferable coarse-graining of ionic liquids with dual graph
+convolutional neural networks
+Jurgis Ruza,1, 2 Wujie Wang,2 Daniel Schwalbe-Koda,2 Simon Axelrod,2, 3 William H. Harris,2 and Rafael
+Gómez-Bombarelli2, a)
+
+1)Materials Science and Engineering, École Polytechnique Fédérale de Lausanne, Lausanne,
+Switzerland
+2)Department of Materials Science and Engineering, Massachusetts Institute of Technology, Cambridge,
+Massachusetts
+3)Department of Chemistry and Chemical Biology, Harvard University, Cambridge, Massachusetts
+
+Computer simulations can provide mechanistic insight into ionic liquids (ILs) and predict the properties of experimentally
+unrealized ion combinations. However, ILs suffer from a particularly large disparity in the time scales of atomistic
+and ensemble motion. Coarse-grained models are therefore used in place of costly all-atom simulations, accessing
+longer time scales and larger systems. Nevertheless, constructing the many-body potential of mean force that defines
+the structure and dynamics of a coarse-grained system can be complicated and computationally intensive. Machine
+learning shows great promise for the linked challenges of dimensionality reduction and learning the potential of mean
+force. To improve the coarse-graining of ILs, we present a neural network model trained on all-atom classical molecular
+dynamics simulations. The potential of mean force is expressed as two jointly-trained neural network interatomic
+potentials that learn the coupled short-range and many-body long range molecular interactions. These interatomic
+potentials treat temperature as an explicit input variable to capture its influence on the potential of mean force. The
+model reproduces structural quantities with high fidelity, outperforms the temperature-independent baseline at capturing
+dynamics, generalizes to unseen temperatures, and incurs low simulation cost.
+
+I.
+INTRODUCTION
+
+Ionic liquids (ILs) are room temperature liquids composed
+of a molecular cation and anion. ILs have a wide variety of ap-
+plications, including ion transport in batteries and catalysis1,2.
+Because of the wide chemical diversity of molecular anions
+and cations, and their many possible combinations, a vast de-
+sign space for ILs exists. Molecular dynamics simulations can
+characterize the structure and dynamics of ILs at the nanoscale,
+and, to some degree, predict their properties before experimen-
+tal realization. However, due to the complex intermolecular
+forces in ILs, classical force fields need to be fine-tuned to
+recover the correct kinetics and structure3,4. The properties of
+ILs are governed by a variety of interactive forces, including
+weak and isotropic forces such as van der Waals, solvophobic
+and dispersion forces5,6, strong Coulombic forces, anisotropic
+hydrogen bonding7, halogen bonding8, and magnetic dipole,
+electron pair and dipole-dipole interactions9. Further compli-
+cating simulation is the sluggish motion of the ensemble. This
+leads to a large gap in the time scales of atomistic and ensemble
+motion, limiting the size of the molecular system and the time
+scales that can be accessed through simulation.
+Coarse-graining (CG) can increase accessible simulation
+sizes by reducing the dimensionality of the full atomistic model
+to a pseudoparticle representation.10,11 A coarse-grained model
+can be described by a potential energy surface, the many-body
+potential of mean force (PMF). The PMF can be seen as the
+configurational free energy in a reduced phase space and is
+determined by the all-atom potential and the mapping operator
+from a full to a coarse-grained resolution.12
+
+a)Electronic mail: rafagb@mit.edu
+
+However, constructing an accurate many-body PMF that can
+faithfully capture the structure, thermodynamics and kinetics of
+the coarse-grained system is not an easy task. This is because
+reducing the representation and averaging out the fast atomic
+motions introduces complex many-body correlations in the
+PMF. Furthermore, the PMF is conditioned on the choice of
+mapping from the all-atom to the compressed model and on the
+temperature of the reference data. Typically, these mappings
+are chosen based on chemical intuition and trial-and-error,
+although there exist some methods for automatic and statistical
+mapping algorithms.13–15
+
+CG-IL models are particularly challenging because of the
+different transport properties of the two components, which
+further complicates the modeling of the many-body PMF.16–18
+Many authors have developed CG-IL models, and while
+each has achieved some success, none has been completely
+satisfactory. For example, Refs.19–22 studied the 1-butyl-3-
+methylimidazolium cation with different anions. In one case,
+idealized models recovered the structural and energetic proper-
+ties, but their transport properties were unreasonably slow.19
+
+The model was improved upon by Merlet et al.21, and the trans-
+port properties were recovered to a higher degree, but with
+a loss of structural properties.21 Wang et al.20 described an
+effective force coarse-graining applied to an IL system and
+recovered structural (RDF) properties over a range of tempera-
+tures, but they did not investigate dynamics. Ref.22 described
+Newton Inversion and Iterative Boltzmann Inversion methods
+for coarse-graining ILs, and the thermodynamic properties
+were well recovered. However, the model underperformed
+with respect to self-diffusivity, both in proximity to experimen-
+tal data and in temperature scaling.22 Moreover, ILs exist as
+liquids over a wide range of temperatures, and many of their
+desired applications involve temperature swings, but none of
+the CG approaches mentioned above are temperature transfer-
+able. Although energy renormalization has been applied23 for
+
+arXiv:2007.14144v2  [physics.comp-ph]  8 Nov 2020
+
+
+2
+
+temperature-transferable CG focused on recovering structure
+of ILs, work on temperature transferability is lacking.
+Each of the methods above achieved success in many, but
+not all, aspects of coarse graining. Moreover, each method
+required user expertise to create CG models that were not trans-
+ferable to other ionic liquids. An alternative approach is to
+use machine learning (ML). ML approaches can achieve di-
+mensionality reduction in a variety of domains15,24 and learn
+complex functions such as the CG many-body PMF.15,25–27
+Neural coarse graining has been shown to recover ensemble
+quantities of liquid-phase alkanes with high accuracy, and with-
+out expert user input.15 Here we expand on this bottom-up ap-
+proach to learn the encoding function and the associated PMF
+for an 1-butyl-3-methylimidazolium tetrafluoroborate system,
+with two key extensions. First, we condition the PMF on the
+temperature, achieving temperature-transferable dynamics at
+temperatures between two extremes. Second, in order to cap-
+ture the complex many-body intermolecular forces acting on
+CG ILs, we utilize two separate neural network models to learn
+the coupled intra- and inter-molecular PMF. These two key
+features allow coarse-graining more complex condensed phase
+systems like ILs and offer a reliable, automated alternative to
+expert-based IL coarse graining.
+
+FIG. 1. Model framework of the coarse-grained auto-encoder. a - The
+encoder-decoder architecture is optimized by minimizing the sum of
+the reconstruction and force regularization losses (Equation 1). b -
+To achieve discrete mapping, the computational graph is optimized
+using the Gubmel-softmax reparametrization, with weights randomly
+initiated as atom-wise vectors. c - Example of the training scheme
+with the convergence to an atom-wise mapping, the x-axis represents
+each heavy atom in the cation and the y-axis the contribution to each
+bead.
+
+II.
+METHODS
+
+A.
+Auto-encoder coarse-graining
+
+The general schematic of auto-encoder coarse graining is
+shown in Fig. 1. The model is an autoencoder, consisting of an
+encoder that maps the atomistic data to a coarse-grained latent
+representation, and a decoder that maps the latent representa-
+tion back to the atomistic representation. To train the model
+we minimize the autoencoder loss, LAE, which was introduced
+in Ref.15 as:
+
+LAE = 1
+
+N Ex∼P(x)[(D(E(x,g,τ))−x)2 +ρFinst(E(x))2]. (1)
+
+The first term in Eq. 1 is a reconstruction loss, where D is the
+decoder mapping operator from the coarse-grained variables to
+the all atom representation, E is the encoder mapping operator
+from the all atom representation to the coarse-grained beads, x
+is the observed atomistic samples from all-atom MD snapshots
+(atomic number and cartesian coordinates of every atom in the
+all-atom MD snapshot). N is the number of coarse grained
+beads. g is sampled from a Gumbel distribution and is used
+for learning the categorical, discrete coarse-grained weights
+for each atom using Gumbel-softmax reparametrization.28 τ
+is a temperature-like variable that decreases along training to
+achieve discrete encoding in the coarse-grained mapping E.
+The second term is an instantaneous force regularization, min-
+imizing of it produces less noisy mapped forces (Finst) of a
+therefore smoother coarse-grained energy landscape. Finst is
+the instantaneous mapped force acting on the CG beads, and is
+calculated from the encoding function and the atomic forces on
+a given all-atom MD frame, Finst(z) = −b∇V(x). The recon-
+struction loss statistically minimizes the loss of geometrical
+information that occurs when going through the latent space,
+and the force regularization is used to minimize the fluctua-
+tions in the mean force of the encoded space. By choosing
+the CG mapping that minimizes force fluctuations, a smoother
+energy landscape is achieved and more intuitive mappings are
+obtained. A weight parameter ρ is introduced as a heuristic to
+adjust the balance between the two terms.
+
+B.
+Temperature-dependent graph neural network potentials
+
+Once a mapping E was chosen, a matching PMF was fit-
+ted through a graph convolutional neural network based on
+the SchNet model.29 In the SchNet model the geometry is
+transformed into a set of atomic fingerprints (the “convolution”
+component), and a fully connected network transforms the
+fingerprints into an output (the “readout” component). The
+convolution blocks consist of a message step and update step
+to systematically gather information from neighboring atoms.
+A neighbor is defined as an atom within a fixed distance cutoff
+(discussed further below). Defining v as index for each atom
+and its neighbors as N(v), the tth graph convolution updates
+the atomic feature vectors hv by aggregating “messages” from
+
+
+3
+
+their connected atoms v and their edge features euv, through30:
+
+ht
+v = ht−1
+v
++ ∑
+u∈N(v)
+messaget(hu,euv)
+(2)
+
+The initial feature vector h0 is generated from a learnable
+embedding of atomic numbers. By performing the convolution
+operations several times, a many body correlation function can
+be parametrized to represent the many body potential of mean
+force of the coarse-grained ionic liquid complex. In the case of
+SchNet, the update function is simply a sum over the atomic
+embeddings. The message function is parameterized by
+
+messaget(euv,hv) = MLP3(MLP1(euv)◦MLP1(hv)),
+(3)
+
+where MLP denotes a multi-layer perceptron and ◦ is the con-
+catenation operation. The readout consists of a sum over MLPs
+acting on each of the N atomic embedding at the final (T th)
+convolution:
+
+Energy =
+N
+∑
+v
+MLP(hT
+v ).
+(4)
+
+Further details of the original model can be found in Ref.29.
+Figure 2 shows the neural network architecture for fitting a
+coarse-grained potential. The model is based on the SchNet
+architecture, but uses graph convolutions performed at two
+scales through two separate networks [as defined in Eq. (2)].
+Specifically, an intramolecular embedding (hv, intra) is calcu-
+lated by performing graph convolutions only among atoms
+belonging to the same molecule and within an intramolecular
+distance threshold (dintra). A second intermolecular embedding
+(hv, inter) is calculated by performing graph convolutions among
+atoms non belonging to the same molecule, and within an in-
+termolecular distance threshold (dinter). dintra and dinter are
+hyperparameters chosen through hyperparameter optimization,
+typically with dinter > dintra. The parallel graph convolution
+passes create two embeddings for each CG bead. These embed-
+dings are summed and the single resulting fingerprint then fed
+into a multi-layer perceptron for atomic energy parametriza-
+tion. The per-atom energies are summed into a total energy,
+and its derivative fitted through stochastic force matching. The
+purpose of this restrictive design was to differentiate the atomic
+environment after coarse-graining: the convolution procedure
+can differentiate its CG bead neighbor by inter-molecular in-
+teractions and intra-molecular interactions. This is necessary
+because intra- and inter-molecular distances in CG systems
+are closer than in all-atom simulations, but have distinct and
+complicated functional forms. For example, covalently linked
+beads in the cation interact through different mechanisms than
+non-bonded ion pairing regardless of distance. Even point
+charge interactions become complex anisotropic functions in
+the PMF landscape, yet occur over distances comparable to
+intramolecular interactions.
+A classical bond prior with fixed bond lengths between
+the cation pseudoparticles to achieve better learning of the
+intramolecular interactions,
+
+Fbond = k(ri −rj)2,
+(5)
+
+FIG. 2. Overview of the neural network architecture, which is based
+on the SchNet model29. Instead of having a single interaction block,
+two are used to model the inter- and intra-molecular interactions of
+the coarse-grained atoms. Temperature learning and classical priors
+in the forms of excluded volume and bond length are also used.
+
+where k is a spring constant hyperparameter, and ri, rj are
+the positions of neighboring particles. Furthermore, an ex-
+cluded volume prior was added to obtain better intermolecular
+interactions:
+
+Fex =
+�
+||
+1
+
+ri −rj
+||σex
+
+�nex
+,
+(6)
+
+with σex and nex hyperparameters related to the excluded vol-
+ume.
+We further included temperature as a neural network input to
+parameterize a temperature-dependent potential of mean force.
+We considered that temperature induces fluctuations and biases
+in the mean forces and thereby affects structural correlation.
+To this end, we transformed the inverted temperature T into
+an embedding to be combined with the convolution operations,
+thereby modifying the structural representation. In particular,
+we generated a thermodynamic embedding γ according to
+
+γ = ˜MT −1,
+(7)
+
+where ˜M is a linear matrix of size 1×Nbasis that maps the tem-
+perature dependence into the same size as the atomic embed-
+
+
+4
+
+ding and T is the thermostat temperature of the all-atom NPT
+simulation. After the convolution layers, the intramolecular
+embedding was summed with the intermolecular embedding;
+the dot product of the atomic and thermodynamic embeddings
+was taken. A shallow, 2-layer MLP was used as readout layer
+to map individual embeddings into atomic energies as in Eq.
+(4).
+
+Energy =
+N
+∑
+v
+MLP((hT
+v, intra +hT
+v, inter)·γ)+Fex +Fbond
+(8)
+
+C.
+Stochastic force matching
+
+The force-matching approach for parameterizing force fields
+was proposed in Ref.10 to reproduce structural correlation func-
+tions. Given an atomistic potential energy function V(x) with
+the partition function Z, the probabilistic distribution of atom-
+istic configurations is:
+
+P(x) = 1
+
+Z e−βV(x).
+(9)
+
+The distribution function of coarse-grained variables PCG(z)
+and the corresponding many-body potential of mean force
+A(z) is the log-likelihood of the distribution of coarse-grained
+variables. It is a free energy obtained from marginalizing over
+micro-states that are mapped to the coarse-grained coordinates,
+
+A(z) = − 1
+
+β lnPCG(z).
+(10)
+
+The mean force of the coarse-grained variables is the average of
+instantaneous forces conditioned on the mapping bx = z31,32:
+
+− dA
+
+dz = F(z) = ⟨−b∇V(x)⟩E(x)=z
+(11)
+
+where b corresponds to the mapping assignment from the all-
+atom to the coarse-grained representation. Force matching
+requires the minimization of the loss function:
+
+min
+θ L = min
+θ E[(F(z)+∇zVCG(z))2]
+(12)
+
+where θ are the parameters in VCG and ∇VCG represents the
+“coarse-grained forces” which can be obtained from automatic
+differentiation. As proposed in Zhang et al., if Ez[Finst] =
+F(z) is assumed, the loss function can be reformulated as the
+following minimization target:
+
+min
+θ Linst = min
+θ E[Finst(z)+∇VCG(z))2].
+(13)
+
+This minimization target has also been used in several works
+with stochastic gradient descent.15,26 Instead of matching mean
+forces that need to be obtained from constrained dynamics,
+the model minimizes Linst with respect to VCG(z) and E(x).
+This target provides a data-driven target for optimizing coarse-
+grained force fields.
+
+FIG. 3. Radial distribution functions of the ionic liquid system with
+300 cation and anion molecules. GT denotes the ground truth and
+T-NFF is the temperature transferable neural force field. Results are
+shown at temperatures of a) 300 K, b) 400 K (out of sample), c) 500
+K.
+
+III.
+RESULTS
+
+The model was trained on molecular dynamics simulations
+performed with the Large-scale Atomic/Molecular Massively
+Parallel Simulator (LAMMPS) engine33, with a publicly avail-
+able custom force field for ionic liquids3,4. The simulation box
+was created with a size of 300 ion pairs with PACKMOL34. A 1
+ns NPT simulation with a Nosé-Hoover thermostat and barostat
+was run to equilibrate the box followed by a 10 ns simulation
+performed at different temperatures, each repeated 3 times
+with different randomly initiated starting velocities to obtain
+larger space sampling. A subsample of the dataset was used
+for training: out of the 30,000 timesteps, 6,000 were evenly
+sampled and used further. The model was then trained on data
+from 300, 350, 450 and 500 K simulations, with hyperparam-
+eters chosen using Bayesian hyperparameter optimization as
+detailed in the Supplementary Information section. New CG
+molecular dynamics simulations with the trained models were
+run at 300-500 K in 50 K increments, thus including exper-
+iments at 400 K, outside of the training data. The new CG
+
+
+5
+
+FIG. 4. Transport properties of the coarse-grained ionic liquid. a)
+Mean squared displacement (MSD) over 1 ns long range at 300 K. b)
+Diffusivity across a temperature range from 300 K to 500 K.
+
+simulations were run at NVT ensamble with the Nose-Hoover
+thermostat at a timestep of 1fs. The structure and dynamics of
+CG simulations was then compared with the all-atom ground
+truth.
+In keeping with the convention in the field, we utilized 1
+bead to represent the anion. The choice of number and mapping
+of beads to represent the cation is less settled. Here, we tested
+two representations of 1-butyl-3-methylimidazolium through
+either 2 or 4 pseudoparticles (CG3 and CG5 respectively, when
+counting anion bead).
+Figure 1 a shows the mapping and average reconstruction
+of 1-butyl-3-methylimidazolium. As expected, the 4-bead
+model led to good reconstruction, since it captures the ori-
+entation of the alkyl chain. The assignment learned by the
+auto-encoder structure agrees with prior intuition: one bead
+for the side methyl group and two ring atoms, one bead for the
+two following carbon atoms in the ring, one bead for the other
+imidazolium nitrogen and two connected linear carbons (Fig.
+6), and a final bead for the terminal ethyl group. Because the
+model only learns to reconstruct average positions, rotationally
+equivalent atoms were typically reconstructed near their center
+of gyration.
+Figure 3 shows the radial distribution functions (RDF) of the
+CG5 model (4-bead cation plus tetrafluoroborate anion). The
+ground truth reference data is the result of applying the CG
+mapping to held out all-atom frames. The RDFs are in close
+agreement with the ground truth data. Both the cation-anion
+and anion-anion interactions have been reproduced to a high
+degree. Additionally, the cation-cation interactions and the
+positions of all peaks have been accurately recovered, but their
+intensities show some deviations from the ground truth. The
+difference between the second and third cation-cation peaks
+further decrease at higher temperatures.
+The RDF at 400 K shown in Fig. 3b shows that the model
+produces stable dynamics at temperatures outside the train-
+ing set, and can recover structural properties of systems with
+similar accuracy as at reference temperatures. Bond distance
+distribution comparisons can be found in the Supplementary
+Information.
+Transport properties such as self-diffusivity are very relevant
+to the use of ILs as ionic conductors, and effective CG simula-
+tions should ideally recover dynamic properties to the best de-
+gree possible. Experiments have shown that the self-diffusivity
+
+Ea
+(kJ mol-1)
+Molecule
+GT
+T-NFF
+NFF
+CG3
+
+Cation
+20.7±1.5 14.3±1.6 10.4±0.6 9.4±0.7
+Anion
+21.6±2.9 16.7±1.8 12.2±0.5 8.7±0.6
+
+TABLE I. Activation energy for diffusivity of the ground truth and
+CG neural force field for the tested cases. T-NFF and NFF are with
+the 5 pseudoparticle representation, and CG3 is trained on the T-NFF
+model with 3 pseudoparticle representation.
+
+of the 1-butyl-3-methylimidazolium tetrafluoroborate ionic
+liquid exhibits Arrhenius behavior17,18. Figure 4a shows the
+mean-squared displacement calculated by the Einstein relation
+at 300 K:
+
+Dself = 1
+
+2 lim
+τ→∞
+⟨[ri(t +τ)−ri(t)]2⟩
+
+τ
+.
+(14)
+
+The evolution of CG T-NFF displacement is about an or-
+der of magnitude faster than the ground truth all-atom system.
+This is because in the CG model, the small, fast movements
+of hydrogen atoms are averaged out, thus reducing the overall
+friction of the system and speeding up the dynamics, more dis-
+cussion change of dynamics in the supplementary information.
+Fig. 4b shows the self-diffusivity across a temperature range
+from 300 K to 500 K, including out-of-sample simulations
+at 400 K. Both the ground truth and the T-NFF show similar
+relations between the cation and the anion. At lower temper-
+atures, the cation has strictly faster dynamics than the anion,
+but at higher temperatures this difference shrinks. The T-NFF
+shows the same relation at lower temperatures, but at higher
+temperatures the difference shrinks faster than for the ground
+truth.
+Figure 5b shows the Arrhenius-type relation of the coarse-
+grained anion and cation. The Pearson correlation coefficient
+between for the linear fit is -0.981 and -0.982 for cations and
+anions respectively. The cation and anion curves intersect in the
+high temperature range as in the ground truth simulation (Table
+I), although the intersection occurs at a higher temperature.
+Figure 5 weighs the impact of the temperature embedding in
+the model by comparing the outcome of CG simulations from
+a temperature-independent model (NFF) with the temperature-
+dependent T-NFF results. Both models were trained on the
+same data from all-atom simulations at 300, 350, 450 and 500
+K and have the same hyperparameters. Figure 5 shows the
+RDFs and Arrhenius relations between the ground truth and
+the models. The two models reproduce the structural properties
+to a similar degree and the Arrhenius relation of the system is
+similarly linear. However, as seen from the slopes in Fig. 5b
+and activation energies in Table I, the temperature-averaged
+NFF has not learned the temperature effect on dynamics as well
+as its counterpart and produces a much lower activation energy
+in addition to accelerated dynamics. It also underestimates the
+temperature at which cation and anion diffusivities cross.
+Figure 6 compares the performance the CG3 model (2-bead
+cation) to the CG5 model. In Fig. 6a, it can be seen that
+both the 3 and 5 bead models recover structural properties at
+a temperature that has not been included in the training data.
+
+
+6
+
+FIG. 5. Comparison of a model trained without the temperature
+embedding layer (NFF) and the temperature transferable model (T-
+NFF). a) RDF of the ground truth, temperature transferable model
+and neural force field without the temperature transferability, ran at
+400 K. b) Arrhenius plot comparison of the models.
+
+Nevertheless, significant differences are seen in the dynami-
+cal properties derived from the Arrhenius relation. Both the
+models have recovered the linear relation, including the 400K
+out-of-sample trajectory, but the CG3 model grossly underesti-
+mates the activation energy (Table I).
+
+IV.
+DISCUSSION
+
+We have introduced a novel extension of graph convolu-
+tional neural networks to learn many body PMFs by separating
+short-range intramolecular and longer-range many-body inter-
+molecular terms, and incorporated a temperature transferable
+embedding to learn the temperature dependence of a many-
+body PMF. The model has been trained on all-atom simula-
+tions of a ionic liquid system, 1-butyl-3-methylimidazolium
+tetrafluoroborate, whose PMF is known to be difficult to con-
+struct. The reconstruction of the structural properties has been
+achieved to a high degree. Furthermore, the Arrhenius relation
+for self-diffusivity has been obtained with the neural force
+field, but with faster dynamics. The fast dynamics arise due
+to the averaging of fast motions in the system, which in turn
+decrease the overall friction of the system. If dynamics cannot
+be reconstructed exactly, it is preferable that the activation
+energy for diffusion remain constant between all-atom to CG
+simulations, and a simple scaling of the dynamics is observed.
+Other strategies based on spectral matching25 or differentiable
+simulations35 could be utilized to further condition the encod-
+
+FIG. 6. Comparison of models trained on a 3 bead representation (2
+cation and 1 anion, CG3) and on a 5 bead representation (4 cation and
+1 anion, CG5). Both models use the temperature transferable model
+(T-NFF). a) RDF of the ground truth, temperature transferable model
+with 3 and 5 bead representations, ran at 400 K. b) Arrhenius plot
+comparison of the models.
+
+ing function and PMF to reproduce system dynamics.
+Results from a single graph convolutional neural network
+with a single interaction block for both inter- and intra-
+molecular interaction have not been included in this work for
+comparison with the novel dual graph convolutional neural net-
+work. This is because no stable simulations could be performed
+with the simpler model. No choice of hyperparameters led to
+a model that could run coarse-grained IL molecular dynamics
+simulations without the system collapsing on itself. This is
+likely because in a coarse-grained model the distances between
+the beads of a single molecule are on a much larger scale than
+those of atoms in the same molecule. These intramolecular
+distances are then closer to intermolecular distances, and as
+such it becomes harder for a single interaction layer to separate
+them and learn the structural and dynamics properties of the
+system. This highlights the key contribution of the dual graph
+convolutions introduced in this work.
+A comparison in performance was made between the tem-
+perature dependent neural force field (T-NFF) and the neural
+force field without the temperature learning embedding layer
+(NFF) (see Fig. 5). Both models overestimated the dynam-
+ics at lower temperatures equally, but at higher temperatures
+NFF was significantly slower. The T-NFF showed more ho-
+mogeneous acceleration of dynamics across the temperature
+range and as such reproduced the Arrhenius-like temperature
+dependence much better, largely scaling the overall kinetics
+by a constant factor of 3-6 at all temperatures. Interestingly,
+the T-NFF model faithfully captured the loss of linearity in the
+
+
+7
+
+Arrhenius plot at the lowest temperature that is present in the
+all-atom simulation and may be related to the system getting
+trapped in a glassy state. Previous works on on coarse-grained
+ILs, such as Roy et al.19 and Moradzadeh et al.36, heavily
+underestimated dynamics. The model of Roy et al. was im-
+proved by Merlet et al. to attain an agreement of diffusivity21,
+although at the cost of accuracy of structural properties.
+Different cation representations were also compared. Both
+3- and 5-bead models recovered the structural properties to a
+similar degree, but the 5 bead model led to better learning of
+the dynamic temperature relation, despite the overestimation of
+the rate of the self-diffusion in both cases. The model described
+in this work can accurately learn the many-body PMF of a CG
+model for a complicated system, is accurate and transferable
+over a range of temperatures, requires little user input and can
+to be applied to other condensed-phase systems, leading to
+easier, more accurate, and more generalizable CG simulations
+of complex condensed-phase systems.
+
+SUPPLEMENTARY INFORMATION
+
+Includes description of training details and hyperparameter
+selection, further description of parameters of Eq. 1, bond dis-
+tance distribution comparisons for the 5 pseudoparticle model,
+RDF and bond distance distribution comparisons of the 3 pseu-
+doparticle model. Finally, mean squared displacement compar-
+isons by shifting timescale or temperature are also showed.
+
+ACKNOWLEDGMENTS
+
+The authors thank the MIT Energy Initiative (MITEI),
+Toyota Research Institute, MIT-IBM and DARPA (Award
+HR00111920025) for financial support The computations in
+this paper were executed at the Massachusetts Green High-
+Performance Computing Center with support from MIT Re-
+search Computing..
+
+CREDIT
+
+This article may be downloaded for personal use
+only.
+Any other use requires prior permission of the au-
+thor and AIP Publishing.
+This article appeared in the
+AIP Journal of Chemical Physics and may be found at
+https://doi.org/10.1063/5.0022431.
+
+DATA AND CODE AVAILABLITY
+
+The computer code use and training all-atom tra-
+jectories
+used
+to
+train
+the
+models
+are
+available
+at
+https://github.com/learningmatter-mit/T-NFF
+
+REFERENCES
+
+1Jairton Dupont, Roberto F. De Souza, and Paulo A.Z. Suarez.
+Ionic
+liquid (molten salt) phase organometallic catalysis. Chemical Reviews,
+102(10):3667–3692, 10 2002.
+2Meng Chang Lin, Ming Gong, Bingan Lu, Yingpeng Wu, Di Yan Wang,
+Mingyun Guan, Michael Angell, Changxin Chen, Jiang Yang, Bing Joe
+Hwang, and Hongjie Dai. An ultrafast rechargeable aluminium-ion battery.
+Nature, 520(7547):325–328, 4 2015.
+
+3José N. Canongia Lopes and Agílio A.H. Pádua. Molecular force field
+for ionic liquids III: Imidazolium, pyridinium, and phosphonium cations;
+chloride, bromide, and dicyanamide anions. Journal of Physical Chemistry
+B, 110(39):19586–19592, 10 2006.
+
+4José N. Canongia Lopes, Johnny Deschamps, and Agílio A. H. Pádua.
+Modeling Ionic Liquids Using a Systematic All-Atom Force Field. The
+Journal of Physical Chemistry B, 108(6):2038–2047, 2 2004.
+
+5Tamar L. Greaves and Calum J. Drummond. Solvent nanostructure, the
+solvophobic effect and amphiphile self-assembly in ionic liquids. Chemical
+Society Reviews, 42(3):1096–1120, 2 2013.
+
+6Ekaterina I. Izgorodina, Dorothea Golze, Radha Maganti, Vanessa Armel,
+Maria Taige, Thomas J.S. Schubert, and Douglas R. Macfarlane. Importance
+of dispersion forces for prediction of thermodynamic and transport properties
+of some common ionic liquids. Physical Chemistry Chemical Physics,
+16(16):7209–7221, 4 2014.
+7Koichi Fumino and Ralf Ludwig. Analyzing the interaction energies between
+cation and anion in ionic liquids: The subtle balance between Coulomb
+forces and hydrogen bonding. Journal of Molecular Liquids, 192:94–102, 4
+2014.
+
+8Tomohiro Mukai and Keiko Nishikawa. 4,5-Dihaloimidazolium-based ionic
+liquids: Effects of halogen-bonding on crystal structures and ionic conduc-
+tivity. RSC Advances, 3(43):19952–19955, 11 2013.
+
+9Hemant K. Kashyap and Ranjit Biswas. Solvation dynamics of dipolar
+probes in dipolar room temperature Ionic liquids: Separation of Ion - Dipole
+and Dipole - Dipole interaction contributions. Journal of Physical Chemistry
+B, 114(1):254–268, 1 2010.
+
+10Sergei Izvekov and Gregory A. Voth. A multiscale coarse-graining method
+for biomolecular systems. Journal of Physical Chemistry B, 109(7):2469–
+2473, 2 2005.
+
+11W. G. Noid, Jhih Wei Chu, Gary S. Ayton, Vinod Krishna, Sergei Izvekov,
+Gregory A. Voth, Avisek Das, and Hans C. Andersen. The multiscale coarse-
+graining method. I. A rigorous bridge between atomistic and coarse-grained
+models. Journal of Chemical Physics, 128(24):244114, 6 2008.
+
+12W. G. Noid. Perspective: Coarse-grained models for biomolecular systems.
+Journal of Chemical Physics, 139(9):090901, 9 2013.
+
+13Li-Jun Chen, Hu-Jun Qian, Zhong-Yuan Lu, Ze-Sheng Li, and Chia-
+Chung Sun. An Automatic Coarse-Graining and Fine-Graining Simulation
+Method: Application on Polyethylene. The Journal of Physical Chemistry
+B, 110(47):24093–24100, 11 2006.
+
+14Leandro E. Lombardi, Marcelo A. Martí, and Luciana Capece. CG2AA:
+backmapping protein coarse-grained structures. Bioinformatics, 32(8):1235–
+1237, 4 2016.
+
+15Wujie Wang and Rafael Gómez-Bombarelli. Coarse-graining auto-encoders
+for molecular dynamics. npj Computational Materials, 5(1):125, 12 2019.
+
+16M. H. Kowsari, Saman Alavi, Mahmud Ashrafizaadeh, and Bijan Na-
+jafi. Molecular dynamics simulation of imidazolium-based ionic liquids.
+I. Dynamics and diffusion coefficient.
+Journal of Chemical Physics,
+129(22):224508, 12 2008.
+
+17Tatsuya Umecky, Mitsuhiro Kanakubo, and Yutaka Ikushima. Self-diffusion
+coefficients of 1-butyl-3-methylimidazolium hexafluorophosphate with
+pulsed-field gradient spin-echo NMR technique. In Fluid Phase Equilibria,
+volume 228-229, pages 329–333. Elsevier, 2 2005.
+
+18J. Sangoro, C. Iacob, A. Serghei, S. Naumov, P. Galvosas, J. Kärger,
+C. Wespe, F. Bordusa, A. Stoppa, J. Hunger, R. Buchner, and F. Kre-
+mer. Electrical conductivity and translational diffusion in the 1-butyl-3-
+methylimidazolium tetrafluoroborate ionic liquid. The Journal of Chemical
+Physics, 128(21):214509, 6 2008.
+
+19Durba Roy, Nikhil Patel, Sean Conte, and Mark Maroncelli. Dynamics in an
+idealized ionic liquid model. Journal of Physical Chemistry B, 114(25):8410–
+8424, 7 2010.
+
+
+8
+
+20Yanting Wang, Shulu Feng, and Gregory A. Voth. Transferable coarse-
+grained models for ionic liquids. Journal of Chemical Theory and Computa-
+tion, 5(4):1091–1098, 4 2009.
+
+21Céline Merlet, Mathieu Salanne, and Benjamin Rotenberg. New coarse-
+grained models of imidazolium ionic liquids for bulk and interfacial molec-
+ular simulations. Journal of Physical Chemistry C, 116(14):7687–7693, 4
+2012.
+
+22Yong Lei Wang, Alexander Lyubartsev, Zhong Yuan Lu, and Aatto Laakso-
+nen. Multiscale coarse-grained simulations of ionic liquids: Comparison of
+three approaches to derive effective potentials. Physical Chemistry Chemical
+Physics, 15(20):7701–7712, 5 2013.
+
+23Wenjie Xia, Jake Song, Cheol Jeong, David D. Hsu, Frederick R. Phelan,
+Jack F. Douglas, and Sinan Keten. Energy-Renormalization for Achieving
+Temperature Transferable Coarse-Graining of Polymer Dynamics. Macro-
+molecules, 50(21):8787–8796, 11 2017.
+
+24Rafael Gómez-Bombarelli, Jennifer N. Wei, David Duvenaud, José Miguel
+Hernández-Lobato, Benjamín Sánchez-Lengeling, Dennis Sheberla, Jorge
+Aguilera-Iparraguirre, Timothy D. Hirzel, Ryan P. Adams, and Alán Aspuru-
+Guzik. Automatic Chemical Design Using a Data-Driven Continuous Rep-
+resentation of Molecules. ACS Central Science, 4(2):268–276, 2 2018.
+
+25Feliks Nüske, Lorenzo Boninsegna, and Cecilia Clementi. Coarse-graining
+molecular systems by spectral matching. Journal of Chemical Physics,
+151(4):044116, jul 2019.
+
+26Jiang Wang, Simon Olsson, Christoph Wehmeyer, Adrià Pérez, Nicholas E.
+Charron, Gianni De Fabritiis, Frank Noé, and Cecilia Clementi. Machine
+Learning of Coarse-Grained Molecular Dynamics Force Fields. ACS Central
+Science, 5(5):755–767, 5 2019.
+
+27Jiang Wang, Stefan Chmiela, Klaus-Robert Müller, Frank Noé, and Ce-
+cilia Clementi. Ensemble learning of coarse-grained molecular dynamics
+force fields with a kernel approach. The Journal of Chemical Physics,
+152(19):194106, may 2020.
+
+28Eric Jang, Shixiang Gu, and Ben Poole. Categorical reparameterization with
+gumbel-softmax. arXiv preprint arXiv:1611.01144, 2016.
+
+29K. T. Schütt, H. E. Sauceda, P. J. Kindermans, A. Tkatchenko, and K. R.
+Müller. SchNet - A deep learning architecture for molecules and materials.
+Journal of Chemical Physics, 148(24):241722, 6 2018.
+
+30Justin Gilmer, Samuel S. Schoenholz, Patrick F. Riley, Oriol Vinyals, and
+George E. Dahl. Neural message passing for quantum chemistry. In 34th
+International Conference on Machine Learning, ICML 2017, volume 3,
+pages 2053–2070, 4 2017.
+
+31Evangelia Kalligiannaki, Vagelis Harmandaris, Markos A. Katsoulakis, and
+Petr Plecháˇc. The geometry of generalized force matching and related
+information metrics in coarse-graining of molecular systems. The Journal
+of Chemical Physics, 143(8):084105, 8 2015.
+
+32Eric Darve.
+Numerical methods for calculating the potential of mean
+force. In New Algorithms for Macromolecular Simulation, pages 213–249.
+Springer, 2006.
+
+33Steve Plimpton. Fast parallel algorithms for short-range molecular dynamics.
+Journal of Computational Physics, 117(1):1–19, 5 1995.
+
+34L. Martinez, R. Andrade, E. G. Birgin, and J. M. Martínez. PACKMOL: A
+package for building initial configurations for molecular dynamics simula-
+tions. Journal of Computational Chemistry, 30(13):2157–2164, 10 2009.
+
+35Wujie Wang, Simon Axelrod, and Rafael Gómez-Bombarelli. Differentiable
+Molecular Simulations for Control and Learning. arXiv:2003.00868, 2020.
+
+36Alireza Moradzadeh, Mohammad H. Motevaselian, Sikandar Y. Mashayak,
+and Narayana R. Aluru. Coarse-Grained Force Field for Imidazolium-Based
+Ionic Liquids. Journal of Chemical Theory and Computation, 14(6):3252–
+3261, 6 2018.
+
+37Ruben Martinez-Cantin, Kevin Tee, and Michael McCourt.
+Practical
+bayesian optimization in the presence of outliers. In Amos Storkey and
+Fernando Perez-Cruz, editors, Proceedings of the Twenty-First Interna-
+tional Conference on Artificial Intelligence and Statistics, volume 84 of
+Proceedings of Machine Learning Research, page 1722–1731, Playa Blanca,
+Lanzarote, Canary Islands, 09–11 Apr 2018. PMLR.
+
+38Siewert J Marrink, Alex H De Vries, and Alan E Mark. Coarse grained model
+for semiquantitative lipid simulations. The Journal of Physical Chemistry B,
+108(2):750–760, 2004.
+
+39Riccardo Baron, Alex H De Vries, Philippe H Hünenberger, and Wilfred F
+van Gunsteren. Configurational entropies of lipids in pure and mixed bilayers
+from atomic-level and coarse-grained molecular dynamics simulations. The
+
+Journal of Physical Chemistry B, 110(31):15602–15614, 2006.
+
+40Siewert J Marrink, H Jelger Risselada, Serge Yefimov, D Peter Tieleman, and
+Alex H De Vries. The martini force field: coarse grained model for biomolec-
+ular simulations. The journal of physical chemistry B, 111(27):7812–7824,
+2007.
+
+
+1
+
+SUPPLEMENTARY INFORMATION
+
+Training details
+
+Figure 7 shows the train and test validation for the two mod-
+els reported in the main text of the paper (T-NFF and NFF).
+Hyperparameter optimization was done via SigOpt - Bayesian
+hyperparameter optimization tool.37 While optimizing the hy-
+perparameters on SigOpt, the optimization goal was the MAE
+of the RDF from the NFF model to the ground truth. An
+overview of this optimization routine is the following: the
+hyperparameters are selected, the model is trained and a 100
+ps-long MD simulation with the NFF model is run. Then,
+the MAE between the RDF from this simulation is compared
+against the ground truth and new hyperparameters are selected
+based on this criteria. In the scope of the neural network
+training, the hyperparameters (with their respective values in
+brackets) that were optimized include: dinter(8) and dintra(7) as
+the neighbor-list distance cutoffs, natombasis(240), nfilters(256)
+and ngaussians(80) as convolution layer parameters, ninterconv(2)
+and nintraconv(3) as the number of convolutions for the inter-
+and intramolecular interaction blocks, σex(7.730579) and
+nex(7) as the excluded volume parameters and k(11.286249)
+as the bond prior hyperparameter.
+Selected hyperparam-
+eters and the trained model for T-NFF can be found on
+the
+https://github.com/learningmatter-mit/T-NFF
+repository.
+
+FIG. 7. Training and test loss for the model with the temperature
+transferable embedding (T-NFF) and the one without (NFF)
+
+The selection of the weight parameter ρ from equation 1
+(main text), is based on the reconstruction loss and the per-
+formance of the CG model according to structural metrics.
+Generally, low ρ implies high importance given to atomistic
+reconstruction, which will favor high-resolution CG models
+with many beads so loss of structural information is minimized.
+High ρ implies high importance given to minimizing instan-
+taneous fluctuations in the CG forces and will favor low reso-
+lution models with few CG beads which lose more structural
+information but result in a smoother PMF.
+In the case of 1-butyl-3-methylimidazolium tetrafluorobo-
+rate, at high ρ values, the coarse-grained mapping converges
+
+to a mapping with 2 beads, even if the model was created with
+4 beads (Figure 8 a). The minimization of the mean force
+fluctuation does not take into account the number of mapping
+dimensions and as such converges to the mapping with the
+smallest mean forces, ignoring the excess dimensions that had
+been made available to the model. Having fewer coarse-grained
+beads to be mapped to leads to more atoms mapped to the same
+bead, thus averaging out the forces in different directions and
+as such leading to a smaller mean force value. When the pa-
+rameter ρ is smaller, the model converges to mappings with
+larger reconstruction loss (loss .241 (Figure 8 c) compared to
+that of 0.221 of the Figure 8 b).
+
+Simulation details and results
+
+Figure 9 shows the learned bond distributions of the temper-
+ature transferable graph convolutional neural network at 300
+K. The model has properly learned the complex multivariate
+distributions of the interatomic distances to a high degree.
+
+FIG. 8. The learned coarse-grained assignments for different ρ pa-
+rameters. Colors indicate the relative contribution of each atom to the
+coarse-grained particle.
+
+Figure 10 shows the RDFs across a temperature range for
+the 2 pseudoparticle representation of the cation as well as the
+recovered bond distribution. It can be seen from Fig. 10b that
+the model has performed reasonably well in recovering the
+structural properties at 400 K even when this temperature has
+not been included in the training data.
+Figure 11 shows the mean squared displacement compared
+of the T-NFF and the ground truth with different scaling fac-
+tors applied to the ground truth data to obtain overlap of the
+data. Across the three temperatures (400, 450, 500) the scal-
+ing factors vary between 6 and 3. The scaling factor is not
+exactly constant across the temperatures and ranges for 6 to 3,
+as the relation between temperature with dynamic properties
+is not linear. Previous research has outlined a reasoning that
+coarse-grained simulations generally have some scaling factor
+regarding the time scale of the simulation. For example in
+the MARTINI force field, among other works on lipids there
+are reported scaling factors in the margins from 2-10 from the
+atomistic simulations,38–40 in keeping with the scaling found
+here. Given the value of the activation energy of self-diffusion
+
+
+2
+
+FIG. 9. Bond distributions in the coarse-grained cation at 300K. a) The distribution between the first and second pseudoparticle, b) between the
+second and third pseudoparticle, c) between the third and fourth pseudoparticle. d) the overlay of the auto-encoder generated coarse-grained
+mapping and positions of pseudoparticles on top of 1-butyl-3-methylimidazolium.
+
+the acceleration factor is somewhat equivalent to increasing
+the temperature by 100K.
+On the other hand, previous ionic liquid research mention the
+time-scale shift in the coarse-grained models as a temperature
+
+shift19. In figure 12 this is investigated by comparing the T-
+NFF and the ground truth at a 100K increase. It can be noted
+that in the temperature range after the 100K increase there is a
+noticeable agreement between the ground truth and the model.
+
+
+3
+
+FIG. 10. Radial distribution functions and bond distributions of the ionic liquid system with 300 cation and anion molecules, where the cation is
+represented with 2 pseudoparticles. a) At 300 K, b) at 400 K, and c) at 500K. d) Recovered bond distribution at 300 K of the 2 bead cation
+representation.
+
+FIG. 11. Mean squared displacement comparison of the T-NFF model and the ground truth at the same temperature, but timescale has been
+shifted by various degrees to have dynamics alignment. a) Both at 400K temperature, but the ground truth time has been scaled by a factor of 6,
+b) both at 450K temperature, but the ground truth time has been scaled by a factor of 4 and c) both at 500K temperature, but the ground truth
+time has been scaled by a factor of 3
+
+FIG. 12. Mean squared displacement comparison of the T-NFF model and the ground truth at 100K higher than the T-NFF simulation. a) T-NFF
+at 300K and ground truth at 400K, b) T-NFF at 350K and ground truth at 450K and 3) T-NFF at 400K and ground truth at 500K
+
+

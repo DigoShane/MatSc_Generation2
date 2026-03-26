@@ -1,0 +1,2965 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Machine learning for metal additive manufacturing: Predicting temperature and melt pool fluid dynamics using physics-informed neural networks</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2020-09-16">16 Sep 2020</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Qiming</forename><surname>Zhu</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Department of Civil and Environmental Engineering</orgName>
+								<orgName type="institution">University of Illinois at Urbana-Champaign</orgName>
+								<address>
+									<settlement>Champaign</settlement>
+									<region>IL</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Zeliang</forename><surname>Liu</surname></persName>
+							<affiliation key="aff1">
+								<orgName type="department">Livermore Software Technology</orgName>
+								<orgName type="institution">an ANSYS company</orgName>
+								<address>
+									<settlement>Livermore</settlement>
+									<region>CA</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Jinhui</forename><surname>Yan</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="department">Department of Civil and Environmental Engineering</orgName>
+								<orgName type="institution">University of Illinois at Urbana-Champaign</orgName>
+								<address>
+									<settlement>Champaign</settlement>
+									<region>IL</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Machine learning for metal additive manufacturing: Predicting temperature and melt pool fluid dynamics using physics-informed neural networks</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2020-09-16">16 Sep 2020</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">899ADB6A06A7AF61D0243E788A117621</idno>
+					<idno type="arXiv">arXiv:2008.13547v2[cs.CE]</idno>
+					<note type="submission">Preprint submitted to Elsevier September 17, 2020</note>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-03T23:51+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>The recent explosion of machine learning (ML) and artificial intelligence (AI) shows great potential in the breakthrough of metal additive manufacturing (AM) process modeling, which is an indispensable step to derive the process-structure-property relationship. However, the success of conventional machine learning tools in data science is primarily attributed to the unprecedented large amount of labeled data-sets (big data), which can be either obtained by experiments or first-principle simulations. Unfortunately, these labeled data-sets are expensive to obtain in AM due to the high expense of the AM experiments and prohibitive computational cost of high-fidelity simulations, hindering the direct applications of big-data based ML tools to metal AM problems.</p><p>To fully exploit the power of machine learning for metal AM while alleviating the dependence on "big data", we put forth a physics-informed neural network (PINN) framework that fuses both data and first physical principles, including conservation laws of momentum, mass, and energy, into the neural network to inform the learning processes. To the best knowledge of the authors, this is the first application of physics-informed deep learning to three dimensional AM processes modeling. Besides, we propose a hard-type approach for Dirichlet boundary conditions (BCs) based on a Heaviside function, which can not only exactly enforce the BCs but also accelerate the learning process. The PINN framework is applied to two representative metal manufacturing problems, including the 2018 NIST AM-Benchmark test series. We carefully assess the performance of the PINN model by comparing the predictions with available experimental data and high-fidelity simulation results, , using finite element based variational multi-scale formulation. The investigations show that the PINN, owed to the additional physical knowledge, can accurately predict the temperature and melt pool dynamics during metal AM processes with only a moderate amount of labeled data-sets. The foray of PINN to metal AM shows the great potential of physics-informed deep learning for broader applications to advanced manufacturing. All the data-sets and the PINN code will be made open-sourced in https://yan.cee.illinois.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1.">Introduction</head><p>It has been widely believed that metal additive manufacturing (AM) can revolutionize mechanical, aerospace, and biomedical industries owing to its superior capability to print metals with complex geometries directly from digital models without the design constraints of traditional manufacturing routes. The market of metal AM has been growing significantly for the past decade. However, compared with the total manufacturing market, the industrial adoption of metal AM has not reached its expected potential due to a lack of reliable process-structure-property relationships. For the past several years, predictive computational models, in conjunction with in-situ and ex-situ measurements and monitoring <ref type="bibr" target="#b0">[1]</ref><ref type="bibr" target="#b1">[2]</ref><ref type="bibr" target="#b2">[3]</ref>, have been playing an indispensable role in enhancing the understanding of the processstructure-property relationship in metal AM. Federal agencies have also conducted several benchmark experiments, such as NIST AM-bench <ref type="bibr" target="#b3">[4]</ref> and AFRL AM modeling challenge series <ref type="bibr" target="#b4">[5]</ref>, to facilitate the development of metal AM modeling tools.</p><p>Among various computational models at different scales and fidelity, thermal-fluid process simulation is not only an essential tool to understand the metal AM physics but also acts as a spearhead to derive the process-structure-property relationship. The metal AM process is intrinsically a multi-scale and multi-physics problem, involving rapid, complex, and coupled mass/flow/heat exchanges between gas, liquid, and solid phases, with large density ratios and complicated interfacial phenomenon. Current numerical simulation tools often employ mathematical models that couple Navier-Stokes equations and a heat transfer equation to capture the evolution of temperature and melt pool dynamics during manufacturing processes. For decades, the manufacturing community has been adopting computational methods that directly solve these mathematical models or their weak forms, based on spatial discretization (e.g., finite difference, finite volume, finite element, and mesh-free methods) and time-stepping.</p><p>The predictive capacities of these approaches have been significantly enhanced, thanks to the researchers' persistent efforts in numerical method development from the manufacturing and computational mechanics/mathematics communities. For example, Lawrence Livermore National Lab developed a thermal-fluid solver using the Arbitrary-Lagrangian Eulerian technique, which can simulate laser powder bed fusion (LPBF) processes at powder-scale <ref type="bibr" target="#b5">[6]</ref><ref type="bibr" target="#b6">[7]</ref><ref type="bibr" target="#b7">[8]</ref><ref type="bibr" target="#b8">[9]</ref>; Knapp et al. <ref type="bibr" target="#b9">[10]</ref> and Mukherjee et al. <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b11">12]</ref> developed a coupled thermal-fluid model to simulate directed energy deposition (DED) and laser powder bed fusion (LPBF) processes. Lin et al. <ref type="bibr" target="#b12">[13,</ref><ref type="bibr" target="#b13">14]</ref> developed a control-volume finite element approach to simulate directed energy deposition process. Lattice Boltzmann method has been used to model the metal powder melting and re-solidification in <ref type="bibr" target="#b14">[15]</ref><ref type="bibr" target="#b15">[16]</ref><ref type="bibr" target="#b16">[17]</ref>; Zohdi group employed a discrete particle method to describe the selective laser sintering process <ref type="bibr" target="#b17">[18]</ref><ref type="bibr" target="#b18">[19]</ref><ref type="bibr" target="#b19">[20]</ref>; Yan et al. developed a volume-of-fluid (VoF) based thermal-fluid solver to model multi-layer and multi-track LPBF process <ref type="bibr" target="#b20">[21]</ref><ref type="bibr" target="#b21">[22]</ref><ref type="bibr" target="#b22">[23]</ref><ref type="bibr" target="#b23">[24]</ref><ref type="bibr" target="#b24">[25]</ref>; Panwisawas et al. also employed a VoF method by using OpenFOAM to analyze the inter-layer and inter-track void formation <ref type="bibr" target="#b25">[26]</ref>; Li et al. developed a thermal-fluid model by combining level set method and Lagrangian particle tracking to investigate powder-gas interaction in LPBF processes <ref type="bibr" target="#b26">[27]</ref>. CFD-ACE+, a code developed by ESI group, has been used to analyze the defects such as porosity, balling, and denudation in metal AM <ref type="bibr" target="#b27">[28,</ref><ref type="bibr" target="#b28">29]</ref>; The last author of this paper <ref type="bibr" target="#b29">[30]</ref> developed a gas-liquid-solid thermal flow model based on the level set method and residual-based variational multi-scale method to simulate laser spot melt pool flows. Li. et al. used a mesh-free model based on material point method for selective laser beam melting processes <ref type="bibr" target="#b30">[31]</ref>. Gan et al. developed a finite element method (FEM) based thermal-fluid model and applied it to the NIST AM-Bench problems <ref type="bibr" target="#b31">[32]</ref>.</p><p>The core of these conventional approaches can be summarized as the process of replacing PDEs with a set of algebra equations that can be handled by digital computers. Despite the continued success and evolution, these methods require sophisticated mathematical treatments for spatiotemporal discretizations, coupling strategies, boundary conditions, and linear solvers to ensure stability, robustness, and efficiency. The application of these approaches to real additive manufacturing problems is prohibitively expensive and intricate. The highfidelity simulations are typically executed in a parallel environment and consume massive high-performance computing (HPC) hours. Also, the performance of these approaches is often problem-dependent, necessitating numerical practitioners to have a deep understanding of not only the manufacturing problems but also the underlying mathematical techniques.</p><p>Machine learning (ML) and artificial intelligence (AI) have the potential to accelerate breakthroughs in thermal-fluid modeling for metal AM processes by harnessing data from sensors, experiments, and high-fidelity simulations. In general, ML focuses on algorithmic modeling of data and making predictions of labels based on observations, with emphasis on making accurate predictions for classification and regression tasks. Modern deep learning approaches have demonstrated tremendous successes in domains ranging from sentiment analysis to chemical predictions to material design <ref type="bibr" target="#b32">[33]</ref><ref type="bibr" target="#b33">[34]</ref><ref type="bibr" target="#b34">[35]</ref><ref type="bibr" target="#b35">[36]</ref><ref type="bibr" target="#b36">[37]</ref><ref type="bibr" target="#b37">[38]</ref>. The first reason for the major success of modern ML techniques, especially deep learning, is the availability of vast amounts of data (big-data). The second reason is that many technical burdens have been mitigated by advances in both hardware and software, including high-performance computers, graphics processing units (GPUs), fast large-scale optimization schemes, new optimality guarantees, and many user-friendly open-sourced packages, such as Tensorflow <ref type="bibr" target="#b38">[39]</ref>, PyTorch <ref type="bibr" target="#b39">[40]</ref>, Theano <ref type="bibr" target="#b40">[41]</ref>, and Caffe <ref type="bibr" target="#b41">[42]</ref>.</p><p>However, using deep learning for AM process modeling is still challenging. The primary challenge arises from the lack of large labeled data-sets since either experimental measurements or high-fidelity simulated data of AM processes are expensive to attain, rendering the big data-based ML/AI algorithms infeasible. The good news in scientific problems, however, is that there is highly condensed knowledge and expertise available in fundamental conservation, evolution, or constitutive principles, which are often expressed as a set of partial differential equations (PDEs). One can incorporate this type of knowledge into ML/AI models to enhance their predictive capability in sparse data regions. Nowadays, these approaches are coined as scientific machine learning (SciML) in the computational mathematics/mechanics communities. In particular, a widely used approach in SciML is to train a conventional deep learning (DL) model such as Gaussian process regression (GPR) <ref type="bibr" target="#b42">[43,</ref><ref type="bibr" target="#b43">44]</ref> or deep neural network (DNN) <ref type="bibr" target="#b44">[45]</ref><ref type="bibr" target="#b45">[46]</ref><ref type="bibr" target="#b46">[47]</ref><ref type="bibr" target="#b47">[48]</ref><ref type="bibr" target="#b48">[49]</ref> with physical principle constraints. Existing research has demonstrated SciMLs capability in sparse-data scenarios for various application areas, such as environmental study <ref type="bibr" target="#b49">[50,</ref><ref type="bibr" target="#b50">51]</ref>, material science <ref type="bibr" target="#b51">[52,</ref><ref type="bibr" target="#b52">53]</ref>, and cardiovascular modeling <ref type="bibr" target="#b45">[46,</ref><ref type="bibr" target="#b53">54,</ref><ref type="bibr" target="#b54">55]</ref>.</p><p>Although most of the SciML applications are restricted to single physics systems, we envision the general concept can be extended to tackle the multi-physics problems in metal AM. Thus, this paper put forth a SciML framework for metal additive manufacturing processes to predict the temperature field and melt pool fluid dynamics via a physics-informed neural network (PINN). We aim to fully take advantage of the prediction capabilities of deep neural networks while significantly reducing the amount of costly training labeled data. To this end, the physical conservation laws of momentum, mass, and energy are fused into a fully connected neural network by penalizing the loss function with the residuals of the Navier-Stokes equations and enthalpy conservation equation on a set of collocation points. Owed to this additional knowledge, the learning process only requires a small amount of labeled data-set. Besides, to impose the necessary Dirichlet boundary condition (BC), we borrow the idea from the interface-capturing approach widely used in multi-phase fluid mechanics, in which a small portion of the neural network is solely used to enforce the Dirichlet BC by a Heaviside function. This "hard" approach can not only precisely satisfy the Dirichlet BC but also speed up the learning process, compared with the conventional "soft" approach that uses additional constraint in the loss function to enforce the BC. Once the model is trained, the quantities of interest, such as temperature, velocity, pressure, and melt pool dimensions, can be predicted accurately.</p><p>The paper is structured as follows. Section 2 represents the physics-informed neural network framework, in which the PDEs of physical principles, design of loss function, enforcement of Dirichlet BC, and training procedures are introduced in an articulated way. Section 3 demonstrates the applications of the PINN framework to two representative manufacturing problems. The first application is using the PINN framework to solve a classic solidification problem from the textbook by Dantzig and Rappaz <ref type="bibr" target="#b55">[56]</ref>. For this problem, the PINN is informed by the energy conservation law and trained without labeled dataset. We compare the performance of "hard" BC and "soft" BC on this problem in terms of both accuracy and learning efficiency. The predictive capability of the PINN is assessed by comparing it with the standard finite element method (FEM) with resolution refinement studies. The second application is utilizing the PINN framework to predict the temperature field and melt pool fluid dynamics for the 2018 NIST AM-Bench test series. We utilize a validated finite element based variational multi-scale formulation (VMS) <ref type="bibr" target="#b29">[30]</ref> to generate the synthetic training data-sets. The investigations show that the PINN, informed by conservation laws of momentum, mass, and energy, can accurately and efficiently predict the melt pool dimension, fluid field, and cooling rate for the three selective laser beam melting tests done by NIST with a small amount of training data. We summarize the contributions and limitations of the paper and outline future work in Section 4. The methods and setup details of high-fidelity FEM based thermal fluid simulations that are used for generating training data and validation are presented in the Appendix.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.">Methods</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.1.">Governing partial differential equations</head><p>This section presents the governing equations of the thermal-fluid flows in metal AM processes. The theory of the equations builds upon the tacit assumptions that the solid phase is a highly viscous fluid with the same constant density as the liquid phase, and the loss of metal material due to vaporization <ref type="bibr" target="#b56">[57,</ref><ref type="bibr" target="#b57">58]</ref> and the effects on heat loss, composition change and fluid motion are negligible. A flat top surface is adopted based on the fact that the melt pool deformation is small compared with the melt pool dimensions in the problems considered in the paper. With the above assumptions, the thermal-fluid model based on conversation laws of momentum, mass, and energy is defined as the following coupled PDEs</p><formula xml:id="formula_0">ρ(u ,t + u • ∇u -g) + ∇p -2µ∆u = 0 (1) ∇ • u = 0 (2) (ρc p T ) ,t + u • ∇(ρc p T ) + (ρLf L ) ,t + u • ∇(ρLf L ) -κ∇ 2 T -Q T = 0<label>(3)</label></formula><p>Here Eq. 1 and Eq. 2 are the Navier-Stokes equations of incompressible flows, where u is the velocity field, p is the pressure field, g is the gravitational acceleration vector, ∇ is the gradient operator, ∆ is the Laplace operator, ρ and µ are the density and dynamic viscosity, respectively.</p><p>Eq. 3 is the conversation equation of energy, where T is temperature field, c p is the specific heat capacity, L is the latent heat of fusion, κ is the thermal conductivity, Q T is an energy source.</p><p>To have well-posed systems, Eqs.1-3 are subjected to the following Dirichlet and Neumann boundary conditions</p><formula xml:id="formula_1">u = u bc (4) p = p bc (5) T = T bc<label>(6)</label></formula><formula xml:id="formula_2">-pn + 2µ∇ S u • n = τ (7) κ∇T • n = q (8)</formula><p>where u bc , p bc and T bc are the prescribed velocity, pressure, and temperature on Dirichlet boundaries, respectively. τ and q are the prescribed traction and heat flux on the Neumann boundaries, respectively. ∇ S is a symmetric gradient operator and n is the unit normal vector on the boundary.</p><p>In the model, the solid and liquid phases are distinguished by a liquid fraction f L , which takes 1 in the liquid phase, 0 in the solid phase, and a linear profile in the mushy zone <ref type="bibr" target="#b58">[59]</ref>. f L is defined as</p><formula xml:id="formula_3">f L =    0 if T &lt; T s T -Ts T l -Ts if T s ≤ T ≤ T l 1 if T &gt; T l<label>(9)</label></formula><p>where T s and T l are the solidus and liquidus temperature, respectively. With the assistance of f L , the material properties in the thermal-fluid model are evaluated by the following interpolation</p><formula xml:id="formula_4">ψ = f L ψ L + (1 -f L )ψ S (<label>10</label></formula><formula xml:id="formula_5">)</formula><p>where ψ denotes the specific material property in the model (e.g., density, dynamic viscosity, specific heat capacity, heat conductivity), and ψ L and ψ S are the corresponding property in the liquid and solid phase, respectively.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.">Physical informed neural network (PINN) for Thermal-fluid flows</head><p>Neural network is a computing architecture that is vaguely inspired by the biological neural networks that constitute animal brains <ref type="bibr" target="#b59">[60]</ref>. Some typical neural network architectures are fully connected neural network (FC-NN) <ref type="bibr" target="#b60">[61]</ref>, convolutional neural network (CNN) <ref type="bibr" target="#b61">[62]</ref>, and recurrent neural network (RNN) <ref type="bibr" target="#b62">[63]</ref>, which have been successfully used in a variety of machine learning applications, such as system identification and control, signal classification, pattern recognition, 3D reconstruction, sequence recognition, social network filtering, data mining, and medical diagnosis <ref type="bibr" target="#b47">[48,</ref><ref type="bibr" target="#b63">[64]</ref><ref type="bibr" target="#b64">[65]</ref><ref type="bibr" target="#b65">[66]</ref><ref type="bibr" target="#b66">[67]</ref>. In this paper, the PINN of the thermal-fluid model makes use of a fully connected deep neural network (FCNN) <ref type="bibr" target="#b60">[61]</ref>, where the neurons of adjacent layers are fully connected. Figure <ref type="figure">1</ref> shows the schematic picture of the fully connected neural network used in this paper, which consists of an input layer, hidden layers, and an output layer. A neural network with more than one hidden layer is conventionally called a deep neural network, whose function approximation capability increases with the number of hidden layers and neurons <ref type="bibr" target="#b67">[68]</ref>. A deep neural network maps the input z 0 to the output z L from the input layer to the output layer. In the hidden layers, each layer receives outputs from the previous layer and feeds forward inputs to the next layer. The relation of between the input and output of the l th layer (l = 1, ..., L -1) is defined as</p><formula xml:id="formula_6">z l = σ l (w T l z l-1 + b l )<label>(11)</label></formula><p>Figure <ref type="figure">1</ref>: A fully connected deep neural network for metal AM.</p><p>where w l and b l are the weight matrix and bias vector of this layer, respectively. σ l is the activation function that can introduce the non-linearity to the system <ref type="bibr" target="#b68">[69]</ref>. Widely used activation functions in deep learning are tanh function, Rectified linear unit (Relu), sigmoid function <ref type="bibr" target="#b69">[70]</ref>. In this paper, we employ a swish activation function <ref type="bibr" target="#b70">[71]</ref>, which is a smoothed version of Relu function, defined as</p><formula xml:id="formula_7">σ(x) = swish(x) = x sigmoid(x) = x/(1 -e -x )<label>(12)</label></formula><p>The goal of the neural network is to learn the following mapping for a given set of manufacturing parameters (e.g,. alloy properties, laser power, and scanning speed):</p><formula xml:id="formula_8">[t, x] W ,b --→ [u N N , p N N , T N N ] (<label>13</label></formula><formula xml:id="formula_9">)</formula><p>where the input [t, x] are the collocation points (in both space and time) of interest. The output u N N , p N N , T N N are the velocity, pressure, and temperature fields we want to predict.</p><p>To enable such a mapping, the hidden parameters of the neural network, W and b, need to be identified by optimizing a meticulously designed loss function, which will be given in the next section. Once W , and b are determined, the output prediction can be easily achieved by a feed-forward evaluation, which is very efficient since only a few matrix multiplications are needed in Eq. 11.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.1.">Loss function design</head><p>The loss function, L(W , b), in the PINN for thermal-fluid flows consists of two components: L data (W , b) and L pde (W , b), which represents the constraint of matching existing labeled data and the constraints of satisfying fundamental physical principles. Their definitions are given as follows.</p><p>Let û, p, and T denote the available labeled data for velocity, pressure, and temperature, respectively. These labeled data can be either obtained by experiments or validated highfidelity simulations. As a mean squared deviation (MSD) of the discrepancy between the prediction and labeled data, the component in the loss function from the data constraint, L data , is defined as</p><formula xml:id="formula_10">L data (W , b) = 1 N u Nu i=1 [u N N (x i , t i , W , b) -û(x i , t i )] 2<label>(14)</label></formula><formula xml:id="formula_11">+ 1 N p Np i=1 [p N N (x i , t i , W , b) -p(x i , t i )] 2 + 1 N T N T i=1 T N N (x i , t i , W , b) -T (x i , t i ) 2</formula><p>where N u , N p , and N T are the number of labeled velocity, pressure, and temperature data points, respectively. Conventional off-the-shelf machine learning tools purely minimize this loss function to identify the hidden parameters. The success of this approach requires a massive amount of data-sets. However, considering the cost of experimental measurements and high-fidelity simulations, these labeled velocity, pressure, and temperature data points are expensive (sometimes impossible) to obtain. This limitation hinders the direct application of big-data based machine learning tools to metal AM process prediction.</p><p>To alleviate the dependence on big-data, we substitute extra expertise in fundamental physical principles into the loss function. These physical principles, often expressed as a set of PDEs with appropriate initial and boundary conditions, are highly condensed knowledge of fundamental physical mechanisms that can inform the neural network. For that, we first define the following residuals of conversation equations of momentum, mass, and energy (corresponding to Eqs.(1-3)) as</p><formula xml:id="formula_12">   r M := ρ(u ,t + u • ∇u -g) + ∇p -2µ∆u r C := ∇ • u r T := (ρc p T ) ,t + u • ∇(ρc p T ) + (ρLf L ) ,t + u • (ρL∇f L ) -κ∇ 2 T -Q T (15)</formula><p>To have well-posed systems, appropriate initial and boundary conditions are often necessary. In this paper, the initial boundary conditions are treated as part of the labeled data constraint. For boundary conditions (BCs), many existing PINN frameworks utilize a "soft" approach by designing additional loss components defined on the collocation points of boundaries to constrain the BCs. The downsides of this approach are two-fold: (1) The accuracy of satisfying the BCs is not guaranteed ; (2) The assigned weight of BC loss can affect learning efficiency, and no theory is existed to guide choosing the weight at this point.</p><p>In this paper, we treat the Dirichlet BC in a "hard" way by using a particular portion of the neural network to purely satisfy the prescribed Dirichlet BC. For that, we first define a Heaviside function as</p><formula xml:id="formula_13">H (x) = 1 -cos[d(x)π/ ] if d(x) &lt; 1 if d(x) ≥<label>(16)</label></formula><p>where d(x) is the distance to the Dirichlet boundary. defines a artificial thickness of the boundary. With H (x), the predictions of the neural networks are defined as</p><formula xml:id="formula_14">u N N = u bc [1 -H (x)] + uH (x) (17) p N N = p bc [1 -H (x)] + pH (x) (18) T N N = T bc [1 -H (x)] + T H (x)<label>(19)</label></formula><p>where u bc , p bc , and T bc are the prescribed velocity, pressure, and temperature. u, p, and T are the solutions that satisfy the PDEs in the interior. Since H (x) smoothly changes from 1 to 0 as d(x) approaches to 0, the prediction will automatically satisfy the prescribed values by definition, without needing additional constraint. Then, the loss term from the PDEs with embedded Dirichlet BCs is defined as.</p><formula xml:id="formula_15">L 1 pde (W , b) = 1 N r1 N r1 i=1 r M [u N N (x i , t i , W , b), p N N (x i , t i , W , b), T N N (x i , t i , W , b))] 2 (20) + 1 N r1 N r1 i=1 r C [u N N (x i , t i , W , b), p N N (x i , t i , W , b), T N N (x i , t i , W , b))] 2 + 1 N r1 N r1 i=1 r T [u N N (x i , t i , W , b), p N N (x i , t i , W , b), T N N (x i , t i , W , b))] 2</formula><p>where N r1 denotes the number of collocation points to constrain the PDEs.</p><p>In the thermal-fluid flow model for metal AM processes, Neumann BCs incorporate surface tension for flow field and laser for thermal field. In this paper, the Neumann BCs are handled by the conventional way, where the following term is added in the loss function</p><formula xml:id="formula_16">L 2 pde (W , b) = 1 N r2 N r2 i=1 2µ∇ S u N N (x i , t i , W , b) • n -p N N (x i , t i , W , b)n -τ (x i , t i ) 2 (21) + 1 N r3 N r3 i=1 [κ∇T N N (x i , t i , W , b) • n -q(x i , t i )] 2</formula><p>where N r2 and N r3 denote the number of collocation points on the fluid and temperature Neumann boundaries, respectively. With above definitions, The hidden parameters W and b are obtained by minimizing the following total loss function, which are a linear combination of data constraint of L data and PDE constraints of L 1 pde and L 2 pde .</p><p>min</p><formula xml:id="formula_17">W ,b L(W , b) = (1 -λ 1 pde -λ 2 pde )L data (W , b) + λ 1 pde L 1 pde (W , b) + λ 2 pde L 2 pde (W , b)<label>(22)</label></formula><p>λ 1 pde and λ 2 pde are two positive numbers between 0 and 1, which define the weight of the physical law constraints in the loss function.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.2.2.">Learning procedure</head><p>The PINN model is trained by minimizing the loss function defined in Eq. 22. Most of current machine learning frameworks solve the optimization problem by a stochastic gradient descent (SGD) algorithm, which is a stochastic approximation of the gradient descent (GD) optimization <ref type="bibr" target="#b71">[72]</ref>. SGD only uses a subset of collocation points, randomly sampled from the input space at each iteration, to calculate the directional gradient. Research shows that SGD works very well to skip bad local minima. One issue with SGD is the oscillation of gradient direction caused by the random selection of sampled collocation points. In this paper, the Adam method <ref type="bibr" target="#b72">[73]</ref> that combines adaptive learning rate and momentum methods is used to improve convergence speed <ref type="bibr" target="#b72">[73]</ref>.</p><p>The PINN learning process needs the spatial and temporal derivatives of u, p, and T , which can be accurately and efficiently calculated by using automatic differentiation (AD) <ref type="bibr" target="#b73">[74]</ref>. The basic idea of AD is to use the chain rule to back-propagate derivatives from the output layer to the input layer since the connection between layers of a neural network is analytically defined. Compared to numerical differentiation techniques (e.g., finite difference and finite element), AD does not suffer from truncation or round-off errors, resulting in much higher accuracy. AD has been gaining increasing attention in the machine learning community and has been implemented in many modern deep learning frameworks, such as TensorFlow <ref type="bibr" target="#b38">[39]</ref>, PyTorch <ref type="bibr" target="#b39">[40]</ref>, Theano <ref type="bibr" target="#b40">[41]</ref>, and Caffe <ref type="bibr" target="#b41">[42]</ref>. In this paper, the PINN formulation is implemented in TensorFlow.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.">Applications</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1.">Solidification of aluminum in a graphite mold without labeled data</head><p>The solidification process of aluminum in a graphite mold from the textbook Solidification by Dantzig and Rappaz <ref type="bibr" target="#b55">[56]</ref> is investigated to assess the performance of the PINN formulation. Only thermodynamics with phase transition is considered in the simulations here. Figure <ref type="figure" target="#fig_0">2</ref> shows the problem setup, where the left half of the domain (-0.4 m ≤ x ≤ 0.0 m) is occupied by a solid graphite mold with temperature T low = 298.15 K, and the right half of the domain (0.0 m &lt; x ≤ 0.4 m) is occupied with liquid aluminum with temperature T high = 973.15 K, which is higher than the melting temperature of aluminum T melt = 933.15K. As depicted in Figure <ref type="figure" target="#fig_0">2</ref> (lower), solidification occurs by transferring heat from the aluminum into the mold, and the solid-liquid interface propagates towards the right end. The material properties of the graphite mold and aluminum are given in Table <ref type="table" target="#tab_0">1</ref>. The analytical solutions have been derived in <ref type="bibr" target="#b55">[56]</ref> for this problem and are specified as follows. </p><p>where x * is the location of solid-liquid interface over time, T m , T s , and T l are the temperature distribution in the mold, solid aluminum, and liquid aluminum, respectively. Despite the simplicity, solving this problem provides valuable insights into the solidi-fication behavior and the performance of the machine learning model. The PINN model employs 5 hidden layers and 200 neurons of each layer, which provides better results over others based on our non-exhaustive investigation. The neural network is physically informed with the energy conservation principle defined in Eq. 3 and trained without labeled data-set.</p><p>The PINN model predicts the temperature distribution from t = 5 s to t = 10 s. Figure <ref type="figure" target="#fig_1">3</ref> illustrates the PINN setup and the resulting temperature prediction in the spacetime (x -t) slab for the solidification process. We compare the performance of the proposed "hard" approach with the conventional "soft" approach for the Dirichlet boundary condition in Figure <ref type="figure" target="#fig_3">4</ref>, which depicts the learning process and temperature predictions at 10 s. The plot shows that the "hard" approach can not only facilitate the learning process (see Figure <ref type="figure" target="#fig_3">4</ref> (left)) but also produce more accurate temperature prediction (see Figure <ref type="figure" target="#fig_3">4</ref> (right)). One important question is how does the PINN's predictive capability compare with traditional numerical methods, such as finite element method (FEM). To answer this question, we simulate this solidification problem by using PINN with four different numbers of collocation points and linear FEM with four equivalent resolutions (N x = 50, 100, 150, and 200 along x direction). Figure <ref type="figure" target="#fig_5">5</ref> shows the predictions of PINN and FEM for the time history of solid-liquid interface position with the four resolutions. The convergence rate of error of temperature prediction over the x -t slab is shown in Figure <ref type="figure" target="#fig_6">6</ref>. The two plots indicate that PINN and FEM obtain similar convergence rates. However, when the resolution is low, the PINN still attains high accuracy while noticeable discrepancy is observed for the standard FEM.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2.">NIST AM-bench test series</head><p>In this section, we apply the PINN framework to the Additive Manufacturing Benchmark (AM-Bench) test series conducted by the National Institute of Standards and Technology (NIST) <ref type="bibr" target="#b74">[75,</ref><ref type="bibr" target="#b75">76]</ref>. In 2018, NIST performed a series of metal AM experiments with different manufacturing parameters, which attracted blind simulations to compare with the in-situ and ex-situ measurements, such as temperature, melt pool dimensions and micro-structures <ref type="bibr" target="#b74">[75]</ref>. The archived experimental measurements provide valuable benchmark data for modelers to test the predictive capabilities of simulation models. In this paper, we use the proposed PINN   t ( s )</p><formula xml:id="formula_19">F E M -1 F E M -2 F E M -3 F E M -4</formula><p>A n a l y t i c  framework to predict the temperature, melt pool fluid dynamics, melt pool dimensions, and cooling rates during the NIST AM processes, which corresponds to the first challenge in the NIST AM-Bench test series <ref type="bibr" target="#b75">[76]</ref>. To the best knowledge of the authors, this is the first application of PINN to three dimensional metal AM processes modeling.   <ref type="table" target="#tab_1">2</ref>. The laser is applied by imposing the following moving heat flux on the substrate.</p><formula xml:id="formula_20">κ∇T • n = q laser = 2Qη πr 2 b exp( -2((x -V s t) 2 + y 2 ) r 2 b ) (<label>27</label></formula><formula xml:id="formula_21">)</formula><p>where Q is the laser power, η is the absorptivity, r b is the laser beam radius, V s is the laser scanning speed. η = 0.43 and r b = 50 µm are used in this paper. Table <ref type="table">3</ref> lists the laser power and scanning speed of three cases used in the NIST experiments. Based on the fact that the top surface deformation is relatively small compared with the melt pool dimension, a flat top surface is assumed, and the following boundary condition is applied for the fluid field.</p><p>-pn</p><formula xml:id="formula_22">+ 2µ∇ s u • n = τ = dσ dT [∇T -(∇T • n)n]<label>(28)</label></formula><p>where dσ dT is the Marangoni coefficient, which is only effective in the tangential direction of the temperature gradient. Except for the top surface, no-slip and fixed reference temperature boundary conditions are used for other surfaces.</p><p>The PINN model employs a fully connected neural network with 5 hidden layers and 250 neurons per layer, which provides a better balance of accuracy and training efficiency over others based on our non-exhaustive investigation. The model is physically informed by the conservation laws of momentum, mass, and energy defined in Eqs. 1-3. A total of 788, 651 collocation points in the x -t slab are used to penalize the PDE residuals (see Eq. 15) in the loss function. Due to the limited point-wise measurements provided by NIST, we use high-fidelity finite element thermal-fluid simulations to generate the labeled data-sets to facilitate the training. The simulated results are treated as "ground truth" after being compared with the NIST experimental measurements. Appendix briefly presents the core formulation of the finite element formulation that has also been validated for other metal manufacturing process modeling <ref type="bibr" target="#b29">[30]</ref>. The setup for FEM simulations, such as time step and mesh size, is also specified in Appendix. The FEM simulations have been run up to 2.0 ms for all the three cases listed in Table <ref type="table">3</ref>, but only a small portion of the simulated data between 1.2 ms and 1.5 ms is used as labeled training data in the PINN model, which then predicts the manufacturing processes for a wider time interval from 0 ms to 2.0 ms.</p><p>We first compare the predicted results of FEM and PINN with available experimental data for case B (195 W, 0.8 m/s). The purpose is two-fold: 1) Ensure the credibility of FEM data as the training data; 2) Validate the PINN model. Figure <ref type="figure">8</ref> shows the temperature field, melt pool fluid dynamics, and melt pool shape at 2.0 ms. The fast-moving laser, along with the effect of a negative Marangoni coefficient that drives the liquid metal from higher temperature to lower temperature, leading to a long and shallow melt pool. The predicted temperature profile along the scan track and experimental measurement extracted from <ref type="bibr" target="#b76">[77]</ref> is plotted in Figure <ref type="figure">9</ref> for comparison. The predicted results by both FEM and PINN show good agreement with available experimental data. Figure <ref type="figure">8</ref> and Figure <ref type="figure">9</ref> also show that the PINN model, with a moderate amount of training data, can generate very similar predictions of temperature, melt pool length, and melt pool fluid velocity to those of FEM.</p><p>We then apply the PINN model to all the three cases listed in Table <ref type="table">3</ref>. The predicted melt pool shape and the fluid velocity field within the melt pool are presented in Figure <ref type="figure" target="#fig_10">10</ref>. </p><formula xml:id="formula_23">(J • kg -1 • K -1 ) 709.25 Solid solid conductivity κ s (W • m -1 • K -1 ) 3.0 × 10 -5 T 2 -0.0366T + 18.588 Liquid solid conductivity κ l (W • m -1 • K -1 ) 30.078 Latent heat of fusion c L (KJ • kg -1 • K -1 ) 290 Dynamic viscosity µ(P a • s) 7 × 10 -3 Marangoni coefficient ∂γ ∂T (N • m -1 • K -1 )</formula><p>-2 × 10   A critical factor in metal AM is the cooling rate, which profoundly influences dendrite arm spacing, grain structure, micro-segregation, and hot cracking. In this paper, the cooling rate is calculated as</p><formula xml:id="formula_24">R c = T s -1273.15K t c<label>(29)</label></formula><p>where t c = (D s -D 1273.15 )/V s , the cooling time interval determined by dividing the distance between solidus temperature and 1273.15 K by the scanning speed V s . Table <ref type="table" target="#tab_3">5</ref> presents the PINN prediction of cooling rate R c for the case A, B, and C. The results of FEM, Gan's results and experimental measurements are also listed for comparison. Both modeling and experiment show that cooling rate increases from case A to case C. For the cooling rate, the relative discrepancy (with respect to the mean NIST measurements) of prediction accuracy becomes lower compared with melt pool dimension prediction, we notice that the NIST measurements in cooling rates also exhibit significantly higher fluctuations than melt pool dimension measurements. If using this discrepancy as an accuracy metric, the proposed PINN model only underperforms in case A and outperforms in both case B and case C, which is advantageous compared with the other two high-fidelity FEM simulations that employ millions of elements.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.">Conclusion</head><p>This paper presents the first attempt of using the physics-informed neural network (PINN) to predict the temperature and melt pool fluid dynamics in metal AM processes. We applied the PINN model to two representative metal manufacturing problems. The results show that the PINN can accurately predict the quantities of interest by only using a small amount of labeled training data. This paper is also the first few applications of scientific machine learning (SciML), currently confined to single-phase systems, to complex multi-scale and multi-physics problems that involve multi-phase fluid dynamics, heat transfer and phase transition. The two major technical contributions relevant to metal AM of the paper are:</p><p>• A SciML framework for metal AM processes, which can accurately predict temperature, pressure, and velocity field without relying on big-data.</p><p>• A "hard" approach for imposing Dirichlet boundary condition, which exactly imposes the prescribed value and speeds up the learning process.</p><p>Although deep learning models cannot replace conventional numerical tools that will continue to be the principal player, the initial success presented in this paper demonstrates PINN's potential on the modeling and prediction of complicated metal AM processes and paves the way for the broad adoption in advanced manufacturing.</p><p>We also have to admit that this paper does not comprehensively handle the complexity of metal AM processes. To be precise, the PINN model here does not resolve the ambient gas phase, free-surface deformation of the melt pool, and the evaporation phenomenon, although the effects are not crucial for the applications considered in the paper. In the future, the multi-phase Navier-Stokes will be enhanced with the evaporation model in the momentum equations, which was used in our control volume finite element model <ref type="bibr" target="#b13">[14]</ref>, to capture the heat loss, composition change, and fluid motion induced by evaporation. Additional PDEs, such as convection equation of level set or volume-of-fluid used in the previous works <ref type="bibr" target="#b22">[23,</ref><ref type="bibr" target="#b29">30]</ref>, will be incorporated into the PINN to enable modeling metal AM process at the powder scale.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.">Acknowledgement</head><p>J. Yan is partially supported by ASME Robert M. and Mary Haythornthwaite Research Initiation Award and Singapore National Research Foundation (NRF2018-ITS004-0011). The PINN models were trained at the Texas Advanced Computing Center (Tacc) through a startup allocation on Frontera (CTS20014). These supports are greatly acknowledged.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6.">Appendix: High-fidelity FEM thermal-fluid simulations</head><p>The high-fidelity FEM thermal-fluid simulations make use of a residual-based variational multi-scale formulation (VMS) based on our previous work in <ref type="bibr" target="#b29">[30]</ref>. The core formulation is briefly presented as follows. Let W denote the testing function space for the Navier-Stokes and energy conversation equations, V denote the unknown velocity u, pressure p, and temperature T fields. The RBVMS formulation of thermal-fluid flows is stated as: ∀{w, q, η} ∈ W, find {u, p, T } ∈ V, such that where r M , r C and r T are the residuals of momentum, continuity, and energy conservation equations (Eq. 15). τ M , τ C and τ T are the corresponding stabilization parameters <ref type="bibr" target="#b29">[30]</ref>. Other widely used stabilization parameters can be found in <ref type="bibr" target="#b77">[78,</ref><ref type="bibr" target="#b78">79,</ref><ref type="bibr" target="#b78">79,</ref><ref type="bibr" target="#b79">80,</ref><ref type="bibr" target="#b79">80,</ref><ref type="bibr" target="#b80">81]</ref>. The VMS and its extensions on moving fluid domains using Arbitrary Lagrangian-Eulerian technique (ALE-VMS) <ref type="bibr" target="#b81">[82,</ref><ref type="bibr" target="#b82">83]</ref> and Space-Time (ST-VMS) technique <ref type="bibr" target="#b83">[84]</ref><ref type="bibr" target="#b84">[85]</ref><ref type="bibr" target="#b85">[86]</ref><ref type="bibr" target="#b86">[87]</ref><ref type="bibr" target="#b87">[88]</ref> have been used as highfidelity models to simulate a set of challenging fluid dynamics and fluid-structure interaction problems <ref type="bibr" target="#b88">[89]</ref>. Several recent applications include environmental flows <ref type="bibr" target="#b89">[90]</ref>, wind energy <ref type="bibr" target="#b84">[85,</ref><ref type="bibr" target="#b90">[91]</ref><ref type="bibr" target="#b91">[92]</ref><ref type="bibr" target="#b92">[93]</ref><ref type="bibr" target="#b93">[94]</ref><ref type="bibr" target="#b94">[95]</ref><ref type="bibr" target="#b95">[96]</ref><ref type="bibr" target="#b96">[97]</ref><ref type="bibr" target="#b97">[98]</ref><ref type="bibr" target="#b98">[99]</ref>, tidal energy <ref type="bibr" target="#b99">[100]</ref><ref type="bibr" target="#b100">[101]</ref><ref type="bibr" target="#b101">[102]</ref>, bio-mechanics <ref type="bibr" target="#b102">[103,</ref><ref type="bibr" target="#b103">104]</ref>, and transportation engineering <ref type="bibr" target="#b104">[105]</ref>.</p><p>Figure <ref type="figure">11</ref>: The mesh employed in the high-fidelity FEM thermal-fluid simulations.</p><p>The FEM simulations of the NIST AM-bench test series make use of a mesh with 4,464,276 tetrahedral elements. A local refinement is designed to capture the moving laser, which is shown in Figure <ref type="figure">11</ref>. The unknown velocity, pressure, and temperature are solved in a fully coupled fashion. Generalized-α is used for time integration with ∆t = 1 × 10 -6 s. The nonlinear equations are linearized by Newton's method. The resulting linear systems are solved by GMRES with block preconditioning <ref type="bibr" target="#b105">[106]</ref>. These simulations are executed at Stampede2 at Texas Advanced Computing Center (TACC) with 192 CPU processors.</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>Figure 2 :</head><label>2</label><figDesc>Figure2: 1D solidificaton process from<ref type="bibr" target="#b55">[56]</ref> </figDesc><graphic coords="10,148.50,72.00,315.00,213.00" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 3 :</head><label>3</label><figDesc>Figure 3: PINN model for the solidification problem. Left: PINN setup. Right: Temperature prediction.</figDesc><graphic coords="11,142.78,244.80,326.44,151.80" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head>-</head><label></label><figDesc>i n i n g L o s s I t e r a t i o n n u m b e r H a r d B C e n f o r c e m e n t S o f t B C e n f o r c e m e n t l y t i c H a r d B C e n f o r c e m e n t S o f t B C e n f o r c e m e n t</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Figure 4 :</head><label>4</label><figDesc>Figure 4: Comparison between "hard" BC and "soft" BC. Left: learning speed. Right: The temperature distribution at 10 s.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head></head><label></label><figDesc>e r f a c e p o s i t i o n ( m )</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head>Figure 5 :</head><label>5</label><figDesc>Figure 5: Predicted time history of solid-liquid interface position. Left: refinement study of FEM. Right: refinement study of PINN.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>Figure 6 :</head><label>6</label><figDesc>Figure 6: L 2 norm of prediction error of PINN and FEM with different resolutions.</figDesc><graphic coords="14,171.00,72.00,270.00,188.20" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: NIST AM-bench test series</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head>- 5 Table 3 :Figure 8 :Figure 9 :</head><label>5389</label><figDesc>Figure 8: Comparison of the predictions of the temperature and melt pool fluid dynamics of FEM, PINN and experiment for case B (195 W, 0.8 m/s) at quasi-steady state (2 ms), when the melt pool shape is not changing. Left: FEM prediction. Middle: PINN prediction. Right: Thermal video frame based on radiance temperature.</figDesc><graphic coords="16,80.28,503.52,451.44,121.68" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>Figure 10 :</head><label>10</label><figDesc>Figure 10: Melt pool shape and melt pool flow velocity predicted by PINN for case A, B and C at quasi-steady state (2 ms).</figDesc><graphic coords="17,130.90,404.47,350.21,266.40" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_11"><head>Ωw</head><label></label><figDesc>• ρ (u ,t + u • ∇u -g) dΩ + Ω p∇ • wdΩ -Γ w • hdΓ + Ω ∇ s w : µ∇ s udΩ + Ω q∇ • udΩ + Ω η [(ρc p T ) ,t + u • ∇(ρc p T ) + (ρLf L ) ,t + u • ∇(ρLf L )] dΩ + Ω ∇η • κ∇T dΩ -Ω ηQ T dΩ + Σ n el e=1 Ω e τ M (u • ∇w + ∇q ρ ) • r M dΩ + Σ n el e=1 Ω e ρτ C ∇ • wr C dΩ -Σ n el e=1 Ω e τ M w • [r M • ∇u] dΩ -Σ n el e=1 Ω e ∇w ρ : (τ M r M ⊗ τ M r M )dΩ + Σ n el e=1 Ω eτ T (u • ∇η)r T dΩ = 0<ref type="bibr" target="#b29">(30)</ref> </figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head>Table 1 :</head><label>1</label><figDesc>Definition of material properties for the solidification problem</figDesc><table><row><cell>Materials</cell><cell cols="4">Graphite Aluminum (solid) Aluminum (liquid)</cell></row><row><cell>Density (kg/m 3 )</cell><cell>2200</cell><cell cols="3">2555</cell><cell>2555</cell></row><row><cell>Specific heat (J/(kg K))</cell><cell>1700</cell><cell cols="3">1190</cell><cell>1190</cell></row><row><cell cols="2">Thermal conductivity (W/(kg K)) 100</cell><cell cols="3">211</cell><cell>91</cell></row><row><cell>Latent heat (J/kg)</cell><cell>-</cell><cell cols="3">398000</cell><cell>-</cell></row><row><cell></cell><cell>x  *  = 7.095 × 10 -3 √</cell><cell>t s</cell><cell></cell><cell>(23)</cell></row><row><cell></cell><cell cols="3">T m = 769.95 + 471.8erf (</cell><cell>96.69x √ t</cell><cell>) K</cell><cell>(24)</cell></row><row><cell></cell><cell cols="2">T s = 769.95 + 360.2erf (</cell><cell cols="2">60.02x √ t</cell><cell>) K</cell><cell>(25)</cell></row><row><cell></cell><cell cols="3">T l = 973.15 -111.4erf c(</cell><cell>91.39x √ t</cell><cell>) K</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_1"><head>Table 2 :</head><label>2</label><figDesc>Mechanical properties of IN625</figDesc><table><row><cell>Name</cell><cell>Property</cell><cell>Value</cell></row><row><cell>Density</cell><cell>ρ(kg • m -3 )</cell><cell>8440</cell></row><row><cell>Solidus temperature</cell><cell>T s (K)</cell><cell>1563</cell></row><row><cell>Liquid temperature</cell><cell>T l (K)</cell><cell>1623</cell></row><row><cell>Solid specific heat capacity</cell><cell>c ps (J • kg -1 • K -1 )</cell><cell>0.2441T + 338.39</cell></row><row><cell cols="2">Liquid specific heat capacity c pl</cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_2"><head>Table 4 :</head><label>4</label><figDesc>Melt pool dimensions of case A, B and C.The laser results in sufficiently high velocity in the melt pool, which reaches up to 1.641 m/s, 1.566 m/s, and 1.446 m/s for the case A, B, and C, respectively. The predicted melt pool dimensions compared with the present FEM results, the thermal-fluid simulation results by Gan et al.<ref type="bibr" target="#b31">[32]</ref> that won an award in the NIST AM-bench competition, and available NIST experimental measurements are listed in Table4. For melt pool length, the relative discrepancy (with respect to the mean NIST experimental measurements) of PINN, FEM and Gan's predictions are 9.7 %, 11.3 % and 17.8 % for case A, 5.1 %, 4.7 % and 8.1 % for case B, and 2.9 %, 3.6 % and 4.1 % for case C. Similar accuracy is observed among these approaches. Based on the model predictions, we notice that case A generates the smallest melt pool length but the biggest width and depth, which could be due to the low scanning speed that gives the laser more time to melt the underneath metal. In contrast, case B and C have a slightly bigger laser power but much faster scanning speeds, which consequently result in longer melt pool lengths but smaller widths and depths. Between case B and case C with the same laser power, lower spanning (case B) speed results in bigger melt pool dimensions in all directions.</figDesc><table><row><cell>Cases</cell><cell>Approaches</cell><cell cols="3">Length (µm) Width (µm) Depth (µm)</cell></row><row><cell cols="2">Case A PINN</cell><cell cols="2">594.8 (9.7%) 193.3</cell><cell>64.0</cell></row><row><cell></cell><cell>FEM</cell><cell cols="2">584.4 (11.3%) 190.8</cell><cell>62.8</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>542 (17.8%)</cell><cell>-</cell><cell>-</cell></row><row><cell></cell><cell cols="2">Experiment [77] 659 ± 21</cell><cell>-</cell><cell>-</cell></row><row><cell cols="2">Case B PINN</cell><cell cols="2">740.3 (5.1%) 160.0</cell><cell>52.8</cell></row><row><cell></cell><cell>FEM</cell><cell cols="2">743.6 (4.7%) 157.5</cell><cell>52.5</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>843 (8.1%)</cell><cell>-</cell><cell>-</cell></row><row><cell></cell><cell cols="2">Experiment [77] 782 ± 21</cell><cell>-</cell><cell>-</cell></row><row><cell cols="2">Case C PINN</cell><cell cols="2">732.5 (2.9%) 131.5</cell><cell>43.2</cell></row><row><cell></cell><cell>FEM</cell><cell cols="2">727.2 (3.6%) 130.3</cell><cell>42.6</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>785 (4.1%)</cell><cell>-</cell><cell>-</cell></row><row><cell></cell><cell cols="2">Experiment [77] 754 ± 46</cell><cell>-</cell><cell>-</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_3"><head>Table 5 :</head><label>5</label><figDesc>Cooling rates of case A, B and C. PINN, FEM and Gan's predictions are 37.7 %, 29.0 % and 17.6 % for case A, 8.1 %, 12.7 % and 26.3 % for case B, and 7.8 %, 7.8 % and 11.7 % for case C. Although all the models'</figDesc><table><row><cell>Cases</cell><cell>Approaches</cell><cell>solid cooling rate (K/s)</cell></row><row><cell cols="2">Case A PINN</cell><cell>8.54 × 10 5 (37.7%)</cell></row><row><cell></cell><cell>FEM</cell><cell>8.00 × 10 5 (29.0%)</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>5.11 × 10 5 (17.6%)</cell></row><row><cell></cell><cell cols="2">Experiment [77] 6.20 × 10 5 ± 7.99 × 10 4</cell></row><row><cell cols="2">Case B PINN</cell><cell>8.59 × 10 5 (8.1%)</cell></row><row><cell></cell><cell>FEM</cell><cell>8.16 × 10 5 (12.7%)</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>6.89 × 10 5 (26.3%)</cell></row><row><cell></cell><cell cols="2">Experiment [77] 9.35 × 10 5 ± 1.43 × 10 5</cell></row><row><cell cols="2">Case C PINN</cell><cell>1.38 × 10 6 (7.8%)</cell></row><row><cell></cell><cell>FEM</cell><cell>1.38 × 10 6 (7.8%)</cell></row><row><cell></cell><cell>Gan et al. [32]</cell><cell>11.30 × 10 5 (11.7%)</cell></row><row><cell></cell><cell cols="2">Experiment [77] 1.28 × 10 6 ± 3.94 × 10 5</cell></row></table></figure>
+		</body>
+		<back>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Real-time monitoring of laser powder bed fusion process using high-speed x-ray imaging and diffraction</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zhao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Fezzaa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Cunningham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Wen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>De Carlo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rollett</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Sun</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific reports</title>
+		<imprint>
+			<biblScope unit="volume">7</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="1" to="11" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Keyhole threshold and morphology in laser melting revealed by ultrahigh-speed x-ray imaging</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Cunningham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zhao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Parab</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Kantzos</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Pauza</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Fezzaa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rollett</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">363</biblScope>
+			<biblScope unit="issue">6429</biblScope>
+			<biblScope unit="page" from="849" to="852" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">In-situ full-field mapping of melt flow dynamics in laser metal additive manufacturing</title>
+		<author>
+			<persName><forename type="first">Q</forename><surname>Guo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zhao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Qu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Xiong</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Hojjatzadeh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Escano</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Parab</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Fezzaa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Chen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Additive Manufacturing</title>
+		<imprint>
+			<biblScope unit="volume">31</biblScope>
+			<biblScope unit="page">100939</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<monogr>
+		<ptr target="https://www.nist.gov/ambench" />
+		<title level="m">NIST Additive Manufacturing Benchmark Test Series (AM-BENCH</title>
+		<imprint>
+			<date type="published" when="2020-03">2020-03-08 (2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<monogr>
+		<ptr target="https://www.americamakes.us/america-makes-and-afrl-announce-am-modeling-challenge/,ac-cessed:2020-07" />
+		<title level="m">AFRL Additive Manufacturing Modeling Challenge Series</title>
+		<imprint>
+			<date type="published" when="2020-07">-07 (2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<monogr>
+		<author>
+			<persName><forename type="first">C</forename><surname>Noble</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Anderson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Barton</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Bramwell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Capps</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Chang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Chou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Dawson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Diana</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Dunn</surname></persName>
+		</author>
+		<title level="m">Ale3d: An arbitrary lagrangian-eulerian multi-physics code</title>
+		<meeting><address><addrLine>Livermore, CA (United States</addrLine></address></meeting>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+		<respStmt>
+			<orgName>Lawrence Livermore National Lab.(LLNL)</orgName>
+		</respStmt>
+	</monogr>
+	<note type="report_type">Tech. rep.</note>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Laser powder-bed fusion additive manufacturing: Physics of complex melt flow and formation mechanisms of pores, spatter, and denudation zones</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Khairallah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Anderson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rubenchik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>King</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">108</biblScope>
+			<biblScope unit="page" from="36" to="45" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">Modulating laser intensity profile ellipticity for microstructural control during metal additive manufacturing</title>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">T</forename><surname>Roehling</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">S</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">A</forename><surname>Khairallah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">D</forename><surname>Roehling</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">S</forename><surname>Soezeri</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">F</forename><surname>Crumb</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">J</forename><surname>Matthews</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">128</biblScope>
+			<biblScope unit="page" from="197" to="206" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Controlling interdependent meso-nanosecond dynamics and defect generation in metal 3d printing</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Khairallah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Martin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Guss</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Calta</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Hammons</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Nielsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Chaput</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Schwalbach</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Shah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Chapman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Willey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Rubenchik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Anderson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Matthews</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>King</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">368</biblScope>
+			<biblScope unit="issue">6491</biblScope>
+			<biblScope unit="page" from="660" to="665" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Building blocks for a digital twin of additive manufacturing</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Knapp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Mukherjee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Zuback</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Wei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Palmer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>De</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Debroy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">135</biblScope>
+			<biblScope unit="page" from="390" to="399" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">Heat and fluid flow in additive manufacturingpart i: Modeling of powder bed fusion</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Mukherjee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Wei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>De</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Debroy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Materials Science</title>
+		<imprint>
+			<biblScope unit="volume">150</biblScope>
+			<biblScope unit="page" from="304" to="313" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Heat and fluid flow in additive manufacturing-part ii: Powder bed fusion of stainless steel, and titanium, nickel and aluminum base alloys</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Mukherjee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Wei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>De</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Debroy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Materials Science</title>
+		<imprint>
+			<biblScope unit="volume">150</biblScope>
+			<biblScope unit="page" from="369" to="380" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<monogr>
+		<title level="m" type="main">Numerical methods and high performance computing for modeling metallic additive manufacturing processes at multiple scales</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2019">2019</date>
+		</imprint>
+		<respStmt>
+			<orgName>Northwestern University</orgName>
+		</respStmt>
+	</monogr>
+	<note type="report_type">Ph.D. thesis</note>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">A conservative level set method on unstructured meshes for modeling multiphase thermo-fluid flow in additive manufacturing processes</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Gan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Lattice boltzmann model for thermal free surface flows with liquid-solid phase transition</title>
+		<author>
+			<persName><forename type="first">E</forename><surname>Attar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Körner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">International Journal of Heat and Fluid Flow</title>
+		<imprint>
+			<biblScope unit="volume">32</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="156" to="163" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">Mesoscopic simulation of selective beam melting processes</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Körner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Attar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Heinl</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Materials Processing Technology</title>
+		<imprint>
+			<biblScope unit="volume">211</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="978" to="987" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Fundamental consolidation mechanisms during selective beam melting of powders</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Körner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Bauereiß</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Attar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Modelling and Simulation in Materials Science and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">21</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page">85011</biblScope>
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Additive particle deposition and selective laser processing-a computational manufacturing framework</title>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">I</forename><surname>Zohdi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">54</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="171" to="191" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">A direct particle-based computational framework for electrically enhanced thermo-mechanical sintering of powdered materials</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Zohdi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematics and Mechanics of Solids</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="93" to="113" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">Multiphysics modeling and simulation of selective laser sintering manufacturing processes</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Ganeriwala</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">I</forename><surname>Zohdi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Procedia Cirp</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="page" from="299" to="304" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Multiphysics modeling of single/multiple-track defect mechanisms in electron beam selective melting</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ge</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Qian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Zhou</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><forename type="middle">K</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">J</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">134</biblScope>
+			<biblScope unit="page" from="324" to="333" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Meso-scale modeling of multiple-layer fabrication process in selective electron beam melting: interlayer/track voids formation</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Qian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ge</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><forename type="middle">K</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">J</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Materials &amp; Design</title>
+		<imprint>
+			<biblScope unit="volume">141</biblScope>
+			<biblScope unit="page" from="210" to="219" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Data-driven multi-scale multi-physics models to derive process-structure-property relationships for additive manufacturing</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Kafka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Lian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Yu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Wolff</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Ndip-Agbor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Mozaffar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Ehmann</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Cao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Wagner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">61</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="521" to="541" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Multi-scale modeling of electron beam melting of functionally graded materials</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Ge</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Smith</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Kafka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint>
+			<biblScope unit="volume">115</biblScope>
+			<biblScope unit="page" from="403" to="412" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Spattering and denudation in laser powder bed fusion process: multiphase flow modelling</title>
+		<author>
+			<persName><forename type="first">H</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Acta Materialia</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Mesoscale modelling of selective laser melting: Thermal fluid dynamics and microstructural evolution</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Panwisawas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Qiu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">J</forename><surname>Anderson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Sovani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">P</forename><surname>Turner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">M</forename><surname>Attallah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">W</forename><surname>Brooks</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><forename type="middle">C</forename><surname>Basoalto</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Materials Science</title>
+		<imprint>
+			<biblScope unit="volume">126</biblScope>
+			<biblScope unit="page" from="479" to="490" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Revealing transient powder-gas interaction in laser powder bed fusion process through multi-physics modeling and high-speed synchrotron x-ray imaging</title>
+		<author>
+			<persName><forename type="first">X</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Zhao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Tan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Additive Manufacturing</title>
+		<imprint>
+			<biblScope unit="page">101362</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">Powder bed modelsnumerical assessment of as-built quality</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Megahed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H.-W</forename><surname>Mindt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Shula</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Peralta</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Neumann</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">57th AIAA/ASCE/AHS/ASC Structures, Structural Dynamics, and Materials Conference</title>
+		<imprint>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page">1657</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">Modeling of powder bed manufacturing defects</title>
+		<author>
+			<persName><forename type="first">H.-W</forename><surname>Mindt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Desmaison</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Megahed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Peralta</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Neumann</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Materials Engineering and Performance</title>
+		<imprint>
+			<biblScope unit="volume">27</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="32" to="43" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">A fully coupled finite element formulation for liquid-solid-gas thermo-fluid flow with melting and solidification</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Yan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">336</biblScope>
+			<biblScope unit="page" from="444" to="470" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<analytic>
+		<title level="a" type="main">Meshfree simulations for additive manufacturing process of metals</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Fan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Li</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Integrating Materials and Manufacturing Innovation</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="144" to="153" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">Benchmark study of thermal behavior, surface topography, and dendritic microstructure in selective laser melting of inconel 625</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Gan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Lian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">E</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">K</forename><surname>Jones</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><forename type="middle">K</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">J</forename><surname>Wagner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Integrating Materials and Manufacturing Innovation</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="178" to="193" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">Transfer learning of deep material network for seamless structure-property predictions</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Koishi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">64</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="451" to="465" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">A deep material network for multiscale topology learning and accelerated nonlinear modeling of heterogeneous materials</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Koishi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">345</biblScope>
+			<biblScope unit="page" from="1138" to="1168" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Exploring the 3d architectures of deep material network in data-driven multiscale mechanics</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Wu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of the Mechanics and Physics of Solids</title>
+		<imprint>
+			<biblScope unit="volume">127</biblScope>
+			<biblScope unit="page" from="20" to="46" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">Data-driven self-consistent clustering analysis of heterogeneous materials with crystal plasticity</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Kafka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Yu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Computational Plasticity</title>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2018">2018</date>
+			<biblScope unit="page" from="221" to="242" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<analytic>
+		<title level="a" type="main">Microstructural material database for self-consistent clustering analysis of elastoplastic strain softening materials</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Fleming</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">330</biblScope>
+			<biblScope unit="page" from="547" to="577" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<analytic>
+		<title level="a" type="main">Self-consistent clustering analysis: An efficient multi-scale scheme for inelastic heterogeneous materials</title>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Bessa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">306</biblScope>
+			<biblScope unit="page" from="319" to="341" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<analytic>
+		<title level="a" type="main">Tensorflow: A system for large-scale machine learning</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Abadi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Barham</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Davis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Dean</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Devin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ghemawat</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Irving</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Isard</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">12th {USENIX} Symposium on Operating Systems Design and Implementation ({OSDI} 16)</title>
+		<imprint>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page" from="265" to="283" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<analytic>
+		<title level="a" type="main">Pytorch: An imperative style, high-performance deep learning library</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Paszke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Gross</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Massa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Lerer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Bradbury</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Chanan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Killeen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Gimelshein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Antiga</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+		<imprint>
+			<date type="published" when="2019">2019</date>
+			<biblScope unit="page" from="8024" to="8035" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b40">
+	<monogr>
+		<author>
+			<persName><forename type="first">F</forename><surname>Bastien</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Lamblin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Pascanu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Bergstra</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>Goodfellow</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Bergeron</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Bouchard</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Warde-Farley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bengio</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1211.5590</idno>
+		<title level="m">Theano: new features and speed improvements</title>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b41">
+	<analytic>
+		<title level="a" type="main">Caffe: Convolutional architecture for fast feature embedding</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Jia</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Shelhamer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Donahue</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Karayev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Long</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Girshick</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Guadarrama</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Darrell</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the 22nd ACM international conference on Multimedia</title>
+		<meeting>the 22nd ACM international conference on Multimedia</meeting>
+		<imprint>
+			<date type="published" when="2014">2014</date>
+			<biblScope unit="page" from="675" to="678" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b42">
+	<analytic>
+		<title level="a" type="main">Physics-informed cokriging: A gaussian-process-regression-based multifidelity method for data-model convergence</title>
+		<author>
+			<persName><forename type="first">X</forename><surname>Yang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Barajas-Solano</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Tartakovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tartakovsky</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">395</biblScope>
+			<biblScope unit="page" from="410" to="431" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b43">
+	<analytic>
+		<title level="a" type="main">Machine learning of linear differential equations using Gaussian processes</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Raissi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Perdikaris</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Karniadakis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">348</biblScope>
+			<biblScope unit="page" from="683" to="693" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b44">
+	<analytic>
+		<title level="a" type="main">Artificial neural networks for solving ordinary and partial differential equations</title>
+		<author>
+			<persName><forename type="first">I</forename><surname>Lagaris</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Likas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Fotiadis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE transactions on neural networks</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="987" to="1000" />
+			<date type="published" when="1998">1998</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b45">
+	<analytic>
+		<title level="a" type="main">Hidden fluid mechanics: Learning velocity and pressure fields from flow visualizations</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Raissi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Yazdani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Karniadakis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Science</title>
+		<imprint>
+			<biblScope unit="volume">367</biblScope>
+			<biblScope unit="issue">6481</biblScope>
+			<biblScope unit="page" from="1026" to="1030" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b46">
+	<analytic>
+		<title level="a" type="main">Surrogate modeling for fluid flows based on physics-constrained deep learning without simulation data</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Gao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Pan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J.-X</forename><surname>Wang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">361</biblScope>
+			<biblScope unit="page">112732</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b47">
+	<analytic>
+		<title level="a" type="main">A cloud based architecture capable of perceiving and predicting multiple vessel behaviour</title>
+		<author>
+			<persName><forename type="first">D</forename><surname>Zissis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">K</forename><surname>Xidias</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Lekkas</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Applied Soft Computing</title>
+		<imprint>
+			<biblScope unit="volume">35</biblScope>
+			<biblScope unit="page" from="652" to="661" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b48">
+	<monogr>
+		<author>
+			<persName><forename type="first">M</forename><surname>Raissi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Perdikaris</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Karniadakis</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1711.10561</idno>
+		<title level="m">Physics informed deep learning (part i): Data-driven solutions of nonlinear partial differential equations</title>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b49">
+	<analytic>
+		<title level="a" type="main">Physics-informed deep neural networks for multiphysics data assimilation in subsurface transport problems</title>
+		<author>
+			<persName><forename type="first">Q</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Tartakovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Barajas-Solano</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tartakovsky</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">AGUFM</title>
+		<imprint>
+			<biblScope unit="page" from="34B" to="36" />
+			<date type="published" when="2019">2019. 2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b50">
+	<analytic>
+		<title level="a" type="main">Physicsinformed deep neural networks for learning parameters and constitutive relationships in subsurface flow problems</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Tartakovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Marrero</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Perdikaris</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Tartakovsky</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Barajas-Solano</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Water Resources Research</title>
+		<imprint/>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b51">
+	<analytic>
+		<title level="a" type="main">Extraction of mechanical properties of materials through deep learning from instrumented indentation</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Lu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Dao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Kumar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">U</forename><surname>Ramamurty</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><forename type="middle">E</forename><surname>Karniadakis</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Suresh</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">117</biblScope>
+			<biblScope unit="issue">13</biblScope>
+			<biblScope unit="page" from="7052" to="7062" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b52">
+	<analytic>
+		<title level="a" type="main">A physics-constrained data-driven approach based on locally convex reconstruction for noisy database</title>
+		<author>
+			<persName><forename type="first">Q</forename><surname>He</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Chen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">363</biblScope>
+			<biblScope unit="page">112791</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b53">
+	<analytic>
+		<title level="a" type="main">Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Raissi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Perdikaris</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Karniadakis</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">378</biblScope>
+			<biblScope unit="page" from="686" to="707" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b54">
+	<analytic>
+		<title level="a" type="main">Machine learning in cardiovascular flows modeling: Predicting arterial blood pressure from non-invasive 4d flow mri data using physics-informed neural networks</title>
+		<author>
+			<persName><forename type="first">G</forename><surname>Kissas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Yang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Hwuang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Witschey</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Detre</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Perdikaris</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">358</biblScope>
+			<biblScope unit="page">112623</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b55">
+	<monogr>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">A</forename><surname>Dantzig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Rappaz</surname></persName>
+		</author>
+		<title level="m">Solidification: -Revised &amp; Expanded</title>
+		<imprint>
+			<publisher>EPFL press</publisher>
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b56">
+	<analytic>
+		<title level="a" type="main">Alloying element vaporization and weld pool temperature during laser welding of alsl 202 stainless steel</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Khan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Debroy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Metallurgical Transactions B</title>
+		<imprint>
+			<biblScope unit="volume">15</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="641" to="644" />
+			<date type="published" when="1984">1984</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b57">
+	<analytic>
+		<title level="a" type="main">Mechanism of alloying element vaporization during laser welding</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Collur</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Paul</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Debroy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Metallurgical Transactions B</title>
+		<imprint>
+			<biblScope unit="volume">18</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="733" to="740" />
+			<date type="published" when="1987">1987</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b58">
+	<analytic>
+		<title level="a" type="main">Eral source-based method for solidification phase change</title>
+		<author>
+			<persName><forename type="first">V</forename><surname>Voller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Swaminathan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Numerical Heat Transfer, Part B Fundamentals</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="175" to="189" />
+			<date type="published" when="1991">1991</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b59">
+	<analytic>
+		<title level="a" type="main">A survey of deep neural network architectures and their applications</title>
+		<author>
+			<persName><forename type="first">W</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Z</forename><surname>Wang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">X</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Zeng</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Alsaadi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Neurocomputing</title>
+		<imprint>
+			<biblScope unit="volume">234</biblScope>
+			<biblScope unit="page" from="11" to="26" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b60">
+	<monogr>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">G</forename><surname>Schwing</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Urtasun</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1503.02351</idno>
+		<title level="m">Fully connected deep structured networks</title>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b61">
+	<analytic>
+		<title level="a" type="main">Face recognition: A convolutional neural-network approach</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Lawrence</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">L</forename><surname>Giles</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">C</forename><surname>Tsoi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">D</forename><surname>Back</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">IEEE transactions on neural networks</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="98" to="113" />
+			<date type="published" when="1997">1997</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b62">
+	<analytic>
+		<title level="a" type="main">Recurrent neural network based language model</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Mikolov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Karafiát</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Burget</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Černockỳ</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Khudanpur</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Eleventh annual conference of the international speech communication association</title>
+		<imprint>
+			<date type="published" when="2010">2010</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b63">
+	<analytic>
+		<title level="a" type="main">Lung sound classification using cepstral-based statistical features</title>
+		<author>
+			<persName><forename type="first">N</forename><surname>Sengupta</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Sahidullah</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Saha</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computers in biology and medicine</title>
+		<imprint>
+			<biblScope unit="volume">75</biblScope>
+			<biblScope unit="page" from="118" to="129" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b64">
+	<monogr>
+		<title level="m" type="main">Pattern recognition and machine learning</title>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">M</forename><surname>Bishop</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2006">2006</date>
+			<publisher>springer</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b65">
+	<analytic>
+		<title level="a" type="main">3d-r2n2: A unified approach for single and multi-view 3d object reconstruction</title>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">B</forename><surname>Choy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Xu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Gwak</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Chen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Savarese</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">European conference on computer vision</title>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2016">2016</date>
+			<biblScope unit="page" from="628" to="644" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b66">
+	<monogr>
+		<title level="m" type="main">Data mining: concepts and techniques</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Han</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Pei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Kamber</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2011">2011</date>
+			<publisher>Elsevier</publisher>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b67">
+	<monogr>
+		<title level="m" type="main">Why deep neural networks for function approximation?</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Liang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Srikant</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1610.04161</idno>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b68">
+	<analytic>
+		<title level="a" type="main">Analysis of different activation functions using back propagation neural networks</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Sibi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><forename type="middle">A</forename><surname>Jones</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Siddarth</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Theoretical and Applied Information Technology</title>
+		<imprint>
+			<biblScope unit="volume">47</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1264" to="1268" />
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b69">
+	<analytic>
+		<title level="a" type="main">Rectifier nonlinearities improve neural network acoustic models</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Maas</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Hannun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Ng</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proc. icml</title>
+		<meeting>icml</meeting>
+		<imprint>
+			<date type="published" when="2013">2013</date>
+			<biblScope unit="volume">30</biblScope>
+			<biblScope unit="page">3</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b70">
+	<monogr>
+		<author>
+			<persName><forename type="first">S</forename><surname>Eger</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Youssef</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>Gurevych</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1901.02671</idno>
+		<title level="m">Is it time to swish? comparing deep learning activation functions across nlp tasks</title>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b71">
+	<monogr>
+		<title level="m" type="main">An overview of gradient descent optimization algorithms</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Ruder</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:1609.04747</idno>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b72">
+	<monogr>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">P</forename><surname>Kingma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Ba</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Adam</forename></persName>
+		</author>
+		<idno type="arXiv">arXiv:1412.6980</idno>
+		<title level="m">A method for stochastic optimization</title>
+		<imprint/>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b73">
+	<analytic>
+		<title level="a" type="main">Automatic differentiation in machine learning: a survey</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Baydin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Pearlmutter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Radul</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Siskind</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Machine Learning Research</title>
+		<imprint>
+			<biblScope unit="volume">18</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="5595" to="5637" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b74">
+	<analytic>
+		<title level="a" type="main">Outcomes and conclusions from the 2018 am-bench measurements, challenge problems, modeling submissions, and conference</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Levine</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Lane</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Heigel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Migler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Stoudt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Phan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Ricker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Strantza</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Hill</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">F</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Seppala</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Garboczi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Bain</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Cole</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Allen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Fox</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Campbell</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Integrating Materials and Manufacturing Innovation</title>
+		<imprint>
+			<date type="published" when="2020">2020</date>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="page" from="1" to="15" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b75">
+	<analytic>
+		<title level="a" type="main">In situ measurements of melt-pool length and cooling rate during 3d builds of the metal am-bench artifacts</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Heigel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Lane</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Levine</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Integrating Materials and Manufacturing Innovation</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="31" to="53" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b76">
+	<analytic>
+		<title level="a" type="main">Measurement of the melt pool length during single scan tracks in a commercial laser powder bed fusion process</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Heigel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Lane</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Manufacturing Science and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">140</biblScope>
+			<biblScope unit="issue">5</biblScope>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b77">
+	<analytic>
+		<title level="a" type="main">Stabilized finite element formulations for incompressible flow computations</title>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Advances in Applied Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">28</biblScope>
+			<biblScope unit="page" from="1" to="44" />
+			<date type="published" when="1992">1992</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b78">
+	<analytic>
+		<title level="a" type="main">Multiscale space-time fluid-structure interaction techniques</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">48</biblScope>
+			<biblScope unit="page" from="247" to="267" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b79">
+	<analytic>
+		<title level="a" type="main">Space-time fluid-structure interaction methods</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical Models and Methods in Applied Sciences</title>
+		<imprint>
+			<biblScope unit="volume">22</biblScope>
+			<biblScope unit="issue">supp02</biblScope>
+			<biblScope unit="page">1230001</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b80">
+	<analytic>
+		<title level="a" type="main">Multiscale ST methods for thermo-fluid analysis of a ground vehicle and its tires</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Kuraishi</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical Models and Methods in Applied Sciences</title>
+		<imprint>
+			<biblScope unit="volume">25</biblScope>
+			<biblScope unit="page" from="2227" to="2255" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b81">
+	<analytic>
+		<title level="a" type="main">Isogeometric fluid-structure interaction: theory, algorithms, and computations</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><forename type="middle">M</forename><surname>Calo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">J R</forename><surname>Hughes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Zhang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">43</biblScope>
+			<biblScope unit="page" from="3" to="37" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b82">
+	<analytic>
+		<title level="a" type="main">Space-time and ALE-VMS techniques for patient-specific cardiovascular fluid-structure interaction modeling</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Archives of Computational Methods in Engineering</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="page" from="171" to="225" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b83">
+	<analytic>
+		<title level="a" type="main">Computational methods for parachute fluid-structure interactions</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Archives of Computational Methods in Engineering</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="page" from="125" to="169" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b84">
+	<monogr>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<title level="m">Computational Fluid-Structure Interaction: Methods and Applications</title>
+		<imprint>
+			<publisher>Wiley</publisher>
+			<date type="published" when="2013-02">February 2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b85">
+	<analytic>
+		<title level="a" type="main">Fluid-structure interaction modeling of ringsail parachutes with disreefing and modified geometric porosity</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Fritze</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Montes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Spielman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">50</biblScope>
+			<biblScope unit="page" from="835" to="854" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b86">
+	<analytic>
+		<title level="a" type="main">Fluidstructure interaction modeling of clusters of spacecraft parachutes with modified geometric porosity</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Boben</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Kostov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Boswell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Buscher</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">52</biblScope>
+			<biblScope unit="page" from="1351" to="1364" />
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b87">
+	<analytic>
+		<title level="a" type="main">Special methods for aerodynamic-moment calculations from parachute FSI modeling</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Boswell</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Tsutsui</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Montel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">55</biblScope>
+			<biblScope unit="page" from="1059" to="1069" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b88">
+	<analytic>
+		<title level="a" type="main">Computational flow analysis in aerospace, energy and transportation technologies with the variational multiscale methods</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Advanced Engineering and Computation</title>
+		<imprint>
+			<biblScope unit="volume">4</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="83" to="117" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b89">
+	<analytic>
+		<title level="a" type="main">A variational multiscale framework for atmospheric turbulent flows over complex environmental terrains</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Ravensbergen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Helgedagsrud</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Methods in Applied Mechanics and Engineering</title>
+		<imprint>
+			<biblScope unit="volume">368</biblScope>
+			<biblScope unit="page">113182</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b90">
+	<analytic>
+		<title level="a" type="main">3D simulation of wind turbine rotors at full scale. Part I: Geometry modeling and aerodynamics</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-C</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>Akkerman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Wright</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Henicke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Spielman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">International Journal for Numerical Methods in Fluids</title>
+		<imprint>
+			<biblScope unit="volume">65</biblScope>
+			<biblScope unit="page" from="207" to="235" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b91">
+	<analytic>
+		<title level="a" type="main">Stabilized spacetime computation of wind-turbine rotor aerodynamics</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Henicke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-C</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">48</biblScope>
+			<biblScope unit="page" from="333" to="344" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b92">
+	<analytic>
+		<title level="a" type="main">Numerical-performance studies for the stabilized space-time computation of windturbine rotor aerodynamics</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><surname>Henicke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Montes</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-C</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">48</biblScope>
+			<biblScope unit="page" from="647" to="657" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b93">
+	<analytic>
+		<title level="a" type="main">Space-time VMS computation of wind-turbine rotor and tower aerodynamics</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Mcintyre</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Kostov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Kolesar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Habluetzel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">53</biblScope>
+			<biblScope unit="page" from="1" to="15" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b94">
+	<analytic>
+		<title level="a" type="main">Engineering analysis and design with ALE-VMS and spacetime methods</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-C</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Øiseth</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">M</forename><surname>Mathisen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Kostov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Mcintyre</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Archives of Computational Methods in Engineering</title>
+		<imprint>
+			<biblScope unit="volume">21</biblScope>
+			<biblScope unit="page" from="481" to="508" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b95">
+	<analytic>
+		<title level="a" type="main">Computational engineering analysis with the new-generation space-time methods</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">54</biblScope>
+			<biblScope unit="page" from="193" to="211" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b96">
+	<analytic>
+		<title level="a" type="main">Aerodynamic and FSI analysis of wind turbines with the ALE-VMS and ST-VMS methods</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M.-C</forename><surname>Hsu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Kostov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Mcintyre</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Archives of Computational Methods in Engineering</title>
+		<imprint>
+			<biblScope unit="volume">21</biblScope>
+			<biblScope unit="page" from="359" to="398" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b97">
+	<analytic>
+		<title level="a" type="main">Space-time VMS method for flow computations with slip interfaces (ST-SI)</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Mochizuki</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">H</forename><surname>Hattori</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Mei</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Pan</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Montel</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Mathematical Models and Methods in Applied Sciences</title>
+		<imprint>
+			<biblScope unit="volume">25</biblScope>
+			<biblScope unit="page" from="2377" to="2406" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b98">
+	<analytic>
+		<title level="a" type="main">Recent advances in ALE-VMS and ST-VMS computational aerodynamic and FSI analysis of wind turbines</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Frontiers in Computational Fluid-Structure Interaction and Flow Simulation: Research from Lead Investigators under Forty -2018</title>
+		<title level="s">Modeling and Simulation in Science</title>
+		<editor>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</editor>
+		<imprint>
+			<publisher>Springer</publisher>
+			<date type="published" when="2018">2018</date>
+			<biblScope unit="page" from="253" to="336" />
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b99">
+	<analytic>
+		<title level="a" type="main">The actuator line method for wind turbine modelling applied in a variational multiscale framework</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Ravensbergen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computers &amp; Fluids</title>
+		<imprint>
+			<biblScope unit="volume">201</biblScope>
+			<biblScope unit="page">104465</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b100">
+	<analytic>
+		<title level="a" type="main">Performance analysis of two verticalaxis hydrokinetic turbines using variational multiscale method</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Bear</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Bear</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computers &amp; Fluids</title>
+		<imprint>
+			<biblScope unit="volume">200</biblScope>
+			<biblScope unit="page">104432</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b101">
+	<analytic>
+		<title level="a" type="main">Variational multiscale framework for cavitating flows</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Bayram</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Korobenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="page" from="1" to="19" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b102">
+	<analytic>
+		<title level="a" type="main">Space-time fluid mechanics computation of heart valve models</title>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><forename type="middle">E</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Buscher</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Asada</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">54</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="973" to="986" />
+			<date type="published" when="2014">2014</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b103">
+	<analytic>
+		<title level="a" type="main">Heart valve isogeometric sequentially-coupled fsi analysis with the space-time topology change method</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Terahara</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Tezduyar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Bazilevs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Hsu</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="page" from="1" to="21" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b104">
+	<analytic>
+		<title level="a" type="main">Space-time computational analysis of tire aerodynamics with actual geometry, road contact, tire deformation, road roughness and fluid film</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Kuraishi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Takizawa</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Tezduyar</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computational Mechanics</title>
+		<imprint>
+			<biblScope unit="volume">64</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="1699" to="1718" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b105">
+	<analytic>
+		<title level="a" type="main">Gmres: A generalized minimal residual algorithm for solving nonsymmetric linear systems</title>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Saad</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">H</forename><surname>Schultz</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Journal on scientific and statistical computing</title>
+		<imprint>
+			<biblScope unit="volume">7</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="856" to="869" />
+			<date type="published" when="1986">1986</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

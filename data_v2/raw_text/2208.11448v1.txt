@@ -1,0 +1,933 @@
+nanoNET: Machine Learning Platform for Predicting Nanoparticles 
+
+Distribution in a Polymer Matrix 
+
+ 
+ 
+
+Kumar Ayush, Abhishek Seth and Tarak K Patra* 
+
+ 
+
+Department of Chemical Engineering, Center for Atomistic Modeling and Materials Design and 
+Center for Carbon Capture Utilization and Storage, Indian Institute of Technology Madras, Chennai 
+TN 600036, India 
+
+ 
+ 
+ 
+
+Abstract:  
+ 
+Polymer nanocomposites (PNCs) offer a broad range of thermophysical properties that are linked to 
+their compositions. However, it is challenging to establish a universal composition-property relation 
+of PNCs due to their enormous composition and chemical space. Here, we address this problem and 
+develop a new method to model the composition-microstructure relation of a PNC through an 
+intelligent machine learning pipeline named nanoNET. The nanoNET is a nanoparticles (NPs) 
+distribution predictor, built upon computer vision and image recognition concepts. It integrates 
+unsupervised deep learning and regression in a fully automated pipeline. We conduct coarse-grained 
+molecular dynamics simulations of PNCs and utilize the data to establish and validate the nanoNET. 
+Within this framework, a random forest regression model predicts the NPs’ distribution in a PNC in 
+a latent space. Subsequently, a convolutional neural network-based decoder converts the latent space 
+representation to the actual radial distribution function (RDF) of NPs in the given PNC. The nanoNET 
+predicts NPs distribution in many unknown PNCs very accurately. This method is very generic and 
+can accelerate the design, discovery, and fundamental understanding of composition-microstructure 
+relations of PNCs and other molecular systems.   
+ 
+ 
+
+ 
+
+ 
+ 
+ 
+ 
+ 
+Keywords: Deep Learning, polymer nanocomposites, AI, Autoencoder, Radial Distribution 
+Function, Molecular Simulation, Random Forest, Feature Engineering 
+ 
+ 
+ 
+*Corresponding author, E-mail: tpatra@iitm.ac.in 
+ 
+
+
+ 
+2
+
+INTRODUCTION 
+ 
+Polymer nanocomposites (PNC) offer a broad range of properties that are intricately connected to the 
+spatial distribution of nanoparticles (NPs) in the polymer matrices. Understanding and controlling the 
+distribution NPs into a polymer matrix is a significantly challenging task.1–4 The structure, 
+morphology, and phase behavior of PNCs are determined by the complex interplay between the 
+packing entropy of particles with varying size and shape and effective interparticle interaction with 
+varying strength and range.4–11 A wide range of NPs distribution is possible in a polymer matrix 
+depending on various factors, including NP-polymer interaction, NP size, NP shape, NP surface 
+treatment, and NP concentration. Moreover, the spatial distribution of NPs in a polymer matrix is 
+appeared to be very sensitive to these composition parameters. For example, NPs tend to aggregate 
+for weak NP-polymer interaction due to the depletion force.12–14 On the other hand, stronger NP-
+polymer interactions lead to steric stabilization, dispersion, and bridging of NPs in a polymer 
+matrix.15–18 Often, dispersion to agglomeration transitions occur as a function of nanoparticle 
+concentration in a polymer matrix.19 The extent of dispersion and aggregation is influenced by the 
+details of the composition of a PNC. Therefore, controlling the thermophysical properties of a PNC 
+requires a deeper understanding of composition-microstructure correlations. Molecular simulation 
+and liquid state theories are extensively used to establish such correlations.15,16,20–22 However, a 
+comprehensive understanding is still lacking, and no generalized theory can predict the long-range 
+spatial distributions of NPs in a polymer matrix for the broad range of composition parameters. A 
+significant challenge in establishing such composition-microstructure relations in PNCs is their 
+infinitely large phase space due to the enormous range of materials selection, surface chemistries, 
+NP-polymer size ratio, NP concentration, and processing methods. Exploring the entire range of these 
+parameters is not feasible experimentally or computationally.  
+ 
+
+We aim to address this challenge via machine learning. Recently, machine learning has shown 
+
+tremendous success in solving a wide range of materials problems, such as identifying the local 
+structure of metallic nanoparticles on an oxide-support and defective graphene sheets,23 automated 
+recognition of metal nanoparticles deposited on pyrolytic graphite,24 atomic structure classification 
+and prediction,25–27 nanostructure identification from X-ray, SEM (scanning electron microscopy) and 
+TEM (transmission electron microscopy), SAS(small-angle scattering) data,28–32 and classification 
+and prediction of sequence-defined morphologies of copolymers.33–35 Machine learning methods are 
+also recently used to predict the properties of PNCs,36–39 such as dielectric constant, rubbery modulus, 
+and glassy modulus. However, developing a machine learning workflow that predicts the long-range 
+spatial correlation of NPs based on the composition of a PNC remains elusive. The primary bottleneck 
+in building such a model is the disparity in dimensions of input and output. The unusual feature of 
+this problem is that the input vector’s size is very small in comparison to that of the output vector. 
+The input vector represents the composition parameters such as NP concentration, NP-polymer 
+interaction, NP-NP interaction, size of a NP and polymer chain length of a PNC. The output vector 
+represents local concentrations of NPs at different interparticle spacing in the PNC. Usually, the size 
+of the input vector is about five, while that of the output vector is about a hundred. Therefore, 
+approximating the function 𝑓: 𝑋 → 𝑌, where X and Y are the composition vector and radial 
+distribution function (RDF), respectively, is challenging.  
+ 
+
+We attempt to solve the above problem using efficient encoding and decoding techniques that 
+
+are used in computer vision and image recognition. An efficient encoding and decoding of data are 
+
+
+ 
+3
+
+critical for the performance of ML models. In ML literature, the encoding of data is commonly known 
+as feature learning.40 It extracts the unique characteristics from data and represents it in a lower 
+dimensional continuous space representation. In the context of materials design and structure-
+property modeling, several feature learning techniques are used to represent the vast chemical space 
+of molecules in machine-readable numerical form.41 These features serve as an input to a machine 
+learning regression model that predicts the properties of molecules and materials.42An appropriate 
+feature selection technique is decided depending on the nature of data and target correlations. One-
+hot encoding, chemical tree, motif-based fingerprints, property coloring, and autoencoding are a few 
+techniques that have been recently developed and employed in materials problems.35,43–46 There 
+feature learning techniques are commonly applied to the input data, which is typical vast in size. On 
+the contrary, the current problem deals with high dimensional output and demands feature extraction 
+from RDF for building an efficient ML model. Here, for the first time, we employ feature engineering 
+on spatially correlated data, viz., RDF of NPs in a polymer matrix. In particular, we use an 
+unsupervised dimensionality reduction technique to encode an RDF to a lower dimensional latent 
+space and subsequently decode it back to the RDF space. A convolutional neural network autoencoder 
+is used for this purpose.47 We choose an appropriate architecture of the autoencoder that creates a 
+latent space of the desired dimension, which is comparable to the dimension of the composition 
+vector. A supervised regression technique is then used to build a function that correlates the 
+composition vector to the latent space vector, as they are of comparable dimensions. This way, the 
+regression model can predict the latent space vector of a given composition vector, which can be 
+converted to RDF by the decoder part of the autoencoder. We envision that this combination of 
+supervised and unsupervised learning will tackle the problem of predicting the radial distribution of 
+NPs in a polymer matrix based on composition information.  
+ 
+
+Therefore, the objective is to establish an automated ML framework that could take the 
+
+composition parameters as input and predict the long-range radial distribution of NPs in the polymer 
+matrix. Towards this end, we consider a phenomenological model of PNC and perform coarse-grained 
+molecular dynamics (CGMD) simulations within a carefully selected range of compositional 
+parameters, which span a wide region of the phase space, including experimentally known phases. 
+We then quantify the aggregation and dispersion states of filler NPs from the CGMD simulations 
+data. In particular, we calculate the long-range radial distribution function (RDF) for 80 different 
+combinations of composition parameters. This data is utilized to build the machine learning 
+framework, code name nanoNET, that elucidates the composition-structure relationships. The 
+nanoNET provides a robust machine learning method that enables intelligent interpolation in the 
+composition and chemical space of a PNC without directly measuring its properties via physics-based 
+computer simulations or experiments. This machine learning approach can accelerate the 
+characterization, prediction, and fundamental understanding of polymer nanocomposites and other 
+molecular systems.    
+ 
+MODEL AND METHODOLOGY 
+ 
+Model. A very generic phenomenological coarse-grained (CG) model of PNC is considered for this 
+study. Here polymer chains are represented as a coarse-grained bead-spring model of Kremer and 
+Grest48 wherein a pair of monomers interact via the Lennard-Jones (LJ) potential of the form  𝑉(𝑟) =
+
+4𝜀 -.
+
+!
+
+"/
+
+#$
+
+− .
+
+!
+
+"/
+
+%
+1. The 𝜖 is the unit of pair interaction energy and the size of a monomer (d) is s. In 
+
+
+ 
+4
+
+addition, two adjacent coarse-grained monomers of a polymer chain are connected by the Finitely 
+
+Extensible Nonlinear Elastic (FENE) potential of the form 𝐸 = −
+
+#
+
+$ 𝐾𝑅&
+
+$ 𝑙𝑛 -1 − .
+
+"
+
+'!/
+
+$
+1, where 𝐾 =
+
+30𝜖/𝜎$ and 𝑅& = 1.5𝜎 for bond length 𝑟 ≤ 𝑅& and 𝐸 = ∞ for 𝑟 > 𝑅&. The LJ interaction between a 
+pair of monomers is truncated and shifted to zero at a cut-off distance 𝑟( = 2.5𝜎. The NP is also 
+modeled via the LJ potential. The diameter of an NP (D) is varied from 2𝜎 to 5𝜎. The NP-NP 
+interaction is truncated and shifted to zero at a distance 𝑟( = 2.5𝐷 to represent attraction between 
+them. The NP-NP interaction (𝜖)*+)*) is varied from 0.1𝜖 to 2.5𝜖. The polymer-NP (𝜖*+)*) 
+interaction is varied from 0.1𝜖 to 1.5𝜖. The polymer-NP interaction is truncated and shifted to zero at 
+a cut-off distance  𝑟( = 2.5 × (𝐷 + 𝑑)/2. The chain length of the polymer is varied between N=25 
+to 40.  
+ 
+MD Simulations and Data Curation. We conduct CGMD simulations of the PNC for a wide range 
+of polymer-NP interaction, NP concentration, NP-NP interaction, NP-polymer size ratio; and generate 
+a database for training and developing the machine learning framework. The CGMD simulations are 
+performed in an isothermal isobaric ensemble (NPT), wherein the temperature and pressure are 
+controlled by a Nose-Hoover thermostat and barostat, respectively.  We use the velocity-Verlet 
+
+algorithm with a timestep of 0.005t to integrate the equation of motion. Here, 𝜏 = 𝜎I
+
+,
+
+-  is the unit of 
+
+time, and 𝑚 is the mass of a monomer, All the simulations are conducted for a reduced temperature 
+𝑇∗ = 𝑇 𝑘/ 𝜖 = 1
+⁄
+, and a reduced pressure 𝑃∗ = 𝑃𝜎0 𝜖
+⁄ = 1, using the LAMMPS open-sourced 
+
+code.49,50 All the systems are equilibrated for 107 MD steps, followed by a production run of 107 MD 
+steps. During these production MD simulations, we collect 10000 configurations to calculate the RDF 
+of a system. We carry out 80 MD simulations each for a distinct combination of D, N, r, 𝜖)*+)*, and 
+𝜖*+)*. The concentration of NPs (r) is calculated as the ratio of the number of NPs and the 
+equilibrium simulation box volume. Combinations of all these five parameters provide a wide range 
+of RDF, including microscopic phase separation, steric stabilization, and bridging of NPs via polymer 
+layers. We calculate RDF within a distance of 10s. We consider a bin width of 0.1s for the RDF 
+calculation. Therefore, an RDF is a one-dimensional array of length 100. We plot an RDF on a 
+cartesian coordinate for each set of composition parameters. The magnitude of an RDF in our data 
+set varies from 0 to 300. We change the ordinate of the plot to a logarithmic scale to display a wider 
+range of variation more compactly. We fix axes of the plots from 0 and 10 for abscissa, whereas from 
+0.001 and 300 for ordinate for uniformity. The RDF plot is rendered as a greyscale image, wherein 
+the RDF is a white line with a black background. This procedure is followed to prepare 80 greyscale 
+images, each corresponding to a specific set of five composition parameters.  
+ 
+Convolutional Neural Network Autoencoder. A convolutional neural network (CNN) is a special 
+class of multi-layer artificial neural networks that is capable of recognizing visual patterns 
+automatically and adaptively through learning.51 The architecture of CNNs is inspired by the 
+mechanism of the optical system of living creatures. It very accurately retains the correlated 
+information between the pixels of an image, and, thus, is very efficient in feature extraction from 
+images. CNNs have shown tremendous success in computer vision and image classification 
+problems.52,53 We employ CNN to extract features from RDF images and create a unique latent space 
+representation of RDF by constructing an autoencoder. The CNN autoencoder has two main parts - 
+an encoder that maps the input image to a smaller size vector and a decoder that reconstructs the 
+
+
+ 
+5
+
+image from its encoded vector. A schematic representation of the CNN autoencoder, which is used in 
+the present study, is shown in Figure 1. An RDF image, which is calculated from an MD trajectory, 
+is fed to the CNN through its input layer. It produces an identical RDF image in its output layer. The 
+output RDF image corresponds to a morphology, which closely resembles the input one. Each RDF 
+image is a grayscale image, which can be represented as a three-dimensional (3D) array with a depth 
+of 1. The array rows correspond to the x-coordinate of the image, and the columns correspond to the 
+y-coordinate. The array contains at each coordinate pair (x and y) a value, typically an integer between 
+0 and 255, specifying the level of greyness. The width and height of the images are 64 pixels each. 
+Therefore, each RDF image is converted to a tensor of size 64x64x1. A total of 60 RDF images are 
+repeatedly fed to the CNN autoencoder during the training.  
+
+ 
+The architecture of the encoder consists of six convolution layers and six pooling layers 
+
+arranged alternatively. The convolution layers perform the convolution of image segments and their 
+activation. During the convolution, a kernel, which is a small matrix of numbers, is applied to the 
+input tensor. A dot product between the kernel and the input tensor is calculated at each location of 
+the tensor and passes as the output value in the corresponding position of the output tensor. We use a 
+matrix of size (3,3) for the kernel of the convolution operation. The kernel moves across the input 
+tensor with a stride of unity. Here the stride is defined as the distance between two successive kernel 
+positions. This operation does not allow the center of the kernel to overlap with the outermost 
+elements of the input tensor. Padding is used to overcome this situation wherein rows or columns of 
+zeroes are added to each side of the input tensor. This ensures that the center of the kernel can fit on 
+all the extreme elements of the input tensor. These operations produce a planer feature map. We repeat 
+the entire process multiple times with different kernel matrices to create a 3D feature map of the input. 
+Therefore, the output of a convolution layer will be a tensor of length and width equal to that of the 
+input. The width of the tensor will depend on the number of filters, which is the number of planner 
+feature maps generated during the convolution operation. The number of filters in the successive 
+convolution layers of the CNN are 64, 32, 32, 16, 16, and 8, respectively. The kernel parameters are 
+learned during the training. The output of the convolution layer is also passed through an activation 
+function. Subsequently, a pooling layer, which is placed in between two successive convolution 
+layers, shrinks the in-plane dimension of its input tensor. The Max-pooling method is used for the 
+
+Figure 1: A schematic representation of the convolution neural network autoencoder that encodes the image of an RDF to a lower-
+dimensional latent space. RDFs are calculated from MD trajectories and converted into grayscale images and feed to the autoencoder. 
+The autoencoder reconstructs the RDF images at the output layer, which closely resembles the input layer RDF and the microstructure.   
+
+
+ 
+6
+
+pooling operations.54 It extracts patches (subregions) from the input tensor and outputs the maximum 
+values of the patches while discarding all other numbers. Therefore, the features are gradually reduced 
+to lower dimensional representation as the network grows via successive convolution and pooling 
+operations. The pooling operation changes the in-plane dimension, while the convolution operation 
+changes the depth of the tensor. This architecture of the encoder creates a latent space of dimension 
+1x1x8 for an input of dimension 64x64x1. Decoding of the latent space tensor to the original RDF 
+image is done by the decoder part of the network.  It deconvolutes the latent space tensor to the actual 
+RDF image. Usually, the decoder's topology is the encoder's mirror image. We chose twelve hidden 
+layers for the decoder part of the network, six of them are transposed convolutional layers, and the 
+remaining six are upsampling layers. A transposed convolution layer, which is also known as a 
+deconvolution layer, increases the depth of the input matrix. The filters in the successive 
+deconvolution layers are 8, 16, 16, 32, 32, and 64, respectively.  A kernel of size (3,3) is used for the 
+deconvolution operations. An activation function activates the output of the deconvolution layer. An 
+upsampling layer, which is placed between two successive deconvolution layers, yields a feature map 
+with an in-plane dimension greater than its input. These sequential deconvolutions and upsampling 
+operations convert the latent space tensor of dimension 1x1x8 to the output tensor of dimension 
+64x64x1.   
+
+ 
+This autoencoder links the convolutional layers, pooling layers, de-convolution layers and 
+
+upsampling layers without any intermediate dense neural network. Such an autoencoder topology 
+ensures faster training convergency and attains a higher quality local optimum. The number of layers, 
+dimension of the input image, number of filters, stride and padding are decided based on our initial 
+studies to improve the accuracy and efficiency of the CNN. This network shows better performance 
+
+for our system than any other state-of-
+the-art method. The mathematical 
+details underlying the construction of 
+the CNN autoencoder can be seen 
+elsewhere.55,56 We use rectified linear 
+unit (ReLU) function57,58 as the 
+activation function for the convolution 
+and deconvolution layers.  A standard 
+backpropagation algorithm is used for 
+the network training. A gradient-based 
+stochastic optimization algorithm viz. 
+Adam optimizer is used to optimize 
+the parameters of kernels during the 
+backpropagation.59  We use  Keras,60 
+an 
+open-sourced 
+application 
+
+programming interface (API), for 
+constructing the autoencoder.  
+ 
+Random Forest: The Random Forest 
+
+(RF) algorithm is an ensemble learning method that can perform regression using a decision tree 
+framework.61,62 Ensemble learning is a process that gives a final prediction by combining the forecasts 
+from multiple models trained over the same data. It uses bootstrap and aggregation, commonly known 
+as bagging, which involves averaging predictions from several decision trees to give the final output. 
+
+Figure 2: A schematic representation of a random forest that takes system 
+variables viz., PNC composition parameters as input and predicts latent space 
+representation of the corresponding NPs’ RDF in the PNC. 
+
+
+ 
+7
+
+A schematic representation of a random forest that receives composition parameters of a PNC as 
+inputs and predicts latent space representation of the corresponding RDF is shown in Figure 2. The 
+main parameters in this model are the number of trees and the size of the random subsets of features 
+to consider when splitting a node. We systematically study the performance of RF for varying number 
+of trees and select the optimal number that gives minimum error in prediction.  A default value of one 
+is used for the random subset of features while splitting a node. We build the RF regression model 
+using scikit-learn.63  
+ 
+nanoNET Workflow. The success of LeNET,64–66 and its variants such as AlexNet,52 VGGNet,67 
+GoogLeNet,68 ResNet,69 and DenseNet70 in hand-written digits and image recognitions has 
+revolutionized the field of computer vision and promoted the development of deep learning tools 
+across disciplines. These deep learning models are primarily backpropagation convolutional neural 
+networks that extract meaningful low-dimensional features of an image. They have multiple 
+processing layers to learn images with multiple levels of abstraction. We adopt a similar approach to 
+extract the spatial correlation of NPs that are distributed in a polymer matrix and link it with the 
+composition of the PNC. The machine learning framework for predicting the long-range NPs 
+distribution in a polymer matrix, which is abbreviated as nanoNET, has two main components – a 
+regressor and a decoder. As discussed in the previous section, the decoder is a deconvolution neural 
+network, which is an integral part of the CNN autoencoder. We use an RF for the regression task, as 
+discussed in the previous section. The regressor and the decoder are connected, as shown in Figure 3 
+
+Figure 3: nanoNET. The random forest regressor and the decoder part of the convolutional neural network autoencoder is integrated 
+to predict the RDF of NPs in a polymer matrix. The input to this machine learning tool is the composition parameters of a PNC viz.,  
+NP-NP interaction, NP-polymer interaction, polymer chain length, NP diameter, NP concentration, and the output is its long-range 
+RDF of NPs. 
+
+
+ 
+8
+
+to predict the RDF of NPs in a polymer matrix. Both the RF and CNN autoencoder are trained 
+previously with the available information (training data). For any given composition, the regressor 
+predicts the latent space representation of the NPs’ RDF, and the decoder converts it to the real 2D 
+space representation of an RDF. Within this predictive framework, the composition matrix, which is 
+the input vector, has a dimension of five. They represent the size of NP (D), polymer chain length 
+(N), NP concentration (r), NP-NP interaction (𝜖)*+)*), and polymer-NP interaction (𝜖*+)*). The 
+dimension of the latent space is 8. The output dimension is 64x64, which corresponds to an RDF 
+image. The size of the latent space vector and output matrix is decided based on initial trials to 
+improve the accuracy and efficiency of the ML pipeline. The performance of nanoNET as a function 
+of the latent space dimension is discussed in the supporting information (SI).  
+ 
+RESULTS AND DISCUSSION 
+ 
+The nanoNET is built using a CNN autoencoder and an RF regressor. We use 68 RDFs to build these 
+two components of the nanoNET. The performance of the nanoNET is tested for 12 RDFs that are 
+not used for model building. These 80 RDFs are calculated for a selected range of composition 
+parameters that yield a large variety of NP distributions in a polymer matrix. Figure 4 shows a few 
+representative cases of NP distributions. We observe microscopic phase separation for a weak NP-
+polymer interaction wherein the first RDF peak occurs at 𝑟 ≈ 3𝜎 = 𝐷. This corresponds to a complete 
+unmixing of NPs and polymers. A layer of polymer is present in Figure 4b that defines the bridging 
+of NPs, and the corresponding peak position is seen for an NP-NP separation distance of 𝑟 ≈ 4𝜎 =
+𝐷 + 𝑑. Figure 4c represents a case when nanoparticles are well dispersed in the polymer matrix. The 
+corresponding RDF shows a very low pick height, and the peak position is around a separation 
+distance of 8s for the case of D=3s. This is a signature of a weak effective potential of mean force 
+
+Figure 4:  MD snapshots and RDFs of NPs in a polymer matrix are shown for three representative cases. The (a), (b) and (c) 
+correspond to composition parameters ( D=3s, N=40, r=0.00072, 𝜖!"#!"=0.1e  and 𝜖"#!" =0.1e ), (D=3s, N=40, 
+r=0.00032, 𝜖!"#!" = 0.5e , and 𝜖"#!" = 1.0e ) and (D=3s, N=40, r=0.00082, 𝜖!"#!" = 0.2e  , and = 0.4e ), respectively. The 
+green and blue beads are monomers of the polymers, and nanoparticles, respectively. The (d), (e) and (f) are the respective RDFs. 
+
+
+ 
+9
+
+between NPs. Overall,  our CGMD simulation-identified phases of PNC that are commonly seen in 
+experiments,71–74 and our machine learning protocol is targeted to establish composition-
+microstructure relations of PNCs that are experimentally realizable.  
+
+ 
+First, we focus on CNN autoencoder training with the RDFs data. All RDFs are converted to 
+
+grayscale images of dimension 64x64 for machine learning purposes as discussed in the method 
+section. We create two data sets – training and validation for establishing the autoencoder model. The 
+training validation sets consist of 80% and 20% of the total RDF data. The CNN autoencoder is 
+trained for 400 epochs. The mean square error during the training drops rapidly in the early stage of 
+the training, as shown in Figure 5a for both the training and validation sets. The reconstruction loss, 
+which is defined as the mean absolute error (MSE) in prediction, after the training is found to be 
+~0.005 for the training data set. The autoencoder compresses a two-dimensional image of size 64x64 
+to a one-dimensional array of size 8. We decide the dimension of the latent space based on many 
+initial studies. Our initial studies suggest that latent space of size 8 most accurately predicts the RDF. 
+Details of these analyses can be seen in the supporting information (SI).  Once the training completes, 
+we evaluate the performance of the autoencoder. The input image and output image of a trained CNN 
+autoencoder are compared in Figures 5b, c, and d, for three representative cases. The visual inspection 
+suggests close agreement between input and output images. The MSE in prediction is below 2%.  
+Therefore, we infer that the CNN autoencoder creates a unique latent space representation of the 
+RDFs.  
+ 
+
+Now, we build an RF model to predict the latent space vector of an RDF based on the 
+
+information of the composition of a PNC. Each feature and target are scaled individually such that 
+they vary in the range between zero and one. The normalized dataset is split randomly into two 
+subsets- one for training the RF regressor, and another one for testing the performance of the 
+regressor. The training and test subsets contain 80% and 20% of the total data, respectively. We vary 
+the number of decision trees in the RF to identify the best model. Figure 6a shows the MSE as a 
+function of decision trees in the RF. It indicates that the best performance of the RF regressor can be 
+achieved for over 20 decision trees. The performance of an RF with 20 decision tresses is compared 
+in Figure 6b.  The predicted and actual latent space values are in close agreement. The coefficient of 
+determination (r2) is 0.98 and 0.84 for training and test sets, respectively. We infer that this RF model 
+
+Figure 5: Training and validation of the convolutional neural network autoencoder. Sixty-eight RDFs are used to build the 
+convolutional autoencoder. The loss function i.e., MSE during the training is shown for training and validation data sets in 
+(a). Three representative input RDF images and corresponding output RDF images are shown in (b), (c) and (e). The top 
+and bottom panels in (b), (c) and (d) correspond to the actual input images and predicted output images, respectively.    
+
+
+ 
+10
+
+can serve as a surrogate model for predicting the latent space vector of an RDF image. We note that 
+one can build an RF model that directly predicts the RDF for a given composition vector of a PNC. 
+In that case, an RDF is a one-dimensional array of length 100, each representing the local density of 
+NPs within a range of 0 to 10s NP-NP separation distance. As shown in SI, a RF regressor can’t 
+establish such a correlation between two vectors of disparate dimensions. Also, predicting 100 target 
+values correctly from the 5 features/inputs is equally error-prone for other AI/ML algorithms like XG 
+Boost, deep neural network, and ridge regression. Therefore, instead of directly predicting an RDF, 
+we build a regression model that predicts a lower dimensional representation of the RDF.   
+
+ 
+We now integrate the RF model and the decoder part of the CNN autoencoder and build the 
+
+nanoNET that predicts the RDF of NPs for a given PNC, as schematically shown in Figure 3. The 
+nanoNET receives composition information of a PNC viz, NP-polymer interaction strength (𝜖"#!"), 
+NP-NP interaction strength (𝜖)*+)*), NP concentration (r), NP diameter (D) and length of a polymer 
+chain (N) as input. The RF model predicts the latent space vector for this given composition vector. 
+The predicted latent space vector is fed to the decoder. The decoder constructs the RDF of NPs in the 
+system and produces as an output of the nanoNET. The predicted RDFs from the nanoNET are 
+compared to the actual RDFs that are computed using CGMD simulations in Figure 7 for twelve 
+representative cases. The set of composition parameters for all the representative cases is tabulated in 
+SI.  The predicted first peak height and position of an RDF for all the cases are in very close agreement 
+with their actual value. The model is able to predict a wide extent of structural correlations from a 
+very weak correlation in Figure 7k, where the peak height is about 4 to a very strong correlation in 
+Figure 7l, where the peak height is about 100. Similarly, the first peak position shifts from around 
+2.5s ( Figure 7b, 7e, 7g, 7k)  to around 5s (Figure 7j). The model makes a very accurate prediction 
+for the entire range of the first coordination shell for all the cases. For a few cases (Fig 7a, b, and c), 
+
+Figure 6: Development of a random forest (RF) model and its performance evaluation. Mean square error is plotted as a function of 
+the number of decision tress in an RF in (a). The MSE is appeared to reach a plateau when the number of decision tress is around 20.  
+The actual and predicted latent space variables are compared in (b) for training and test sets. 
+
+
+ 
+11
+
+the second peak height and location are slightly overpredicted. Overall, the shape of the predicted 
+RDF curve is largely in agreement with that of the actual curve for all the cases. Moreover, the phase 
+behavior of the PNC is predicted very accurately. For example, predicted microscopic phase 
+separation (Figure 7l), bridging of nanoparticles by a polymer layer (Figure 7f) and dispersion (Figure 
+7k) are well in agreement with the actual phases.  
+ 
+CONCLUSIONS 
+ 
+AI and ML offer exceptional promises to predict the behavior of a vast chemical and composition 
+space of a material based on a relatively smaller number of training data points. However, it is chal-
+lenging to develop an ML workflow that correlates two vectors of disparate dimensions. Here we 
+tackle this problem using feature engineering for polymer nanocomposites. Specifically, we develop 
+a model that correlates the composition of a polymer nanocomposite and the long-range spatial dis-
+tribution of nanoparticles in it. As the composition vector and radial distribution function are of 
+
+Figure 7: Performance of nanoNET. The actual RDF of nanoparticles in a polymer matrix is compared with that of the predicted 
+one for twelve representative cases. Each case corresponds to a distinct combination of composition parameters. The composition 
+parameter value for each of these cases can be seen in SI.   
+
+
+ 
+12
+
+disparate dimensions, we use a data encoding technique to solve this problem. The quality of data 
+encoding is very critical for the success of any ML pipeline and model development. We show that 
+an unsupervised convolutional neural network provides a unique architecture to extract the vital fea-
+tures of images and create a latent space representation of an RDF. Subsequently, we use random 
+forest regression to establish correlations between the composition parameters and the latent space 
+representation of an RDF. Finally, the decoder is used to construct an RDF from the latent space 
+variables that are predicted by a random forest for an unknown composition matrix. In principle, any 
+dimensionality reduction technique such as deep neural network (DNN) autoencoders, principal com-
+ponent analysis (PCA), or t-distributed stochastic neighbor embedding (t-SNE) can be used for this 
+purpose. However, the choice of method for dimensionality reduction plays a vital role in the model's 
+overall performance. Our initial studies suggest that convolutional neural network autoencoder-based 
+feature extraction from an RDF is most efficient for the current problem, and it improves the compo-
+sition-structure ML model of PNCs dramatically. In summary, we develop a robust metamodel that 
+enables intelligent interpolations in the physicochemical space of a polymer nanocomposite without 
+direct simulations or experiments. In the present study, we use a very generic phenomenological 
+model of polymer nanocomposite to construct the machine learning framework that predicts the na-
+noparticle distribution. This framework can be further expanded to study and predict structures and 
+morphologies of other nanocomposite systems, including polymer-grafted nanoparticles, and poly-
+mer-grafted nanoparticles in a polymer matrix. Moreover, all-atom molecular simulations and exper-
+imental data can be utilized to build the ML pipeline. We expect that the mathematical framework of 
+the nanoNET will be useful for predicting any spatial or temporal correlation of molecular systems.  
+
+ 
+
+ACKNOWLEDGMENT 
+ 
+The work is made possible by financial support from the SERB, DST, and Gov. of India through a 
+start-up research grant (SRG/2020/001045) and the National Supercomputing Mission’s research 
+grant (DST/NSM/R&D_HPC_Applications/2021/40). This research uses resources of the Argonne 
+Leadership Computing Facility, which is a DOE Office of Science User Facility supported under 
+Contract DE-AC02-06CH11357. We also use the computational facility of the Center for 
+Nanoscience Materials. Use of the Center for Nanoscale Materials, an Office of Science user facility, 
+was supported by the U.S. Department of Energy, Office of Science, Office of Basic Energy Sciences, 
+under Contract No. DE-AC02-06CH11357.We acknowledge the use of the computing resources at 
+HPCE, IIT Madras. 
+ 
+REFERENCE 
+ 
+(1) 
+Akcora, P.; Liu, H.; Kumar, S. K.; Moll, J.; Li, Y.; Benicewicz, B. C.; Schadler, L. S.; 
+Acehan, D.; Panagiotopoulos, A. Z.; Pryamitsyn, V.; Ganesan, V.; Ilavsky, J.; Thiyagarajan, 
+P.; Colby, R. H.; Douglas, J. F. Anisotropic Self-Assembly of Spherical Polymer-Grafted 
+Nanoparticles. Nat. Mater. 2009, 8 (4), 354–359. https://doi.org/10.1038/nmat2404. 
+
+(2) 
+Mackay, M. E.; Tuteja, A.; Duxbury, P. M.; Hawker, C. J.; Horn, B. V.; Guan, Z.; Chen, G.; 
+Krishnan, R. S. General Strategies for Nanoparticle Dispersion. Science 2006, 311 (5768), 
+1740–1743. https://doi.org/10.1126/science.1122225. 
+
+(3) 
+Vaia, R. A.; Giannelis, E. P. Polymer Nanocomposites: Status and Opportunities. MRS Bull. 
+2001, 26 (5), 394–401. https://doi.org/10.1557/mrs2001.93. 
+
+
+ 
+13
+
+(4) 
+Kumar, S. K.; Ganesan, V.; Riggleman, R. A. Perspective: Outstanding Theoretical Questions 
+in Polymer-Nanoparticle Hybrids. J. Chem. Phys. 2017, 147 (2), 020901. 
+https://doi.org/10.1063/1.4990501. 
+
+(5) 
+Israelachvili, J. N. Intermolecular and Surface Forces, 3rd edition.; Academic Press: 
+Burlington (Mass.), 2011. 
+
+(6) 
+Poon, W. C. K. The Physics of a Model Colloid Polymer Mixture. J. Phys. Condens. Matter 
+2002, 14 (33), R859–R880. https://doi.org/10.1088/0953-8984/14/33/201. 
+
+(7) 
+Pusey, P. N.; Zaccarelli, E.; Valeriani, C.; Sanz, E.; Poon, W. C. K.; Cates, M. E. Hard 
+Spheres: Crystallization and Glass Formation. Philos. Trans. R. Soc. Math. Phys. Eng. Sci. 
+2009, 367 (1909), 4993–5011. https://doi.org/10.1098/rsta.2009.0181. 
+
+(8) 
+Zaccarelli, E.; Liddle, S. M.; Poon, W. C. K. On Polydispersity and the Hard Sphere Glass 
+Transition. Soft Matter 2015, 11 (2), 324–330. https://doi.org/10.1039/C4SM02321H. 
+
+(9) 
+Ilett, S. M.; Orrock, A.; Poon, W. C. K.; Pusey, P. N. Phase Behavior of a Model Colloid-
+Polymer Mixture. Phys. Rev. E 1995, 51 (2), 1344–1352. 
+https://doi.org/10.1103/PhysRevE.51.1344. 
+
+(10) Rivas-Barbosa, R.; Ruiz-Franco, J.; Lara-Peña, M. A.; Cardellini, J.; Licea-Claverie, A.; 
+
+Camerin, F.; Zaccarelli, E.; Laurati, M. Link between Morphology, Structure, and 
+Interactions of Composite Microgels. Macromolecules 2022, 55 (5), 1834–1843. 
+https://doi.org/10.1021/acs.macromol.1c02171. 
+
+(11) Cheng, S.; Stevens, M. J.; Grest, G. S. Ordering Nanoparticles with Polymer Brushes. J. 
+
+Chem. Phys. 2017, 147 (22), 224901. https://doi.org/10.1063/1.5006048. 
+
+(12) Asakura, S.; Oosawa, F. On Interaction between Two Bodies Immersed in a Solution of 
+
+Macromolecules. J. Chem. Phys. 1954, 22 (7), 1255–1256. 
+https://doi.org/10.1063/1.1740347. 
+
+(13) Asakura, S.; Oosawa, F. Interaction between Particles Suspended in Solutions of 
+
+Macromolecules. J. Polym. Sci. 1958, 33 (126), 183–192. 
+https://doi.org/10.1002/pol.1958.1203312618. 
+
+(14) Miyazaki, K.; Schweizer, K. S.; Thirumalai, D.; Tuinier, R.; Zaccarelli, E. The Asakura–
+
+Oosawa Theory: Entropic Forces in Physics, Biology, and Soft Matter. J. Chem. Phys. 2022, 
+156 (8), 080401. https://doi.org/10.1063/5.0085965. 
+
+(15) Hall, L. M.; Jayaraman, A.; Schweizer, K. S. Molecular Theories of Polymer 
+
+Nanocomposites. Curr. Opin. Solid State Mater. Sci. 2010, 14 (2), 38–48. 
+https://doi.org/10.1016/j.cossms.2009.08.004. 
+
+(16) Hooper, J. B.; Schweizer, K. S. Theory of Phase Separation in Polymer Nanocomposites. 
+
+Macromolecules 2006, 39 (15), 5133–5142. https://doi.org/10.1021/ma060577m. 
+
+(17) Hooper, J. B.; Schweizer, K. S. Contact Aggregation, Bridging, and Steric Stabilization in 
+
+Dense Polymer−Particle Mixtures. Macromolecules 2005, 38 (21), 8858–8869. 
+https://doi.org/10.1021/ma051318k. 
+
+(18) Moinuddin, M.; Biswas, P.; Tripathy, M. The Effect of Surface Roughness on the Phase 
+
+Behavior of Colloidal Particles. J. Chem. Phys. 2020, 152 (4), 044902. 
+https://doi.org/10.1063/1.5136080. 
+
+(19) Starr, F. W.; Douglas, J. F.; Glotzer, S. C. Origin of Particle Clustering in a Simulated 
+
+Polymer Nanocomposite and Its Impact on Rheology. J. Chem. Phys. 2003, 119 (3), 1777–
+1788. https://doi.org/10.1063/1.1580099. 
+
+(20) Pryamtisyn, V.; Ganesan, V.; Panagiotopoulos, A. Z.; Liu, H.; Kumar, S. K. Modeling the 
+
+Anisotropic Self-Assembly of Spherical Polymer-Grafted Nanoparticles. J. Chem. Phys. 
+2009, 131 (22), 221102. https://doi.org/10.1063/1.3267729. 
+
+(21) Patti, A. Molecular Dynamics of Spherical Nanoparticles in Dense Polymer Melts. J. Phys. 
+
+Chem. B 2014, 118 (13), 3731–3742. https://doi.org/10.1021/jp412440g. 
+
+(22) Ganesan, V.; Jayaraman, A. Theory and Simulation Studies of Effective Interactions, Phase 
+
+Behavior and Morphology in Polymer Nanocomposites. Soft Matter 2013, 10 (1), 13–38. 
+https://doi.org/10.1039/C3SM51864G. 
+
+
+ 
+14
+
+(23) Madsen, J.; Liu, P.; Kling, J.; Wagner, J. B.; Hansen, T. W.; Winther, O.; Schiøtz, J. A Deep 
+
+Learning Approach to Identify Local Structures in Atomic-Resolution Transmission Electron 
+Microscopy Images. Adv. Theory Simul. 2018, 1 (8), 1800037. 
+https://doi.org/10.1002/adts.201800037. 
+
+(24) Okunev, A. G.; Mashukov, M. Y.; Nartova, A. V.; Matveev, A. V. Nanoparticle Recognition 
+
+on Scanning Probe Microscopy Images Using Computer Vision and Deep Learning. 
+Nanomaterials 2020, 10 (7), 1285. https://doi.org/10.3390/nano10071285. 
+
+(25) Banik, S.; Dhabal, D.; Chan, H.; Manna, S.; Cherukara, M.; Molinero, V.; Sankaranarayanan, 
+
+S. K. CEGAN: Crystal Edge Graph Attention Network for Multiscale Classification of 
+Materials Environment. arXiv July 20, 2022. https://doi.org/10.48550/arXiv.2207.10168. 
+
+(26) Reinhart, W. F. Unsupervised Learning of Atomic Environments from Simple Features. 
+
+Comput. Mater. Sci. 2021, 196, 110511. https://doi.org/10.1016/j.commatsci.2021.110511. 
+
+(27) Liu, S.; Li, J.; Bennett, K. C.; Ganoe, B.; Stauch, T.; Head-Gordon, M.; Hexemer, A.; 
+
+Ushizima, D.; Head-Gordon, T. Multiresolution 3D-DenseNet for Chemical Shift Prediction 
+in NMR Crystallography. J. Phys. Chem. Lett. 2019, 10 (16), 4558–4565. 
+https://doi.org/10.1021/acs.jpclett.9b01570. 
+
+(28) Liu, S.; Melton, C. N.; Venkatakrishnan, S.; Pandolfi, R. J.; Freychet, G.; Kumar, D.; Tang, 
+
+H.; Hexemer, A.; Ushizima, D. M. Convolutional Neural Networks for Grazing Incidence X-
+Ray Scattering Patterns: Thin Film Structure Identification. MRS Commun. 2019, 9 (2), 586–
+592. https://doi.org/10.1557/mrc.2019.26. 
+
+(29) Heil, C. M.; Patil, A.; Dhinojwala, A.; Jayaraman, A. Computational Reverse-Engineering 
+
+Analysis for Scattering Experiments (CREASE) with Machine Learning Enhancement to 
+Determine Structure of Nanoparticle Mixtures and Solutions. ACS Cent. Sci. 2022, 8 (7), 
+996–1007. https://doi.org/10.1021/acscentsci.2c00382. 
+
+(30) Wessels, M. G.; Jayaraman, A. Machine Learning Enhanced Computational Reverse 
+
+Engineering Analysis for Scattering Experiments (CREASE) to Determine Structures in 
+Amphiphilic Polymer Solutions. ACS Polym. Au 2021, acspolymersau.1c00015. 
+https://doi.org/10.1021/acspolymersau.1c00015. 
+
+(31) Lu, S.; Montz, B.; Emrick, T.; Jayaraman, A. Self-Supervised Machine Learning Model for 
+
+Analysis of Nanowire Morphologies from Transmission Electron Microscopy Images. arXiv 
+March 25, 2022. https://doi.org/10.48550/arXiv.2203.13875. 
+
+(32) Qu, E. Z.; Jimenez, A. M.; Kumar, S. K.; Zhang, K. Quantifying Nanoparticle Assembly 
+
+States in a Polymer Matrix through Deep Learning. Macromolecules 2021, 54 (7), 3034–
+3040. https://doi.org/10.1021/acs.macromol.0c02483. 
+
+(33) Bhattacharya, D.; Kleeblatt, D. C.; Statt, A.; Reinhart, W. F. Predicting Aggregate 
+
+Morphology of Sequence-Defined Macromolecules with Recurrent Neural Networks. Soft 
+Matter 2022, 18 (27), 5037–5051. https://doi.org/10.1039/D2SM00452F. 
+
+(34) Statt, A.; Kleeblatt, D. C.; Reinhart, W. F. Unsupervised Learning of Sequence-Specific 
+
+Aggregation Behavior for a Model Copolymer. Soft Matter 2021, 17 (33), 7697–7707. 
+https://doi.org/10.1039/D1SM01012C. 
+
+(35) Webb, M. A.; Jackson, N. E.; Gil, P. S.; Pablo, J. J. de. Targeted Sequence Design within the 
+
+Coarse-Grained Polymer Genome. Sci. Adv. 2020, 6 (43), eabc6216. 
+https://doi.org/10.1126/sciadv.abc6216. 
+
+(36) Shen, Z.-H.; Bao, Z.-W.; Cheng, X.-X.; Li, B.-W.; Liu, H.-X.; Shen, Y.; Chen, L.-Q.; Li, X.-
+
+G.; Nan, C.-W. Designing Polymer Nanocomposites with High Energy Density Using 
+Machine Learning. Npj Comput. Mater. 2021, 7 (1), 1–9. https://doi.org/10.1038/s41524-021-
+00578-6. 
+
+(37) Zhu, M.-X.; Deng, T.; Dong, L.; Chen, J.-M.; Dang, Z.-M. Review of Machine Learning-
+
+Driven Design of Polymer-Based Dielectrics. IET Nanodielectrics 2022, 5 (1), 24–38. 
+https://doi.org/10.1049/nde2.12029. 
+
+
+ 
+15
+
+(38) Kadulkar, S.; Howard, M. P.; Truskett, T. M.; Ganesan, V. Prediction and Optimization of Ion 
+
+Transport Characteristics in Nanoparticle-Based Electrolytes Using Convolutional Neural 
+Networks. J. Phys. Chem. B 2021. https://doi.org/10.1021/acs.jpcb.1c02004. 
+
+(39) Wang, Y.; Zhang, M.; Lin, A.; Iyer, A.; Prasad, A. S.; Li, X.; Zhang, Y.; Schadler, L. S.; Chen, 
+
+W.; Brinson, L. C. Mining Structure–Property Relationships in Polymer Nanocomposites 
+Using Data Driven Finite Element Analysis and Multi-Task Convolutional Neural Networks. 
+Mol. Syst. Des. Eng. 2020, 5 (5), 962–975. https://doi.org/10.1039/D0ME00020E. 
+
+(40) Verdonck, T.; Baesens, B.; Óskarsdóttir, M.; vanden Broucke, S. Special Issue on Feature 
+
+Engineering Editorial. Mach. Learn. 2021. https://doi.org/10.1007/s10994-021-06042-2. 
+
+(41) Mohapatra, S.; An, J.; Gómez-Bombarelli, R. Chemistry-Informed Macromolecule Graph 
+
+Representation for Similarity Computation, Unsupervised and Supervised Learning. Mach. 
+Learn. Sci. Technol. 2022, 3 (1), 015028. https://doi.org/10.1088/2632-2153/ac545e. 
+
+(42) Patra, T. K. Data-Driven Methods for Accelerating Polymer Design. ACS Polym. Au 2022, 2 
+
+(1), 8–26. https://doi.org/10.1021/acspolymersau.1c00035. 
+
+(43) Huan, T. D.; Mannodi-Kanakkithodi, A.; Ramprasad, R. Accelerated Materials Property 
+
+Predictions and Design Using Motif-Based Fingerprints. Phys. Rev. B 2015, 92 (1), 014106. 
+https://doi.org/10.1103/PhysRevB.92.014106. 
+
+(44) Sanchez-Lengeling, B.; Aspuru-Guzik, A. Inverse Molecular Design Using Machine 
+
+Learning: Generative Models for Matter Engineering. Science 2018, 361 (6400), 360–365. 
+https://doi.org/10.1126/science.aat2663. 
+
+(45) Chen, G.; Tao, L.; Li, Y. Predicting Polymers’ Glass Transition Temperature by a Chemical 
+
+Language Processing Model. Polymers 2021, 13 (11), 1898. 
+https://doi.org/10.3390/polym13111898. 
+
+(46) Bertinetto, C.; Duce, C.; Micheli, A.; Solaro, R.; Starita, A.; Tiné, M. R. Prediction of the 
+
+Glass Transition Temperature of (Meth)Acrylic Polymers Containing Phenyl Groups by 
+Recursive Neural Network. Polymer 2007, 48 (24), 7121–7129. 
+https://doi.org/10.1016/j.polymer.2007.09.043. 
+
+(47) Bhattacharya, D.; Patra, T. K. DPOLY: Deep Learning of Polymer Phases and Phase 
+
+Transition. Macromolecules 2021, 54 (7), 3065–3074. 
+https://doi.org/10.1021/acs.macromol.0c02655. 
+
+(48) Kremer, K.; Grest, G. S. Dynamics of Entangled Linear Polymer Melts:  A Molecular‐
+
+dynamics Simulation. J. Chem. Phys. 1990, 92 (8), 5057–5086. 
+https://doi.org/10.1063/1.458541. 
+
+(49) Plimpton, S. Fast Parallel Algorithms for Short-Range Molecular Dynamics. J. Comput. 
+
+Phys. 1995, 117 (1), 1–19. https://doi.org/10.1006/jcph.1995.1039. 
+
+(50) LAMMPS Molecular Dynamics Simulator. https://www.lammps.org/ (accessed 2021-09-13). 
+(51) Sultana, F.; Sufian, A.; Dutta, P. Advancements in Image Classification Using Convolutional 
+
+Neural Network. In 2018 Fourth International Conference on Research in Computational 
+Intelligence and Communication Networks (ICRCICN); 2018; pp 122–129. 
+https://doi.org/10.1109/ICRCICN.2018.8718718. 
+
+(52) Krizhevsky, A.; Sutskever, I.; Hinton, G. E. ImageNet Classification with Deep 
+
+Convolutional Neural Networks. In Advances in Neural Information Processing Systems; 
+Curran Associates, Inc., 2012; Vol. 25. 
+
+(53) Deng, J.; Dong, W.; Socher, R.; Li, L.; Li, K.; Fei-Fei, L. ImageNet: A Large-Scale 
+
+Hierarchical Image Database. In 2009 IEEE Conference on Computer Vision and Pattern 
+Recognition; 2009; pp 248–255. https://doi.org/10.1109/CVPR.2009.5206848. 
+
+(54) Scherer, D.; Müller, A.; Behnke, S. Evaluation of Pooling Operations in Convolutional 
+
+Architectures for Object Recognition. In Artificial Neural Networks – ICANN 2010; 
+Diamantaras, K., Duch, W., Iliadis, L. S., Eds.; Lecture Notes in Computer Science; Springer: 
+Berlin, Heidelberg, 2010; pp 92–101. https://doi.org/10.1007/978-3-642-15825-4_10. 
+
+
+ 
+16
+
+(55) Mao, X.-J.; Shen, C.; Yang, Y.-B. Image Restoration Using Very Deep Convolutional 
+
+Encoder-Decoder Networks with Symmetric Skip Connections. arXiv August 31, 2016. 
+https://doi.org/10.48550/arXiv.1603.09056. 
+
+(56) Dumoulin, V.; Visin, F. A Guide to Convolution Arithmetic for Deep Learning. arXiv March 
+
+23, 2016. https://doi.org/10.48550/arXiv.1603.07285. 
+
+(57) Glorot, X.; Bordes, A.; Bengio, Y. Deep Sparse Rectifier Neural Networks. In Proceedings of 
+
+the Fourteenth International Conference on Artificial Intelligence and Statistics; JMLR 
+Workshop and Conference Proceedings, 2011; pp 315–323. 
+
+(58) Nair, V.; Hinton, G. E. Rectified Linear Units Improve Restricted Boltzmann Machines. In 
+
+Proceedings of the 27th International Conference on International Conference on Machine 
+Learning; ICML’10; Omnipress: Madison, WI, USA, 2010; pp 807–814. 
+
+(59) Kingma, D. P.; Ba, J. Adam: A Method for Stochastic Optimization. ArXiv14126980 Cs 2017. 
+(60) Keras: the Python deep learning API. https://keras.io/ (accessed 2020-10-06). 
+(61) Breiman, L. Random Forests. Mach. Learn. 2001, 45 (1), 5–32. 
+
+https://doi.org/10.1023/A:1010933404324. 
+
+(62) Quinlan, J. R. Simplifying Decision Trees. Int. J. Man-Mach. Stud. 1987, 27 (3), 221–234. 
+
+https://doi.org/10.1016/S0020-7373(87)80053-6. 
+
+(63) Pedregosa, F.; Varoquaux, G.; Gramfort, A.; Michel, V.; Thirion, B.; Grisel, O.; Blondel, M.; 
+
+Prettenhofer, P.; Weiss, R.; Dubourg, V.; Vanderplas, J.; Passos, A.; Cournapeau, D.; Brucher, 
+M.; Perrot, M.; Duchesnay, É. Scikit-Learn: Machine Learning in Python. J. Mach. Learn. 
+Res. 2011, 12 (85), 2825–2830. 
+
+(64) Cun, Y. L.; Cun, Y. L. Steels ( Eds) “Connectionism in Perspective”, Elsevier 1989. 
+
+Generalization and Network Design Strategies, 1989. 
+
+(65) Lecun, Y.; Bottou, L.; Bengio, Y.; Haffner, P. Gradient-Based Learning Applied to Document 
+
+Recognition. Proc. IEEE 1998, 86 (11), 2278–2324. https://doi.org/10.1109/5.726791. 
+
+(66) LeCun, Y.; Boser, B.; Denker, J. S.; Henderson, D.; Howard, R. E.; Hubbard, W.; Jackel, L. 
+
+D. Backpropagation Applied to Handwritten Zip Code Recognition. Neural Comput. 1989, 1 
+(4), 541–551. https://doi.org/10.1162/neco.1989.1.4.541. 
+
+(67) Simonyan, K.; Zisserman, A. Very Deep Convolutional Networks for Large-Scale Image 
+
+Recognition. arXiv April 10, 2015. 
+
+(68) Szegedy, C.; Liu, W.; Jia, Y.; Sermanet, P.; Reed, S.; Anguelov, D.; Erhan, D.; Vanhoucke, V.; 
+
+Rabinovich, A. Going Deeper with Convolutions. arXiv September 16, 2014. 
+
+(69) He, K.; Zhang, X.; Ren, S.; Sun, J. Deep Residual Learning for Image Recognition. arXiv 
+
+December 10, 2015. https://doi.org/10.48550/arXiv.1512.03385. 
+
+(70) Huang, G.; Liu, Z.; van der Maaten, L.; Weinberger, K. Q. Densely Connected Convolutional 
+
+Networks. arXiv January 28, 2018. https://doi.org/10.48550/arXiv.1608.06993. 
+
+(71) Akpinar, B.; Fielding, L. A.; Cunningham, V. J.; Ning, Y.; Mykhaylyk, O. O.; Fowler, P. W.; 
+
+Armes, S. P. Determining the Effective Density and Stabilizer Layer Thickness of Sterically 
+Stabilized Nanoparticles. Macromolecules 2016, 49 (14), 5160–5171. 
+https://doi.org/10.1021/acs.macromol.6b00987. 
+
+(72) Mangal, R.; Srivastava, S.; Archer, L. A. Phase Stability and Dynamics of Entangled 
+
+Polymer–Nanoparticle Composites. Nat. Commun. 2015, 6 (1), 7198. 
+https://doi.org/10.1038/ncomms8198. 
+
+(73) Srivastava, S.; Schaefer, J. L.; Yang, Z.; Tu, Z.; Archer, L. A. 25th Anniversary Article: 
+
+Polymer–Particle Composites: Phase Stability and Applications in Electrochemical Energy 
+Storage. Adv. Mater. 2014, 26 (2), 201–234. https://doi.org/10.1002/adma.201303070. 
+
+(74) Balazs, A. C.; Emrick, T.; Russell, T. P. Nanoparticle Polymer Composites: Where Two Small 
+
+Worlds Meet. Science 2006, 314 (5802), 1107–1110. 
+https://doi.org/10.1126/science.1130557. 
+
+ 
+ 
+
+

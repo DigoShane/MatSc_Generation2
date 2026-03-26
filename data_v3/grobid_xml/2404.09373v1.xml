@@ -1,0 +1,1919 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Use of multigrids to reduce the cost of performing interpolative separable density fitting</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+				<date type="published" when="2024-04-14">14 Apr 2024</date>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Kori</forename><forename type="middle">E</forename><surname>Smyser</surname></persName>
+						</author>
+						<author>
+							<persName><forename type="first">Sandeep</forename><surname>Sharma</surname></persName>
+						</author>
+						<author>
+							<affiliation key="aff0">
+								<orgName type="department">Department of Chemistry</orgName>
+								<orgName type="institution">University of Colorado</orgName>
+								<address>
+									<postCode>80302</postCode>
+									<settlement>Boulder</settlement>
+									<region>CO</region>
+									<country key="US">USA</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<affiliation key="aff1">
+								<orgName type="institution">Alec White Quantum Simulation Technologies, Inc</orgName>
+								<address>
+									<postCode>02135</postCode>
+									<settlement>Boston</settlement>
+									<country key="US">United States</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Use of multigrids to reduce the cost of performing interpolative separable density fitting</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date type="published" when="2024-04-14">14 Apr 2024</date>
+						</imprint>
+					</monogr>
+					<idno type="MD5">D65A9A66AA3AF67A396AFAAA90F32839</idno>
+					<idno type="arXiv">arXiv:2404.09373v1[physics.chem-ph]</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.0" ident="GROBID" when="2026-03-04T03:29+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>In this article, we present an interpolative separable density fitting (ISDF) based algorithm to calculate exact exchange in periodic mean field calculations. In the past, decomposing the twoelectron integrals into tensor hypercontraction (THC) form using ISDF was the most expensive step of the entire mean field calculation. Here we show that by using a multigrid-ISDF algorithm both the memory and the CPU cost of this step can be reduced. The CPU cost is brought down from cubic scaling to quadratic scaling with a low computational prefactor which reduces the cost by almost two orders of magnitude. Thus, in the new algorithm, the cost of performing ISDF is largely negligible compared to other steps. Along with the CPU cost, the memory cost of storing the factorized two-electron integrals is also reduced by a factor of up to 35. With the current algorithm, we can perform Hartree-Fock calculations on a Diamond supercell containing more than 17,000 basis functions and more than 1,500 electrons on a single node with no disk usage. For this calculation, the cost of constructing the exchange matrix is only a factor of four slower than the cost of diagonalizing the Fock matrix. Augmenting our approach with linear scaling algorithms can further speed up the calculations.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>I. INTRODUCTION</head><p>Much of modern ab initio computational chemistry and materials science is based on Kohn-Sham (KS) density functional theory (DFT) 1 . The inclusion of exact Hartree-Fock (HF) exchange within this framework 2 has been instrumental to the success of DFT for molecular systems to the point that almost all modern molecular calculations rely on these "hybrid" density functionals 3 . Hybrid functionals can outperform their semi-local counterparts for some properties of periodic solids 4-9 , but, in contrast to molecular calculations, the cost of evaluating the non-local exchange contribution may be prohibitive.</p><p>Methods for the efficient evaluation of exact exchange are well-developed in the context of molecular calculations. Such calculations typically use a relatively small set of small, local basis functions such that the ratio of basis functions to electrons, N/n, is often less than ten. Computing every element of the fourth-order tensor of electron repulsion integrals, which one might naively expect to be necessary for both the Coulomb and exchange contributions, would scale like O(N 4 ). However, the locality of the basis functions implies that there are asymptotically only a linear number of significant basis function pairs, which means that the Coulomb and exchange contributions can be computed in O(N 2 ) time 10 . The scaling of the Coulomb contribution can be reduced to linearithmic, O(N ln N ), using the multipole expansion and fast multipole method <ref type="bibr" target="#b10">[11]</ref><ref type="bibr" target="#b11">[12]</ref><ref type="bibr" target="#b12">[13]</ref> . The exchange contribution can also be computed in asymptotically linear time for non-metallic systems by leveraging locality in the density matrix <ref type="bibr" target="#b13">[14]</ref><ref type="bibr" target="#b14">[15]</ref><ref type="bibr" target="#b15">[16]</ref><ref type="bibr" target="#b16">[17]</ref> . For most practical molecular calculations, these asymptotically linear methods come with a large prefactor, and it is preferable to reduce the cost of higher-scaling algorithms with tensor factorization. The resolution of the identity (RI) method is one such tensor factorization technique that is commonly applied to both Coulomb and exchange contributions with the RI-J 18,19 and RI-K 20-23 algorithms respectively. These RI methods are also called "density fitting;" and Dunlap showed how a "robust" fit can be used to make the error in the fitted two-electron integral quadratic in the error for basis function pairs. 24-26 RI approaches usually rely on predetermined, atom-centered basis sets of fitting functions. Circumventing this requirement, local-RI using numerical basis <ref type="bibr" target="#b26">27,</ref><ref type="bibr" target="#b27">28</ref> and Cholesky decomposition approach yields a factorization of the same form without the need for pre-optimized fitting basis sets. <ref type="bibr" target="#b28">29,</ref><ref type="bibr" target="#b29">30</ref> The pseudospectral (PS) method is an alternative factorization that uses a partial real-space quadrature to factorize the two-electron integrals 31 , and the chain of spheres algorithm for exchange (COSX) 32 is a commonly used implementation of the PS idea. In recent years, the tensor hypercontraction (THC) method of Martinez and coworkers took the idea of tensor factorization to the logical limit <ref type="bibr" target="#b32">[33]</ref><ref type="bibr" target="#b33">[34]</ref><ref type="bibr" target="#b34">[35]</ref> . The THC method factorizes the four-index tensor of two-electron integrals into a product of two-index tensors-a drastic factorization. But obtaining an accurate THC factorization is generally difficult so initial applications to correlated methods are limited. However, the "interpolative separable density fitting" (ISDF) method 36 can provide a factorization of THC form with only cubic, O(N 3 ), scaling, and it has since been</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>used in various algorithms for exact exchange <ref type="bibr" target="#b36">[37]</ref><ref type="bibr" target="#b37">[38]</ref><ref type="bibr" target="#b38">[39]</ref><ref type="bibr" target="#b39">[40]</ref><ref type="bibr" target="#b40">[41]</ref><ref type="bibr" target="#b41">[42]</ref> .</p><p>On the other hand, calculations on periodic solids often use a large basis set of N g plane waves. In these calculations, the action of the Coulomb operator on just the occupied space is determined by solving n Poisson equations, which leads to quadratic scaling, O(nN g ln N g ), or linear scaling when using translational (k-point) symmetry. Unfortunately, the action of the exchange operator on the occupied space is cubic, O(n 2 N g ln N g ), or quadratic with k-point symmetry. So, in a plane-wave basis set, the exchange contribution is higher scaling than the Coulomb part, and there have been many efforts to reduce this cost. Linear scaling methods have been developed for both the Coulomb and exchange <ref type="bibr" target="#b15">16,</ref><ref type="bibr" target="#b42">43</ref> . As in the molecular case, traditional linear scaling exchange algorithms rely on locality in the density matrix for insulating systems <ref type="bibr" target="#b43">44</ref> . An exception is stochastic density functional theory (sDFT), which can reduce the prefactor and scaling of the exchange calculation by using the stochastic resolution of identity method <ref type="bibr" target="#b44">[45]</ref><ref type="bibr" target="#b45">[46]</ref><ref type="bibr" target="#b46">[47]</ref> . For typical calculations, asymptotically linear scaling methods are not practical, and methods to improve the efficiency without addressing the scaling can result in useful speedups <ref type="bibr" target="#b47">48</ref> . Additional examples include the adaptively compressed exchange (ACE) method <ref type="bibr" target="#b48">49</ref> and the auxiliary density matrix method <ref type="bibr" target="#b49">50</ref> . Methods that use ISDF-THC for exact exchange in solids <ref type="bibr" target="#b36">37,</ref><ref type="bibr" target="#b37">38,</ref><ref type="bibr" target="#b39">[40]</ref><ref type="bibr" target="#b40">[41]</ref><ref type="bibr" target="#b41">[42]</ref> , including the method presented in this work, fall into this category.</p><p>Since its introduction by Lu and Ying in 2015, <ref type="bibr" target="#b35">36</ref> ISDF has been quickly adopted to speed up the exchange calculations in codes that use Gaussian orbitals <ref type="bibr" target="#b39">40,</ref><ref type="bibr" target="#b40">41</ref> , numerical atomic orbitals <ref type="bibr" target="#b50">51</ref> , and plane wave basis sets <ref type="bibr" target="#b36">37,</ref><ref type="bibr" target="#b37">38,</ref><ref type="bibr" target="#b41">42</ref> . Although the computational scaling of performing ISDF is cubic with the system size (the same as the ultimate computation of the exchange matrix), the computational prefactor is high, making it one of the most expensive steps of the entire calculation. Furthermore, the memory requirements are high, which limits its applicability to small systems unless massively parallel computers are used. Recently, it has been realized that the memory cost can be reduced if one performs interpolative decomposition of the occupied molecular orbitals rather than the entire atomic orbital basis set <ref type="bibr" target="#b40">41</ref> . This does reduce the memory requirement but this comes at an additional cost of having to perform this decomposition at every self-consistent field (SCF) iteration. There is also additional computational overhead related to constructing the exchange matrix (for details we refer the reader to Ref. 41).</p><p>In this work, we perform the interpolative decomposition on the atomic integrals, which is only done once, and simultaneously reduce the computational and memory cost of performing this step using ideas from so-called "multigrid" approaches <ref type="bibr" target="#b51">[52]</ref><ref type="bibr" target="#b52">[53]</ref><ref type="bibr" target="#b53">[54]</ref><ref type="bibr" target="#b54">[55]</ref><ref type="bibr" target="#b55">[56]</ref><ref type="bibr" target="#b56">[57]</ref> . As we will show in the results, the computational cost of this step is no longer the leading cost of the algorithm and we can perform calculations on systems with &gt; 10000 basis functions on a single node without running out of memory. Along with reduced memory requirements, we also show that the cost of performing ISDF calculations is nearly eliminated. The key ingredient of the algorithm is to use multiple local grids of varying resolutions, each of which supports only a subset of atomic orbitals (Fig. <ref type="figure" target="#fig_0">1</ref>). This idea has been used in the past to significantly speed up the calculation of the Coulomb operator in CP2K <ref type="bibr" target="#b52">53,</ref><ref type="bibr" target="#b56">57</ref> , and here we extend this approach to accelerate exchange evaluation within the ISDF-THC framework.</p><p>In the rest of the paper, we will focus on periodic calculations with Gaussian basis functions in the presence of Pseudopotentials, although the ideas can be extended to mixed Gaussian/plane-wave basis and all-electron calculations. We will begin the paper by recalling how the interpolative decomposition is typically performed to obtain integrals in the THC form. This will be followed by our updated algorithm that shows how the memory and CPU cost of performing this step can be significantly reduced. We end the paper with some results and prospects for future work. Instead of calculating the entire four-index quantity one can decompose it into a product of several two-index quantities. We begin by noting that the product of the orbitals µ(R)ν(R) = (µν|R) can be viewed as a matrix with two indices, the first index being a composite index consisting of a pair of orbitals, µν, and the second being a set of suitably chosen grid points with a sufficiently high density, R. This matrix (µν|R) is low-rank and can be decomposed as,</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>II. THEORY</head><formula xml:id="formula_0">(µν|R) = ξ (µν|ξ)ξ(R)</formula><p>where the size of the index ξ is smaller than both the square of the number of basis functions (N ) and the number of grid points (N g ). An optimal decomposition that minimizes the Frobenius norm of the error is given by SVD. However, with SVD we lose the separability of the original matrix (note that while (µν|R</p><formula xml:id="formula_1">) = µ(R)ν(R), (µν|ξ) ̸ = µ(ξ)ν(ξ)).</formula><p>One can instead perform interpolative decomposition that ensures that the indices ξ in the matrix (µν|ξ) are just a subset of grid points R. The disadvantage of interpolative decomposition is that one does not have an optimal algorithm to find it and the Frobeius norm of the error is guaranteed to be greater than that from SVD, but the separability of the resulting matrix is retained, i.e. (µν|ξ) = µ(ξ)ν(ξ), which more than makes up for the shortcomings.</p><p>After having performed the interpolative decomposition of the orbital products one can then write the two-electron integrals as,</p><formula xml:id="formula_2">(µν|λσ) = ξξ ′ µ(ξ)ν(ξ)(ξ|ξ ′ )λ(ξ ′ )σ(ξ ′ )</formula><p>where the matrix (ξ|ξ ′ ) can be evaluated numerically as,</p><formula xml:id="formula_3">(ξ|ξ ′ ) = ξ(r 1 ) 1 r 12 ξ ′ (r 2 )dr 1 dr 2<label>(1)</label></formula><p>using fast Fourier transform (FFT). Typically, THC requires more fitting functions ξ(r) than RI-while the error in the two-electron integrals is quadratic in the RI fitting error, it is linear in the THC error. One can use robust tensor hypercontraction, also known as the robust pseudospectral (rPS) method, to make the error from two-electron integrals quadratic in the fitting errors (similar to RI) and use fewer functions, as in RI. rPS is known to produce non-positive definite two-electron integrals that can cause variational collapse of the SCF cycles <ref type="bibr" target="#b57">58,</ref><ref type="bibr" target="#b58">59</ref> . But we have never seen this in our previous work because we never use rPS to evaluate the Coulomb matrix-only the exchange matrix, which is itself negative definite.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>A. Interpolative decomposition</head><p>As mentioned in the previous section, one needs to perform an interpolative decomposition of the two-electron integrals. The most common way of doing this is to perform pivoted-QR decomposition of the (µν|R) matrix. A simple algorithm would lead to a computational cost of O(N 4 ), making the entire algorithm prohibitively expensive. Lu and Ying 36 in their original paper introduced a randomized algorithm where one first obtains two random matrices G 1 and G 2 of size N × p each, with p = N ξ + δ orthogonal columns, where N ξ is the number of THC functions and δ is a small number usually around 5 <ref type="bibr" target="#b59">60,</ref><ref type="bibr" target="#b60">61</ref> . A randomized density matrix is constructed from these matrices according to,</p><formula xml:id="formula_4">ρ mn,R = µ G 1 µm µ(R) ν G 2 νn ν(R)</formula><p>One can then perform a pivoted-QR decomposition on the matrix ρ mn,R to obtain the pivots. The pivots from the randomized matrix will be of similar quality to those obtained from the full matrix (µν|R) as long as its singular values decay sufficiently quickly, as they do here. The overall cost of the randomized algorithm is O(N 3 ) which is a significant improvement over the deterministic algorithm.</p><p>Matthew suggested <ref type="bibr" target="#b61">62</ref> that one can improve the efficiency of the algorithm by first forming a matrix</p><formula xml:id="formula_5">M (R, R ′ ) = µν (µν|R)(µν|R ′ ) (2)</formula><p>and then perform a pivoted-Cholesky decomposition on it to obtain the pivots ξ. The methods give the same pivot points (when randomization is not introduced), and pivoted Cholesky is typically significantly faster than pivoted QR. This algorithm is extremely efficient especially if the matrix M can be stored in memory. Later we will show that for our purposes these matrices are indeed small enough to be stored in memory. It is also worth mentioning that a third approach called centroid-Voronoi-tesselation (CVT) is also widely used in this context <ref type="bibr" target="#b36">37,</ref><ref type="bibr" target="#b38">39</ref> .</p><p>Having obtained the pivot points ξ, a least square algorithm obtains the functions ξ(R) that minimize the error, min</p><formula xml:id="formula_6">ξ(R) (µν|R) - ξ (µν|ξ)ξ(R)<label>(3)</label></formula><p>This can be done with an</p><formula xml:id="formula_7">O(N N ξ N g + N 3 ξ + N 2 ξ N g ) cost, dominated by O(N 2 ξ N g ).</formula><p>As mentioned in the introduction, this algorithm has a rather steep memory requirement because one has to store the fitting functions ξ(R) at the cost of N g × N ξ . The value of N g can become significant even if there is a single sharp function in the basis set.</p><p>There are a few ways of overcoming the high cost of ISDF calculation:</p><p>1. In a previous publication, <ref type="bibr" target="#b39">40</ref> we have shown that one can reduce both the memory and CPU cost of ISDF by using a robust fitting procedure, which reduces the number of ISDF functions needed to get an accurate result by about a factor of two (for instance, compare THC and rPS in Figure <ref type="figure">5</ref>). Although the cost of ISDF is reduced, it remains the dominant cost of the calculation.</p><p>2. The cost of doing ISDF can be eliminated by not doing ISDF but instead by solely relying on FFT and using the occ-RI (occ refers to occupied orbitals) trick of Manzer et al. <ref type="bibr" target="#b22">23</ref> occ-RI relies on the fact that the value and gradient of the DFT energy can be obtained simply by knowing the occupied-virtual block of the exchange matrix K ip , which is given by</p><formula xml:id="formula_8">K ip = p ϕ i (r 1 )ϕ j (r 2 ) 1 r 12 ϕ j (r 1 )ϕ p (r 2 )dr 1 dr 2<label>(4)</label></formula><p>where we have assumed that the orbitals are real.</p><p>If all the orbitals are representable on an FFT grid of size N g then this entire matrix can be evaluated by performing n 2 Poisson solves, and matrix multiplications with the cost equal to O(n 2 N g ln(N g )) and O(nN N g ), respectively. Out of the two steps, we find that the cost of Poisson solves O(n 2 N g ln(N g )) dominates. Because the ISDF calculation is not used, the memory requirement for storing the fitting functions ξ(R) (N g × N ξ ) is eliminated.</p><p>3. Instead of performing ISDF on the products of atomic orbitals once at the start of the calculation, one can perform a new ISDF calculation on the product of molecular orbitals at each SCF iteration. The two dominant costs of this algorithm are the same as that of AO-based ISDF-O(N 2 ξ N g ) for matrix multiplications and O(N ξ N g ln(N g )) for N ξ Poisson solves. The potential advantage is that the N ξ required is independent of the basis set, it only depends on the number of electrons, and it is expected to be smaller than the N ξ from ISDF on atomic orbital pairs. The disadvantage is that one has to perform an ISDF at each SCF iteration and ISDF remains the dominant cost of the calculation. This approach, of performing ISDF on the molecular orbitals, was first pointed out by Hu et al. <ref type="bibr" target="#b36">37</ref> It was recently extended to use with Gaussian basis sets and k-point sampling by Rettig et al. <ref type="bibr" target="#b40">41</ref> where they pointed out a few terms that were missing in the gradient of the exchange energy in <ref type="bibr" target="#b36">37</ref> .</p><p>For Γ-point calculations we expect the CPU cost of the FFT-based approach and rPS to be lower than that of the MO-based ISDF calculations. The memory cost of the FFT-based approach is superior to the other two because one does not have to store the ISDF fitting functions.</p><p>In this work, we introduce a third approach that relies on the use of multiple grids of varying resolutions. Our algorithm uses both a single-shot ISDF by using pivoted Cholesky on atomic orbitals and an iterative FFT-based Poisson solution at each SCF cycle. The ISDF is only performed for products of atomic orbitals where at least one of the orbitals is sharp and the FFT is only used to solve the Poisson equation for products where both orbitals are diffuse, as described in more detail below.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B. Using multiple grids for exchange</head><p>In this section we describe the basic idea of our multigrid algorithm for calculating exchange and go into more technical details in the next section. We begin with an uncontracted Gaussian-type orbital (GTO) basis and partition it into two sets. The first set contains sharp Gaussian basis functions with large exponents and the second set contains diffuse basis functions with small exponents. The product of sharp-sharp and sharp-diffuse atomic orbitals are approximated using ISDF on a grid centered around the atom on which the sharp function is centered (see Figure <ref type="figure" target="#fig_0">1</ref>). Because the functions are sharp here, they require the grid to have a high point density, though for the same reason they do not span the full unit cell. Notice that the sharp functions with large exponents decay rapidly and their product with any other function is only expected to be non-zero in the local spatial region where it is itself non-zero. The rest of the products between diffuse-diffuse functions are treated using the iterative FFT approach outlined in the second bullet point of Section II A. This does not use ISDF but is solely based on Poisson solves using FFT. Our algorithm can reduce both the memory and CPU cost compared to usual ISDF-based calculations because:</p><p>1. We only need to perform ISDF calculations once, before the SCF iterations, instead of at each SCF iteration. We perform n atom (the number of atoms) independent local ISDF calculations and each calculation is cheap. The cost of each local ISDF calculation scales linearly with the size of the system. After the ISDF fitting functions are obtained one has to construct the two-center Coulomb matrix (ξ|ξ ′ ) which scales quadratically with the size of the system, making the entire ISDF calculation quadratic in system size. In this algorithm, we do not need to use the randomized algorithm and the overall cost of ISDF is negligible.</p><p>2. The memory cost of our algorithm is largely independent of the size of the basis set and the overall memory requirement is quite low. This is because all of the diffuse-diffuse products, which represent the largest fraction of the non-negligible basis set pairs, are treated using an FFT grid that is independent of the basis set size. A key point is that the number of grid points needed to represent diffuse functions can be fairly small and thus the Poisson solves are cheap. Furthermore, for these pairs of basis functions, we do not store ISDF functions.</p><p>Because we use multiple grids of different resolutions, we have called our method "multigrid" inspired by the approach of the same name used to speed up the Coulomb matrix formation <ref type="bibr" target="#b51">[52]</ref><ref type="bibr" target="#b52">[53]</ref><ref type="bibr" target="#b53">[54]</ref><ref type="bibr" target="#b54">[55]</ref><ref type="bibr" target="#b55">[56]</ref><ref type="bibr" target="#b56">[57]</ref> . Although currently we only employ grids of two resolutions, one for sharp and one for diffuse functions, this approach is readily extended to include a larger number of grids. This can become important when all-electron calculations are performed without the use of Pseudopotentials, where a larger range of resolutions is needed due to the presence of extremely sharp basis functions. The approach here also has similarities to that of Füsti-Molnár and Pulay <ref type="bibr" target="#b62">63,</ref><ref type="bibr" target="#b63">64</ref> in which the basis functions are partitioned into sharp and diffuse and different approaches are used to evaluate the contributions from various pairs. Recently, a similar approach has been used in the context of stochastic density functional theory where contributions of sharp functions are evaluated exactly while for diffuse functions stochastic resolution of identity is used <ref type="bibr" target="#b46">47</ref> .</p><p>In the next section, we describe in more detail how the various grids are formed and how the entire exchange matrix is calculated.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>III. COMPUTATIONAL DETAILS</head><p>To illustrate the algorithm let us imagine we have an atom, A, with uncontracted GTOs with exponents α 1 , α 2 , • • • in decreasing order of magnitude. A user-defined value, α min , divides the GTOs into sharp functions that have exponents larger than α min and diffuse functions with exponents smaller than α min . Although the sharp functions require a high-resolution grid, the spatial extent of this grid is relatively small because the function decays rapidly in real space. The real space and Fourier space representation of an s-type function of exponent α are exp(-αr 2 ) and exp(-G 2 /(4α)) up to a multiplicative factor. If we want to represent the functions in real space up to an accuracy of ε r then we have a local atom-centered grid of radius,  <ref type="formula" target="#formula_9">5</ref>).</p><formula xml:id="formula_9">r max = -ln(ε r ) α min<label>(5)</label></formula><p>A sparse universal grid (U ) spans the full supercell and supports all global GTOs (G) but is only required by exponents smaller than αmin.</p><p>where ε K is a threshold that one can decrease continuously to increase the overall accuracy of the calculation. For all systems considered in this article, we have found that using ε r = 10 -5 gives an overall error that will be below 50 µ Ha per atom. The optimal value of α min from a computational cost point of view can be system-dependent. There is a trade-off between the cost of the exchange evaluation and the memory requirement for storing the functions on the dense grid. A higher α min speeds up the ISDF calculation because fewer functions are considered sharp but it also increases the memory cost for storing µ(R U ) because the universal grid U requires more points. We have found that an α min value of 2.8 Bohr -2 is a reasonable choice for the systems studied here. Now one performs a local interpolative decomposition on each atom-centered grid A such that the equality,</p><formula xml:id="formula_10">µ L A (R A )ν G A (R A ) ≈ ξ A µ L A (ξ A )ν G A (ξ A )(ξ A |R A )<label>(7)</label></formula><p>is satisfied up to sufficient accuracy, determined by an ISDF threshold ε ISDF . In the equation, the subscripts indicate the grid centered on atom A and the superscript L stands for local, indicating all sharp functions that are atom-A centered. ν G A are all functions (superscript G stands for global) that have a non-zero value on the grid around atom A, these include both the sharp and diffuse functions on atom A and also functions on other atoms. ξ A are ISDF fitting points (functions) on the grid around A. At this point, it is also useful to define the set of functions µ N A that are present in the global list (G) but are not in the set (L), i.e. functions that have a non-zero value on at least one of the grid points R A of local grid centered on A but are not one of the sharp functions centered on atom A.</p><p>For the dense atom-centered grids, the ISDF fitting is done using pivoted Cholesky without randomization because, unlike on a full grid, it is inexpensive to build the product density matrix M (R A , R ′ A ) (Eq. 2) on local grids. After selecting the points using pivoted Cholesky we use a least square minimization (Eq. 3) to obtain the fitting functions ξ A (R A ). These functions are fully supported on the local grids and are relatively inexpensive to store in memory. This local ISDF procedure is carried out for each local grid and the number of fitting functions chosen on each grid is controlled by the user-specified tolerance ε ISDF . The cost of performing the local ISDF calculation for each atom-centered grid is system size-independent.</p><p>Once the fitting functions are formed we calculate the two-centered Coulomb integral (ξ A |ξ B ) for all pairs of atomcentered ISDF functions and (ξ A |R U ), between ISDF functions on atom centered grids and each grid point on the</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Symbol Meaning αmin</head><p>Gaussians with exponents greater than αmin are sharp and others are diffuse εr Threshold that determines the extent of the local grid (see Equation <ref type="formula" target="#formula_9">5</ref>and upper panel of Figure <ref type="figure" target="#fig_0">1</ref>) εISDF Threshold used during pivoted-Cholesky decomposition that determines the number of ISDF functions εK Determines the number of grid points that make up the universal sparse grid (see Equation <ref type="formula">6</ref>)</p><p>TABLE II: The accuracy of the exchange calculation is determined by four different thresholds as outlined above. For all the calculations in the paper we fix εr to be 10 -5 and αmin is chosen to be 2.8 Bohr -2 . The parameters εK and εISDF are varied to obtain the desired accuracy.</p><p>universal grid. The cost of constructing these matrices is equal to O(N ξ,L N g ln(N g )) + O(N 2 ξ,L ), where N ξ,L are the total number of ISDF functions from all atom-centered grids. The first term comes from having to perform an FFT for each local ISDF fitting function and the second term comes from evaluating the matrix (ξ A |ξ B ). Notice that because each ISDF function is local the cost of this matrix evaluation is only quadratic as opposed to cubic with fully non-local ISDF functions. Finally, the calculation of the matrix (ξ A |R U ) only requires the potential due to the fitting function on the universal grids and does not require any matrix multiplications. One can readily evaluate the entire matrix (R U |R ′ U ) using a single FFT, using the fact that this is a circulant matrix. In our algorithm, we avoid storing this matrix and use FFT to calculate the exchange matrix.</p><p>The analysis here shows that the entire cost of the ISDF calculation is quadratic in the system size which is lower than the cubic cost of forming the exchange matrix. Therefore, the overhead of performing these ISDF calculations is negligible. Table <ref type="table" target="#tab_0">II</ref> summarizes the various thresholds used to construct the exchange matrix.</p><p>A. Building the exchange matrix</p><formula xml:id="formula_11">(μ |ξ ) G A B C U A B C U (μ |ξ ) L A B C U A B C U (μ |ξ ) N A B C U A B C U FIG.</formula><p>2: Graphical representations of the matrices (µ|ξ) G , (µ|ξ) L , and (µ|ξ) N . The colors here follow from Figure <ref type="figure" target="#fig_0">1</ref> and represent sets of atom-centered GTOs that are local to atom-centered grids. The white blocks correspond to zeros in the matrix and the shaded blocks represent non-zero entries. The columns of the matrices correspond to ISDF functions for atom-centered grids (A, B, C) or all the grid points on the universal grid U .</p><p>In the multigrid approach, the expressions of the two-electron integrals have the THC form, however, there are now four terms,</p><formula xml:id="formula_12">(µν|λσ) = ξξ ′ (µ|ξ) L (ν|ξ) G (ξ|ξ ′ )(λ|ξ ′ ) G (σ|ξ ′ ) L + ξξ ′ (µ|ξ) N (ν|ξ) L (ξ|ξ ′ )(λ|ξ ′ ) L (σ|ξ ′ ) N = ξξ ′ (µ|ξ) L (ν|ξ) G (ξ|ξ ′ )(λ|ξ ′ ) L (σ|ξ ′ ) N + ξξ ′ (µ|ξ) N (ν|ξ) L (ξ|ξ ′ )(λ|ξ ′ ) G (σ|ξ ′ ) L<label>(8)</label></formula><p>The various matrices with superscripts L, N , and G are described in Figure <ref type="figure">2</ref>. The four terms arise to ensure that products of basis functions are only evaluated on the appropriate grid. For example, there are diffuse functions that are non-zero on local grids of various atoms and also on the diffuse grid. The equation ensures that the product of diffuse functions is only evaluated on the most sparse grid; on the sharp grids, only products of sharp-sharp and sharp-diffuse are evaluated. We use occ-RI and only the occupied-virtual part of the exchange matrix is constructed using the two-electron integrals in Eq. 8. We would like to reemphasize that in Eq. 8 one needs the two-electron integrals (R U |R ′ U ) because all points on the sparse universal grids are included as ISDF points. However, this matrix is never stored and we rely on the fact that this matrix is diagonal in the Fourier space and the action of this matrix on any function is evaluated using FFTs.</p><p>It is worth pointing out that one can potentially speed up the calculations by utilizing the block structure of the various matrices. However, in our current work, the entire code is implemented in Python and we find that implementing block multiplication by using for loops incurs an overhead that nullifies any benefit of reducing the computations. In a future publication, this can be remedied by implementing some of these matrix multiplications in an optimized C-code.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>IV. RESULTS AND DISCUSSION</head><p>The algorithm described above was implemented in Python, with a small portion that allows for the direct calculation of atomic orbitals in C. The one-electron integrals comprising the core Hamiltonian are calculated using a multigrid branch of PySCF. <ref type="bibr" target="#b64">65</ref> We benchmark the performance of the multigrid ISDF method with occ-RI using two systems: diamond, with a conventional unit cell containing eight carbon atoms, and lithium hydride, with a conventional unit cell containing four lithium and four hydrogen atoms. For all calculations the Goedecker-Teter-Hutter (GTH) pseudopotentials <ref type="bibr" target="#b65">[66]</ref><ref type="bibr" target="#b66">[67]</ref><ref type="bibr" target="#b67">[68]</ref> and uncontracted GTH-CC-XZVP basis sets 69 of Ye are used throughout. We use a Kinetic energy cutoff of the plane waves in FFT of 70 E h for diamond and 130 E h for lithium hydride to ensure that the error from the finite plane-wave cutoff is less than 5 µHa per atom. For all calculations shown in this section, we fix ε r = 10 -5 and α min = 2.8 Bohr -2 .</p><p>A. Accuracy of multigrid ISDF FIG. <ref type="figure">3:</ref> The error per atom incurred from the ISDF approximation for diamond (C8) and lithium hydride (Li4H4) supercells with an increasing number of local fitting functions for fixed εK of 10 -2 and 10 -3 for diamond and lithium hydride, respectively. The four points on each curve are obtained by using εISDF = 10 -2 , 10 -3 , 10 -4 , 10 -5 .</p><p>In multigrid ISDF there are two types of fitting functions, the first set is local and is supported on a dense grid (their number is denoted by N ξ,1 ). These functions are obtained through ISDF. The memory and CPU cost of using these functions increases quadratically with N ξ,1 . The second type of ISDF functions are Sinc functions uniformly placed throughout the unit cell (their number is denoted by N ξ,2 ). The memory and CPU cost of the calculation increases only linearly with the number of these functions.</p><p>In Figure <ref type="figure">3</ref> we show how the number of local ISDF functions changes as one reduces the ε ISDF threshold and the accompanying reduction in the error of the calculation. As shown, the number of local ISDF functions needed is relatively small and the number of these functions does not change significantly with the size of the basis set. The error stops decreasing exponentially because we have kept ε K fixed which fixes the number of ISDF functions on the diffuse grid. The basis functions and ISDF fitting functions for 2 × 2 × 2 super cell of diamond ( (C8)8) and lithium hydride ( (Li4H4)8). N ξ,1 : the number of ISDF functions on the dense grid, N ξ,2 : the number of uniformly placed Sinc functions on the diffuse grid, α1: the range of exponents local to the dense grid, α2: the range of exponents supported by the diffuse grid, N : the total number of basis functions, and N sharp : the number of sharp basis functions.</p><formula xml:id="formula_13">Basis N ξ,1 N ξ,2<label>α1 α2 N</label></formula><p>The number of uniform ISDF functions (N ξ,2 ) depends on two settings: the largest GTO exponent that is less than the threshold α min and the threshold ε K . These functions constitute the majority of the ISDF fitting functions and often far exceed the number of ISDF functions on the dense grid. N ξ,2 can vary with the system and basis set. For example, in the TZ basis set lithium hydride there are no exponents between 3.1 and 1.4 (see Table <ref type="table" target="#tab_1">III</ref>), thus with the α min of 2.8 we find that the N ξ,2 for the TZ basis set is smaller than that for the DZ basis set. Table <ref type="table" target="#tab_1">III</ref> gives detailed information on the number of basis functions and ISDF functions supported on the dense and sparse grids, along with the range of exponents for the basis functions on each grid. Error per atom (Ha)</p><formula xml:id="formula_14">(Li 4 H 4 ) (Li 4 H 4 ) 2 (Li 4 H 4 ) 4 (Li 4 H 4 ) 8</formula><p>FIG. <ref type="figure">4:</ref> The results in the two graphs are obtained using the TZ basis set. ξ in the graph includes ISDF basis functions from both the dense and sparse grids. The number of ISDF functions on the sparse grid was N ξ,2 /N ≈ 11 for diamond, and 23 for lithium hydride. The accuracy is independent of system size so smaller systems may be used when choosing an ISDF threshold. The data here can be reproduced with the following settings: εK = 10 -2 and εISDF = 10 -2 , 10 -3 , and 10 -4 for diamond, and εK = 10 -3 and εISDF = 10 -3 , 10 -4 , and 10 -5 for lithium hydride.</p><p>Next, we show that once the various thresholds are selected for a unit cell, the error per atom does not increase with the size of the system. Figure <ref type="figure">4</ref> shows the error per atom with increasing N ξ /N for the diamond conventional unit cell C 8 and supercells of increasing sizes: (C 8 ) 2 , (C 8 ) 4 , and (C 8 ) 8 ; it also shows the lithium hydride conventional unit cell Li 4 H 4 and supercells of increasing sizes: (Li 4 H 4 ) 2 , (Li 4 H 4 ) 4 , and (Li 4 H 4 ) 8 . Here the uncontracted GTH-CC-TZVP basis is used with ε K = 10 -2 and 10 -3 for diamond and lithium hydride, respectively, which determine the number of grid points in the sparse universal grid. Three different ISDF thresholds are used, ε ISDF = 10 -2 , 10 -3 , 10 -4 , which increase the number of ISDF fitting functions used on the dense grids. One can see that with decreasing thresholds the errors in the calculations exponentially decrease. The number of fitting functions N ξ includes the ISDF functions from the atom-centered grids and also all the grid points in the universal sparse grid.</p><p>The N ξ /N in these calculations is larger than in conventional AO-based ISDF by almost a factor of two. It is worth remembering that the ISDF functions on the sparse grid most greatly contribute to N ξ /N . For these functions, we do not store or calculate the two-center Coulomb integrals and thus, the overall CPU and memory cost is significantly lower than AO-based ISDF as we show in the next subsection.  <ref type="figure">5</ref>: Wall times for a single exchange build using the AO-based ISDF (THC), robust pseudospectral method (rPS), singlegrid with no ISDF (FFT), and multigrid ISDF (MG) methods on a single core of Intel(R) Xeon(R) CPU E5-2680 v3 @ 2.50GHz processor. The wall time for the full ISDF procedure (red) is divided by the number of iterations to evaluate the per-iteration cost. The systems reported are a 2×2×2 supercell of C8 (diamond) and a 1×2×2 supercell of Li4H4 (lithium hydride). For an accuracy of ≈ 50 µHa/atom, we used εK = 10 -2 and εISDF = 10 -4 for diamond and εK = 10 -3 and εISDF = 10 -5 for Li4H4 in the multigrid calculations. The ISDF parameters N ξ /N = 13 and 6 for Li4H4 and 7 and 4 for diamond were used for the THC and rPS methods, respectively, to get a similar accuracy. For the MG method, the wall times for building the exchange (dark blue) and Coulomb (Direct, light blue) matrices are nearly equivalent. They are also comparable to the times for the THC and rPS methods. The ISDF wall time, however, is one to two orders of magnitude faster using the MG method.</p><p>Figure <ref type="figure">5</ref> compares the wall times of single Coulomb and exchange builds and the ISDF wall time that includes the time to find ISDF functions ξ and build the matrix (ξ|ξ ′ ) (Eq. 1). The ISDF times here are weighted by a factor of 1/7. A major hurdle overcome by the multigrid method is the cost of ISDF. The wall times from the multigrid ISDF are one to two orders of magnitude faster than the single-grid THC and rPS methods (with occ-RI) from Ref. <ref type="bibr" target="#b39">40</ref> . In the multigrid ISDF method, this is reduced because only small subsets of product densities are fit on regions of the most dense grids (Eq. 2). The most significant efficiency gain comes from not fitting the universal sparse grid and calculating the matrix (ξ|ξ ′ ) (Eq. 1) in a direct fashion during the exchange build.</p><p>The memory requirement for the largest arrays is significantly reduced in the multigrid builds. For the multigrid method, the matrix (ξ|ξ ′ ) for the 2×2×2 diamond TZ data shown here is about 1 GB, and the orbital matrices (µ|ξ) require less than 1 GB. For the LiH data shown here, the total memory required by the MG method is less than 2 GB. For diamond, the THC method requires about 53 GB and rPS 28 GB. For 1 × 2 × 2 LiH supercell , THC and rPS require about 54 and 36 GB, respectively. Compared to the single grid methods, the MG method requires up to about 35 times less memory for the data here. The smaller system is used for LiH as the 2×2×2 supercell required more than 128 GB of memory when using the THC method.</p><p>Next, we calculate the scaling of the various steps with increasing system size. Figure <ref type="figure">6</ref> shows the cost of single Coulomb and exchange builds, the total ISDF times (as in Fig. <ref type="figure">5</ref> are weighted by 1/7), and the wall time per SCF iteration for diagonalizing the Fock matrix for diamond supercells of up to 80 unit cell copies, depending on the basis, and lithium hydride supercells of up to 48 copies. Calculations using GTH-CC-DZVP (DZ, left), GTH-CC-TZVP (TZ, middle), and GTH-CC-QZVP (QZ, right) are shown. The thresholds used are the same as reported in Fig. <ref type="figure">5</ref>. The following conclusions can be drawn from the graphs:</p><p>1. The multigrid ISDF scales quadratically N 2 , which is due to the local nature of the fitting. For errors under 50 µHa, we used an ISDF threshold ε ISDF of 10 -4 for diamond and 10 -5 for lithium hydride which corresponds to N ξ /N of 9 to 84, depending on the system and basis used. The majority of these fitting functions are Sinc FIG. <ref type="figure">6</ref>: Wall times for performing ISDF (weighted by 1/7, dark blue), a single build of the Coulomb (Direct, light blue) and exchange (purple) matrices, and diagonalizing the Fock matrix (red) on a single core of Intel(R) Xeon(R) CPU E5-2680 v3 @ 2.50GHz processor. The calculations were performed using the uncontracted GTH-CC-DZVP (DZ, left), GTH-CC-TZVP (TZ, middle), and GTH-CC-QZVP (QZ, right) basis sets. The systems used are diamond supercells (top) of 1, 4, 8, 12, 18, 27, 36, 48, 64, and 80 unit cell copies (DZ), 1, 4, 8, 12, 18, 27, 36, and 48 copies (TZ), and 1, 4, 8, 12, 18, 27 and 36 copies (QZ), and lithium hydride supercells (bottom) of 1, 4, 8, 12, 18, 27, 36, and 48 unit cell copies (DZ), 1, 4, 8, 12, 18, 27, and 36 copies (TZ), and 1, 4, 8, 12, 18, and 27 copies (QZ). The settings used here are the same as in Figure <ref type="figure">5</ref>.</p><p>functions on the sparse grid. A large value of 84 is sometimes needed for smaller basis set such as DZ because the number of Sinc functions can be quite large relative to the size of the basis set.</p><p>2. The scaling of the exchange matrix is cubic with the system size. The cost of the calculation for the largest basis set is only about a factor of 4 more expensive than the cost of performing diagonalization.</p><p>3. The cost of Coulomb is nearly linear with the size of the system. There is some deviation from linearity because in these calculations we only use 2-4 Coulomb grids. By adding more grids, linear scaling is possible; doing so comes with additional CPU cost but no additional memory requirement.</p><p>4. The cost of the exchange is cheaper than the cost of Coulomb calculations for fairly large systems containing up to 3,000 basis functions in the case of diamond with the QZ basis set and for around 1,000 basis functions in the case of lithium hydride with the QZ basis set.</p><p>5. The largest calculation, in terms of the number of basis functions, was a 3 × 3 × 4 diamond supercell with the QZ basis set containing 17,856 basis functions and 1,152 electrons. Because we use tighter thresholds, both ε ISDF and ε k , for lithium hydride the largest calculation for it was a 3 × 3 × 3 supercell containing 431 electrons and 10,584 basis functions; this was also with the QZ basis. The number of electrons per unit cell are also smaller in LiH than in Diamond.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>V. CONCLUSIONS</head><p>In this paper, we have shown that efficient calculations of exchange matrices can be performed using our multigrid ISDF algorithm. The multigrid ISDF is significantly more efficient than the usual ISDF algorithm both in terms of memory and CPU cost. With this algorithm, relatively large calculations (containing &gt; 17, 000 basis functions) can be performed without running out of memory on a single node. With this technique, the exchange calculation is more efficient than Coulomb calculations for systems with up to about 1,000 basis functions for TZ and QZ basis sets in diamond and lithium hydride systems. For large basis sets, such as QZ, the cost of exchange evaluation is only a factor of 4 more expensive than the cost of diagonalization and because the scaling of the two steps is similar we expect that this result will hold for even larger systems.</p><p>In our current implementation, we have not parallelized the calculations, although it should be possible to do so with high efficiency because most of the operations involve a series of FFTs that can be embarrassingly parallelized, or matrix multiplications that are also amenable to parallelization. We have also not made use of linear scaling approaches to leverage the fact that the exchange matrix is near-sighted, which can be used to further improve the efficiency of the calculations, particularly for systems with large band gaps. The approach we have outlined here has many extensions that we are actively exploring, including the ability to perform all-electron calculations, use of mixed Gaussian-plane-wave basis set, use for molecular calculations, the calculation of nuclear gradients, and also use of k-point symmetry at a nearly linear cost (O(N k log(N k ))) with the number of k-points N k . Given that the cost of the exchange evaluation is cheaper than Coulomb for systems containing up to 1,000 basis functions and around 100 electrons (these numbers are larger for diamond with the QZ basis set), one can likely perform hybrid DFT calculations with a similar cost as pure DFT calculations if the unit cells contain 100 or fewer electrons (because the scaling with N k is similar for both Coulomb and exchange).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>VI. ACKNOWLEDGMENTS</head><p>K.E.S. was supported through the National Science Foundation grant CHE-2145209 and S.S. through a grant from the Camille and Henry Dreyfus Foundation.</p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>FIG. 1 :</head><label>1</label><figDesc>FIG.1: Example of the grid structure used for building the exchange matrix. The most dense grid is only defined on spherical, atom-centered regions (colored circles, A, B, C; top). The volume of each atom-centered grid is determined by a cutoff radius beyond which the local GTOs (L) with exponents larger than αmin (colored lines) are expected to go to zero (see Equation5). A sparse universal grid (U ) spans the full supercell and supports all global GTOs (G) but is only required by exponents smaller than αmin.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head></head><label></label><figDesc>FIG.5: Wall times for a single exchange build using the AO-based ISDF (THC), robust pseudospectral method (rPS), singlegrid with no ISDF (FFT), and multigrid ISDF (MG) methods on a single core of Intel(R) Xeon(R) CPU E5-2680 v3 @ 2.50GHz processor. The wall time for the full ISDF procedure (red) is divided by the number of iterations to evaluate the per-iteration cost. The systems reported are a 2×2×2 supercell of C8 (diamond) and a 1×2×2 supercell of Li4H4 (lithium hydride). For an accuracy of ≈ 50 µHa/atom, we used εK = 10 -2 and εISDF = 10 -4 for diamond and εK = 10 -3 and εISDF = 10 -5 for Li4H4 in the multigrid calculations. The ISDF parameters N ξ /N = 13 and 6 for Li4H4 and 7 and 4 for diamond were used for the THC and rPS methods, respectively, to get a similar accuracy. For the MG method, the wall times for building the exchange (dark blue) and Coulomb (Direct, light blue) matrices are nearly equivalent. They are also comparable to the times for the THC and rPS methods. The ISDF wall time, however, is one to two orders of magnitude faster using the MG method.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head></head><label></label><figDesc>, y = 2.0x -11.3 Direct, y = 1.6x -9.4 Exchange, y = 2.7x -15.2 Diagonalize, y = 2.6x -19., y = 1.9x -10.4 Direct, y = 1.3x -7.6 Exchange, y = 2.7x -16.5 Diagonalize, y = 2.7x -19., y = 1.9x -11.4 Direct, y = 1.3x -6.9 Exchange, y = 2.6x -16.6 Diagonalize, y = 2.9x -21.2</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_0"><head>TABLE I :</head><label>I</label><figDesc>Notation used in paper.</figDesc><table><row><cell>integrals,</cell><cell></cell><cell></cell><cell></cell></row><row><cell cols="2">(µν|λσ) =</cell><cell>µ(r 1 )ν(r 1 )</cell><cell>1 r 12</cell><cell>λ(r 2 )σ(r 2 )dr 1 dr 2</cell></row><row><cell>Ng</cell><cell cols="3">Number of grid points</cell></row><row><cell>N ξ</cell><cell cols="4">Number of fitting functions</cell></row><row><cell>N</cell><cell cols="4">Number of basis functions</cell></row><row><cell>n</cell><cell cols="3">Number of electrons</cell></row><row><cell cols="3">natom Number of atoms</cell><cell></cell></row><row><cell cols="5">µ, ν, • • • Indices of atomic orbitals</cell></row><row><cell cols="5">i, j, • • • Indices of the occupied molecular orbitals</cell></row><row><cell cols="5">p, q, • • • Indices of any molecular orbital</cell></row><row><cell cols="5">A major bottleneck in a simple implementation of hybrid-DFT calculations is the need to evaluate the two-electron</cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_1"><head>TABLE III :</head><label>III</label><figDesc></figDesc><table><row><cell></cell><cell></cell><cell></cell><cell></cell><cell></cell><cell></cell><cell>N sharp</cell></row><row><cell></cell><cell></cell><cell></cell><cell cols="2">Diamond (C4)8</cell><cell></cell><cell></cell></row><row><cell>DZ</cell><cell>3240</cell><cell>17576</cell><cell>4.3 -4.3</cell><cell>1.3 -0.1</cell><cell>1344</cell><cell>256</cell></row><row><cell>TZ</cell><cell>4128</cell><cell>27000</cell><cell>5.4 -5.4</cell><cell>2.0 -0.1</cell><cell>2368</cell><cell>256</cell></row><row><cell>QZ</cell><cell>5256</cell><cell>39304</cell><cell>6.2 -6.2</cell><cell>2.6 -0.1</cell><cell>3968</cell><cell>256</cell></row><row><cell></cell><cell></cell><cell cols="3">Lithium hydride (Li4H4)8</cell><cell></cell><cell></cell></row><row><cell>DZ</cell><cell>1728</cell><cell>74088</cell><cell>8.4 -7.3</cell><cell>2.1 -0.1</cell><cell>896</cell><cell>160</cell></row><row><cell>TZ</cell><cell>4568</cell><cell>39304</cell><cell>10.9 -3.1</cell><cell>1.4 -0.1</cell><cell>1696</cell><cell>320</cell></row><row><cell>QZ</cell><cell>6120</cell><cell>74088</cell><cell>12.5 -4.5</cell><cell>2.3 -0.1</cell><cell>3136</cell><cell>320</cell></row></table></figure>
+		</body>
+		<back>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Self-consistent equations including exchange and correlation effects</title>
+		<author>
+			<persName><forename type="first">Walter</forename><surname>Kohn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lu</forename><forename type="middle">Jeu</forename><surname>Sham</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical review</title>
+		<imprint>
+			<biblScope unit="volume">140</biblScope>
+			<biblScope unit="issue">4A</biblScope>
+			<biblScope unit="page">1133</biblScope>
+			<date type="published" when="1965">1965</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">No Title</title>
+		<author>
+			<persName><forename type="first">A D</forename><surname>Becke</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">J. Chem. Phys</title>
+		<imprint>
+			<biblScope unit="volume">98</biblScope>
+			<biblScope unit="page">5648</biblScope>
+			<date type="published" when="1993">1993</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Thirty years of density functional theory in computational chemistry: an overview and extensive assessment of 200 density functionals</title>
+		<author>
+			<persName><forename type="first">Narbe</forename><surname>Mardirossian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Molecular physics</title>
+		<imprint>
+			<biblScope unit="volume">115</biblScope>
+			<biblScope unit="issue">19</biblScope>
+			<biblScope unit="page" from="2315" to="2372" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Energy band gaps and lattice parameters evaluated with the Heyd-Scuseria-Ernzerhof screened hybrid functional</title>
+		<author>
+			<persName><forename type="first">Jochen</forename><surname>Heyd</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Juan</forename><forename type="middle">E</forename><surname>Peralta</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gustavo</forename><forename type="middle">E</forename><surname>Scuseria</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Richard</forename><forename type="middle">L</forename><surname>Martin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">123</biblScope>
+			<biblScope unit="issue">17</biblScope>
+			<biblScope unit="page" from="1" to="8" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Screened hybrid density functionals applied to solids</title>
+		<author>
+			<persName><forename type="first">Joachim</forename><surname>Paier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martijn</forename><surname>Marsman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Hummer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Georg</forename><surname>Kresse</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Iann</forename><forename type="middle">C</forename><surname>Gerber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">János</forename><forename type="middle">G</forename><surname>Ángyán</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of chemical physics</title>
+		<imprint>
+			<biblScope unit="volume">124</biblScope>
+			<biblScope unit="issue">15</biblScope>
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<analytic>
+		<title level="a" type="main">Excess electron states in reduced bulk anatase TiO2: Comparison of standard GGA, GGA+U, and hybrid DFT calculations</title>
+		<author>
+			<persName><forename type="first">Emanuele</forename><surname>Finazzi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Di</forename><surname>Cristiana</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gianfranco</forename><surname>Valentin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Annabella</forename><surname>Pacchioni</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Selloni</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">129</biblScope>
+			<biblScope unit="issue">15</biblScope>
+			<biblScope unit="page">154113</biblScope>
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Accurate band gaps for semiconductors from density functional theory</title>
+		<author>
+			<persName><forename type="first">Xiao</forename><surname>Hai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jamil</forename><surname>Tahir-Kheli</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">William</forename><forename type="middle">A</forename><surname>Goddard</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Physical Chemistry Letters</title>
+		<imprint>
+			<biblScope unit="volume">2</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="212" to="217" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">Stability of non-metal dopants to tune the photo-absorption of TiO2 at realistic temperatures and oxygen partial pressures: A hybrid DFT study</title>
+		<author>
+			<persName><forename type="first">Pooja</forename><surname>Basera</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Shikha</forename><surname>Saini</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ekta</forename><surname>Arora</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Arunima</forename><surname>Singh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Manish</forename><surname>Kumar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Saswata</forename><surname>Bhattacharya</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Scientific Reports</title>
+		<imprint>
+			<biblScope unit="volume">9</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="20" to="26" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Photocatalytic co2 reduction: A review of ab initio mechanism, kinetics, and multiscale modeling simulations</title>
+		<author>
+			<persName><forename type="first">Zan</forename><surname>Kovacic</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Blaz</forename><surname>Likozar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matej</forename><surname>Hus</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">ACS catalysis</title>
+		<imprint>
+			<biblScope unit="volume">10</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page" from="14984" to="15007" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<analytic>
+		<title level="a" type="main">Principles for a direct SCF approach to LICAO-MO ab-initio calculations</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Almlöf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Faegri</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><surname>Korsell</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Chemistry</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="385" to="399" />
+			<date type="published" when="1982">1982</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">The continuous fast multipole method</title>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">A</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">G</forename><surname>Johnson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><forename type="middle">M W</forename><surname>Gill</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Chemical Physics Letters</title>
+		<imprint>
+			<biblScope unit="volume">230</biblScope>
+			<biblScope unit="issue">1-2</biblScope>
+			<biblScope unit="page" from="8" to="16" />
+			<date type="published" when="1994">1994</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">Fast assembly of the coulomb matrix: A quantum chemical tree code</title>
+		<author>
+			<persName><forename type="first">Matt</forename><surname>Challacombe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eric</forename><surname>Schwegler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jan</forename><surname>Almlöf</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of chemical physics</title>
+		<imprint>
+			<biblScope unit="volume">104</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page" from="4685" to="4698" />
+			<date type="published" when="1996">1996</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">A fast multipole method for periodic systems with arbitrary unit cell geometries</title>
+		<author>
+			<persName><forename type="first">N</forename><surname>Konstantin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gustavo</forename><forename type="middle">E</forename><surname>Kudin</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Scuseria</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Chemical Physics Letters</title>
+		<imprint>
+			<biblScope unit="volume">283</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="61" to="68" />
+			<date type="published" when="1998">1998</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<analytic>
+		<title level="a" type="main">Linear scaling computation of the Fock matrix</title>
+		<author>
+			<persName><forename type="first">Matt</forename><surname>Challacombe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eric</forename><surname>Schwegler</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">106</biblScope>
+			<biblScope unit="issue">13</biblScope>
+			<biblScope unit="page">5526</biblScope>
+			<date type="published" when="1997">1997</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<analytic>
+		<title level="a" type="main">Linear and sublinear scaling formation of Hartree-Fock-type exchange matrices</title>
+		<author>
+			<persName><forename type="first">Christian</forename><surname>Ochsenfeld</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christopher</forename><forename type="middle">A</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">109</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page">1663</biblScope>
+			<date type="published" when="1998">1998</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<analytic>
+		<title level="a" type="main">Linear scaling electronic structure methods</title>
+		<author>
+			<persName><forename type="first">Stefan</forename><surname>Goedecker</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Reviews of Modern Physics</title>
+		<imprint>
+			<biblScope unit="volume">71</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page" from="1085" to="1123" />
+			<date type="published" when="1999">1999</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Enabling Large-Scale Condensed-Phase Hybrid Density Functional Theory Based Ab Initio Molecular Dynamics. 1. Theory, Algorithm, and Performance</title>
+		<author>
+			<persName><forename type="first">Hsin-Yu</forename><surname>Ko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Junteng</forename><surname>Jia</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Biswajit</forename><surname>Santra</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xifan</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roberto</forename><surname>Car</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">A</forename><surname>Distasio</surname><genName>Jr</genName></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="3757" to="3785" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Fast evaluation of the Coulomb potential for electron densities using multipole accelerated resolution of identity approximation</title>
+		<author>
+			<persName><forename type="first">Marek</forename><surname>Sierka</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Annika</forename><surname>Hogekamp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Reinhart</forename><surname>Ahlrichs</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">118</biblScope>
+			<biblScope unit="page">9136</biblScope>
+			<date type="published" when="2003">2003</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Linear scaling density fitting</title>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Sodt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joseph</forename><forename type="middle">E</forename><surname>Subotnik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">125</biblScope>
+			<biblScope unit="issue">19</biblScope>
+			<biblScope unit="page">194109</biblScope>
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">Fast Hartree-Fock theory using local density fitting approximations</title>
+		<author>
+			<persName><forename type="first">Robert</forename><surname>Polly</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joachim</forename><surname>Hans</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Frederick</forename><forename type="middle">R</forename><surname>Werner</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Peter</forename><forename type="middle">J</forename><surname>Manby</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Knowles</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Molecular Physics</title>
+		<imprint>
+			<biblScope unit="volume">102</biblScope>
+			<biblScope unit="issue">21-22</biblScope>
+			<biblScope unit="page" from="2311" to="2321" />
+			<date type="published" when="2004">2004</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Hartree-Fock exchange computed using the atomic resolution of the identity approximation</title>
+		<author>
+			<persName><forename type="first">Alex</forename><surname>Sodt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">128</biblScope>
+			<biblScope unit="page">104106</biblScope>
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Efficient implementation of the pair atomic resolution of the identity approximation for exact exchange for hybrid and range-separated density functionals</title>
+		<author>
+			<persName><forename type="first">F</forename><surname>Samuel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Evgeny</forename><surname>Manzer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Epifanovsky</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">11</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="518" to="527" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Fast, accurate evaluation of exact exchange: The occ-RI-K algorithm</title>
+		<author>
+			<persName><forename type="first">Samuel</forename><surname>Manzer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Paul</forename><forename type="middle">R</forename><surname>Horn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Narbe</forename><surname>Mardirossian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">143</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page">24113</biblScope>
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Robust variational fitting: Gaspar&apos;s variational exchange can accurately be treated analytically</title>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">I</forename><surname>Dunlap</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Molecular Structure: THEOCHEM</title>
+		<imprint>
+			<biblScope unit="page" from="221" to="228" />
+			<date type="published" when="2000-08">August. 2000</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">Robust and variational fitting: Removing the four-center integrals from center stage in quantum chemistry</title>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">I</forename><surname>Dunlap</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Molecular Structure: THEOCHEM</title>
+		<imprint>
+			<biblScope unit="volume">529</biblScope>
+			<biblScope unit="issue">1-3</biblScope>
+			<biblScope unit="page" from="37" to="40" />
+			<date type="published" when="2000">2000</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Fast construction of the exchange operator in an atom-centred basis with concentric atomic density fitting</title>
+		<author>
+			<persName><forename type="first">David</forename><forename type="middle">S</forename><surname>Hollman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Henry</forename><forename type="middle">F</forename><surname>Schaefer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Edward</forename><forename type="middle">F</forename><surname>Valeev</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Molecular Physics</title>
+		<imprint>
+			<biblScope unit="volume">115</biblScope>
+			<biblScope unit="issue">17-18</biblScope>
+			<biblScope unit="page" from="2065" to="2076" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Accurate localized resolution of identity approach for linear-scaling hybrid density functionals and for many-body perturbation theory</title>
+		<author>
+			<persName><forename type="first">Arvid</forename><surname>Conrad Ihrig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürgen</forename><surname>Wieferink</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Igor</forename><forename type="middle">Ying</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matti</forename><surname>Ropo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xinguo</forename><surname>Ren</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Patrick</forename><surname>Rinke</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthias</forename><surname>Scheffler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Volker</forename><surname>Blum</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">New Journal of Physics</title>
+		<imprint>
+			<biblScope unit="volume">17</biblScope>
+			<biblScope unit="issue">9</biblScope>
+			<biblScope unit="page">93020</biblScope>
+			<date type="published" when="2015-09">sep 2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<monogr>
+		<title level="m" type="main">Efficient all-electron hybrid density functionals for atomistic simulations beyond 10,000 atoms</title>
+		<author>
+			<persName><forename type="first">Sebastian</forename><surname>Kokott</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Florian</forename><surname>Merz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yi</forename><surname>Yao</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christian</forename><surname>Carbogno</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mariana</forename><surname>Rossi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ville</forename><surname>Havu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Markus</forename><surname>Rampp</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthias</forename><surname>Scheffler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Volker</forename><surname>Blum</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2024">2024</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b28">
+	<analytic>
+		<title level="a" type="main">Simplifications in the generation and transformation of two-electron integrals in molecular calculations</title>
+		<author>
+			<persName><forename type="first">Nhf</forename><surname>Beebe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Linderberg</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">International Journal of Quantum Chemistry</title>
+		<imprint>
+			<biblScope unit="volume">XII</biblScope>
+			<biblScope unit="page" from="683" to="705" />
+			<date type="published" when="1977">1977</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b29">
+	<analytic>
+		<title level="a" type="main">Unbiased auxiliary basis sets for accurate two-electron integral approximations</title>
+		<author>
+			<persName><forename type="first">Francesco</forename><surname>Aquilante</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roland</forename><surname>Lindh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Bondo Pedersen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">127</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page">114107</biblScope>
+			<date type="published" when="2007">2007</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b30">
+	<analytic>
+		<title level="a" type="main">Solution of self-consistent field electronic structure equations by a pseudospectral method</title>
+		<author>
+			<persName><forename type="first">Richard</forename><forename type="middle">A</forename><surname>Friesner</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Chemical Physics Letters</title>
+		<imprint>
+			<biblScope unit="volume">116</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="39" to="43" />
+			<date type="published" when="1985">1985</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b31">
+	<analytic>
+		<title level="a" type="main">Efficient, approximate and parallel Hartree-Fock and hybrid DFT calculations. A &apos;chain-of-spheres&apos; algorithm for the Hartree-Fock exchange</title>
+		<author>
+			<persName><forename type="first">Frank</forename><surname>Neese</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Frank</forename><surname>Wennmohs</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andreas</forename><surname>Hansen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ute</forename><surname>Becker</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">356</biblScope>
+			<biblScope unit="issue">1-3</biblScope>
+			<biblScope unit="page" from="98" to="109" />
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b32">
+	<analytic>
+		<title level="a" type="main">Communication: Tensor hypercontraction. III. Least-squares tensor hypercontraction for the determination of correlated wavefunctions</title>
+		<author>
+			<persName><forename type="first">Edward</forename><forename type="middle">G</forename><surname>Hohenstein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">M</forename><surname>Parrish</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">David</forename><surname>Sherrill</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Todd</forename><forename type="middle">J</forename><surname>Martínez</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">137</biblScope>
+			<biblScope unit="page">221101</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b33">
+	<analytic>
+		<title level="a" type="main">Tensor hypercontraction. II. Leastsquares renormalization</title>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">M</forename><surname>Parrish</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Edward</forename><forename type="middle">G</forename><surname>Hohenstein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Todd</forename><forename type="middle">J</forename><surname>Martínez</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><forename type="middle">David</forename><surname>Sherrill</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">137</biblScope>
+			<biblScope unit="issue">22</biblScope>
+			<biblScope unit="page">224106</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b34">
+	<analytic>
+		<title level="a" type="main">Tensor hypercontraction density fitting. I. Quartic scaling second-and third-order Møller-Plesset perturbation theory</title>
+		<author>
+			<persName><forename type="first">Edward</forename><forename type="middle">G</forename><surname>Hohenstein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><forename type="middle">M</forename><surname>Parrish</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Todd</forename><forename type="middle">J</forename><surname>Martínez</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">137</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page">1085</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b35">
+	<analytic>
+		<title level="a" type="main">Compression of the electron repulsion integral tensor in tensor hypercontraction format with cubic scaling cost</title>
+		<author>
+			<persName><forename type="first">Jianfeng</forename><surname>Lu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lexing</forename><surname>Ying</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Physics</title>
+		<imprint>
+			<biblScope unit="volume">302</biblScope>
+			<biblScope unit="page" from="329" to="335" />
+			<date type="published" when="2015">2015</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b36">
+	<analytic>
+		<title level="a" type="main">Interpolative Separable Density Fitting Decomposition for Accelerating Hybrid Density Functional Calculations with Applications to Defects in Silicon</title>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Hu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lin</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Chao</forename><surname>Yang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">13</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="5420" to="5431" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b37">
+	<analytic>
+		<title level="a" type="main">Interpolative Separable Density Fitting through Centroidal Voronoi Tessellation with Applications to Hybrid Functional Electronic Structure Calculations</title>
+		<author>
+			<persName><forename type="first">Kun</forename><surname>Dong</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Hu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lin</forename><surname>Lin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">14</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1311" to="1320" />
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b38">
+	<analytic>
+		<title level="a" type="main">Systematically Improvable Tensor Hypercontraction: Interpolative Separable Density-Fitting for Molecules Applied to Exact Exchange, Second-A nd Third-Order Møller-Plesset Perturbation Theory</title>
+		<author>
+			<persName><forename type="first">Joonho</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Lin</forename><surname>Lin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="243" to="263" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b39">
+	<analytic>
+		<title level="a" type="main">Fast Exchange with Gaussian Basis Set Using Robust Pseudospectral Method</title>
+		<author>
+			<persName><forename type="first">Sandeep</forename><surname>Sharma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alec</forename><forename type="middle">F</forename><surname>White</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gregory</forename><surname>Beylkin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">18</biblScope>
+			<biblScope unit="issue">12</biblScope>
+			<biblScope unit="page" from="7306" to="7320" />
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b40">
+	<monogr>
+		<author>
+			<persName><forename type="first">Adam</forename><surname>Rettig</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joonho</forename><surname>Lee</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Martin</forename><surname>Head-Gordon</surname></persName>
+		</author>
+		<idno type="arXiv">arXiv:2304.05505</idno>
+		<title level="m">Even faster exact exchange for solids via tensor hypercontraction</title>
+		<imprint>
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+	<note type="report_type">arXiv preprint</note>
+</biblStruct>
+
+<biblStruct xml:id="b41">
+	<analytic>
+		<title level="a" type="main">Machine learning k-means clustering of interpolative separable density fitting algorithm for accurate and efficient cubic-scaling exact exchange plus random phase approximation within plane waves</title>
+		<author>
+			<persName><forename type="first">Zhenlin</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Xilin</forename><surname>Yin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Hu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jinlong</forename><surname>Yang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<date type="published" when="2024">2024</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b42">
+	<analytic>
+		<title level="a" type="main">O(N) methods in electronic structure calculations</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">R</forename><surname>Bowler</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Miyazaki</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Reports on Progress in Physics</title>
+		<imprint>
+			<biblScope unit="volume">75</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page">36503</biblScope>
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b43">
+	<analytic>
+		<title level="a" type="main">Order-N implementation of exact exchange in extended insulating systems</title>
+		<author>
+			<persName><forename type="first">Xifan</forename><surname>Wu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Annabella</forename><surname>Selloni</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roberto</forename><surname>Car</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review B -Condensed Matter and Materials Physics</title>
+		<imprint>
+			<biblScope unit="volume">79</biblScope>
+			<biblScope unit="page">85102</biblScope>
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b44">
+	<analytic>
+		<title level="a" type="main">Self-averaging stochastic kohn-sham density-functional theory</title>
+		<author>
+			<persName><forename type="first">Roi</forename><surname>Baer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Neuhauser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eran</forename><surname>Rabani</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physical Review Letters</title>
+		<imprint>
+			<biblScope unit="volume">111</biblScope>
+			<biblScope unit="page">106402</biblScope>
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b45">
+	<analytic>
+		<title level="a" type="main">Stochastic Optimally Tuned Range-Separated Hybrid Density Functional Theory</title>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Neuhauser</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Eran</forename><surname>Rabani</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Yael</forename><surname>Cytter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roi</forename><surname>Baer</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Physical Chemistry A</title>
+		<imprint>
+			<biblScope unit="volume">120</biblScope>
+			<biblScope unit="issue">19</biblScope>
+			<biblScope unit="page" from="3071" to="3078" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b46">
+	<analytic>
+		<title level="a" type="main">Deterministic/fragmented-stoclhastic exchange for large-scale hybrid dft calculations</title>
+		<author>
+			<persName><forename type="first">Nadine</forename><forename type="middle">C</forename><surname>Bradbury</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tucker</forename><surname>Allen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Minh</forename><surname>Nguyen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Daniel</forename><surname>Neuhauser</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">24</biblScope>
+			<biblScope unit="page" from="9239" to="9247" />
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b47">
+	<analytic>
+		<title level="a" type="main">Molecular dynamics simulation of liquid water: Hybrid density functionals</title>
+		<author>
+			<persName><forename type="first">Teodora</forename><surname>Todorova</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ari</forename><forename type="middle">P</forename><surname>Seitsonen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Hutter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><surname>-Feng</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><surname>Kuo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christopher</forename><forename type="middle">J</forename><surname>Mundy</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Physical Chemistry B</title>
+		<imprint>
+			<biblScope unit="volume">110</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="3685" to="3691" />
+			<date type="published" when="2006">2006</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b48">
+	<analytic>
+		<title level="a" type="main">Adaptively Compressed Exchange Operator</title>
+		<author>
+			<persName><forename type="first">Lin</forename><surname>Lin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">12</biblScope>
+			<biblScope unit="issue">5</biblScope>
+			<biblScope unit="page" from="2242" to="2249" />
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b49">
+	<analytic>
+		<title level="a" type="main">Auxiliary Density Matrix Methods for Hartree-Fock Exchange Calculations</title>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Manuel Guidon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joost</forename><surname>Hutter</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Vandevondele</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">6</biblScope>
+			<biblScope unit="issue">8</biblScope>
+			<biblScope unit="page" from="2348" to="2364" />
+			<date type="published" when="2010">2010</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b50">
+	<analytic>
+		<title level="a" type="main">Interpolative separable density fitting decomposition for accelerating hartree-fock exchange calculations within numerical atomic orbitals</title>
+		<author>
+			<persName><forename type="first">Xinming</forename><surname>Qin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jie</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Wei</forename><surname>Hu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jinlong</forename><surname>Yang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Physical Chemistry A</title>
+		<imprint>
+			<biblScope unit="volume">124</biblScope>
+			<biblScope unit="issue">27</biblScope>
+			<biblScope unit="page" from="5664" to="5674" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b51">
+	<analytic>
+		<title level="a" type="main">The Gaussian and augmented-plane-wave density functional method for ab initio molecular dynamics simulations</title>
+		<author>
+			<persName><forename type="first">Gerald</forename><surname>Lippert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Hutter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michele</forename><surname>Parrinello</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Theoretical Chemistry Accounts</title>
+		<imprint>
+			<biblScope unit="volume">103</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="124" to="140" />
+			<date type="published" when="1999">1999</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b52">
+	<analytic>
+		<title level="a" type="main">Quickstep: Fast and accurate density functional calculations using a mixed Gaussian and plane waves approach</title>
+		<author>
+			<persName><forename type="first">Joost</forename><surname>Vandevondele</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthias</forename><surname>Krack</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fawzi</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michele</forename><surname>Parrinello</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Chassaing</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Hutter</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Computer Physics Communications</title>
+		<imprint>
+			<biblScope unit="volume">167</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="103" to="128" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b53">
+	<analytic>
+		<title level="a" type="main">An efficient real space multigrid qm/mm electrostatic coupling</title>
+		<author>
+			<persName><forename type="first">Teodoro</forename><surname>Laino</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fawzi</forename><surname>Mohamed</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alessandro</forename><surname>Laio</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michele</forename><surname>Parrinello</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">1</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page" from="1176" to="1184" />
+			<date type="published" when="2005">2005</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b54">
+	<analytic>
+		<title level="a" type="main">5 real-space and multigrid methods in computational chemistry</title>
+		<author>
+			<persName><forename type="first">L</forename><surname>Thomas</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Beck</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Reviews in Computational Chemistry</title>
+		<imprint>
+			<biblScope unit="volume">26</biblScope>
+			<biblScope unit="page">223</biblScope>
+			<date type="published" when="2009">2009</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b55">
+	<analytic>
+		<title level="a" type="main">Second-order møller-plesset perturbation theory in the condensed phase: An efficient and massively parallel gaussian and plane waves approach</title>
+		<author>
+			<persName><forename type="first">Mauro</forename><surname>Del Ben</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Hutter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joost</forename><surname>Vandevondele</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of chemical theory and computation</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="issue">11</biblScope>
+			<biblScope unit="page" from="4177" to="4188" />
+			<date type="published" when="2012">2012</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b56">
+	<analytic>
+		<title level="a" type="main">CP2K: An electronic structure and molecular dynamics software package -Quickstep: Efficient and accurate electronic structure calculations</title>
+		<author>
+			<persName><forename type="first">Thomas</forename><forename type="middle">D</forename><surname>Kühne</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Marcella</forename><surname>Iannuzzi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mauro</forename><surname>Del Ben</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vladimir</forename><forename type="middle">V</forename><surname>Rybkin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Patrick</forename><surname>Seewald</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Frederick</forename><surname>Stein</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Teodoro</forename><surname>Laino</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Rustam</forename><forename type="middle">Z</forename><surname>Khaliullin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Ole</forename><surname>Schütt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Florian</forename><surname>Schiffmann</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Dorothea</forename><surname>Golze</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jan</forename><surname>Wilhelm</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sergey</forename><surname>Chulkov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mohammad</forename><surname>Hossein Bani-Hashemian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Valéry</forename><surname>Weber</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Urban</forename><surname>Borštnik</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mathieu</forename><surname>Taillefumier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alice</forename><forename type="middle">Shoshana</forename><surname>Jakobovits</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Alfio</forename><surname>Lazzaro</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Hans</forename><surname>Pabst</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Tiziano</forename><surname>Müller</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Robert</forename><surname>Schade</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Manuel</forename><surname>Guidon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Samuel</forename><surname>Andermatt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nico</forename><surname>Holmberg</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gregory</forename><forename type="middle">K</forename><surname>Schenter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Anna</forename><surname>Hehn</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Augustin</forename><surname>Bussy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Fabian</forename><surname>Belleflamme</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Gloria</forename><surname>Tabacchi</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Andreas</forename><surname>Glöß</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Michael</forename><surname>Lass</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Iain</forename><surname>Bethune</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christopher</forename><forename type="middle">J</forename><surname>Mundy</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Christian</forename><surname>Plessl</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matt</forename><surname>Watkins</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Joost</forename><surname>Vandevondele</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Matthias</forename><surname>Krack</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Jürg</forename><surname>Hutter</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">152</biblScope>
+			<biblScope unit="page">194103</biblScope>
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b57">
+	<analytic>
+		<title level="a" type="main">Attractive electron-electron interactions within robust local fitting approximations</title>
+		<author>
+			<persName><forename type="first">Patrick</forename><surname>Merlot</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Kjaergaard</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Trygve</forename><surname>Helgaker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Roland</forename><surname>Lindh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Francesco</forename><surname>Aquilante</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Simen</forename><surname>Reine</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Bondo Pedersen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Computational Chemistry</title>
+		<imprint>
+			<biblScope unit="volume">34</biblScope>
+			<biblScope unit="issue">17</biblScope>
+			<biblScope unit="page" from="1486" to="1496" />
+			<date type="published" when="2013">2013</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b58">
+	<analytic>
+		<title level="a" type="main">On resolution-of-the-identity electron repulsion integral approximations and variational stability</title>
+		<author>
+			<persName><forename type="first">Lukas</forename><forename type="middle">N</forename><surname>Wirz</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Simen</forename><forename type="middle">S</forename><surname>Reine</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Thomas</forename><surname>Bondo Pedersen</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">13</biblScope>
+			<biblScope unit="issue">10</biblScope>
+			<biblScope unit="page" from="4897" to="4906" />
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b59">
+	<analytic>
+		<title level="a" type="main">Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions</title>
+		<author>
+			<persName><forename type="first">P</forename><surname>Halko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J A</forename><surname>G Martinsson</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Tropp</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">SIAM Review</title>
+		<imprint>
+			<biblScope unit="volume">53</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="217" to="288" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b60">
+	<analytic>
+		<title level="a" type="main">Randomized algorithms for the low-rank approximation of matrices</title>
+		<author>
+			<persName><forename type="first">Edo</forename><surname>Liberty</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Franco Woolfe</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Vladimir</forename><surname>Per-Gunnar Martinsson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Mark</forename><surname>Rokhlin</surname></persName>
+		</author>
+		<author>
+			<persName><surname>Tygert</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">104</biblScope>
+			<biblScope unit="issue">51</biblScope>
+			<biblScope unit="page" from="20167" to="20172" />
+			<date type="published" when="2007">2007</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b61">
+	<analytic>
+		<title level="a" type="main">Improved grid optimization and fitting in least squares tensor hypercontraction</title>
+		<author>
+			<persName><forename type="first">Devin</forename><forename type="middle">A</forename><surname>Matthews</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">16</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1382" to="1385" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b62">
+	<analytic>
+		<title level="a" type="main">Accurate molecular integrals and energies using combined plane wave and gaussian basis sets in molecular electronic structure theory</title>
+		<author>
+			<persName><forename type="first">László</forename><surname>Füsti-Molnár</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Peter</forename><surname>Pulay</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of chemical physics</title>
+		<imprint>
+			<biblScope unit="volume">116</biblScope>
+			<biblScope unit="issue">18</biblScope>
+			<biblScope unit="page" from="7795" to="7805" />
+			<date type="published" when="2002">2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b63">
+	<analytic>
+		<title level="a" type="main">The Fourier transform Coulomb method: Efficient and accurate calculation of the Coulomb operator in a Gaussian basis</title>
+		<author>
+			<persName><forename type="first">László</forename><surname>Füsti-Molnár</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Peter</forename><surname>Pulay</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">The Journal of Chemical Physics</title>
+		<imprint>
+			<biblScope unit="volume">117</biblScope>
+			<biblScope unit="issue">17</biblScope>
+			<biblScope unit="page" from="7827" to="7835" />
+			<date type="published" when="2002">11 2002</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b64">
+	<analytic>
+		<title level="a" type="main">PySCF: the Python-based simulations of chemistry framework</title>
+		<author>
+			<persName><forename type="first">Qiming</forename><surname>Sun</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Timothy</forename><forename type="middle">C</forename><surname>Berkelbach</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Nick</forename><forename type="middle">S</forename><surname>Blunt</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">George</forename><forename type="middle">H</forename><surname>Booth</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sheng</forename><surname>Guo</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Zhendong</forename><surname>Li</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Junzi</forename><surname>Liu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">James</forename><forename type="middle">D</forename><surname>Mc-Clain</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Elvira</forename><forename type="middle">R</forename><surname>Sayfutyarova</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sandeep</forename><surname>Sharma</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Sebastian</forename><surname>Wouters</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Garnet Kin-Lic</forename><surname>Chan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Wiley Interdisciplinary Reviews: Computational Molecular Science</title>
+		<imprint>
+			<date type="published" when="2017">2017</date>
+		</imprint>
+	</monogr>
+	<note>published online</note>
+</biblStruct>
+
+<biblStruct xml:id="b65">
+	<analytic>
+		<title level="a" type="main">Separable dual-space gaussian pseudopotentials</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Goedecker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Teter</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Hutter</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Phys. Rev. B</title>
+		<imprint>
+			<biblScope unit="volume">54</biblScope>
+			<biblScope unit="page" from="1703" to="1710" />
+			<date type="published" when="1996-07">Jul 1996</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b66">
+	<analytic>
+		<title level="a" type="main">Relativistic separable dual-space gaussian pseudopotentials from h to rn</title>
+		<author>
+			<persName><forename type="first">C</forename><surname>Hartwigsen</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Goedecker</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Hutter</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Phys. Rev. B</title>
+		<imprint>
+			<biblScope unit="volume">58</biblScope>
+			<biblScope unit="page" from="3641" to="3662" />
+			<date type="published" when="1998-08">Aug 1998</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b67">
+	<monogr>
+		<author>
+			<persName><forename type="first">Juerg</forename><surname>Hutter</surname></persName>
+		</author>
+		<ptr target="https://github.com/juerghutter/gth" />
+		<title level="m">New optimization of gth pseudopotentials for pbe, scan, pbe0 functionals. gth pseudopotentials for hartree-fock. nlcc pseudopotentials for pbe</title>
+		<imprint>
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+<biblStruct xml:id="b68">
+	<analytic>
+		<title level="a" type="main">Correlation-consistent gaussian basis sets for solids made simple</title>
+		<author>
+			<persName><forename type="first">Hong-Zhou</forename><surname>Ye</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Timothy</forename><forename type="middle">C</forename><surname>Berkelbach</surname></persName>
+		</author>
+		<idno type="PMID">35192359</idno>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Chemical Theory and Computation</title>
+		<imprint>
+			<biblScope unit="volume">18</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="1595" to="1606" />
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

@@ -1,0 +1,3204 @@
+An accurate, robust, and efficient finite element framework for anisotropic,
+nearly and fully incompressible elasticity
+
+Elias Karabelasa, Matthias A. F. Gsellb, Gernot Plankb,c, Gundolf Haasea,c, Christoph M. Augustinb,∗
+
+aInstitute for Mathematics and Scientific Computing, Karl-Franzens-University Graz, Graz, Austria
+bGottfried Schatz Research Center: Division of Biophysics, Medical University of Graz, Graz, Austria
+cBioTechMed-Graz, Graz, Austria
+
+Abstract
+
+Fiber-reinforced soft biological tissues are typically modeled as hyperelastic, anisotropic, and nearly in-
+compressible materials. To enforce incompressibility a multiplicative split of the deformation gradient into a
+volumetric and an isochoric part is a very common approach. However, due to the high stiffness of anisotropic
+materials in the preferred directions, the finite element analysis of such problems often suffers from severe
+locking effects and numerical instabilities. In this paper, we present novel methods to overcome locking
+phenomena for anisotropic materials using stabilized P1-P1 elements. We introduce different stabilization
+techniques and demonstrate the high robustness and computational efficiency of the chosen methods. In
+several benchmark problems we compare the approach to standard linear elements and show the accuracy
+and versatility of the methods to simulate anisotropic, nearly and fully incompressible materials. We are
+convinced that this numerical framework offers the possibility to accelerate accurate simulations of biological
+tissues, enabling patient-specfic parameterization studies, which require numerous forward simulations.
+
+Keywords:
+Stabilized finite element methods, anisotropic materials, quasi-incompressibility, soft biological
+tissues, cardiac electromechanics
+
+1. Introduction
+
+Computer models of biological tissues, e.g., the simulation of vessel mechanics or cardiac electro-mechanics
+(EM), aid in understanding the biomechanical function of the organs and show promise to be a powerful
+tool for predicting therapeutic responses.
+Advanced applications include the simulation of growth and
+remodeling processes occurring in the failing heart or arteries [1, 2, 3, 4] as well as rupture risk assessment
+in arterial aneurysms [5, 6]. Here, predictions of in-silico models are often based on the computation of
+local stresses, hence, an accurate computation of strain and stress is indispensable to build confidence in
+simulation outcomes.
+Additionally, high computational efficiency and excellent strong scaling properties
+are crucial to perform simulations with highly-resolved, complex, or heterogeneous geometries; to facilitate
+model personalization using a large number of forward simulations; and to simulate tissue behavior over a
+broad range of experimental protocols and extended observation periods.
+In-silico models of cardiac tissue and vessel walls are typically based on the theory of hyperelasticity and
+properties of soft tissues include a nonlinear relationship between stress and strain with large deformations
+and a nearly-incompressible, anisotropic materials [7, 8, 9]. Commonly, the resulting non-linear formulations
+are approximately solved using a finite element (FE) approach [10, 11, 12, 13]. However, volumetric locking
+phenomena that are resulting in ill-conditioned global stiffness matrices are frequently encountered. In fact,
+this one of the classical problems of modeling nearly incompressible hyperelasticity [14, 15, 16]. Locking,
+often completely invalidating FE solutions, is in particular prevalent for fiber-reinforced soft biological tissues
+due to a high stiffness in the preferred fiber directions and thus extensivley studied in recent publications
+[17, 18, 19, 20].
+
+∗Address correspondence to Christoph M. Augustin, Gottfried Schatz Research Center: Division of Biophysics, Medical
+University of Graz, Neue Stiftingtalstrasse 6/IV, Graz 8010, Austria. Email: christoph.augustin@medunigraz.at
+
+Preprint submitted to Elsevier
+November 2, 2021
+
+arXiv:2111.00612v1  [math.NA]  31 Oct 2021
+
+
+Typically, the modeling of (nearly) incompressible elastic materials involves a split of the deformation
+gradient into a volumetric and an isochoric part [21]. Here, locking phenomena are very common when using
+unstable approximation pairs such as Q1-P0 or P1-P0 elements, i.e., when linear shape functions are the
+choice to approximate the displacement field u and the hydrostatic pressure p is statically condensed from
+the system of equations on the element-level. It is well known that in such cases solution algorithms are likely
+to show very low convergence rates, and that variables of interest such as stresses can be inaccurate [18].
+To some degree locking problems in anisotropic hyperelasticity for these simple elements can be reduced
+by using augmented Lagrangian methods [22, 23], formulations with an unsplit deformation gradient for
+the anisotropic contribution [24, 25], and methods with simplified kinematics for the anisotropic contribu-
+tions [26]. Another possibility to obtain more accurate results is the use of higher order polynomials to
+approximate the displacement [27, 28, 29, 30]. However, the incompressibility constraint is still modeled by
+a penalty formulation, hence, volumetric locking may still be an issue and the modeling of fully incompress-
+ible materials is not possible. Additionally, already for quadratic ansatz functions the considerable larger
+amount of degrees of freedom increases computational cost significantly.
+A more sophisticated approach – also allowing the modeling of fully incompressible materials – is the
+reformulation of the underlying equations into a saddle point problem by introducing the hydrostatic pressure
+p as an additional unknown to the system. Here, from mathematical theory, approximation pairs for u and
+p have to fulfill the Ladyzhenskaya–Babuˆska–Brezzi (LBB) or inf-sup conditions [31, 32, 33] to guarantee
+stability. A popular choice are quadratic ansatz functions for the displacement and linear ansatz functions
+for the pressure, i.e., the Taylor–Hood element [34, 35]. Though stable, this element leads to a vast increase
+in degrees of freedom and consequently a high computational burden; especially for applied problems in the
+field of tissue mechanics with highly resolved geometries.
+A computationally more favorable choice are equal order pairs with a stabilization, widely used for linear
+and isotropic elasticity [36, 37, 38, 39, 40, 41, 42]. Yet, their extension to non-linear, anisotropic problems is
+challenging [43, 44, 26]. In the specific case of modeling biological tissues Hu–Washizu-based formulations
+are often used, e.g., [45, 46, 47, 48]. However, especially for problems undergoing large strains, this mixed
+three field approach shows limited performance and robustness [26].
+As our results suggest, a very promising and efficient stabilization approach for nearly incompressible,
+anisotropic elasticity problems is a variant of the MINI element [49], originally established for computational
+fluid dynamics problems. This element is modified for the application of incompressible hyperelasticity and
+a bubble function is included in the space of displacements. To improve efficiency, the support of this bubble
+can be eliminated from the system of equation using static condensation. First uses of MINI elements have
+been reported [50, 51] though still using a piecewise constant ansatz for the hydrostatic pressure. Even
+more efficient and notably simple to implement is a pressure projection method originally introduced for the
+Stokes problem [52]. To the best of our knowledge the here proposed methods were not yet used in this form
+for anisotropic and nearly incompressible materials.
+A big advantage of both stabilization techniques is that they do not rely on artificial stabilization pa-
+rameters that may influence the numerical solution. We illustrate in different benchmarks that the same
+setting can be used for a large variety of tissue mechanics problems allowing for a one-for-all approach. By
+comparing to literature we show that our methods are suitable to compute accurate strain and stress fields
+and outperform existing contributions in terms of efficiency.
+The paper is outlined as follows: in Section 2 we recall the mathematical background of modeling
+anisotropic, nearly incompressible elasticity and introduce the theoretical framework of our stabilization
+techniques. Subsequently, Section 3 documents three benchmarks problems to show the applicability of the
+stabilized P1-P1 elements in different scenarios. For each benchmark we give a detailed problem description
+and discuss results and computational efficiency by comparing to the literature and analyzing strong-scaling
+properties.
+To show the usefulness of the presented methods to clinically relevant problems, we present a 3D EM
+model of the heart that is coupled to a 0D model of blood flow. This constitutes the most complete model
+of cardiac EM in the literature to date as all components, i.e., electrophysiology, cellular dynamics, active
+stress, passive tissue mechanics, pre- and afterload, are based on physiological, state-of-the-art models from
+the literature. Finally, Section 4 concludes the paper with a brief summary and all required equations to
+implement the methods in a software framework are given in the Appendix.
+
+2
+
+
+2. Methodology
+
+2.1. Almost Incompressible Nonlinear Elasticity
+Let Ω0 ⊂ R3 denote the reference configuration and let Ωt ⊂ R3 denote the current configuration of
+the domain of interest.
+Assume that the boundary of Ω0 is decomposed into ∂Ω0 = ΓD,0 ∪ ΓN,0 with
+|ΓD,0| > 0.
+Here, ΓD,0 describes the Dirichlet part of the boundary and ΓN,0 describes the Neumann
+part of the boundary, respectively. Further, let N be the unit outward normal on ∂Ω0. The nonlinear
+mapping φ: X ∈ Ω0 → x ∈ Ωt, defined by φ := X + u(X, t), with displacement u, maps points in the
+reference configuration to points in the current configuration. Following standard notation, we introduce the
+deformation gradient F , the Jacobian J, and the left Cauchy-Green tensor C as
+
+F := Grad φ = I + Grad u,
+J := det(F ),
+C := F ⊤F .
+
+Here, Grad(•) denotes the gradient with respect to the reference coordinates X ∈ Ω0. The displacement
+field u is sought as infimizer of the functional
+
+Πtot(u) := Π(u) + Πext(u),
+
+Π(u) :=
+�
+
+Ω0
+
+Ψ(F (u)) dX,
+
+Πext(u) := −ρ0
+
+�
+
+Ω0
+
+f(X) · u dX −
+�
+
+ΓN,0
+
+h(u) · u dsX,
+(1)
+
+over all admissible fields u with u = gD on ΓD,0, where, Ψ denotes the strain energy function; ρ0 denotes the
+material density in reference configuration; f denotes a volumetric body force; gD denotes a given boundary
+displacement; and h denotes a given follower surface traction defined as
+
+h(u) := −pextJ(u)F −⊤(u)N,
+
+with giving external load pext > 0. For ease of presentation it is assumed that ρ0 is constant and f, and gD
+do not depend on u. Existence of infimizers is, under suitable assumptions, guaranteed by the pioneering
+works of Ball, see [53] and [54] for the case of follower loads.
+In this study, we consider nearly incompressible materials, meaning that J ≈ 1. A possibility to model
+this behavior was originally proposed by [21] using a split of the deformation gradient F such that
+
+F = FvolF .
+(2)
+
+Here, Fvol describes the volumetric change while F describes the isochoric change. By setting Fvol := J
+1
+3 I
+and F := J− 1
+
+3 F we get det(F ) = 1 and det(Fvol) = J. Analogously, by setting Cvol := J
+2
+3 I and C :=
+J− 2
+
+3 C, we have C = CvolC. Assuming a hyperelastic material, the Flory split also postulates an additive
+decomposition of the strain energy function
+
+Ψ = Ψ(C) = U(J) + Ψ(C).
+(3)
+
+The function U(J) will be used in the form
+
+U(J) := κ
+
+2 Θ(J)2
+
+where κ denotes the bulk modulus.
+In the literature many different choices for the functions Θ(J) are
+proposed, see e.g [55, 56, 57] for examples and related discussion. For studying also the limit case κ → ∞ we
+will consider a reformulation of Equation (1) as perturbed Lagrangian-multiplier functional, see [58, 59, 60, 61]
+for details. Introducing the hydrostatic pressure p we seek infimizers (u, p) ∈ VgD × Q of
+
+Πtot(u, p) := ΠPL(u, p) + Πext(u),
+(4)
+
+ΠPL(u, p) :=
+�
+
+Ω0
+
+Ψ(C) + pΘ(J(u)) − 1
+
+2κp2 dX.
+
+3
+
+
+To guarantee well-definedness, we assume that
+
+VgD :=
+�
+v ∈ [H1(Ω0)]3 : v|ΓD,0= gD
+�
+,
+
+with H1
+0(Ω0) being the standard Sobolev space of square integrable functions having a square integrable
+gradient, and Q = L2(Ω0). For a more in-depth discussion we refer to [53, 54]. To solve for infimizers
+of Equation (4) we calculate the variations with respect to v and q. This results in the following non-linear
+variational problem, find (u, p) ∈ VgD × Q such that
+
+Rvol(u, p; v) = 0,
+(5)
+
+Rinc(u, p; q) = 0,
+(6)
+
+for all (v, q) ∈ V0 × Q. Here,
+
+Rvol(u, p; v) := aisc(u; v) + avol(u; v) − lfollow(u, pext; v),
+
+Rinc(u, p; v) := bvol(u; q) − c(p, q),
+
+where
+
+aisc(u; v) :=
+�
+
+Ω0
+
+Sisc(u) : Σ(u, v) dX,
+avol(u, p; v) :=
+�
+
+Ω0
+
+pSvol(u) : Σ(u, v) dX,
+
+bvol(u; q) :=
+�
+
+Ω0
+
+Θ(J(u))q dX,
+c(p, q) := 1
+
+κ
+
+�
+
+Ω0
+
+pq dX,
+
+lfollow(u, pext; v) := −pext
+
+�
+
+ΓN
+
+J(u)F −⊤N · v dsX,
+
+with Σ(u, v) := sym(F ⊤(u) Grad v). Components of the second Piola–Kirchhoff stress tensor
+
+Stot = Svol + Sisc
+(7)
+
+are computed as
+
+Sisc := J− 2
+
+3 Dev(S),
+S := ∂Ψ(C)
+
+∂C
+Svol := π(J)C−1,
+π(J) := JΘ′(J).
+
+When modeling electrically active tissue, we consider an additive decomposition of the isochoric part of the
+stress tensor. The total stress tensor is now given by the additive decomposition
+
+Stot = Sa + Sp = Sa + 2∂Ψ(C)
+
+∂C
+.
+(8)
+
+To simulate the effect of the circulatory system, these equations are coupled to a 0D lumped model as
+in [62]. The corresponding nonlinear variational problem reads as find (u, p) ∈ VgD × Q and pCAV ∈ RnCAV
+such that
+
+Rvol(u, p, pCAV; v) = 0,
+(9)
+
+Rinc(u, p; q) = 0,
+(10)
+
+RCAV,i(u, pCAV,i) = 0,
+(11)
+
+for all (v, q) ∈ V0 × Q, and i = 1, . . . , nCAV. Here, the variations read as
+
+Rvol(u, p, pCAV; v) := aisc(u; v) + avol(u; v) +
+
+nCAV
+�
+
+i=1
+lfollower(u, pCAV,i; v),
+(12)
+
+Rinc(u, p; v) := bvol(u; q) − c(p, q),
+(13)
+
+RCAV,i(u, pCAV,i) := VCAV,i(u) − VCS(pCAV,i),
+(14)
+
+4
+
+
+where
+
+VCAV,i(u) := 1
+
+3
+
+�
+
+ΓCAV,i,0
+
+J(X + u) · F −⊤N dsX,
+
+with ΓCAV,i,0 denoting the closed surface of the ith cavity in reference configuration. The expression for
+cavity volume VCAV,i follows from applying Nanson’s formula to the definition of cavity volume in the
+current configuration
+
+VCAV,i := 1
+
+3
+
+�
+
+ΓCAV,i
+
+x · n dsx.
+
+For a more detailed account on the coupling of nonlinear elastic equations with 0D lumped parameter models
+we refer to [62].
+
+2.2. Consistent Linearization
+For the subsequent discretization we need the consistent linearization of (5)–(6) and (9)–(11) and we
+obtain the following linear saddle-point problem: for each (uk, pk) ∈ VgD × Q, find (∆u, ∆p) ∈ V0 × Q such
+that
+
+ak(∆u, ∆v) + ak,Γ(∆u, ∆v) + bk(∆p, ∆v) = −Rvol(uk, pk; ∆v),
+(15)
+
+bk(∆q, ∆u) − c(∆p, ∆q) = −Rinc(uk, pk; ∆q),
+(16)
+
+where
+
+ak(∆u, ∆v) :=
+�
+
+Ω0
+
+Grad ∆vStot,k : Grad ∆u dX +
+�
+
+Ω0
+
+Σ(uk, ∆v) : Ctot,k : Σ(uk, ∆u) dX,
+
+ak,Γ(∆u, ∆v) := pext
+
+�
+
+ΓN,0
+
+Jk(F −⊤
+k
+: Grad ∆u)∆v · F −⊤N dsX
+(17)
+
+− pext
+
+�
+
+ΓN,0
+
+JkF −⊤
+k
+(Grad ∆u)⊤F −⊤
+k
+N · ∆v dsX,
+
+bk(∆p, ∆v) :=
+�
+
+Ω0
+
+∆pπ(Jk)F −⊤
+k
+: Grad ∆v dX,
+
+using the following abbreviations
+
+Fk := F (uk),
+Jk := det(Fk),
+
+Stot,k := Sisc|u=uk + pk Svol|u=uk ,
+Ctot,k := Cisc|u=uk + pk Cvol|u=uk ,
+
+Cvol := k(J)C−1 ⊗ C−1 − 2π(J)C−1 ⊙ C−1,
+k(J) := J2Θ′′(J) + JΘ′(J),
+
+and Cisc given in (C.2). For the deviation of term (17) see Appendix A, other terms in (15)–(16) have been
+discussed previously, see [63].
+In the case of an attached circulatory system we obtain the following linearized system, find (∆u, ∆p, ∆pCAV)
+such that
+
+ak(∆u, ∆v) + ak,Γ(∆u, ∆v) + bk(∆p, ∆v) + lsurface(uk, ∆pCAV; ∆v) = −Rvol(uk, pk, pk
+CAV; ∆v),
+(18)
+
+bk(∆q, ∆u) − c(∆p, ∆q) = −Rinc(uk, pk; ∆q),
+(19)
+
+dk(∆u) − ek(∆pCAV) = −RCAV(uk, pk
+CAV),
+(20)
+
+where
+
+ek(∆pCAV) := ∂VCAV
+
+∂pCAV
+,
+(21)
+
+and dk defined as in (A.3). The term (21) depends on the chosen model for the circulatory system and a
+detailed discussion is out of the scope of this work. For a detailed derivation of the explicit representation
+of the compliance matrix (21) stemming from the model used in Section 3 we refer to [62].
+
+5
+
+
+2.3. Finite Element Discretization
+Here we provide a summary of the finite element discretization used in the subsequent results. The frame-
+work builds upon methods previously introduced for isotropic, passive mechanics in [63]. In the following,
+we extend this approach to anisotropic tissues also allowing for complex EM simulations that are coupled to
+a 0D system of the circulatory system.
+Let Th be a finite element partitioning of Ω consisting of tetrahedral and/or isoparametric hexahedral finite
+elements. We assume standard regularity assumptions [54] and invertibility of the isoparametric mapping
+FK from the reference element ˆK to a physical element K ∈ Th. For tetrahedral elements this poses no
+additional restrictions, for hexahedral elements we refer to [64] for details. Let further ˆP1 and ˆQ1 denote the
+space of lowest order linear/trilinear finite element functions on the reference tetrahedron/hexahedron. The
+discrete analogue to (15)–(16) reads as: given (uk
+h, pk
+h) ∈ Vh,gD × Qh, find (∆uh, ∆ph) ∈ Vh,0 × Qh such that
+
+ak(∆uh, vh) + ak,Γ(∆uh, vh) + bk(∆ph, vh) = −Rvol(uk
+h, pk
+h; vh),
+(22)
+
+bk(qh, ∆uh) − c(∆ph, qh) = −Rinc(uk
+h, pk
+h; qh)
+(23)
+
+for all (vh, qh) ∈ Vh,0 × Qh. The discrete spaces Vh,0 and Qh are defined as
+
+Vh,0 :=
+�
+v ∈
+�
+H1
+0(Ω0)
+�3 : v|K = ˆv ◦ F −1
+K , ˆv ∈ [ ˆV]3, ∀K ∈ Th
+�
+,
+
+Qh :=
+�
+q ∈ L2(Ω0) : q|K = ˆq ◦ F −1
+K , ˆq ∈ ˆQ, ∀K ∈ Th
+�
+,
+
+and additionally we introduce
+
+Vh,gD := H1
+gD(Ω0) ∩ Vh,0.
+
+2.3.1. Pressure Projection Stabilized Equal Order Pair
+The pressure projection stabilization was originally introduced for solving Stokes problems [52] and has
+also been applied in the context of linear elasticity [65, 66]. Recently, we extended its use to isotropic,
+nonlinear elasticity [63]. A similar approach can be used for anisotropic materials, we set ˆV := ˆQ := ˆP1/ ˆQ1
+for tetrahedral or hexahedral elements. To ensure stability, we have to modify the definition of the residuals
+in (6) and (10) to
+
+�Rinc(uh, ph; qh) := Rinc(uh, ph; qh) − sh(ph, qh),
+
+sh(p, q) :=
+�
+
+Ω0
+
+1
+µ∗
+(p − Πhp)(q − Πhq) dx,
+(24)
+
+where the projection operator Πh is defined elementwise as
+
+Πhq|K :=
+1
+|K|
+
+�
+
+K
+q dx.
+
+In contrast to [63], the parameter µ∗ is no longer an arbitrary value but set to |K|1/3; a choice that showed
+excellent results for all discussed anisotropic problems in Section 3 as well as isotropic benchmarks in [63].
+We note, that the integral in (24) has to be understood as a sum over all the elements of the triangulation
+of the domain Ω0. For a more comprehensive overview and implementation details we refer to [63].
+
+2.3.2. MINI Element
+One of the earliest strategies in constructing a stable finite element pairing for discrete saddle-point
+problems arising from Stokes Equations is the MINI-Element, dating back to the works of Brezzi et al, see
+for example [49, 67]. Briefly, the strategy is to enrich the basis of lowest order finite elements by adding a
+higher degree polynomial with support restricted to the interior of the element. Thus, for the tetrahedral
+reference element ˆK we define
+
+ˆV := ˆP1 ⊕ { ˆψB}
+ˆQ := ˆP1,
+ˆψB := 256ξ0ξ1ξ2(1 − ξ0 − ξ1 − ξ2),
+
+6
+
+
+where (ξ0, ξ1, ξ2) ∈ ˆK see also [68].
+For the hexahedral reference element ˆK = [−1, 1]3 we define
+
+ˆV := ˆQ1 ⊕ { ˆψB,1, ˆψB,2}
+(25)
+ˆQ := ˆQ1,
+ˆψB,1 := (1 − ξ0)2(1 − ξ1)2(1 − ξ2)2 ˆψα,
+ˆψB,2 := (1 − ξ0)2(1 − ξ1)2(1 − ξ2)2 ˆψβ,
+
+for (ξ0, ξ1, ξ2) ∈ ˆK and (α, β) ∈ [1, 8] denoting the indices of two ansatz functions for diagonal opposite nodes
+in ˆK, see [63].
+Classical results [68] guarantee the stability of the MINI-Element for tetrahedral meshes in the almost
+incompressible linear elastic case. For hexahedral elements we were able to prove stability in the almost
+incompressible linear elastictiy case provided an enrichment like (25) of the displacement ansatz space by
+two bubble functions see [63]. Due to the compact support of the bubble functions, static condensation can
+be applied to remove the interior degrees of freedom during assembly. Static condensation can be done by
+standard procedures [68] with the exception of follower loads which is discussed in Appendix B. As a result,
+these degrees of freedom are not needed to be considered in the full global stiffness matrix assembly which
+is a key advantage of the MINI element.
+
+2.4. Material Models
+Arterial and myocardial tissue as modeled in Section 3 is considered as a non-linear, hyperelastic, nearly
+incompressible, and anisotropic material with a layered organization of fibers. To model this behaviour in
+our benchmark problems we used strain energy functions of the form (3); namely, the transverseley isotropic
+constitutive law by Guccione et al. [69]
+
+Ψ(C) = U(J) + Ψ(C)
+with
+Ψ(C) = a
+
+2
+�
+exp Q(C, ai) − 1
+�
+(26)
+
+with a > 0 kPa a scaling parameter, ai fiber directions, and Q a function in terms of scalar strain components.
+Further, we compared the standard formulation of a separated Fung-type exponential model
+
+Ψ(C) = U(J) + ΨAS(C)
+with
+ΨAS(C) = Ψiso(C) + Ψaniso(C, ai)
+(27)
+
+with the formulation using an unsplit deformation gradient for the anisotropic contribution
+
+Ψ(C) = U(J) + ΨWAS(C)
+with
+ΨWAS(C) = Ψiso(C) + Ψaniso(C, ai),
+(28)
+
+introduced in [70, 71]. The specific form of the volumetric, U(J), isotropic, Ψiso, and anisotropic, Ψaniso/Ψaniso,
+contributions will be discussed later for each of the benchmark problems.
+
+3. Numerical Examples
+
+Biomechanical applications often require highly resolved meshes and thus efficient and massively parallel
+solution algorithms for the linearized system of equations become an important factor to deal with the
+resulting computational load. Extending our previous implementations for cardiac EM [72] we used the
+software Cardiac Arrhythmia Research Package (CARP) [73] which makes use of the MPI based library
+PETSc [74].
+We solve the stabilized saddle-point problem (22)–(23) by using a GMRES method with
+a block preconditioner based on a smoothed aggregation algebraic multigrid (GAMG) approach which is
+incorporated in PETSc [75].
+In all of the following benchmark problems our goal was to study the performance and accuracy of different
+finite element discretizations, namely i) Q1/P1-P0-AS: discretization with piecewise linear displacements
+and piecewise constant pressure using the strain energy function (27); ii) Q1/P1-P0-WAS: discretization
+with piecewise linear displacement and piecewise constant pressure using the strain energy function (28);
+iii) Projection: equal order discretization with piecewise linear displacements and pressure, stabilized as
+described in Section 2.3.1 using the strain energy function (27); iv) MINI : discretization using MINI elements
+as described in Section 2.3.2 using the strain energy function (27).
+
+7
+
+
+3.1. Extension, Inflation and Torsion of a Simplified Artery Model
+Simulation setup. First, we show the applicability of our proposed methods to a benchmark problem
+from Gültekin et al. [76] where a simplified artery model is represented by a thick-walled cylindrical tube.
+The dimensions of this idealized geometry with its centerline on the z-axis are as follows: height H = 10 mm,
+inner radius R1 = 8 mm, and outer radius R2 = 10 mm. Two symmetric families of fibers, f0 and s0 are
+immersed in the tissue, having an angle of 40° with circumferential θ-axis, see Figure 1A. As for loading, a
+
+A
+B
+
+(a)
+(b)
+
+Figure 1: Artery benchmark: Geometry, fiber distribution, and boundary conditions. Figure (a) shows the fiber arrangement
+and Figure (b) shows the geometry and colorcoded boundaries for the application of the boundary conditions and the evaluation
+points A, and B for mesh convergence.
+
+monotonically increasing displacement up to 2 mm superimposed by a monotonically increasing torsion up to
+60° is applied on the top of the tube (marked blue in Figure 1B). Additionally, a linearly increasing pressure
+(follower load) up to 500 mmHg is applied on the inside of the tube (marked red in Figure 1B). Finally, the
+lower part of the tube is clamped at zero displacement.
+The material is described by the strain-energy function (27), ΨAS, with
+
+Θ(J) := J − 1,
+Ψiso(C) := µ
+
+2
+�
+I1 − 3
+�
+,
+
+Ψaniso(C, f0, s0) := k1
+
+2k2
+
+�
+
+i=4,6
+
+�
+exp
+�
+k2
+�
+Ii − 1
+�2�
+− 1
+�
+,
+
+and invariants
+
+I1 := tr(C),
+I4 := C : f0 ⊗ f0,
+I6 := C : s0 ⊗ s0,
+
+and analogously with Ψaniso(C, f0, s0) for the WAS formulation, ΨWAS, (28). Material parameters were
+taken from [76, Table 1], i.e., κ = 5000 kPa, µ = 10 kPa, k1 = 500 kPa, and k2 = 2.0. In case of the stabilized
+equal-order elements (Projection and MINI), we set 1/κ = 0 to render the material incompressible. To assess
+mesh convergence simulations were performed on seven discretization levels, see Table 1.
+
+Results. A comparison of the radial, σrr, the circumferential, σθθ, and the axial, σzz, components of the
+Cauchy stress tensor is shown in Figure 2 for the finest discretization level ℓ = 7. We see that with the
+exception of the lowest order discretizations with anisotropic splitting (Q1/P1-P0-AS) the stress distribution
+is very similar and also matches results in Gültekin et al. [76]. The observation that simulations with Q1/P1-
+P0-AS are not accurate for this benchmark problem is further emphasized in Figures 3 and 4. Here, Figure 3
+shows the displacements (ux, uy, uz) and Figure 4 shows the stress components (σrr, σθθ, σzz) at the evaluation
+points A and B over the discretization levels. In agreement with [76] the lowest order discretization with
+anisotropic splitting converges to a lower value than the other discretization types hinting at possible locking
+phenomena. All other formulations perform similarly well. Here, discrepancies at the finest level ℓ = 7 are
+rather due to differences in the meshes for tetrahedral and hexahedral grids.
+
+Figure 5 shows a distribution of the Jacobian det(F ) on the finest level ℓ = 7. Unsurprisingly, with a
+mean value µ close to 1 the saddle-point formulations (Projection, MINI) satisfy incompressibility better
+
+8
+
+
+(a.1)
+
+(a.2)
+
+(a.3)
+
+(a.4)
+
+(a)
+
+(b.1)
+
+(b.2)
+
+(b.3)
+
+(b.4)
+
+(b)
+
+Figure 2: Artery benchmark: Stress distribution for (a) tetrahedral and (b) hexahedral elements. Shown are the the radial, σrr,
+circumferential, σθθ, and longitudinal stresses, σzz, on the finest discretization level ℓ = 7. The rows 1, 2, 3, 4 correspond to
+Q1-P0-AS, Q1-P0-WAS, Projection, and MINI, respectively.
+
+9
+
+
+103
+104
+105
+
+−5.6
+
+−5.4
+
+−5.2
+
+−5.0
+
+−4.8
+
+ux [mm]
+
+103
+104
+105
+
+Number of nodes [-]
+
+1.3
+
+1.4
+
+1.5
+
+1.6
+
+uy [mm]
+
+103
+104
+105
+
+0.95
+
+1.00
+
+1.05
+
+1.10
+
+1.15
+
+1.20
+
+uz [mm]
+
+Displacements at Point A
+
+Hex: MINI
+Hex: Q1-P0-AS
+
+Hex: Q1-P0-WAS
+Hex: Projection
+
+Tet: MINI
+Tet: P1-P0-AS
+
+Tet: P1-P0-WAS
+Tet: Projection
+
+(a)
+
+103
+104
+105
+
+4.5
+
+4.6
+
+4.7
+
+4.8
+
+4.9
+
+ux [mm]
+
+103
+104
+105
+
+Number of nodes [-]
+
+−3.3
+
+−3.2
+
+−3.1
+
+−3.0
+
+−2.9
+
+uy [mm]
+
+103
+104
+105
+
+0.94
+
+0.96
+
+0.98
+
+1.00
+
+1.02
+
+1.04
+
+uz [mm]
+
+Displacements at Point B
+
+Hex: MINI
+Hex: Q1-P0-AS
+
+Hex: Q1-P0-WAS
+Hex: Projection
+
+Tet: MINI
+Tet: P1-P0-AS
+
+Tet: P1-P0-WAS
+Tet: Projection
+
+(b)
+
+Figure 3: Artery benchmark: Mesh convergence. Shown are the individual displacement values at (a) Point A and (b) Point B
+for increasing mesh resolution and finite elements.
+
+10
+
+
+103
+104
+105
+
+−600
+
+−400
+
+−200
+
+0
+
+200
+
+σrr [kPa]
+
+103
+104
+105
+
+Number of nodes [-]
+
+0
+
+200
+
+400
+
+600
+
+800
+
+1000
+
+1200
+
+σθθ [kPa]
+
+103
+104
+105
+
+500
+
+750
+
+1000
+
+1250
+
+1500
+
+1750
+
+σzz [kPa]
+
+Stresses at Point A
+
+Hex: MINI
+Hex: Q1-P0-AS
+
+Hex: Q1-P0-WAS
+Hex: Projection
+
+Tet: MINI
+Tet: P1-P0-AS
+
+Tet: P1-P0-WAS
+Tet: Projection
+
+(a)
+
+103
+104
+105
+
+1000
+
+1500
+
+2000
+
+2500
+
+σrr [kPa]
+
+103
+104
+105
+
+Number of nodes [-]
+
+3000
+
+4000
+
+5000
+
+6000
+
+7000
+
+8000
+
+σθθ [kPa]
+
+103
+104
+105
+
+2000
+
+3000
+
+4000
+
+5000
+
+σzz [kPa]
+
+Stresses at Point B
+
+Hex: MINI
+Hex: Q1-P0-AS
+
+Hex: Q1-P0-WAS
+Hex: Projection
+
+Tet: MINI
+Tet: P1-P0-AS
+
+Tet: P1-P0-WAS
+Tet: Projection
+
+(b)
+
+Figure 4: Artery benchmark: Mesh convergence. Shown are the individual stresses at (a) Point A and (b) Point B for increasing
+mesh resolution and finite elements.
+
+11
+
+
+MINI
+
+µ = 1.0000
+σ = 0.0133
+
+Projection
+µ = 1.0000
+σ = 0.0132
+
+P1-P0-AS
+µ = 1.0613
+σ = 0.0264
+
+P1-P0-WAS
+µ = 0.9959
+σ = 0.0135
+
+0.95
+
+1.00
+
+1.05
+
+1.10
+
+1.15
+
+det(F) [-]
+
+(a)
+
+MINI
+
+µ = 1.0000
+σ = 0.0012
+
+Projection
+µ = 1.0000
+σ = 0.0011
+
+Q1-P0-WAS
+µ = 0.9962
+σ = 0.0046
+
+0.980
+
+0.985
+
+0.990
+
+0.995
+
+1.000
+
+1.005
+
+1.010
+
+det(F) [-]
+
+(b)
+
+Figure 5: Artery benchmark: Jacobian distribution for (a) tetrahedral and (b) hexahedral elements. Shown are violin plots of the
+Jacobian distribution det(F ) on the finest discretization level at maximum loading for the various finite elements. Additionally,
+the mean µ and standard deviation σ is given. Q1-P0-AS has been excluded from plot (b) as values were significantly higher
+compared to other element types.
+
+12
+
+
+than the penalty formulations (P1/Q1-P0-AS, P1/Q1-P0-WAS). While the AS formulation led to a small
+increase in volume (µ > 1), the WAS formulation resulted in a slightly reduced volume (µ < 1).
+
+Numerical performance. Computational times for the simulation using different element types are given
+in Figure 6; left, for the coarse problem (ℓ = 1) and right, for the finest grid (ℓ = 7). For all cases we used a
+relative error reduction of ϵ = 10−8 for the GMRES linear solver and a relative error reduction of ϵ = 10−6
+
+for the residual of the Newton method. Using a load stepping scheme, this required a total number of 100
+linear solving steps for the coarse problem and 1000 linear solving steps for the fine problem to arrive at the
+final prescribed displacement and inner pressure of 500 mmHg.
+
+1
+2
+4
+8
+16
+
+Number of processes [-]
+
+1
+
+10
+
+100
+
+2
+
+5
+
+20
+
+50
+
+Compute time [s]
+
+16
+32
+64
+128
+256
+512
+1024
+
+Number of processes [-]
+
+100
+
+1k
+
+10k
+
+100k
+
+200
+
+500
+
+2k
+
+5k
+
+20k
+
+50k
+
+Compute time [s]
+
+Hex: MINI
+Hex: Q1-P0-AS
+
+Hex: Q1-P0-WAS
+Hex: Projection
+
+Tet: MINI
+Tet: P1-P0-AS
+
+Tet: P1-P0-WAS
+Tet: Projection
+
+Figure 6: Artery benchmark: Strong scaling results for the different element types for the coarsest grid (ℓ = 1, left) and the
+finest grid (ℓ = 7, right). Simulations were performed on 1 to 16 cores of a standard desktop computer for the coarse problem
+and on 16 to 1024 cores on Archer2.
+
+Strong scaling was achieved for the coarse problem up to 16 cores on a desktop machine (AMD Ryzen
+Threadripper 2990X), see Figure 6, left. Here, computational times were averaged over 5 runs using the
+same setup and range from 1 s to 1.5 s for penalty formulations (P1/Q1-P0-AS, P1/Q1-P0-WAS). For the
+projection-stabilized element compute times were around 3 times slower (Tet Projection: 3.5 s, Hex Projec-
+tion: 4.5 s) while for the MINI element compute times were around 7 times slower (Tet MINI: 6.4 s, Hex
+MINI: 10.8 s).
+For the fine grid strong scaling was obtained up to 1024 cores on Archer2 (https://www.archer2.ac.
+uk/), see Figure 6, right. Computational times using 1024 cores were between 146 s and 200 s for penalty
+formulations (P1/Q1-P0-AS, P1/Q1-P0-WAS); around 3 times slower for the projection-stabilized elements
+(Tet Projection: 422 s, Hex Projection: 601 s); and around 6 times slower for MINI elements (Tet MINI:
+600 s, Hex MINI: 1166 s).
+
+Table 1: Artery benchmark: properties of idealized artery meshes used in Section 3.1.
+
+ℓ
+Elements (Hex)
+Elements (Tet)
+Nodes
+
+1
+960
+5760
+1320
+2
+7680
+46 080
+9072
+3
+25 920
+155 520
+29 016
+4
+61 440
+368 640
+66 912
+5
+120 000
+720 000
+128 520
+6
+207 360
+1 244 160
+219 600
+7
+329 280
+1 975 690
+345 912
+
+13
+
+
+Discussion. In accordance with Gültekin et al. [76] we have shown for this benchmark that the concept
+Q1/P1-P0-WAS is able to match quasi-incompressible responses compared to the gold standard of locking-
+free elements. For this extreme loading case standard Q1/P1-P0 elements cannot reproduce accurate stress
+distributions; not even on very fine grids, see Figure 4(b).
+Further, this benchmark highlights the high efficiency of our methods. While the authors in [76] reported
+computational times on one 3.2GHz CPU unit that were 1 minute for Q1-P0-WAS elements and 20 minutes
+for their gold-standard (Q1-P0 elements using an Augmented Lagrangian method) we have achieved compute
+times on a comparable 3.0GHz CPU unit and the same mesh that were 11 seconds for Q1-P0-WAS elements
+and 24 seconds for locking-free Hex Projection elements, see Figure 6, left. That means that stabilization
+techniques presented in this paper allow up to 50 times faster execution times for this benchmark compared
+to other gold standard methods.
+Due to a higher number of linear iterations and higher matrix assembly times, simulations with hexahedral
+meshes were more expensive compared to simulations with tetrahedral grids. However, as also observed, e.g.,
+by Chamberland et al. [77] hexahedral elements were slightly more accurate than their tetrahedral equivalent.
+
+3.2. Inflation and Active Contraction of a Simplified Ventricle
+Simulation setup. To verify our EM setup we repeated the inflation and active contraction benchmark
+from Land et al. [78]. We generated the reference geometry of an idealized ventricle as a tetrahedral mesh
+of a truncated ellipsoid and prescribed a local orthonormal coordinate system with fiber, f0, sheet, s0,
+and sheet-normal, n0, directions according to this paper. We constructed three levels of refinement, see
+see Table 2 for discretization details.
+
+Table 2: Ellipsoid benchmark: properties of idealized ventricle meshes used in Section 3.2.
+
+ℓ
+Elements
+Nodes
+
+1
+20 709
+4732
+2
+201 495
+38 896
+3
+1 747 845
+312 784
+
+As material we used the transversely isotropic law by Guccione et al. [69], see Equation (26), with
+Θ(J) := ln(J) and
+
+Q := bf(f0 · Ef0)2 + bt
+�
+(s0 · Es0)2 + (n0 · En0)2 + 2(s0 · En0)2�
++
+2bfs
+�
+(f0 · Es0)2 + (f0 · En0)2�
+.
+
+Constitutive parameters were a = 2 kPa, bf = 8, bt = 2, and bfs = 4. In the benchmark paper the material is
+considered to be fully incompressible, hence, we chose 1/κ = 0 for the saddle-point formulation (Projection,
+MINI). For the penalty formulation (P1-P0 elements) we chose κ = 1000 kPa which was the best trade-off
+between convergence of the solver for all three levels in Table 2, near incompressibility, and minimization of
+locking effects.
+As the material law above does not allow for a WAS formulation we repeated the benchmark using a
+separated Fung-type exponential model as in Equation (27). In particular, we chose a Holzapfel–Ogden
+material [79] of the form
+
+Θ(J) := ln(J),
+Ψiso(C) := a
+
+2b
+�
+exp
+�
+b(I1 − 3)
+�
+− 1
+�
+
+Ψaniso(C, f0, s0, n0) :=
+�
+
+i=f,n
+
+ai
+2bi
+
+�
+exp
+�
+bi(I4i − 1)2�
+− 1
+�
++ afs
+
+2bfs
+
+�
+exp
+�
+bfs(I8fs)2�
+− 1
+�
+,
+(29)
+
+with invariants
+
+I1 := tr(C),
+I4f = max
+�
+f0 · Cf0, 1
+�
+,
+I4n = max
+�
+n0 · Cn0, 1
+�
+,
+
+such that contributions of compressed fibers are excluded, and the interaction-invariant
+
+I8fs = f0 · Cs0.
+
+Analogously, we used the constitutive equation above with Ψaniso(C, f0, s0, n0) for the WAS formulation.
+Material parameters were taken from [80], a = 0.809 kPa, b = 7.474, af = 1.911 kPa, bf = 22.063, an =
+0.227 kPa, bn = 34.802, afs = 0.547 kPa, and bfs = 5.691, fitted to human myocardial experiments in [81].
+
+14
+
+
+Results. For the transversely isotropic law (26), we compared our results to selected reference solutions
+from the benchmark paper [78], namely, the result from IBM with the Cardioid framework [82] using P2-P1
+elements and the result from Simula with FEniCS [83] using two-dimensional P2-P1 elements. First, the
+final location of the apex is measured and, second, circumferential, longitudinal, and radial strains at the
+endocardium, epicardium, and midwall are calculated on points along apex-to-base lines, see [78] for more
+details. Results show that the apex location Figure 7(a) and strains Figure 8 are very similar for the finest
+level (ℓ = 3) for all chosen element types. For the level ℓ = 2 the strain solution using simple P1-P0 elements
+is not converged showing differences to the benchmark solutions especially in boundary regions at the apex
+(p1) and the base (p10), see Figure 8(a).
+We repeated simulations as above measuring the final apex location and calculating strains along apex-
+to-base lines using the orthotropic law (29). We compared results using P1-P0-WAS, P1-P0-AS, projection-
+stabilized, and MINI elements in Figure 7(b) and Figure 9. Apex locations are very similar for all element
+types, however, strains are different, especially in boundary regions close to the apex and the base. We can
+see in Figure 9 that even for the finest level (ℓ = 3) the strain solution for both P1-P0 formulations is not
+converged while solutions for stabilized elements are already very similar for levels ℓ = 2 and ℓ = 3.
+
+(a)
+(b)
+
+Figure 7: Ellipsoid benchmark:
+apex location.
+The dashed line separates results for the deformed positions of the apex
+at the endo- and epicardium. (a) Guccione material with comparison to benchmark results (in gray) presented in [78]; (b)
+Holzapfel–Ogden material with comparison to P1-P0-WAS formulation.
+
+Discussion. For the transversely-isotropic Guccione material model strains with the presented projection-
+stabilized and MINI elements match results using higher order P2-P1 elements even on coarser grids. Here,
+also linear tetrahedral elements seem to be accurate given a fine enough discretization; this behavior was
+also observed in [78].
+In contrast to that, for the orthotropic Holzapfel–Ogden material, we see in Figure 9 that P1-P0 elements
+cannot always accurately reproduce strains even on the finest grid. On the other hand we can assume that
+strains are accurate and almost converged for projection-stabilized and MINI elements as results for levels
+2 and 3 are very similar. Interestingly, for this benchmark, we see no difference in accuracy between the
+standard P1-P0 and the P1-P0-WAS formulation. Most likely the reason for this is that parameters fitted
+to human myocardial data [80] are not as stiff in fiber direction compared to the more extreme artificial
+benchmark case in Section 3.1. Overall, both approaches with simple linear elements fail to match results
+from gold-standard elements, especially in boundary regions.
+
+3.3. 3D-0D closed-loop model of the heart and circulation
+
+Simulation setup. Finally, we show the applicability of our method to an advanced model of computational
+cardiac EM. Here, a 3D model of bi-ventricular EM is coupled to the physiologically comprehensive 0D
+CircAdapt model representing atrial mechanics and closed-loop circulation. In the present paper, the my-
+ocardium of the ventricles was modeled as a nonlinear hyperelastic, (nearly) incompressible and orthotropic
+
+15
+
+
+(a) ℓ = 2
+(b) ℓ = 3
+
+Figure 8: Ellipsoid benchmark, Guccione material: longitudinal (LONG), circumferential (CIRC), and radial (TRANS) strains
+at endocardium, epicardium, and midwall. Index of points increases from the apex to the base. Own results (in black) are
+compared to benchmark results (in gray) presented in [78].
+
+(a) ℓ = 2
+(b) ℓ = 3
+
+Figure 9: Ellipsoid benchmark, Holzapfel–Ogden material: longitudinal (LONG), circumferential (CIRC), and radial (TRANS)
+strains at endocardium, epicardium, and midwall. Index of points increases from the apex to the base. P1-P0 elements (in
+gray) are compared to stabilized elements (in black).
+
+16
+
+
+material as in Equation (27). In particular, for this application, we chose the model proposed by Gültekin
+et al. [84]
+
+Θ(J) := ln(J),
+Ψiso(C) := a
+
+2b
+�
+exp
+�
+b(I1 − 3)
+�
+− 1
+�
+
+Ψaniso(C, f0, s0) :=
+�
+
+i=f,s
+
+ai
+2bi
+
+�
+exp
+�
+bi(I4i − 1)2�
+− 1
+�
++ afs
+
+2bfs
+
+�
+exp
+�
+bfs(I8fs)2�
+− 1
+�
+,
+
+with modified unimodular fourth-invariants to support dispersion of fibers
+
+I∗
+4i = κiI1 + (1 − 3κi)I4i,
+i ∈ f, s
+
+and standard invariants
+
+I1 := tr(C),
+I8fs = f0 · Cs0.
+
+Analogously, we used the constitutive equation above with Ψaniso(C, f0, s0) for the WAS formulation.
+A reaction-eikonal model [85] was used to generate electrical activation sequences. Cellular dynamics were
+described by the Grandi–Pasqualini–Bers model [86] coupled to the Land–Niederer model [87] to account
+for length and velocity dependence of active stress generation, see also Augustin et al. [72] for more details
+on this strong coupling as well as Regazzoni and Quarteroni [88] for implementation details on the velocity-
+dependent active stress model. The active stress tensor is computed according to [89] as
+
+Sa = Sa
+
+�
+κf
+
+1 − 2κf
+C−1 + 1 − 3κf
+
+1 − 2κf
+(f0 · Cf0)−1f0 ⊗ f0
+
+�
+,
+
+where Sa is the scalar valued active stress generated in the cardiac myocytes and κf is the same dispersion
+parameter as above.
+For the time integration of Cauchy’s equation of motion we used a variant of the generalized-α integra-
+tor [90] with spectral radius ρ∞ = 0 and damping parameters βmass = 0.1 ms−1, βstiff = 0.1 ms.
+
+Bi-ventricular finite element models. The bi-ventricular geometry was created according to [62] with an
+average spatial resolution of 1.3 mm for the LV and 1.2 mm for the RV. The resulting mesh used for simulations
+consisted of 557 316 elements and 111 234 nodes. Fiber and sheet directions were computed by a rule-based
+method [91] with fiber angles changing linearly from −60◦ at the epicardium to +60◦ at the endocardium [92].
+
+Boundary conditions. Boundary conditions on the epicardium were modeled using spatially varying normal
+Robin boundary conditions [93] to simulate in-vivo constrains imposed by the pericardium. The basal cut
+plane was constrained by omni-directional spring type boundary conditions. The 3D ventricular PDE model
+was coupled to the 0D ODE model CircAdapt [94] representing cardiovascular system dynamics according
+to Augustin et al. [62]. An ex-vivo setting without pericardial boundary conditions is used to calibrate
+parameters replicating ex-vivo passive inflation experiments by Klotz et al. [95].
+
+Parameterization. Passive material parameters a = 0.4, b = 6.55, af = 3.05, bf = 29.05, as = 1.25, bs =
+36.65, afs = 0.15, and bfs = 6.28 were taken from [84]. Dispersion parameters have been identified previously
+by mechanical experiments on passive cardiac tissue by Sommer et al. [81] and are set to κf = 0.08 and
+κs = 0.09.
+To eliminate potential differences in stress/strain due to parameterization we fitted parameters to achieve
+similar pressure-volume (PV) loops and a similar end-diastolic PV relationship (EDPVR) for all element
+types. First, initial passive material parameters above were fitted to the empiric description of the EDPVR
+by Klotz et al. [95].
+For each element type we used a backward displacement algorithm and boundary
+conditions replicating experiments in [95] according to Marx et al. [96], see Figure 10. This fitting resulted
+in multiplicative scaling factors of 0.4529 (P1-P0 elements) and 0.9582 (locking-free elements) for the stress-
+like material parameters (a, af, as, afs); and in multiplicative scaling factors of 1.0322 (P1-P0 elements)
+and 0.7981 (locking-free elements) for the dimensionless parameters (b, bf, bs, bfs). The list of fitted passive
+parameters is given in Table 3.
+Active stress parameters were fitted using locking-free elements to reach a target peak pressure of
+105 mmHg in the LV. Using the same active stress parameters, the simulations with P1-P0 elements re-
+sulted in slightly higher peak pressure, 109.2 mmHg, see Figure 11 (a). The end-diastolic state remained
+
+17
+
+
+almost unchanged while the ejection fraction increased slightly. We attribute this to a higher contractility
+of the elements when the tissue is not modeled as a fully incompressible continuum. To achieve similar
+PV loops for P1-P0 elements, simulations were repeated with reduced active tension T •
+ref. See Table 3 for
+a summary of all active stress parameters. Simulations parameters of the circulatory system were set as
+in Augustin et al. [62] with a cycle length of 0.585 s.
+
+Results. First, simulation results in Figure 10 (a) show that the passive parameterization - that was per-
+formed individually for all element types - allowed to reach the predicted stress-free volume and the given
+end-diastolic volume almost perfectly while reproducing the shape of the Klotz EDPVR curve. Boundary
+conditions for this experiment correspond to the ex-vivo setting described above replicating passive inflation
+experiments [95]. With fitted material parameters we repeat the backward displacement algorithm to get
+a stress-free reference geometry with in-vivo boundary conditions to model the constrains imposed by the
+pericardium. Loading the found stress-free configuration to end-diastolic pressure results in loading curves
+as shown in Figure 10 (b). These loading curves are almost identical for all element types. The pre-stressed
+configuration after this initial loading phase matches the geometry obtained from imaging and serves as the
+starting point for EM heart beat experiments as described in the following.
+To get to a converged solution of the closed-loop 3D-0D system we simulated 30 heart beats for each
+finite element setting: 18 init beats with 1 Newton step corresponding to a semi-implicit (linearly-implicit)
+discretization method [97]; 10 beats with 2 Newton steps which is required to get a correct update due to
+the velocity dependence of the active-stress model; and two final beats with a fully converged Newton with
+a relative error reduction of the residual of ϵ = 10−6.
+See Figure 11 (a) for a comparison of the final three pressure-volume loops with the same active stress
+parameters which resulted in higher pressures for P1-P0 elements. In Figure 11 (b)–(d) we show traces for
+the refitted active stress parameters as described above. Here, the final three P-V loops in Figure 11 (b)
+coincide. Hence, the solution is converged and there is also no difference between the simulation with two
+Newton steps and the fully converged Newton method. This also holds for true for pressures in the ventricles
+and adjacent arteries, see Figure 11 (c), in- and outflow traces Figure 11 (d), and strains/stresses.
+Looking at myocardial mass in Figure 10 (c) we can see that for projection-stabilized and MINI elements
+the mass stays at the initial value of 133.56 cm3 all the time during the final three beats; this is expected as
+the tissue is modeled to be fully incompressible (1/κ = 0). For P1-P0 elements using a penalty formulation
+(κ = 650 kPa) the tissue is nearly incompressible and especially during the ejection phase the myocardial
+mass decreases slightly: maximal 1.17 % for P1-P0-AS and 1.38 % for P1-P0-WAS elements.
+In contrast to pressure, volume, and flow traces, stresses show a very different pattern when comparing
+locking-free to simple P1-P0 elements, see Figure 12. In this plot we show element-wise, total first principal
+stress at three time points marked by A, B, and C in the P-V loop in Figure 11 (b) which represent A, the most
+expanded (end-diastole), B, the highest total stress (peak systole), and C, the most contracted (beginning
+of filling phase) states of the ventricles. Especially at end-diastole Figure 12 (a) and the beginning of the
+filling phase Figure 12 (c) where passive stress dominates and active stress is close to zero we see a distinct
+checkerboard pattern for P1-P0 elements while solutions for projection-stabilized and MINI elements are
+smooth. Also in violin plots showing the stress distribution over the whole tissue domain we see a clear
+difference for these time points, see Figure 13 (a) and (c). On the other hand, the stress distribution is very
+similar for all element types at peak-systole where active stress dominates, see Figure 12 (b) and Figure 13 (b).
+
+Numerical performance. Computational times for the simulation using different element types are given
+in Table 4. Simulations were performed on 128 cores of Archer2 and we distinguish between solver-time,
+ts,•, the accumulated time of the linear solver (GMRES), and assembly-time, ta,•, the accumulated time of
+matrix and vector assembling of the linearized system (18)–(20).
+In total, for a full simulation with loading, 18 initialization beats with 1 Newton step, 10 initialization
+beats with 2 Newton steps, and 2 final beats with a fully converging Newton method the computational costs
+were around 3.5 h for P1-P0 elements, 13 h for projection stabilized elements, and 17.5 h for MINI elements,
+see Table 4 for exact values. Here, in addition to GMRES solver and assembly times, also input-output
+times, the solution of the R-E model governing EP, ODE times, and postprocessing are taken into account.
+Using a coarser mesh with 45 686 elements and 11 850 nodes tractable computational times could also be
+achieved on a desktop machine (AMD Ryzen Threadripper 2990X) with 2.5 minutes for one heart beat
+
+18
+
+
+Table 3: Summary of electrical and mechanical material parameters.
+
+Passive stress parameters: P1-P0 elements
+a = 0.1812 kPa,
+af = 1.3813 kPa,
+as = 0.5661 kPa,
+afs = 0.0679 kPa,
+b = 6.7609 [−],
+bf = 29.9854 [−],
+bs = 37.8301 [−],
+bfs = 6.4822 [−].
+
+Passive stress parameters: locking-free elements
+a = 0.3833 kPa,
+af = 2.9225 kPa,
+as = 1.1978 kPa,
+afs = 0.1437 kPa,
+b = 5.2278 [−],
+bf = 23.1848 [−],
+bs = 29.2504 [−],
+bfs = 5.0121 [−].
+
+Active stress parameters
+T LV
+ref = 200.0 mN mm−2,
+T RV
+ref = 160.0 mN mm−2,
+[Ca2+]T50 = 0.52 µmol L−1,
+TRPN50 = 0.37 [−],
+nTRPN = 1.54 [−],
+kTRPN = 0.14 ms−1,
+nxb = 3.38 [−],
+kxb = 4.9 × 10−3 ms−1.
+
+Adapted active stress parameters for P1-P0 elements
+T LV
+ref = 190.0 mN mm−2,
+T RV
+ref = 130.0 mN mm−2.
+
+35
+40
+45
+50
+55
+60
+
+Volume (ml)
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+Pressure (mmHg)
+
+Klotz-curve
+P1-P0-WAS/AS
+
+Projection/MINI
+
+Measured ED data point
+V0
+
+(a)
+
+40
+45
+50
+55
+60
+
+Volume (ml)
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+Pressure (mmHg)
+
+LV P1-P0-WAS
+LV Projection/MINI
+
+(b)
+
+16.0
+16.5
+17.0
+17.5
+
+Time (s)
+
+131.75
+
+132.00
+
+132.25
+
+132.50
+
+132.75
+
+133.00
+
+133.25
+
+133.50
+
+Wall Volume (cm3)
+
+P1-P0-WAS
+P1-P0-AS
+Projection/MINI
+
+Initial volume
+
+(c)
+
+Figure 10: 3D-0D model of the heart: Passive model calibration and unloading following Marx et al. [96]. (a) An ex-vivo setup
+was used to calibrate the passive material parameters to fit the EDPVR of Klotz et al. [95]; (b) Calibrated material parameters
+were used in an in-vivo setup to generate prestress using a backward-displacement scheme. (c) Change in tissue volume over
+the last three beats.
+
+19
+
+
+30
+40
+50
+60
+
+Volume (ml)
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Pressure (mmHg)
+
+LV P1-P0-WAS
+RV P1-P0-WAS
+LV Projection/MINI
+
+RV Projection/MINI
+
+(a)
+
+B
+
+A
+C
+
+(b)
+
+16.0
+16.5
+17.0
+17.5
+
+Time (s)
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+Pressure (mmHg)
+
+(c)
+
+16.0
+16.5
+17.0
+17.5
+
+Time (s)
+
+−150
+
+−100
+
+−50
+
+0
+
+50
+
+100
+
+150
+
+200
+
+Flux (mL/s)
+
+(d)
+
+Figure 11: 3D-0D model of the heart: Plot comparing data traces for the P1-P0-WAS formulation (LV: red lines, RV: blue
+lines) and for the MINI and stabilized P1-P1 elements (LV: black dashed lines, RV: gray dashed lines). Shown are the last 3
+beats of the simulation with (a) same active stress and preload parameters for P1-P0-WAS and locking free elements and (b-d)
+modified active stress and preload parameters for P1-P0-WAS elements to reach similar PV loops. In particular we show: (a,b)
+converged PV-loops for both ventricles; (c) pressure trace for the LV and RV and pressure in the respective outflow vessel;
+(d) in- (negative values) and outflow (positive values) traces of both ventricles. A, B, C mark the time-points for stress plots
+in Figures 12 and 13.
+
+20
+
+
+Figure 12: 3D-0D model of the heart: Snapshots of first principal stress values at end-diastole (first row), peak systole (second
+row), and at mitral valve opening (third row), see Figure 11 A, B, C for a visualization of the time-points. Gray outlines
+show the end-diastolic configuration. Compared are P1-P0-WAS elements (first column), stabilized P1-P1 elements (second
+columns), and MINI elements (third column). Shown is total stress as defined tress fields are element-wise and not smoothed.
+
+21
+
+
+MINI
+Projection
+P1-P0-AS
+P1-P0-WAS
+
+−6
+
+−4
+
+−2
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+First principal stress [kPa]
+
+(a)
+
+MINI
+Projection
+P1-P0-AS
+P1-P0-WAS
+
+0
+
+20
+
+40
+
+60
+
+80
+
+100
+
+First principal stress [kPa]
+
+(b)
+
+MINI
+Projection
+P1-P0-AS
+P1-P0-WAS
+
+−3
+
+−2
+
+−1
+
+0
+
+1
+
+2
+
+3
+
+First principal stress [kPa]
+
+(c)
+
+Figure 13: 3D-0D model of the heart: Violin plots of the first principal stress distribution at (a) end-diastole, (b) peak systole,
+(c) mitral valve opening.
+
+22
+
+
+on 32 cores using P1-P0 elements and 7.15 minutes using locking-free projection stabilized elements. Total
+computational times on the desktop machine for 30 beats were 94.6 minutes for P1-P0 and 264.4 minutes for
+projection stabilized elements.
+In Figure 14 we show strong scaling properties of the simulation on 16 to 1024 cores of Archer2. Loading
+and heart beat experiments scale well up to 256 cores for all element types. For 512 and 1024 cores strong
+scaling efficiency drops markedly due to small local partition sizes (< 500 degrees of freedom per partition).
+
+8
+16
+32
+64
+128 256 512 1024
+
+Number of processes [-]
+
+1
+
+10
+
+100
+
+1000
+
+2
+
+5
+
+20
+
+50
+
+200
+
+500
+
+Compute time [s]
+
+8
+16
+32
+64
+128 256 512 1024
+
+Number of processes [-]
+
+100
+
+1k
+
+10k
+
+200
+
+500
+
+2k
+
+5k
+
+20k
+
+Compute time [s]
+
+Tet: MINI
+Tet: P1-P0-AS
+Tet: P1-P0-WAS
+Tet: Projection
+
+Figure 14: 3D-0D model of the heart: Strong scaling results for the loading phase (left) and one beat (right). Simulations were
+performed on 16 to 1024 cores on Archer2.
+
+Type
+DOF
+ts,1/ta,1
+ts,2/ta,2
+ts,c/ta,c
+Tb,1/Tb,2/Tb,c
+Tld
+Total
+[−]
+[−]
+[s]
+[s]
+[s]
+[s]
+[s]
+[min]
+
+P1-P0-AS
+333 702
+93.7/93.4
+183.6/186.8
+938.4/739.0
+221.3/438.6/1947.5
+7.71
+207.2
+P1-P0-WAS
+333 702
+92.1/92.9
+181.2/185.8
+922.4/739.7
+218.7/434.4/1930.4
+7.48
+205.0
+Projection
+444 936
+573.6/119.1
+1289.1/238.2
+7479.6/921.3
+727.1/1606.0/8694.3
+23.8
+777.0
+MINI
+444 936
+600.8/495.2
+1242.1/990.4
+6126.3/3078.8
+1181.8/2328.3/9547.5
+59.1
+1060.5
+
+Table 4: Summary of computational times on 128 cores of Archer2 for the different finite element types. Given are solver,
+assembly, and total computational times for one beat using one Newton iteration (ts,1, ta,1) two Newton iterations (ts,2, ta,2)
+and a fully converged Newton solution (ts,c, ta,c). Tb,1, Tb,2, and Tb,c correspond to the total simulation time per heart beat
+for one Newton iteration, two Newton iteration, and fully converged Newton scenarios. Timings refer to a single heart beat
+lasting 0.585 s at a time step size of 1 ms. In addition, the times required for the loading phase, Tld, using 32 load steps and
+the total simulation times including 0D solution, IO, and postprocessing are presented.
+
+Discussion. In this benchmark, we show the most complete model of cardiac EM that is currently available:
+i) Cardiac electrophysiology was modeled by a reaction-Eikonal model which predicts potential fields with
+high fidelity even on coarser grids [85]. ii) Cellular dynamics were modeled by the physiological Grandi–
+Pasqualini–Bers model [86] which is coupled to the Land–Niederer model [87]. This allows for strong coupling,
+i.e., to account for length and velocity effects on the cytosolic calcium transient, using an approach as
+described in Augustin et al. [72]. iii) Passive tissue mechanics was modeled by the recent Holzapfel–Ogden
+type model [84] and active stress according to [89] using a recent approach by Regazzoni and Quarteroni [88]
+to avoid oscillations. Note that both, passive and active stress computation, account for fiber dispersion,
+hence, allowing to model the active tension generated by dispersed fibers.
+iv) Spatially varying Robin
+boundary conditions were included to model the effect of the pericardium [93]. v) The 3D PDE model
+was coupled to the physiologically comprehensive 0D closed-loop model CircAdapt of the cardiovascular
+system.
+This allows to replicate physiological behaviors under experimental standard protocols altering
+loading conditions and contractility [62]. vi) Simulations were performed using locking-free finite elements -
+as presented in this paper - to accurately compute stress distributions.
+
+23
+
+
+All computational models of cardiac EM presented in the literature so far, e.g., [82, 62, 98, 99, 100, 101,
+
+102, 27], are missing one or mostly more of the above points. While the importance of model components
+i) – v) was discussed extensively in references above we could show in this paper that also vi) is necessary
+to compute accurate stress fields in the tissue. Depending on the application this could be a very critical
+modeling component, e.g., for the accurate prediction of rupture risks or for the estimation of growth and
+remodeling based on stress. Note that also for this benchmark we see no substantial difference between
+simulation outcomes using standard standard P1-P0 and the P1-P0-WAS formulation; both approaches fail
+to match stress results from gold-standard elements.
+While stress fields differ vastly the PV loops computed with locking-free and simple P1-P0 elements
+are very similar; at least if active and passive tissue parameters are fitted independently for each element
+type. In particular, passive parameters fitted to the Klotz curve using P1-P0 elements correspond to a softer
+material. Here, the fitting compensates locking effects to a certain degree. On the other hand, the reference
+peak tension parameter (T •
+ref) had to be slightly reduced to reach the same target value as projection
+stabilized and MINI elements. In this case, the softer passive material and the higher compressibility of
+the tissue using the penalty term in the P1-P0 formulation are most likely the reasons for higher active
+stress generation. With these adaptations, PV traces for the different element types are almost identical,
+see Figure 11. This shows that simple P1-P0 elements can predict most simulation outputs as good as gold
+standard formulations and are thus adequate for cardiac EM simulations when stresses are not an outcome
+or critical simulation value. In this case, the computational efficiency of P1-P0 elements might trump the
+numerical accuracy of locking-free elements.
+High resolution EM models require efficient numerical solvers to limit the computational cost that results
+from a high number of degrees of freedom to capture anatomical details as well as a high number of time
+steps. Strong scaling characteristics of our EM framework was reported in detail previously [72, 103]. In the
+present work, we showed that strong scaling is preserved when using locking free elements and a coupling to
+a 0D model of the circulatory system.
+Using the advanced approach presented in this paper, the time needed for the passive filling of the bi-
+ventricular model of the heart is very low. For the projection stabilized element loading times are less than
+half a minute on 128 cores@2.25Ghz of Archer2 (Table 4) for the simulation with 444 936 degrees of freedom.
+Even on 8 cores the passive filling could be achieved within 5 minutes (Figure 14). In comparison, a recent
+work [19] reports compute times for a similar passive inflation scenario using locking-free elements that were
+around 162 minutes (203 214 degrees of freedom, 8 cores@2.8Ghz). Fast loading times are crucial for the
+estimation of the stress-free reference configuration using fixed-point iterations [104, 105].
+Computational cost for one heart beat – using grids with a comparable number of elements and nodes
+but, in general, P1-P0 elements – range from 1.8 to 24 hours in previous studies [82, 99, 100, 101, 102].
+In this work, we could show that even with locking-free elements one heart beat can be simulated within
+27 minutes on 128 cores of Archer2, see Table 4, and within 11 minutes using 1024 cores, see Figure 14.
+Still, P1-P0 elements are computationally less expensive with one heart beat in around 7 minutes using 128
+cores and 3.2 minutes using 1024 cores. Using a coarser mesh as in [62] fast computational times are also
+possible on desktop machines with 2.5 minutes for one heart beat on 32 cores using P1-P0 elements and 7.15
+minutes using locking-free elements. This computational efficiency is of paramount importance for future
+parameterization studies where numerous forward simulations have to be carried out to personalize models
+to patient data.
+
+Limitations. First, we set an arbitrary number of 30 heart beats which was more than enough to reach a limit
+cycle in all experiments. However, an automatic stopping criterion could be used that stops the simulation
+after reaching the limit cycle. Simulation times could be further reduced by accelerated the convergence to
+a limit cycle using data-driven 0D emulators [106] or by tuning the 0D CircAdapt model to predict P-V
+traces from the 3D-0D model in a better fashion, hence, reducing the number of beats needed to a converged
+solution.
+Second, the parameterization of the model has room for improvement. Passive parameters were fitted to
+the empiric Klotz curve using end-diastolic volume and pressure and active stress was fitted using a target
+peak pressure value. Other model components such as the reaction-Eikonal model and CircAdapt were not
+parameterized and we were using default values from the literature. The personalization of the complete
+model to patient-specific data is not within the scope of this contribution, however, the computational
+
+24
+
+
+efficiency of the model is of crucial importance for parameter identification studies that often require a large
+number of forward simulations.
+Third, no independent validation of the model is performed. This could be done by comparing displace-
+ments or strains predicted by the model to observations from cine MRI or 3D tagged MRI data, see, e.g.,
+[107, 101, 13]. However, in this work, we focused on showing advantages of locking-free elements for applied
+simulations using an advanced setup which is necessary to replicate physiological behavior.
+A rigorous,
+independent validation against for several patient-specific cases using image data will be the focus of future
+studies.
+Finally, locking-free formulations as presented in this paper require the solution of a block system, which
+in turn necessitates suitable preconditioning for computational efficiency. This is not a trivial task, however,
+preconditioners used for simulations in this paper are publicly available through the open-source software
+framework PETSc.
+
+4. Conclusion
+
+In this study, we introduced stabilization techniques that accelerate simulations of anisotropic materials,
+in particular, nearly and fully incompressible fiber-reinforced solids such as arterial wall or myocardial tissue.
+A MINI element formulation and a simple and computationally efficient technique based on a local pressure
+projection were presented.
+Both methods were applied for the first time for simulations of anisotropic
+materials and showed to be an excellent choice when the use of higher order or Taylor–Hood elements is not
+desired. This is the case, e.g., for detailed, high-resolution problem domains that results in a high number
+of degrees of freedom. We showed that both approaches are very versatile and can be applied to stationary
+and transient problems as well as hexahedral and tetrahedral grids without modifications. It is worth noting
+that all required implementations are purely on the element level, thus, facilitating an inclusion in existing
+finite element codes. Furthermore, solvers and preconditioners used to solve the linearized block system of
+equations are available through the open-source software package PETSc [74].
+We showed the robustness and accuracy of the chosen approaches in two benchmark problems from
+the literature: first, a thick-walled cylindrical tube representing arterial tissue and second, an ellipsoid
+representing LV myocardial tissue. Additionally, in a third application of the stabilization approaches, we
+presented a complex 3D-0D model of the ventricles. This constitutes the first computational EM model
+of the heart where all components are captured by physiological, state-of-the-art models. We could show
+that for the first time accurate and physiological cardiovascular simulations are feasible within a clinically
+tractable time frame.
+Computational efficiency of the methods is unprecedented in the literature and the framework shows
+excellent strong scaling on desktop and HPC architectures. The high versatility of the one-fits-all approach
+allows the simulation of nearly and fully incompressible fiber-reinforced materials in many different scenarios.
+Overall, this offers the possibility to perform accurate simulations of biological tissues in clinically tractable
+time frames, also enabling parameterization studies where numerous forward simulations have to be carried
+out to personalize models to patient data.
+
+Declaration of competing interest
+
+The authors declare that they have no known competing financial interests or personal relationships that
+could have appeared to influence the work reported in this paper.
+
+Acknowledgements
+
+This project has received funding from the European Union’s Horizon 2020 research and innovation
+programme under the Marie Skłodowska–Curie Action H2020-MSCA-IF-2016 InsiliCardio, GA No. 750835
+and under the ERA-NET co-fund action No. 680969 (ERA-CVD SICVALVES, JTC2019) funded by the
+Austrian Science Fund (FWF), Grant I 4652-B to CMA. Additionally, the research was supported by the
+Grants F3210-N18 and I2760-B30 from the Austrian Science Fund (FWF) and a BioTechMed Graz flagship
+award “ILearnHeart” to GP. Further, the project has received funding from the European Union’s Horizon
+2020 research and innovation programme under the ERA-LEARN co-fund action No. 811171 (PUSHCART,
+JTC1_27) funded by ERA-NET ERACoSysMed to GP.
+
+25
+
+
+References
+
+[1] A. Grytsan, T. Eriksson, P. Watton, T. Gasser, Growth Description for Vessel Wall Adaptation: A
+Thick-Walled Mixture Model of Abdominal Aortic Aneurysm Evolution,
+Materials 10 (2017) 994.
+doi:10.3390/ma10090994.
+
+[2] M. Genet, L. C. Lee, B. Baillargeon, J. M. Guccione, E. Kuhl, Modeling Pathologies of Diastolic
+and Systolic Heart Failure,
+Annals of Biomedical Engineering 44 (2016) 112–127. doi:10.1007/
+s10439-015-1351-2.
+
+[3] M. Peirlinck, F. Sahli Costabal, K. L. Sack, J. S. Choy, G. S. Kassab, J. M. Guccione, M. De Beule,
+P. Segers, E. Kuhl, Using machine learning to characterize heart failure across the scales, Biomechanics
+and Modeling in Mechanobiology 18 (2019) 1987–2001. doi:10.1007/s10237-019-01190-w.
+
+[4] J. A. Niestrawska, C. M. Augustin, G. Plank, Computational modeling of cardiac growth and remod-
+eling in pressure overloaded hearts—Linking microstructure to organ phenotype, Acta Biomaterialia
+106 (2020) 34–53. doi:10.1016/j.actbio.2020.02.010.
+
+[5] T. C. Gasser, M. Auer, F. Labruto, J. Swedenborg, J. Roy, Biomechanical rupture risk assessment
+of abdominal aortic aneurysms: model complexity versus predictability of finite element simulations,
+European Journal of Vascular and Endovascular Surgery 40 (2010) 176–185.
+
+[6] O. Gültekin, H. Dal, G. A. Holzapfel,
+A phase-field approach to model fracture of arterial walls:
+theory and finite element analysis,
+Computer methods in applied mechanics and engineering 312
+(2016) 542–566.
+
+[7] Y.
+C.
+Fung,
+Biomechanics,
+1,
+Springer
+New
+York,
+New
+York,
+NY,
+1990.
+doi:10.1007/
+978-1-4419-6856-2.
+
+[8] J. M. Guccione, A. D. McCulloch, L. Waldman,
+Passive material properties of intact ventricular
+myocardium determined from a cylindrical model (1991).
+
+[9] G. A. Holzapfel, T. C. Gasser, R. W. Ogden, A new constitutive framework for arterial wall mechanics
+and a comparative study of material models, Journal of elasticity and the physical science of solids 61
+(2000) 1–48.
+
+[10] C. M. Augustin, G. A. Holzapfel, O. Steinbach,
+Classical and all-floating FETI methods for the
+simulation of arterial tissues, International Journal for Numerical Methods in Engineering 99 (2014)
+290–312. doi:10.1002/nme.4674.
+
+[11] J. M. Guccione, K. D. Costa, A. D. McCulloch,
+Finite element stress analysis of left ventricular
+mechanics in the beating dog heart,
+Journal of Biomechanics 28 (1995) 1167–1177. doi:10.1016/
+0021-9290(94)00174-3.
+
+[12] M. P. Nash, P. J. Hunter, Computational mechanics of the heart, Journal of elasticity and the physical
+science of solids 61 (2000) 113–141.
+
+[13] K. L. Sack, E. Aliotta, D. B. Ennis, J. S. Choy, G. S. Kassab, J. M. Guccione, T. Franz, Construction
+and validation of subject-specific biventricular finite-element models of healthy and failing swine hearts
+from high-resolution DT-MRI, Frontiers in Physiology 9 (2018) 1–19.
+
+[14] I. Babuška, M. Suri, Locking effects in the finite element approximation of elasticity problems, Nu-
+merische Mathematik 62 (1992) 439–463. doi:10.1007/BF01396238.
+
+[15] T. J. R. Hughes, The Finite Element Method, Prentice-Hall, Englewood Cliffs, New Jersey, 1987.
+
+[16] O. C. Zienkiewicz, R. L. Taylor, R. L. Taylor, The finite element method: solid mechanics, volume 2,
+Butterworth-heinemann, 2000.
+
+26
+
+
+[17] P. E. Farrell, L. F. Gatica, B. P. Lamichhane, R. Oyarzúa, R. Ruiz-Baier,
+Mixed Kirchhoff
+stress–displacement–pressure formulations for incompressible hyperelasticity, Computer Methods in
+Applied Mechanics and Engineering 374 (2021) 113562. doi:10.1016/j.cma.2020.113562.
+
+[18] O. Gültekin, H. Dal, G. A. Holzapfel, On the quasi-incompressible finite element analysis of anisotropic
+hyperelastic materials, Computational Mechanics (2018). doi:10.1007/s00466-018-1602-9.
+
+[19] D. E. Hurtado, P. Zavala, Accelerating cardiac and vessel mechanics simulations: An energy-transform
+variational formulation for soft-tissue hyperelasticity, Computer Methods in Applied Mechanics and
+Engineering 379 (2021) 113764. doi:https://doi.org/10.1016/j.cma.2021.113764.
+
+[20] J. Schröder, N. Viebahn, D. Balzani, P. Wriggers, A novel mixed finite element for finite anisotropic
+elasticity; the SKA-element Simplified Kinematics for Anisotropy,
+Computer Methods in Applied
+Mechanics and Engineering 310 (2016) 475–494. doi:10.1016/j.cma.2016.06.029.
+
+[21] P. Flory, Thermodynamic relations for high elastic materials, Transactions of the Faraday Society 57
+(1961) 829–838.
+
+[22] R. Glowinski, P. Le Tallec, Augmented Lagrangian and operator-splitting methods in nonlinear me-
+chanics, volume 9, SIAM, 1989.
+
+[23] J. C. Simo, R. L. Taylor, Quasi-incompressible finite elasticity in principal stretches. continuum basis
+and numerical algorithms, Computer methods in applied mechanics and engineering 85 (1991) 273–310.
+
+[24] C. Sansour, On the physical assumptions underlying the volumetric-isochoric split and the case of
+anisotropy, European Journal of Mechanics, A/Solids 27 (2008) 28–39. doi:10.1016/j.euromechsol.
+2007.04.001.
+
+[25] J. Helfenstein, M. Jabareen, E. Mazza, S. Govindjee, On non-physical response in models for fiber-
+reinforced hyperelastic materials, International Journal of Solids and Structures 47 (2010) 2056–2061.
+doi:10.1016/j.ijsolstr.2010.04.005.
+
+[26] J. Schröder, N. Viebahn, D. Balzani, P. Wriggers, A novel mixed finite element for finite anisotropic
+elasticity; the SKA-element Simplified Kinematics for Anisotropy,
+Computer Methods in Applied
+Mechanics and Engineering 310 (2016) 475–494. doi:10.1016/J.CMA.2016.06.029.
+
+[27] T. Gerach, S. Schuler, J. Fröhlich, L. Lindner, E. Kovacheva, R. Moss, E. M. Wülfers, G. Seemann,
+C. Wieners, A. Loewe, Electro-mechanical whole-heart digital twins: A fully coupled multi-physics
+approach, Mathematics 9 (2021) 1247.
+
+[28] R. C. Kerckhoffs, M. L. Neal, Q. Gu, J. B. Bassingthwaighte, J. H. Omens, A. D. McCulloch, Coupling
+of a 3d finite element model of cardiac ventricular mechanics to lumped systems models of the systemic
+and pulmonic circulation, Annals of biomedical engineering 35 (2007) 1–18.
+
+[29] R. Kerckhoffs, J. Lumens, K. Vernooy, J. Omens, L. Mulligan, T. Delhaas, T. Arts, A. McCulloch,
+F. Prinzen, Cardiac resynchronization: insight from experimental and computational models, Progress
+in biophysics and molecular biology 97 (2008) 543–561.
+
+[30] T. P. Usyk, I. J. LeGrice, A. D. McCulloch,
+Computational model of three-dimensional car-
+diac electromechanics,
+Computing and Visualization in Science 4 (2002) 249–257. doi:10.1007/
+s00791-002-0081-9.
+
+[31] I. Babuška, The finite element method with Lagrangian multipliers, Numerische Mathematik (1973).
+doi:10.1007/BF01436561.
+
+[32] F. Brezzi, On the existence, uniqueness and approximation of saddle-point problems arising from La-
+grangian multipliers, Revue française d’automatique, informatique, recherche opérationnelle. Analyse
+numérique (1974). doi:10.1051/m2an/197408R201291.
+
+27
+
+
+[33] D. Chapelle, K. J. Bathe,
+The inf-sup test,
+Computers and Structures (1993). doi:10.1016/
+0045-7949(93)90340-J.
+
+[34] C. Taylor, P. Hood,
+A numerical solution of the Navier-Stokes equations using the finite element
+technique, Computers & Fluids 1 (1973) 73–100. doi:10.1016/0045-7930(73)90027-3.
+
+[35] F. Nobile, A. Quarteroni, R. Ruiz-Baier, An active strain electromechanical model for cardiac tissue,
+International Journal for Numerical Methods in Biomedical Engineering 28 (2012) 52–71. doi:10.1002/
+cnm.1468.
+
+[36] L. P. Franca, T. J. R. Hughes, A. F. D. Loula, I. Miranda, A new family of stable elements for nearly
+incompressible elasticity based on a mixed Petrov-Galerkin finite element formulation, Numerische
+Mathematik 53 (1988) 123–141. doi:10.1007/BF01395881.
+
+[37] T. J. R. Hughes, L. P. Franca, M. Balestra,
+A new finite element formulation for computational
+fluid dynamics: V. Circumventing the Babuška–Brezzi condition: a stable Petrov–Galerkin formula-
+tion of the stokes problem accommodating equal-order interpolations, Computer Methods in Applied
+Mechanics and Engineering (1986). doi:10.1016/0045-7825(86)90025-3.
+
+[38] A. Masud, T. J. Truster, A framework for residual-based stabilization of incompressible finite elasticity:
+Stabilized formulations and F methods for linear triangles and tetrahedra,
+Computer Methods in
+Applied Mechanics and Engineering 267 (2013) 359–399. doi:10.1016/j.cma.2013.08.010.
+
+[39] S. Rossi, N. Abboud, G. Scovazzi,
+Implicit finite incompressible elastodynamics with linear finite
+elements: A stabilized method in rate form, Computer Methods in Applied Mechanics and Engineering
+311 (2016) 208–249. doi:10.1016/j.cma.2016.07.015.
+
+[40] M. Chiumenti, M. Cervera, R. Codina, A mixed three-field FE formulation for stress accurate analysis
+including the incompressible limit, Computer Methods in Applied Mechanics and Engineering 283
+(2015) 1095–1116. doi:10.1016/j.cma.2014.08.004.
+
+[41] R. Codina, Stabilization of incompressibility and convection through orthogonal sub-scales in finite
+element methods, Computer Methods in Applied Mechanics and Engineering 190 (2000) 1579–1599.
+doi:10.1016/S0045-7825(00)00254-1.
+
+[42] N. M. Lafontaine, R. Rossi, M. Cervera, M. Chiumenti,
+Explicit mixed strain-displacement finite
+element for dynamic geometrically non-linear solid mechanics, Computational Mechanics 55 (2015)
+543–559. doi:10.1007/s00466-015-1121-x.
+
+[43] F. Auricchio, L. B. da Veiga, C. Lovadina, A. Reali, A stability study of some mixed finite elements
+for large deformation elasticity problems, Computer Methods in Applied Mechanics and Engineering
+194 (2005) 1075–1092.
+
+[44] F. Auricchio, L. B. Da Veiga, C. Lovadina, A. Reali, The importance of the exact satisfaction of the
+incompressibility constraint in nonlinear elasticity: mixed fems versus nurbs-based approximations,
+Computer Methods in Applied Mechanics and Engineering 199 (2010) 314–323.
+
+[45] R. A. Boerboom, N. J. Driessen, C. V. Bouten, J. M. Huyghe, F. P. Baaijens, Finite element model of
+mechanically induced collagen fiber synthesis and degradation in the aortic valve, Annals of Biomedical
+Engineering 31 (2003) 1040–1053.
+
+[46] S. Göktepe, S. Acharya, J. Wong, E. Kuhl, Computational modeling of passive myocardium, Interna-
+tional Journal for Numerical Methods in Biomedical Engineering 27 (2011) 1–12.
+
+[47] J. A. Weiss, B. N. Maker, S. Govindjee, Finite element implementation of incompressible, transversely
+isotropic hyperelasticity, Computer methods in applied mechanics and engineering 135 (1996) 107–128.
+
+[48] A. Zdunek, W. Rachowicz, T. Eriksson, Nearly incompressible and nearly inextensible finite hypere-
+lasticity, Compter Methods in Applied Mechanics and Engineering (2014) 1–42. doi:10.1016/j.cma.
+2014.08.008.
+
+28
+
+
+[49] D. N. Arnold, F. Brezzi, M. Fortin, A stable finite element for the stokes equations, Calcolo 21 (1984)
+337–344. doi:10.1007/bf02576171.
+
+[50] T. H. Ong, C. E. Heaney, C.-K. Lee, G. Liu, H. Nguyen-Xuan, On stability, convergence and accuracy
+of bES-FEM and bFS-FEM for nearly incompressible elasticity 285 (2015) 315–345. doi:10.1016/j.
+cma.2014.10.022.
+
+[51] C.-K. Lee, L. A. Mihai, J. S. Hale, P. Kerfriden, S. P. Bordas, Strain smoothing for compressible and
+nearly-incompressible finite elasticity 182 (2017) 540–555. doi:10.1016/j.compstruc.2016.05.004.
+
+[52] C. R. Dohrmann, P. B. Bochev, A stabilized finite element method for the Stokes problem based on
+polynomial pressure projections, International Journal for Numerical Methods in Fluids 46 (2004)
+183–201. doi:10.1002/fld.752.
+
+[53] J. M. Ball, Convexity conditions and existence theorems in nonlinear elasticity, Archive for Rational
+Mechanics and Analysis 63 (1976) 337–403. doi:10.1007/BF00279992.
+
+[54] P. G. Ciarlet, The finite element method for elliptic problems, volume 40, Siam, 2002.
+
+[55] S. Rossi, N. Abboud, G. Scovazzi,
+Implicit finite incompressible elastodynamics with linear finite
+elements: A stabilized method in rate form, Computer Methods in Applied Mechanics and Engineering
+311 (2016) 208–249. doi:10.1016/j.cma.2016.07.015.
+
+[56] S. Hartmann, P. Neff, Polyconvexity of generalized polynomial-type hyperelastic strain energy functions
+for near-incompressibility, International journal of solids and structures 40 (2003) 2767–2791.
+
+[57] S. Doll, K. Schweizerhof, On the Development of Volumetric Strain Energy Functions, Journal of
+Applied Mechanics 67 (2000) 17. doi:10.1115/1.321146.
+
+[58] T. Sussman, K.-J. Bathe, A finite element formulation for nonlinear incompressible elastic and inelastic
+analysis, Computers & Structures 26 (1987) 357–409.
+
+[59] S. N. Atluri, E. Reissner, On the formulation of variational theorems involving volume constraints,
+Computational Mechanics 5 (1989) 337–344.
+
+[60] J. C. Simo, R. L. Taylor, P. Wriggers, A note on finite-element implementation of pressure bound-
+ary loading, Communications in Applied Numerical Methods 7 (1991) 513–525. doi:10.1002/cnm.
+1630070703.
+
+[61] U. Brink, E. Stein, On some mixed finite element methods for incompressible and nearly incompressible
+finite elasticity, Computational Mechanics 19 (1996) 105–119.
+
+[62] C. M. Augustin, M. A. Gsell, E. Karabelas, E. Willemen, F. W. Prinzen, J. Lumens, E. J. Vigmond,
+G. Plank, A computationally efficient physiologically comprehensive 3D–0D closed-loop model of the
+heart and circulation, Computer Methods in Applied Mechanics and Engineering 386 (2021) 114092.
+doi:10.1016/j.cma.2021.114092.
+
+[63] E. Karabelas, G. Haase, G. Plank, C. M. Augustin, Versatile stabilized finite element formulations
+for nearly and fully incompressible solid mechanics,
+Computational Mechanics 65 (2020) 193–215.
+doi:10.1007/s00466-019-01760-w.
+
+[64] P. Knabner, S. Korotov, G. Summ, Conditions for the invertibility of the isoparametric mapping for
+hexahedral finite elements, Finite Elements in Analysis and Design 40 (2003) 159 – 172. doi:https:
+//doi.org/10.1016/S0168-874X(02)00196-8.
+
+[65] J. Cante, C. Dávalos, J. A. Hernández, J. Oliver, P. Jonsén, G. Gustafsson, H.-Å. Häggblad, PFEM-
+based modeling of industrial granular flows, Computational Particle Mechanics 1 (2014) 47–70. doi:10.
+1007/s40571-014-0004-9.
+
+29
+
+
+[66] J. M. Rodriguez, J. M. Carbonell, J. C. Cante, J. Oliver, The particle finite element method (PFEM) in
+thermo-mechanical problems, International Journal for Numerical Methods in Engineering 107 (2016)
+733–785. doi:10.1002/nme.5186.
+
+[67] F. Brezzi, M.-O. Bristeau, L. P. Franca, M. Mallet, G. Rogé, A relationship between stabilized finite
+element methods and the galerkin method with bubble functions,
+Computer Methods in Applied
+Mechanics and Engineering 96 (1992) 117–129. doi:10.1016/0045-7825(92)90102-p.
+
+[68] D. Boffi, F. Brezzi, M. Fortin, Mixed finite element methods and applications, Springer, 2013.
+
+[69] J. M. Guccione, K. D. Costa, A. D. McCulloch,
+Finite element stress analysis of left ventricular
+mechanics in the beating dog heart,
+Journal of Biomechanics 28 (1995) 1167–1177. doi:10.1016/
+0021-9290(94)00174-3.
+
+[70] C. Sansour, On the physical assumptions underlying the volumetric-isochoric split and the case of
+anisotropy, European Journal of Mechanics - A/Solids 27 (2008) 28 – 39. doi:10.1016/j.euromechsol.
+2007.04.001.
+
+[71] J. Helfenstein, M. Jabareen, E. Mazza, S. Govindjee, On non-physical response in models for fiber-
+reinforced hyperelastic materials, International Journal of Solids and Structures 47 (2010) 2056 – 2061.
+doi:10.1016/j.ijsolstr.2010.04.005.
+
+[72] C. M. Augustin, A. Neic, M. Liebmann, A. J. Prassl, S. A. Niederer, G. Haase, G. Plank, Anatomically
+accurate high resolution modeling of cardiac electromechanics: a strongly scalable algebraic multigrid
+solver method for non-linear deformation, J Comput Phys 305 (2016) 622–646. doi:10.1016/j.jcp.
+2015.10.045.
+
+[73] E. Vigmond, R. Weber dos Santos, A. Prassl, M. Deo, G. Plank, Solvers for the cardiac bidomain
+equations, Prog Biophys Mol Biol 96 (2008) 3–18.
+
+[74] S. Balay, S. Abhyankar, M. F. Adams, J. Brown, P. Brune, K. Buschelman, L. Dalcin, A. Dener,
+V. Eijkhout, W. D. Gropp, D. Kaushik, M. G. Knepley, D. A. May, L. C. McInnes, R. T. Mills,
+T. Munson, K. Rupp, P. Sanan, B. F. Smith, S. Zampini, H. Zhang, H. Zhang, PETSc Users Manual,
+Technical Report ANL-95/11 - Revision 3.10, Argonne National Laboratory, 2018.
+
+[75] D. A. May, P. Sanan, K. Rupp, M. G. Knepley, B. F. Smith, Extreme-scale multigrid components
+within petsc, in: Proceedings of the Platform for Advanced Scientific Computing Conference, 2016,
+pp. 1–12.
+
+[76] O. Gültekin, H. Dal, G. A. Holzapfel,
+On the quasi-incompressible finite element analysis of
+anisotropic hyperelastic materials,
+Computational Mechanics 63 (2019) 443–453. doi:10.1007/
+s00466-018-1602-9.
+
+[77] É. Chamberland, A. Fortin, M. Fortin, Comparison of the performance of some finite element dis-
+cretizations for large deformation elasticity problems, Computers & Structures 88 (2010) 664–673.
+doi:10.1016/j.compstruc.2010.02.007.
+
+[78] S. Land, V. Gurev, S. Arens, C. M. Augustin, L. Baron, R. Blake, C. Bradley, S. Castro, A. Crozier,
+M. Favino, T. E. Fastl, T. Fritz, H. Gao, A. Gizzi, B. E. Griffith, D. E. Hurtado, R. Krause, X. Luo,
+M. P. Nash, S. Pezzuto, G. Plank, S. Rossi, D. Ruprecht, G. Seemann, N. P. Smith, J. Sundnes,
+J. J. Rice, N. Trayanova, D. Wang, Z. Jenny Wang, S. A. Niederer, Verification of cardiac mechanics
+software: benchmark problems and solutions for testing active and passive material behaviour, Pro-
+ceedings of the Royal Society A: Mathematical, Physical and Engineering Science 471 (2015) 20150641.
+doi:10.1098/rspa.2015.0641.
+
+[79] G. A. Holzapfel, R. W. Ogden, Constitutive modelling of passive myocardium: a structurally based
+framework for material characterization, Phil. Trans. R. Soc. A 367 (2009) 3445–75. doi:10.1098/
+rsta.2009.0091.
+
+30
+
+
+[80] D. Guan, F. Ahmad, P. Theobald, S. Soe, X. Luo, H. Gao, On the AIC-based model reduction for the
+general Holzapfel–Ogden myocardial constitutive law, Biomechanics and Modeling in Mechanobiology
+18 (2019) 1213–1232.
+
+[81] G. Sommer, A. J. Schriefl, M. Andrä, M. Sacherer, C. Viertler, H. Wolinski, G. A. Holzapfel, Biome-
+chanical properties and microstructure of human ventricular myocardium, Acta Biomaterialia 24 (2015)
+172–192.
+
+[82] V. Gurev, P. Pathmanathan, J.-L. Fattebert, H.-F. Wen, J. Magerlein, R. a. Gray, D. F. Richards,
+J. J. Rice, A high-resolution computational model of the deforming human heart, Biomechanics and
+Modeling in Mechanobiology 14 (2015) 829–849. doi:10.1007/s10237-014-0639-8.
+
+[83] A. Logg, K.-A. Mardal, G. Wells, Automated solution of differential equations by the finite element
+method: The FEniCS book, volume 84, Springer Science & Business Media, 2012.
+
+[84] O. Gültekin, G. Sommer, G. A. Holzapfel,
+An orthotropic viscoelastic model for the passive my-
+ocardium: continuum basis and numerical treatment, Computer methods in biomechanics and biomed-
+ical engineering 19 (2016) 1647–1664.
+
+[85] A. Neic, F. O. Campos, A. J. Prassl, S. A. Niederer, M. J. Bishop, E. J. Vigmond, G. Plank, Efficient
+computation of electrograms and ECGs in human whole heart simulations using a reaction-eikonal
+model, Journal of Computational Physics 346 (2017) 191–211.
+
+[86] E. Grandi, F. S. Pasqualini, D. M. Bers,
+A novel computational model of the human ventricular
+action potential and Ca transient, Journal of Molecular and Cellular Cardiology 48 (2010) 112–121.
+doi:10.1016/j.yjmcc.2009.09.019.
+
+[87] S. Land, S. A. Niederer, J. M. Aronsen, E. K. S. Espe, L. Zhang, W. E. Louch, I. Sjaastad, O. M.
+Sejersted, N. P. Smith, An analysis of deformation-dependent electromechanical coupling in the mouse
+heart., The Journal of physiology 590 (2012) 4553–69. doi:10.1113/jphysiol.2012.231928.
+
+[88] F. Regazzoni, A. Quarteroni, An oscillation-free fully staggered algorithm for velocity-dependent active
+models of cardiac mechanics, Computer Methods in Applied Mechanics and Engineering 373 (2021)
+113506. doi:10.1016/j.cma.2020.113506.
+
+[89] T. S. E. Eriksson, A. J. Prassl, G. Plank, G. A. Holzapfel, Modeling the dispersion in electromechan-
+ically coupled myocardium, International Journal for Numerical Methods in Biomedical Engineering
+29 (2013) 1267–1284.
+
+[90] C. Kadapa, W. Dettmer, D. Perić, On the advantages of using the first-order generalised-alpha scheme
+for structural dynamic problems 193 (2017) 226–238. doi:10.1016/j.compstruc.2017.08.013.
+
+[91] J. D. Bayer, R. C. Blake, G. Plank, N. A. Trayanova, A novel rule-based algorithm for assigning
+myocardial fiber orientation to computational heart models,
+Annals of Biomedical Engineering 40
+(2012) 2243–2254.
+
+[92] D. D. Streeter, H. M. Spotnitz, D. P. Patel, J. Ross, E. H. Sonnenblick, Fiber orientation in the canine
+left ventricle during diastole and systole., Circulation research (1969).
+
+[93] M. Strocchi, M. A. Gsell, C. M. Augustin, O. Razeghi, C. H. Roney, A. J. Prassl, E. J. Vigmond, J. M.
+Behar, J. S. Gould, C. A. Rinaldi, M. J. Bishop, G. Plank, S. A. Niederer, Simulating ventricular
+systolic motion in a four-chamber heart model with spatially varying robin boundary conditions to
+model the effect of the pericardium,
+Journal of Biomechanics 101 (2020) 109645. doi:10.1016/j.
+jbiomech.2020.109645.
+
+[94] J. Walmsley, T. Arts, N. Derval, P. Bordachar, H. Cochet, S. Ploux, F. W. Prinzen, T. Delhaas,
+J. Lumens, Fast Simulation of Mechanical Heterogeneity in the Electrically Asynchronous Heart Using
+the MultiPatch Module, PLOS Computational Biology 11 (2015) e1004284.
+
+31
+
+
+[95] S. Klotz, M. L. Dickstein, D. Burkhoff, A computational method of prediction of the end-diastolic
+pressure–volume relationship by single beat, Nature Protocols 2 (2007) 2152–2158.
+
+[96] L. Marx, J. A. Niestrawska, M. A. Gsell, F. Caforio, G. Plank, C. M. Augustin, Efficient identification
+of myocardial material parameters and the stress-free reference configuration for patient-specific human
+heart models, arXiv preprint arXiv:2101.04411 (2021).
+
+[97] P. Deuflhard, Newton Methods for Nonlinear Problems: Affine Invariance and Adaptive Algorithms,
+volume 35, Springer Science & Business Media, 2011.
+
+[98] R. Piersanti,
+F. Regazzoni,
+M. Salvador,
+A. F. Corno,
+L. Dede’,
+C. Vergara,
+A. Quar-
+teroni, 3d-0d closed-loop model for the simulation of cardiac biventricular electromechanics, 2021.
+arXiv:2108.01907.
+
+[99] T. Kariya, T. Washio, J. ichi Okada, M. Nakagawa, M. Watanabe, Y. Kadooka, S. Sano, R. Nagai,
+S. Sugiura, T. Hisada,
+Personalized Perioperative Multi-scale, Multi-physics Heart Simulation of
+Double Outlet Right Ventricle, Annals of Biomedical Engineering 48 (2020) 1740–1750.
+
+[100] M. Hirschvogel, M. Bassilious, L. Jagschies, S. M. Wildhirt, M. W. Gee, A monolithic 3D-0D cou-
+pled closed-loop model of the heart and the vascular system: Experiment-based parameter estimation
+for patient-specific cardiac mechanics, International Journal for Numerical Methods in Biomedical
+Engineering 33 (2017).
+
+[101] M. R. Pfaller, J. M. Hörmann, M. Weigl, A. Nagler, R. Chabiniok, C. Bertoglio, W. A. Wall, The
+importance of the pericardium for cardiac biomechanics: from physiology to computational modeling,
+Biomechanics and Modeling in Mechanobiology 18 (2019) 503–529.
+
+[102] Z. J. Wang, A. Santiago, X. Zhou, L. Wang, F. Margara, F. Levrero-Florencio, A. Das, C. Kelly,
+E. Dallarmellina, M. Vazquez, B. Rodriguez, Human biventricular electromechanical simulations on
+the progression of electrocardiographic and mechanical abnormalities in post-myocardial infarction,
+Europace 23 (2021) I143–I152.
+
+[103] E. Karabelas, M. A. F. Gsell, C. M. Augustin, L. Marx, A. Neic, A. J. Prassl, L. Goubergrits,
+T. Kuehne, G. Plank, Towards a Computational Framework for Modeling the Impact of Aortic Coarc-
+tations Upon Left Ventricular Load, Frontiers in Physiology 9 (2018) 1–20.
+
+[104] M. Sellier, An iterative method for the inverse elasto-static problem, Journal of Fluids and Structures
+27 (2011) 1461–1470.
+
+[105] M. K. Rausch, M. Genet, J. D. Humphrey, An augmented iterative method for identifying a stress-free
+reference configuration in image-based biomechanical modeling, Journal of Biomechanics 58 (2017)
+227–231.
+
+[106] F. Regazzoni, A. Quarteroni, Accelerating the convergence to a limit cycle in 3d cardiac electromechan-
+ical simulations through a data-driven 0d emulator, Computers in Biology and Medicine 135 (2021)
+104641. doi:https://doi.org/10.1016/j.compbiomed.2021.104641.
+
+[107] A. V. S. Ponnaluri, I. A. Verzhbinsky, J. D. Eldredge, A. Garfinkel, D. B. Ennis, L. E. Perotti, Model
+of Left Ventricular Contraction: Validation Criteria and Boundary Conditions, in: Lecture Notes in
+Computer Science, volume 11504 LNCS, Springer International Publishing, 2019, pp. 294–303.
+
+[108] G. A. Holzapfel, Nonlinear solid mechanics: A continuum approach for engineering, John Wiley &
+Sons Ltd, Chichester, 2000. doi:10.1023/A:1020843529530.
+
+[109] P. Wriggers, Nonlinear Finite Element Methods, Springer Berlin Heidelberg, Berlin, Heidelberg, 2008.
+doi:10.1007/978-3-540-71001-1.
+
+32
+
+
+Appendix A. Linearization
+
+We will give a short summary of the linearization of a cavity volume VCAV defined by
+
+VCAV := 1
+
+3
+
+�
+
+ΓCAV
+
+x · n dsx.
+
+Using Nanson’s formula and x = X + u we can rewrite this as
+
+VCAV = 1
+
+3
+
+�
+
+ΓCAV,0
+
+(X + u) · JF −⊤N dsX
+
+Using the known linearizations
+
+∂J
+∂F : Grad ∆u = JF −⊤ : Grad ∆u
+(A.1)
+
+∂F −⊤
+
+∂F
+: Grad ∆u = −F −⊤(Grad ∆u)⊤F −⊤
+(A.2)
+
+we can calculate the linearization around ∆u as
+
+dk(∆u) := D∆uVCAV = D∆u
+1
+3
+
+�
+
+ΓCAV
+
+x · n dsx
+(A.3)
+
+= D∆u
+1
+3
+
+�
+
+ΓCAV,0
+
+J (X + u) · F −⊤N dsX
+(A.4)
+
+= 1
+
+3
+
+�
+
+ΓCAV,0
+
+J(F −⊤ : Grad ∆u)x · F −⊤N dsX
+(A.5)
+
+− 1
+
+3
+
+�
+
+ΓCAV,0
+
+Jx · F −⊤(Grad ∆u)⊤F −⊤N dsX
+(A.6)
+
++ 1
+
+3
+
+�
+
+ΓCAV,0
+
+J∆u · F −⊤N dsX
+(A.7)
+
+Appendix B. Static Condensation for Inhomogeneous Neumann Boundary Condition
+
+While homogenous Nuemann boundary conditions don’t alter the process of static condensation, the
+procedure needs to be adapted to for inhomogenous ones. First, looking at the definition of the nonlinear
+residual Rvol in (5) we see that this can be split as
+
+Rvol = Rvol,Ω0 + Rvol,ΓN,0
+
+where Rvol,Ω0 holds all the terms coming from integration over the domain Ω0 and Rvol,ΓN,0 holds all the
+terms coming from integration over the Neumann surfaces. Next, note that the bubble functions ˆψB for
+tetrahedral elements as well as their hexahedral counterparts ˆψB,1, ˆψB,2 have compact support in the finite
+element interior. However, the respective gradients don’t vanish on the finite element boundary. Consider an
+arbitrary finite element K ∈ Th with K ∩ΓN,0 ̸= ∅. The gradient of a bubble function occurs in bilinear-form
+aΓ,k in (17), for the argument ∆u ∈ Vh. This yields a non-zero contribution to the element-stiffness-matrix,
+whereas there is no contribution from Rvol,ΓN,0 to the total element residual vector. Using the decomposition
+of local degrees of freedom into exterior, E and interior, I it follows that the local block system can be written
+in the following form
+
+
+
+KEE + KΓ,EE
+KEI + KΓ,EI
+BE
+KIE
+KII
+BI
+CE
+CI
+DE
+
+
+
+
+
+
+
+
+∆uE
+∆uI
+∆pE
+
+
+
+ =
+
+
+
+
+−Rvol,E − Rvol,Γ,E
+−Rvol,I
+−Rinc,E
+
+
+
+ .
+
+33
+
+
+The interior degrees of freedom can be statically condensed.
+On element level this leads to the static
+condensed system
+�
+�
+K
+�
+B
+�
+C
+�
+D
+
+�
+
+�
+��
+�
+
+:= �
+A
+
+�∆uE
+∆pE
+
+�
++
+��
+KΓ
+�
+BΓ
+0
+0
+
+�
+
+�
+��
+�
+
+:= �
+AΓ
+
+�∆uE
+∆pE
+
+�
+=
+
+�
+−�Rvol
+−�Rinc
+
+�
+
+�
+��
+�
+:=−R
+
++
+�
+−�RΓ,upper
+0
+
+�
+
+�
+��
+�
+:=−RΓ
+
+,
+
+where
+
+�
+K := KEE − KEIK−1
+II KIE,
+�
+B := BE − KEIK−1
+II BI,
+�
+C := CE − CIK−1
+II KIE,
+�
+D := DE − CIK−1
+II BI,
+
+�
+KΓ := KΓ,EE − KΓ,EIK−1
+II KIE,
+�
+BΓ := −KΓ,EIK−1
+II BI,
+�Rvol := Rvol,E − KEIK−1
+II Rvol,I,
+�RΓ,vol := RΓ,E − KΓ,EIK−1
+II Rvol,I,
+
+�Rinc := Rinc,E − CIK−1
+II Rinc,I.
+
+The individual element matrices/vectors �
+A, �
+AΓ, �R, and �RΓ can be assembled into a global stiffness matrix
+through loops over volume elements and surface elements respectively. In the case of an attached circulatory
+system a static condensation can be performed in an analogous way
+
+
+
+
+
+
+KEE + KΓ,EE
+KEI + KΓ,EI
+BE
+ECAV,E
+KIE
+KII
+BI
+0
+CE
+CI
+DE
+0
+FCAV,E
+FCAV,I
+0
+GCAV
+
+
+
+
+
+
+
+
+
+
+
+
+
+∆uE
+∆uI
+∆pE
+∆pCAV
+
+
+
+
+
+ =
+
+
+
+
+
+
+
+−Rvol,E − RΓ,vol,E
+−Rvol,I
+−Rinc,E
+−RCAV,E
+
+
+
+
+
+ .
+
+Static condensation of all interior degrees of freedom leads to
+
+
+
+
+
+�
+K
+�
+B
+ECAV,E
+�
+C
+�
+D
+0
+�FCAV
+�
+HCAV
+GCAV
+
+
+
+
+
+
+�
+��
+�
+
+:= �
+A
+
+
+
+
+∆uE
+∆pE
+∆pCAV
+
+
+
+ +
+
+
+
+
+�
+KΓ
+�
+BΓ
+0
+0
+0
+0
+0
+0
+0
+
+
+
+
+
+�
+��
+�
+
+:= �
+AΓ
+
+
+
+
+∆uE
+∆pE
+∆pCAV
+
+
+
+ =
+
+
+
+
+
+−�Rvol
+−�Rinc
+�RCAV
+
+
+
+
+
+
+�
+��
+�
+:=−R
+
++
+
+
+
+
+−�RΓ,vol
+0
+0
+
+
+
+
+
+�
+��
+�
+:=−RΓ
+
+,
+
+where
+
+�FCAV := FCAV,E − FCAV,IK−1
+II KIE,
+
+�
+HCAV := −FCAV,IK−1
+II BI,
+�RCAV := RCAV − FCAV,IK−1
+II Rvol,I
+
+Appendix C. Tensor calculus
+
+We use the following results from tensor calculus, for more details we refer to, e.g., [108, 109].
+
+∂C
+∂C = J− 2
+
+3 P = J− 2
+
+3
+�
+I − 1
+
+3C−1 ⊗ C
+�
+,
+
+∂C−1
+
+∂C
+= −C−1 ⊙ C−1,
+
+(A ⊙ A)ijkl := 1
+
+2 (AikAjl + AilAjk) .
+
+For symmetric A it holds
+
+P : A = Dev(A) = A − 1
+
+3(A : C)C−1.
+
+34
+
+
+The isochoric part of the second Piola–Kirchhoff stress tensor as well as the isochoric part of the fourth order
+elasticity tensor are given as
+
+Sisc := 2∂Ψ(C)
+
+∂C
+= J− 2
+
+3 Dev(S),
+(C.1)
+
+S := 2∂Ψ(C)
+
+∂C
+,
+
+Cisc := 4 Ψ(C)
+
+∂C∂C = J− 4
+
+3 PCP⊤ + J− 2
+
+3 2
+
+3tr(CS)�P − 4
+
+3Sisc
+S⊗ C−1,
+(C.2)
+
+C := 4∂Ψ(C)
+
+∂C∂C ,
+
+�P := C−1 ⊙ C−1 − 1
+
+3C−1 ⊗ C−1,
+
+A
+S⊗ B := 1
+
+2 (A ⊗ B + B ⊗ A) .
+
+35
+
+

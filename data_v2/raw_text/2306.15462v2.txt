@@ -1,0 +1,2251 @@
+epiq : an open-source software for the calculation of
+electron-phonon interaction related properties
+
+Giovanni Marinia∗, Guglielmo Marcheseb∗, Gianni Profetac,d, Jelena
+Sjakstee, Francesco Machedaa,b, Nathalie Vaste, Francesco Mauria,b, Matteo
+Calandraa,e,f
+
+aGraphene Labs, Fondazione Istituto Italiano di Tecnologia, Via Morego, I-16163
+Genova, Italy
+bDipartimento di Fisica, Università di Roma La Sapienza, I-00185 Roma, Italy
+cDipartimento di Scienze Fisiche e Chimiche, Università dell’Aquila, Via Vetoio 10,
+I-67100 L’Aquila, Italy
+dCNR-SPIN L’Aquila, Via Vetoio 10, I-67100 L’Aquila, Italy
+eLaboratoire des Solides Irradiés, CEA/DRF/IRAMIS, École Polytechnique, CNRS,
+Institut Polytechnique de Paris, 91120 Palaiseau, France
+fDepartment of Physics, University of Trento, Via Sommarive 14, 38123 Povo, Italy
+
+Abstract
+
+epiq (Electron-Phonon wannier Interpolation over k and q-points) is an
+open-source software for the calculation of electron-phonon interaction re-
+lated properties from first principles. Acting as a post-processing tool for a
+density-functional perturbation theory code ( Quantum ESPRESSO ) and
+wannier90, epiq exploits the localization of the deformation potential in
+the Wannier function basis and the stationary properties of a force-constant
+functional with respect to the first-order perturbation of the electronic charge
+density to calculate many electron-phonon related properties with high ac-
+curacy and free from convergence issues related to Brillouin zone sampling.
+epiq features includes: the adiabatic and non-adiabatic phonon dispersion,
+superconducting properties (including the superconducting band gap in the
+Migdal-Eliashberg formulation), double-resonant Raman spectra and lifetime
+of excited carriers.
+The possibility to customize most of its input makes
+epiq a versatile and interoperable tool. Particularly relevant is the interac-
+tion with the Stochastic Self-Consistent Harmonic Approximation (SSCHA)
+allowing anharmonic effects to be included in the calculation of electron-
+
+∗These authors contributed equally.
+
+arXiv:2306.15462v2  [cond-mat.mtrl-sci]  1 Jul 2023
+
+
+properties. The scalability offered by the Wannier representation combined
+with a straightforward workflow and easy-to-read input and output files make
+epiq accessible to the wide condensed matter and material science commu-
+nities.
+
+Contents
+
+1
+Introduction
+3
+
+2
+Theoretical framework
+5
+2.1
+Maximally localized Wannier functions: definition and prop-
+erties . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+
+2.2
+Wannier interpolation of matrix elements.
+. . . . . . . . . . .
+6
+
+2.2.1
+Operators diagonal in the electron momentum. . . . . .
+7
+
+2.2.2
+Operators not diagonal in the electron momentum . . .
+9
+
+2.3
+Electron-phonon coupling in polar semiconductors . . . . . . .
+10
+
+3
+Calculations available in epiq
+11
+3.1
+Adiabatic (static) and non-adiabatic (dynamic) force constant
+matrices . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+
+3.2
+Electron-phonon contribution to the phonon linewidth and re-
+lated quantities. . . . . . . . . . . . . . . . . . . . . . . . . . .
+14
+
+3.3
+Isotropic and anisotropic Eliashberg equations . . . . . . . . .
+16
+
+3.4
+Double-resonant Raman scattering
+. . . . . . . . . . . . . . .
+18
+
+3.5
+Electron lifetime and relaxation time. . . . . . . . . . . . . . .
+19
+
+4
+Applications
+19
+4.1
+Interpolation quality: real space localization . . . . . . . . . .
+19
+
+4.2
+Calculation of superconducting properties of MgB2
+. . . . . .
+21
+
+4.2.1
+Phonon linewidths and electron-phonon coupling pa-
+rameter λ . . . . . . . . . . . . . . . . . . . . . . . . .
+21
+
+4.2.2
+Anisotropic Migdal-Eliashberg gap
+. . . . . . . . . . .
+21
+
+4.3
+Calculation of interpolated phonon frequencies in MgB2 . . . .
+21
+
+4.4
+Double-resonant Raman of graphene multi-layers
+. . . . . . .
+22
+
+4.5
+Electron relaxation time in GaAs . . . . . . . . . . . . . . . .
+22
+
+2
+
+
+5
+Implementation technicalities
+24
+5.1
+Gauge fixing and the phase problem . . . . . . . . . . . . . . .
+24
+
+5.2
+Parallelization . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+
+5.3
+Interface with Quantum ESPRESSO and wannier90 and work-
+flow of epiq . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+
+5.4
+Usage of alternative dynamical matrices. . . . . . . . . . . . .
+28
+
+5.5
+Utilities and post-processing tools . . . . . . . . . . . . . . . .
+29
+
+6
+Computational details
+29
+
+7
+Conclusions
+29
+
+8
+Acknowledgments
+30
+
+1. Introduction
+
+Electron-phonon interaction plays a central role in solid state physics as it
+is involved in almost any material property of practical interest. Some promi-
+nent examples are electronic transport in metals[46] and semiconductors[27,
+44], thermal transport[12], thermoelectricity[47, 30], charge-density waves[23],
+thermalization of excited carriers, superconducting[5] instabilities in a large
+class of superconductors, including the room-temperature superconducting
+hydrides [42], and a plethora of other phenomena[20]. Thanks to the theo-
+retical developments of the last few decades, many material properties can
+now be routinely calculated in a linear response formalism[7, 8], includ-
+ing the electron-phonon interaction.
+At the same time, the massive in-
+crease in computational power combined with the development of new in-
+vestigation methodologies provide novel tools for high throughput materials
+engineering[39, 26, 16] as well as the possibility to study systems of increas-
+ing complexity. It follows that developing methods for faster computational
+treatment of complex quantities such as the electron-phonon interaction is
+becoming increasingly important. A first principles treatment of electron-
+phonon interaction related properties presents many challenges in most ma-
+terials even at the semi-local density functional theory (DFT) level, as they
+often depend on the precise shape of the Fermi surface in metals or doped
+insulators (nesting), thus requiring a very accurate sampling of the Brillouin
+Zone, resulting in a high computational cost. In this regard, the concept
+of maximally localized Wannier functions (MLWFs)[36] is of great practical
+
+3
+
+
+Figure 1: Logo of epiq.
+
+help, as the electron-phonon interaction and related phenomena can be accu-
+rately interpolated in the MLWF representation[21, 11], effectively reducing
+the computational load intrinsic in the linear response calculations. Different
+softwares based on such an approach have been developed[43, 17, 13].
+In this work we introduce epiq (Electron-Phonon wannier Interpolation
+over k and q-points), an open-source software studied to facilitate the cal-
+culation of electron-phonon related properties of materials. epiq acts as a
+post-processing of a plane wave DFPT calculation. By operating a Fourier
+interpolation of the electron-phonon matrix elements in the optimally smooth
+subspace identified by MLWF, the code allows to precisely calculate phonon
+frequencies and electron-phonon matrix elements at an arbitrary Brillouin
+zone wavevector with a low computational cost. epiq acts as a simple post-
+processing tool of the Quantum ESPRESSO package and is very easy to in-
+stall and execute on any calculator equipped with the free linear algebra blas
+and lapack libraries. epiq exploits the concept of maximally localized Wan-
+nier functions (MLWFs)[36], that can be obtained from plane waves thorough
+a unitary transform by minimizing the spread functional, as implemented in
+the wannier90 package[38]. The theoretical foundations underlying epiq
+has been presented in a previous paper by some of the authors[11].
+The paper is organized as follows. In Sec.2 we describe the theoretical
+framework underlying epiq, as well as the practical implementation of these
+concepts in the software, in Sec.3 we present the type of calculations available
+in epiq and in Sec.4 we demonstrate some exemplar applications. In sec. 5
+we explain the technical details of the implementation and in sec. 6 we give
+all the technical details to reproduce the simulations in the paper. Finally in
+Sec.7 we draw our conclusions.
+
+4
+
+
+2. Theoretical framework
+
+2.1. Maximally localized Wannier functions: definition and properties
+The core of epiq is the Wannier interpolation kernel. Taking advantage
+of the MLWF representation[36], epiq can interpolate the quantity of interest
+over ultra-dense electron momentum (k point) and phonon momentum (q-
+point) grids. We recall here below the key ideas of MLWF [36, 50, 38].
+For the sake of simplicity, we consider a composite set of bands, i.e. a
+set of Nw bands isolated from all the others. In an insulator, it is always
+possible to identify such a set of bands.
+The choice of the single-particle Kohn-Sham Bloch functions (|ψkn⟩) in
+this subspace is not unique as any unitary transformation of the kind
+
+| ˜ψkn⟩ =
+�
+
+m
+Umn(k)|ψkm⟩
+(1)
+
+leads to an equally acceptable Kohn-Sham Bloch function.
+The n−th Wannier function on the R−th cell is defined as
+
+|Rn⟩ =
+1
+�
+
+N w
+k
+
+Nw
+k
+�
+
+k=1
+
+Nw
+�
+
+m=1
+e−ik·RUmn(k)|ψkm⟩
+(2)
+
+where N w
+k is the number of points in the k-grid used to perform the integral
+(i.e. the number of electron momentum k-points in the Wannier procedure).
+As it is clear from Eq. 2, there are Nw Wannier functions, the same number
+of the bands forming the composite set. They are not unique as different
+choices of Umn(k) lead to different Wannier functions with different degrees
+of localization. The converse relation of Eq. 2 is:
+
+|ψkm⟩ =
+1
+�
+
+N w
+k
+
+�
+
+R
+
+�
+
+n
+eikRU ∗
+nm(k) |Rn⟩
+(3)
+
+The ideal situation would be to have Wannier functions exponentially local-
+ized as in this case Fourier interpolation can be used to obtain observables
+in the Bloch function basis on any k and q points.
+The localization properties of the Wannier functions are related to the
+regularity of the periodic part of the Bloch function, ukn = e−ikrψkn
+�
+
+N w
+k
+as a function of k.
+The more regular the states, the more localized the
+Wannier functions[29, 14, 51]. Exponential decay is obtained if and only if
+
+5
+
+
+the functions ukn are analytic in k [14, 28]. The set of Bloch functions having
+periodic parts analytic in k is called the optimally smooth subspace.
+For one-dimensional insulating systems, Kohn [29] proved that exponen-
+tially localized Wannier functions exist. In two and three dimensional in-
+sulators displaying time reversal symmetry, the existence of exponentially
+localized Wannier functions has been proved in Ref. [9]. However, these
+theorems do not provide a recipe to find the optimally smooth subspace,
+namely they do not suggest a way to obtain the matrix Umn(k) leading to
+Bloch functions analytic in k.
+MLWF are obtained by imposing that the sum of the spreads of the
+Wannier functions is minimized. Namely, the spread functional
+
+Ω =
+
+Nw
+�
+
+n=1
+
+�
+⟨r2⟩n − r2�
+(4)
+
+is minimized with respect to the matrices Unm(k). The following quantities
+have been defined in Eq. 4, namely ⟨r2⟩n = ⟨0n|r2|0n⟩ and rn = ⟨0n|r|0n⟩.
+The Wannier functions minimizing the spread Ω are called MLWF and the
+corresponding transformation Umn(k) leads to the optimally smooth subspace
+via Eq. 1. It should be stressed that this transformation does not necessary
+leads to Bloch functions analytic in k and, consequently, to exponentially
+localized Wannier functions.
+However, as the minimization of the spread
+leads to Wannier functions with a substantial degree of localization, it is
+expected that the corresponding Bloch functions posses a certain degree of
+smoothness (even if they are not necessarily analytic in k).
+In the case of systems with entangled bands, namely metals or system
+with substantial band mixing, it has been shown [50] that a disentanglement
+procedure can be carried out. In particular, if Nnbnd is the number of bands
+calculated in the first-principles simulations, it is possible to isolate an energy
+window that encompasses the Nw bands of interest. The procedure is carried
+out for each k-point in the simulation. Having isolated a target group of Nw
+bands, then the standard minimization for composite bands can be carried
+out.
+In the construction of Wannier functions (disentanglement and minimiza-
+tion of Ω) the epiq code closely follows Ref.[58].
+
+2.2. Wannier interpolation of matrix elements.
+We distinguish two kinds of matrix elements, namely those related to
+operators diagonal in the electron-momentum space and those not diagonal
+
+6
+
+
+in the electron-momentum space.
+
+2.2.1. Operators diagonal in the electron momentum.
+We consider an operator O diagonal in the electron-momentum k,
+
+Onm(k) = ⟨uPW
+kn |O|uPW
+km ⟩
+(5)
+
+where |uPW
+km ⟩ are the periodic parts of the Bloch functions obtained from a
+density functional theory code (Quantum ESPRESSO [19, 18] in our case)
+and the integral with respect to the electronic coordinate is over the unit
+cell. As the functions |uPW
+km ⟩ are produced by a routine that diagonalizes a
+complex hermitian hamiltonian, they are not smooth in k (the phase of the
+eigenvectors is random). Moreover they are known on a N w
+k k-points grid. If
+the MLWF procedure is carried out, then the unitary transformation Umn(k)
+is known for any k point in the N w
+k electron-momentum grid. Thus, the
+Wannier functions |Rn⟩ are also known. By using Eq. 2 we have:
+
+Onm(R)
+=
+⟨0n|O|Rm⟩ =
+1
+N w
+k
+
+�
+
+k
+e−ikR �
+
+n′m′
+⟨uPW
+kn′ |U ∗
+n′n(k) O Um′m(k)|uPW
+km′⟩
+
+=
+1
+N w
+k
+
+�
+
+k
+e−ikR ˜Onm(k)
+(6)
+
+where
+˜Onm(k) =
+�
+
+n′m′
+⟨uPW
+kn′ |U ∗
+n′n(k) O Um′m(k)|uPW
+km′⟩
+(7)
+
+From Eq.
+6, it is seen that the operator in the Wannier function basis
+is connected via a Fourier transform to the operator ˜O(k). The following
+procedure is then adopted: Onm(k) in Eq.5 is obtained from the Quantum
+ESPRESSO output, then by using Eq. 7 and Eq. 6, the operator Onm(R) is
+obtained on a real-space supercell of size N w
+k .
+As Eq. 6 is an inverse Fourier transform, we can use Fourier interpolation
+to estimate the operator ˜O(˜k) at any point ˜k in the Brillouin zone, namely
+
+˜Onm(˜k) =
+�
+
+R
+ei˜kR Onm(R)
+(8)
+
+For short range operators the accuracy of the Fourier interpolation is dictated
+by the degree of localization of the Wannier functions.
+
+7
+
+
+One last step is needed to obtain the matrix element Onm(˜k), namely we
+have to left and right multiply by the transformation matrices, namely
+
+Onm(˜k) =
+�
+
+n′m′
+Un′n(˜k) ˜Onm(˜k)U ∗
+m′m(˜k)
+(9)
+
+The problem in performing this last operation is that the transformation
+matrices Unn′(˜k) are not known in a point ˜k that does not belong to the
+initial N w
+k k-point grid. In order to circumvent this difficulty it is sufficient
+to consider the electronic bands ϵPW
+kn
+and note that Eq. 6 applied to the
+Hamiltonian H leads to
+
+Hnm(R)
+=
+1
+N w
+k
+
+�
+
+k
+e−ikR �
+
+n′
+⟨uPW
+kn′ |U ∗
+n′n(k) ϵPW
+kn′ Un′m(k)|uPW
+kn′ ⟩
+
+=
+1
+N w
+k
+
+�
+
+k
+e−ikR ˜Hnm(k)
+(10)
+
+It is then possible to obtain via Fourier interpolation of Hnm(R) the matrix
+˜Hnm(˜k) at any point ˜k in the Brillouin zone. Diagonalization of ˜Hnm(˜k) pro-
+vides the interpolated electronic structure ϵ˜kn (eigenvalues) and the desired
+transformation Unm(˜k) (eigenvectors).
+As an example of an operator diagonal in the electron-momentum, we
+consider the electron velocity operator, namely
+
+vα
+k = i
+
+ℏ[Hk, rα],
+(11)
+
+defined as the commutator of the Bloch Hamiltonian Hk = e−ikrHeikr and
+the position operator r (the index α labels the Cartesian component). This
+operator is pivotal to calculate the response to the external electro-magnetic
+field within the dipole approximation. Contrary to the case of the position
+operator, the electron velocity remains well-defined even if the Born-von
+Karman boundary conditions are applied [6].
+By definition the local part of the self-consistent potential commutes with
+the position operator, so that the only contributions to the velocity operator
+arise from the kinetic energy and the non-local part of the bare potential.
+The latter has to be computed numerically, while the kinetic contribution is
+
+8
+
+
+usually expanded in plane-waves over the reciprocal lattice vector G, namely:
+
+vα
+mn(k) = ⟨ψm
+k | ∂
+
+∂rα + i
+
+ℏ[V nl
+k , rα] |ψn
+k⟩
+(12)
+
+=
+�
+
+G
+(kα + Gα) ⟨ψm
+k |G⟩ ⟨G|ψn
+k⟩ + i
+
+ℏ ⟨ψm
+k | [V nl
+k , rα] |ψn
+k⟩ .
+(13)
+
+We then use Eq. 6 to obtain the representation of the velocity operator in
+the Wannier functions basis and Fourier interpolation to obtain vα
+mn(˜k)
+
+2.2.2. Operators not diagonal in the electron momentum
+As an example of operators not diagonal in the electron momentum, we
+consider the deformation potential matrix element, namely
+
+ds
+m,n(k + q, k) =
+�
+uPW
+k+q,m
+�� dvSCF
+
+duq,s
+
+��uPW
+k,n
+�
+=
+1
+N w
+k
+⟨ψPW
+k+q,m|dVSCF
+
+duq,s
+
+��ψPW
+k,n
+�
+(14)
+
+In the previous equation q is the phonon momentum, uqs is the Fourier
+transform of the phonon displacement, VSCF = eiqrvSCF is the screened
+Kohn-Sham potential and s is a cumulative index for atom in the cell and
+cartesian coordinate. By applying the transformation in Eq. 2 we obtain
+
+ds
+m,n(R, RL)
+=
+⟨0, m| dVSCF
+
+dusL
+|R, n⟩
+
+=
+1
+N w
+k
+
+�
+
+k,q
+
+�
+
+m′,n′
+e−i(k·R+q·RL)U ∗
+m′m(k + q) ds
+m′,n′(k, q) Un′n(k)
+
+=
+1
+N w
+k
+
+�
+
+k,q
+e−i(k·R+q·RL) ˜ds
+m,n(k, k + q)
+(15)
+
+where
+
+˜ds
+m,n(k, k + q) =
+�
+
+m′,n′
+U ∗
+m′m(k + q) ds
+m′,n′(k, k + q) Un′n(k)
+(16)
+
+and RL is the direct lattice vector related to the Fourier transform of the
+phonon momentum. From Eq. 15 we see that the deformation potential in
+the Wannier basis is obtained via a Fourier transform of the matrix element
+˜ds
+m,n(k, k + q).
+It is important to underline that in metals, the quantity dVSCF
+
+dusL is not neces-
+sarily short ranged (for example in the case of Kohn-anomalies or in proximity
+
+9
+
+
+of charge density waves). Thus, the real-space localization of ds
+m,n(R, RL) is
+not simply related to the localization of the Wannier functions, but depends
+also on the localization of the real-space force constant matrix.
+Finally, by applying Eq. 2, we obtain the Fourier interpolation formula
+for the deformation potential, namely
+
+ds
+m,n(˜k, ˜k + ˜q)
+=
+1
+
+(N w
+k )2
+�
+
+RRL
+ei(˜k·R+˜q·RL)
+
+×
+�
+
+m′n′
+Um′m(˜k + ˜q) ds
+m,n(R, RL) U ∗
+n′n(˜k)
+(17)
+
+where ˜k and ˜q are any vector in the Brillouin zone. The transformation
+matrices Un′n(˜k) are obtained following the procedure described below Eq.
+7.
+The electron-phonon matrix elements are calculated from the following
+basis transformation,
+
+gν
+m,n(k, q) =
+�
+
+s
+es
+q,ν · ds
+m,n(k, q)/
+�
+
+2Msωq,ν.
+(18)
+
+The diagonalization of the dynamical matrix at phonon momentum ˜q pro-
+vides the phonon frequencies ωq,ν and the cartesian components of the phonon
+eigenvectors es
+q,ν in Eq. 18. The dynamical matrix at ˜q is obtained either
+from Fourier interpolation of the dynamical matrices obtained via linear re-
+sponse or by using the Wannier interpolation technique described in Sec.2.2.2.
+Alternatively, the dynamical matrix can also be read from input as a result of
+another calculation. A typical example is the use of anharmonic dynamical
+matrices within the SSCHA.
+
+2.3. Electron-phonon coupling in polar semiconductors
+The Wannier interpolation of electron-phonon interaction in the case of
+of polar semiconductors has to be treated with special care, as the long
+range Frölich interaction is not localized in the real-space Wannier basis.
+Within epiq, the Frölich interaction in polar semiconductors is calculated
+within the microscopic theory introduced by Vogl[57]. All the details of the
+implementation have been presented by some of us in Ref.[48]. In practice,
+the long-range contribution is subtracted from the electron-phonon matrix
+elements in the smooth representation (before the interpolation in the real
+
+10
+
+
+space) and restored after the Fourier transform back to the reciprocal space.
+The inclusion of this contribution allows to extend the estimation of carrier
+lifetimes to the small wavevector limit in polar semiconductors.
+
+3. Calculations available in epiq
+
+Several quantities can be interpolated and computed in epiq, sharing the
+same Wannier interpolation kernel.
+
+1. Adiabatic (static) and non-adiabatic (dynamic) force constant matri-
+ces.
+
+2. Electron-phonon contribution to the phonon linewidth and related quan-
+tities.
+
+3. Isotropic and anisotropic Eliashberg equations.
+4. Double Resonant Raman scattering.
+5. Electron lifetime and relaxation time.
+
+3.1. Adiabatic (static) and non-adiabatic (dynamic) force constant matrices
+The knowledge of the deformation-potential throughout the full Brillouin
+zone via Wannier interpolation allows for the calculation of adiabatic (static)
+or non-adiabatic (dynamic) force constant matrices at any phonon momen-
+tum q. In particular, it is possible to start from the first principles adiabatic
+(static) force constant matrices calculated in linear response with Quantum
+ESPRESSO by using a given electronic temperature Tph on a given grid
+of electron-momentum k−points Nk(Tph) and on a given grid of phonon-
+momentum q−points and obtain the adiabatic (static) or non-adiabatic (dy-
+namic) force constant matrices calculated at any electronic temperature T0
+on any k−point grid Nk(T0) and at any phonon momentum q. We briefly
+outline the procedure implemented in epiq and we refer to Ref.[11] for more
+details.
+In the presence of a time dependent monocromatic harmonic perturbation
+of the ions, the force at time t acting on the J-th nucleus (J = {M, r}) due
+to the displacement uI(t′) of the atom I-th at time t′ is labeled FJ(t). The
+force constants matrix is defined as:
+
+CIJ(RL − RM; t − t′) = −δFJ(t)
+
+δuI(t′)
+(19)
+
+where we used the translational invariance of the crystal and make evident
+the dependence of CIJ on the lattice vector RL−RM (to lighten the notation
+
+11
+
+
+we omit it in the following equations where no confusion may arise). For the
+causality principle we can suppose that:
+
+CIJ(RL − RM; t) = 0 for t < 0
+(20)
+
+The ω-transform of the force-constants matrix is thus:
+
+CIJ(ω) =
+�
+dteiωtCIJ(t)
+(21)
+
+While the force-constants matrix CIJ(t) is a real quantity, its ω-transform
+CIJ(ω) is not real and has both a real and imaginary part.
+The Fourier
+transform of the force-constant matrix is
+
+Csr(q, ω) =
+�
+
+L
+e−iqRLCLs,Mr(ω)
+(22)
+
+where, without loss of generality, we have chosen RM = 0. The Hermitian
+combination of the force-constant matrix in momentum space leads to the
+dynamical matrix:
+
+Dsr(q, ω) =
+1
+
+2√MsMr
+[Csr(q, ω) + Crs(q, ω)∗]
+(23)
+
+(24)
+
+where Ms is the mass of the s-th atom in the unit cell. Eq. 23 is valid also
+in the adiabatic (static) case by setting ω = 0. If the imaginary part of the
+dynamical matrix Asr(q, ω) =
+1
+
+2i√MsMr [Csr(q, ω) − Crs(q, ω)∗] is small with
+respect to the real part, i.e.
+
+|Asr(q, ω)| << |Dsr(q, ω)|
+(25)
+
+then the self-consistent condition
+
+det
+��Dsr(q, ωqν) − ω2
+qν
+�� = 0
+(26)
+
+determines non-adiabatic/dynamic phonon frequencies ωqν and phonon eigen-
+vectors
+�
+es
+qν
+�
+
+s=1,N and ν = 1, 3N indicates the phonon branches. The adia-
+batic/static phonon frequencies and eigenvectors are obtained considering a
+static perturbation, thus diagonalizing Drs(q, ωqν = 0).
+
+12
+
+
+We label with Csr(q, 0, Tph) the adiabatic (static) force constant matrix
+obtained from a linear response calculation by using and electronic tempera-
+ture Tph and a k−point grid Nk(Tph). By adopting the assumptions and the
+reasoning explained in Ref.[11], the non-adiabatic (dynamic) force constant
+matrix, ˜Csr(q, ω, T0), calculated at any electronic temperature T0 and on any
+k−point grid Nk(T0) reads:
+
+˜Csr(q, ω, T0) = Csr(q, 0, Tph) + ∆sr(q, ω, T0, Tph)
+(27)
+
+where ∆sr(q, ω, T0, Tph) is the difference between the phonon self-energies
+with fully screened vertexes, namely
+
+∆sr(q, ω, T0, Tph) =
+2
+
+Nk(T0)
+
+Nk(T0)
+�
+
+kij
+
+fki(T0) − fk+qj(T0)
+ϵki − ϵk+qj + ω + iη
+
+×
+ds
+ij(k, k + q)dr
+ji(k + q, k)
+
+−
+2
+
+Nk(Tph)
+
+Nk(Tph)
+�
+
+kij
+
+fki(Tph) − fk+qj(Tph)
+
+ϵki − ϵk+qj
+
+×
+ds
+ij(k, k + q)dr
+ji(k + q, k)
+(28)
+
+where fkj(T) is the Fermi occupation of the band ϵkj at a temperature T. We
+underline that Eq. 28 requires the knowledge of the electronic band energies
+and wavefunctions only in a region of energy around the Fermi level of the
+order of the maximum among kBTph and ℏω. As such, ∆sr(q, ω, T0, Tph) can
+be very efficiently interpolated via MLWF.
+As the deformation potential ds
+ij(k, k + q) is interpolated by epiq at any
+electron-momentum, Eqs. 27 and 28 allow for the calculation of the non-
+adiabatic (dynamic) force constant matrix at any electronic temperature and
+on any k−point grid but at fixed phonon momentum q. Eqs. 27 and 28 are
+valid also in the adiabatic (static) case by setting ω = 0.
+The procedure to obtain ˜Csr(q, ω, T0) is implemented in epiq by choosing
+the option calculation=phonon_frequency_grid. Namely, the code reads
+the linear response adiabatic (static) force constant matrices on a phonon mo-
+mentum grid and calculates the non-adiabatic (dynamic) or adiabatic (static)
+ones via Eqs. 27 and 28 on any k−point grid and at any temperature at fixed
+phonon momentum q.
+A similar strategy is used to interpolate adiabatic (static) and non-adiabatic
+(dynamic) force constant matrices at any phonon momentum. The idea is
+
+13
+
+
+to separate in the force-constant matrix obtained in Eq. 27 in the short and
+long range components. The long range force constants are associated to
+Kohn anomalies driven by Fermi surface nesting, and, as such, they cannot
+be easily Fourier interpolated and require an accurate sampling of the Fermi
+surface achievable via Wannier interpolation. The short range part instead
+can be easily Fourier interpolated. The procedure is the following. We first
+obtain the smooth high-temperature (short-ranged) adiabatic force constant
+matrices via the equation:
+˜Csr(q, 0, T∞) = Csr(q, 0, Tph) + ∆sr(q, 0, T∞, Tph)
+(29)
+
+This amounts at using the same interpolation procedure at fixed phonon
+momentum outlined before but on the grid Nk(Tph) = Nk(T∞) and at a hotter
+temperature T∞. The temperature T∞ is an electronic temperature large
+enough in order to have only short range force constants named ˜Csr(q, 0, T∞)
+and no Kohn anomalies in the corresponding phonon branches. The force
+constant matrices ˜Csr(q, 0, T∞) can then be interpolated to every phonon
+momentum ˜q in the Brillouin zone.
+We then obtain the desired adiabatic (static) or non.adiabatic (dynamic)
+force constant matrix by using again Eq. 27 as,
+˜Csr(˜q, ω, T0) = ˜Csr(˜q, 0, T∞) + ∆sr(˜q, ω, T0, T∞)
+(30)
+
+Namely we start from the Fourier interpolated hot dynamical matrices and we
+cool them down via Wannier interpolation. In this way, the Kohn anomalies
+are correctly taken into account via the interpolation of the electron-phonon
+matrix element at any electron and phonon momentum and by employing
+a much denser k−point grid. These last two steps are obtained by using
+the option calculation = phonon_frequency (adiabatic) or calculation
+= phonon_frequency_na to also calculate the non-adiabatic frequencies.
+
+3.2. Electron-phonon contribution to the phonon linewidth and related quan-
+tities.
+epiq performs the calculation of the electron-phonon contribution to the
+phonon linewidth and related quantities at an arbitrary wavevector q by
+using any chosen Nk electron momentum mesh. The electron-phonon contri-
+bution to the phonon linewidth (FWHM) at lowest order (bubble diagram
+or Fermi golden rule) is defined as
+
+γqν
+=
+4π
+Nk
+
+�
+
+k,m,n
+|gν
+kn,k+qm|2 (fkn − fk+qm) δ(ϵk+qm − ϵkn − ωqν)
+(31)
+
+14
+
+
+where fkn is the Fermi occupation of the band ϵkn.
+At temperatures such that kBT ≫ ωqν or in the case of a temperature
+independent γqν, by using the δ-function condition δ(ϵk+qm − ϵkn − ωqν) in
+Eq. 31 one can substitute in Eq. 31,
+
+ωqν
+fk+qm − fkn
+
+ωqν
+�−→ ωqν
+∂f
+∂ϵ
+
+����
+ϵ=ϵkn
+(32)
+
+If the temperature dependence in equation (31) is weak, then the Fermi
+functions can be considered as step functions, so that:
+
+γqν = 4πω
+
+Nk
+
+�
+
+k,m,n
+|gν
+kn,k+qm|2δ(ϵkn − ϵF)δ(ϵk+qm − ϵkn − ω)
+(33)
+
+This approximation has been discussed in details in Ref. [2, 4, 10]. In actual
+calculations, it is customary to neglect the frequency dependence in the δ
+function in Eq.(33), obtaining
+
+γqν = 4πωqν
+
+Nk
+
+�
+
+k,m,n
+|gν
+kn,k+qm|2δ(ϵkn − ϵF)δ(ϵk+qm − ϵF)
+(34)
+
+The reader should however be aware that Eq.34 leads to an incorrect (diver-
+gent) behaviour of the intraband contribution to the phonon linewidth close
+to zone center as it misses the threshold for Landau damping, as demon-
+strated in Ref. [10].
+epiq calculates Eqs. 31,33,34 so that the effect of all the approximations
+in the calculation of the phonon-linewidth can be determined.
+The mode-resolved electron-phonon coupling constant λq,ν is related to
+the phonon linewidth from the Allen formula [2, 4]:
+
+λq,ν =
+γq,ν
+
+2πN(ϵF)ω2
+q,ν
+(35)
+
+where γq,ν is obtained from Eq. 34 and N(ϵF) is the density of states at the
+Fermi level. The knowledge of these quantities allows the evaluation of the
+average electron-phonon coupling constant λ and of the Eliashberg spectral
+function α2F(ω) via the relations:
+
+λ = 1
+
+Nq
+
+�
+
+q,ν
+λq,ν,
+(36)
+
+15
+
+
+α2F(ω) =
+1
+
+2Nq
+
+�
+
+q,ν
+λq,νωq,νδ(ω − ωq,ν).
+(37)
+
+where Nq is the number of phonon-momentum point of the grid on which λqν
+is interpolated. Finally, the logarithmic average of the phonon frequencies to
+be used in the Allen and Dynes formula[1] is
+
+⟨ω⟩log = exp
+�2
+
+λ
+
+� +∞
+
+0
+α2F(ω) log(ω)/ω dω
+�
+(38)
+
+The Eqs. 36,37 and 38, as well as the Allen and Dynes formula for Tc, are
+calculated from the output of epiq by the postprocessing tools alpha2F.x
+and average_lambda.x.
+
+3.3. Isotropic and anisotropic Eliashberg equations
+epiq offers an especially convenient method to calculate the supercon-
+ducting gap within the Migdal-Eliashberg theory. The linearized Eliashberg
+equations on the imaginary frequency axis read[3, 32]
+
+Z(ks, iωn) = 1 +
+π
+
+βωnN(0)
+
+�
+
+k′s′,n′
+
+ωn′δ(ϵk′s′ − ϵF)
+�
+
+ω2
+n′ + ∆2(k′s′, iωn′)
+λ(ks, k′s′, n − n′)
+
+(39)
+
+Z(ks, iωn)∆(ks, iωn)
+=
+π
+
+N(0)β
+
+�
+
+k′s′,n′
+
+∆(k′s′, iωn′)δ(ϵk′s′ − ϵF)
+�
+
+ω2
+n′ + ∆2(k′s′, iωn′)
+
+[λ(ks, k′s′, n − n′) − µ∗]
+(40)
+
+where Z(ks, iωn) is the mass renormalization term for the sth band,
+∆(ks, iωn) is the momentum and frequency resolved superconducting gap
+for the sth band, the n, n′ indices denote the Matsubara frequencies ωn =
+(2n + 1)πβ, and the term
+
+λ(ks, k′, n − n′) =
+� ∞
+
+0
+dΩα2F(ks, k′s′, Ω)
+2Ω
+
+(ωn − ωn′)2 + Ω2
+(41)
+
+is the band-resolved, anisotropic Eliashberg function defined as
+
+α2F(ks, k′s′, Ω) = N(0)
+�
+
+ν
+
+��gν
+ks,k′s′
+��2 δ(ω − ωk−k′,ν)
+(42)
+
+16
+
+
+Here, we are neglecting impurity terms. epiq employs a random k-point
+generation algorithm onto an energetic neighborhood of the Fermi level in
+order to mitigate the computational cost due to the double cycle on k and
+k′ = k+q. Furthermore, to speed up even more the calculation, epiq uses
+the symmetry properties of the normal part of the Green function, namely
+Z(k, iωn) = Z(k, −iωn). The sum on the Matsubara frequencies are cutoffed
+at |ωn′| < ωc.
+Once the Migdal-Eliashberg equations have been solved in the imaginary
+axis and the superconducting gap value is known at the Nω Matsubara fre-
+quencies, epiq also allows to analitically continue the gap function to the real
+space by the calculation of its N-point Padé approximant. This is done in
+epiq employing the algorithm introduced in Ref.[56]. Finally, epiq allows for
+plotting the superconducting gap on the Fermi surface as a 3D color intensity
+plot, as shown in Fig. 4.
+The single particle self-energy calculated in the Migdal-Eliashberg ap-
+proach can be used for computing the single particle propagator
+
+ˆG−1(ks, iωn) = iωnZ(ks, iωn)ˆτ0 + Z(ks, iωn)∆(ks, iωn)ˆτ1 − εs,kˆτ3,
+(43)
+
+where τi are Pauli matrices in the Nambu-Gor’kov [40, 22] spinor space.
+In materials where the superconducting gap is known to be isotropic, the
+full k-dependence of the gap can be neglected by averaging over k-space,
+while still obtaining good comparison with experiments. In this case, the
+Eliashberg equations take the following isotropic form:
+
+Z(iωn) = 1 +
+π
+
+βωn
+
+�
+
+n′
+
+ωn′
+�
+
+ω2
+n′ + ∆2(iωn′)
+λ(n − n′),
+(44)
+
+Z(iωn)∆(iωn) =
+�
+
+n′
+
+∆(iωn′)
+�
+
+ω2
+n′ + ∆2(iωn′)
+[λ(n − n′) − µ∗]
+(45)
+
+where now we have
+
+λ(n − n′) =
+� ∞
+
+0
+dΩ
+2Ω α2F(Ω)
+
+(ωn − ωn′)2 + Ω2
+(46)
+
+The isotropic solution requires a negligible computational effort once
+the isotropic Eliashberg function α2F(Ω) defined in Eq.
+37 is known, as
+there is no need to perform any sum over k-points. The postprocessing tool
+
+17
+
+
+ee1
+
+eh1
+he1
+he2
+eh2
+
+ee2
+hh1
+hh2
+
+Light:
+Phonon:
+Electron:
+Hole:
+
+Figure 2: Feynman diagrams of the eight processes occurring in the double resonant Raman
+scattering due to phonons as explained in [52].
+
+isotropic_ME.x solves the isotropic Eliashberg equations having as input an
+α2F(Ω) calculated with epiq. Both the isotropic and anisotropic approach
+have already been employed in previous literature[34, 45].
+
+3.4. Double-resonant Raman scattering
+Double-resonant Raman is a rich spectroscopic technique that provides
+detailed insights on the vibrational and electronic excitations simultaneously.
+It probes the forth-order response of the system to the impinging laser of
+frequency ωL. A comprehensive theoretical description of this phenomenon
+is presented in Refs.[35, 55].
+Following Ref. [55], the two-phonon (pp) double-resonant Raman inten-
+sity is
+
+I(ω)
+=
+1
+Nq
+
+�
+
+q,ν,µ
+Ipp
+qνµδ(ωL − ω − ων
+−q − ωµ
+q)[n(ων
+−q) + 1][n(ωµ
+q) + 1],(47)
+
+where n(ωµ
+q) is the Bose occupation for mode µ. The probability of exciting
+two phonons is
+
+Ipp
+qνµ =
+
+�����
+1
+Nk
+
+�
+
+k,β
+Kpp
+β (k, q, ν, µ)
+
+�����
+
+2
+(48)
+
+where the matrix elements Kpp
+β (k, q, ν, µ) are defined by expressions involv-
+ing the electron and phonon band dispersion, the electron-phonon coupling
+
+18
+
+
+gµ
+kn,k+qm and the electron-light Dkn,km matrix-elements throughout the full
+Brillouin Zone (see appendix A of Ref. [55]). Here, β labels the different pos-
+sibilities of electron and hole scattering. There are overall 8 double-resonant
+two phonon processes (see Fig.2) of which two involve electron-electron scat-
+tering, two involve hole-hole scattering and the other four involve electron-
+hole and hole-electron scattering (see [55] for more details). All process are
+implemented in epiq. Both the electron-phonon and the electron-light ma-
+trix elements are interpolated on ultradense electron and phonon momentum
+grids.
+
+3.5. Electron lifetime and relaxation time.
+Due to electron-phonon interaction, electronic carriers acquire a finite
+lifetime, as a result of phonon emission and absorption processes. In particu-
+lar, for an electron characterized by crystal momentum k and band index n,
+the average electron-phonon lifetime, τ el−ph
+n,k
+, is defined in terms of the imag-
+
+inary part of the electron-phonon self energy, Σel−ph
+n,k
+, as τ el−ph
+n,k
+=
+ℏ
+
+2 Σel−ph
+n,k
+,
+
+where[20]:
+
+Σel−ph
+n,k
+= π
+�
+
+m,ν
+
+�
+dq
+ΩBZ
+|gn,m,ν(k, q)|2[(1 − fm,k+q + nq,ν)δ(ϵn,k − ℏωq,nu − ϵm,k+q)
+
++(fm,k+q + nq,ν)δ(ϵn,k + ℏωq,ν − ϵm,k+q)]
+(49)
+This quantity can be calculated within epiq, and is especially relevant
+for the evaluation of the excited carriers lifetime in semiconductors[49]. The
+calculation of excited carriers’ lifetime can be extended to the case where
+a photoexcited population in the conduction band is present, provided that
+the starting linear response DFT calculation has been performed using the
+two-Fermi level approach presented in Ref.[33].
+
+4. Applications
+
+4.1. Interpolation quality: real space localization
+As a first step, we qualitatively discuss the behavior of the deformation
+potential in the real space, both as a function of the real-space electronic
+coordinate R and phononic coordinate RL, evaluated for all the cells belong-
+ing to the supercell of size N w
+k . The results are depicted in Fig.3. From the
+
+19
+
+
+Figure 3: Semi-log plot of the deformation potential for the x-coordinate of boron in MgB2
+(arbitrary units) as a function of the real-space electronic coordinate R at RL = 0 (panel
+a) and as a function of the real-space phononic coordinate RL at R = 0 (panel b).
+
+semi-log plots, it is evident how the deformation potential rapidly decays as a
+function of the distance, signaling that the rotation to the optimally smooth
+subspace has been correctly performed.
+
+Figure 4: Superconducting properties of MgB2. Left panel: frequency-resolved Eliashberg
+function and electron-phonon coupling parameter λ. Right panel: Fermi surface resolved
+Migdal-Eliashberg gap (T = 10 K).
+
+20
+
+
+4.2. Calculation of superconducting properties of MgB2
+4.2.1. Phonon linewidths and electron-phonon coupling parameter λ
+We demonstrate the calculation of phonon linewidths within epiq in
+MgB2. We follow the steps described in Sec.3 and perform a phonon linewidth
+calculation setting the ‘calculation’ parameter equal to ‘ph_linewidth’
+in the ‘&control’ namelist. Finally, we employ the post processing alpha2F.x
+to produce the Eliashberg function. In the left panel of Fig.4, we plot two
+times the Eliashberg function divided by the frequency and its integral,
+λ(ω). The resulting λ = 0.78 is in good agreement with previous results
+in literature[11].
+
+4.2.2. Anisotropic Migdal-Eliashberg gap
+We solve the anisotropic Eliashberg equations, Eqs. 39,40, in order to
+calculate the superconducting gap for MgB2 at T= 10 K. In this specific case,
+an isotropic approach is not appropriate since the compound hosts multiband
+superconductivity. As such, a fully anisotropic calculation is performed. The
+resulting k-resolved superconducting gap is depicted in the right panel of
+Fig.4.
+Here, each red point represents the superconducting gap ∆k at a
+specific point in the Brillouin zone, as a function of the imaginary frequency.
+The plot highlights the well known double gap nature of the compound.
+
+4.3. Calculation of interpolated phonon frequencies in MgB2
+We demonstrate phonon frequency interpolation within the differential
+approach in MgB2, following the steps described in Sec.3.
+In Fig.5, the
+phonon frequencies are interpolated on a denser 45×45×45 k-point grid using
+the scheme presented here (red lines) are compared to the result obtained
+using the standard interpolation method on a smooth 16×16×12 grid (blue
+lines), and to the exact linear response result on a denser 45×45×45 k-point
+grid. We use Tph=T0=0.01 Ry and T∞=0.2 Ry. The agreement obtained
+between the direct DFPT calculation and the epiq result is excellent. On the
+contrary, the results obtained within standard interpolation fail in capturing
+all the Kohn anomalies arising from the Fermi surface geometry. This result
+demonstrates the superior quality of our interpolation method with respect
+to the standard Fourier interpolation of the dynamical matrix starting from
+the very same coarse mesh.
+
+21
+
+
+Figure 5: Phonon frequencies for MgB2, calculated with standard interpolation (blue lines)
+and the present interpolation method (red lines), compared to the DFPT result with no
+interpolation error (black empty circles).
+
+4.4. Double-resonant Raman of graphene multi-layers
+Thanks to the epiq interpolation kernel, it is possible to compute the
+resonant Raman intensity in graphene multilayers, as done in Refs.
+[25,
+52, 54].
+The result of this calculations is twofold: from an experimental
+perspective, the theoretical prediction power that allows to discerning the
+number of layers and the stacking from the Raman spectra; on the theoretical
+point of view it is now possible to comprehend the interplay from the different
+contributions due to different scattering processing and different region of the
+Brillouin zone as shown in Fig. 6.
+
+4.5. Electron relaxation time in GaAs
+We demonstrate the usage of epiq to calculate the relaxation of excited
+carriers in a gallium arsenide. We employ Eq. 49 to estimate the electron-
+phonon self-energy Σel−ph, for excited carriers occupying the lowest conduc-
+tion band. The results are shown in Fig. 7. In panel a), the linewidth of
+the conduction band is proportional to the k-resolved electron-phonon self
+energy, Σel−ph. In panel b), together with the electron-phonon self energy
+
+22
+
+
+Figure 6:
+The experimental spectra of different graphene-layer stackings (coloured points)
+are compared to the theoretical prediction (solid line). In panel a the monolayer spectrum
+is taken from [54], in panel b the experimental data are from [25] while panel c shows the
+ABA and ABC trilayer measurements from Refs. [31, 15] and calculations from [52].
+
+23
+
+
+Σel−ph, we plot the mode-averaged density of final states (FDOS) for the
+lowest conduction band, i.e. the quantity
+
+FDOS =
+1
+
+Nmodes
+
+�
+
+m,ν
+
+�
+dq
+ΩBZ
+[(1 − fm,k+q + nq,ν)δ(ϵn,k − ℏωq,nu − ϵm,k+q)
+
++(fm,k+q + nq,ν)δ(ϵn,k + ℏωq,ν − ϵm,k+q)]
+(50)
+
+Figure 7: Panel a): wannierized GaAs band structure starting from a LDA calculation.
+Here, the linewidth associated to the highest valence and lowest conduction band eigenval-
+ues is two times the imaginary part of the associated electron-phonon self energy Σel−ph on
+a high-symmetry path of the FCC BZ. Panel b): k-resolved electron-phonon self energy
+Σel−ph and final-state density of states (FDOS, Eq.50) for the lowest conduction band
+along the same path of panel a).
+
+5. Implementation technicalities
+
+5.1. Gauge fixing and the phase problem
+As already partially discussed in Ref.[11], care has to be taken when per-
+forming the transformation towards the optimally smooth subspace. This is
+due to the presence of a gauge freedom related to the global phase of the Bloch
+function. It easy to verify that both the unitary transformation Umn(k) and
+
+24
+
+
+the deformation potential matrix elements ds
+m,n(k+q, k) are generally gauge
+dependent, carrying a phase that depends on the band indexes, electron and
+phonon momentum. While the precise value of this phase is not important,
+it is crucial that the wavefunctions entering in the operator matrix element
+are exactly the same wave functions used for the Wannierization procedure in
+order to avoid the appearance of spurious phases in the expression of the de-
+formation potential, completely losing its localization properties. Within the
+epiq workflow, the gauge is opportunely fixed employing the same wave func-
+tions for the Wannierization and the calculation of the deformation potential
+matrix elements within Quantum ESPRESSO. Additional details about the
+workflow are given in Sec.5.3.
+
+5.2. Parallelization
+epiq supports parallel execution both on k- and q-points. Depending on
+the number of processors, number of k-points and number of q-points in-
+cluded in the calculation, epiq automatically establishes whether to perform
+a q-point or k-point parallel execution. We test the scalability of epiq on
+the specific case of electron doped monolayer MoS2. We consider the two
+most expensive operations, namely the rotation to the Wannier basis and
+the Fourier interpolation back to the reciprocal space. The cumulative cost
+of all the other operations performed by epiq is typically negligible with
+respect to this two operations. To study how the rotation to the Wannier
+basis scales, we consider a 8×8 Wannier grid (64 points) and use 13 Wannier
+functions. The results are presented in Fig.8 a). To test the interpolation,
+we interpolate over 64×64 q- and k-grids, this time using a single Wannier
+orbital. The results are shown in Fig.8 b). We notice that in both cases
+the scaling is almost optimal up to a very high number of processor, only
+becoming suboptimal when the number of processor becomes comparable to
+the number of q- and k-points in the interpolation. In Tab.1, we schemati-
+cally report the power-law scaling of the most expensive operations in terms
+of the significant calculation parameters is schematically reported.
+
+5.3. Interface with Quantum ESPRESSO and wannier90 and workflow of
+epiq
+We now give a brief practical description of the steps necessary to perform
+any epiq calculation. A detailed explanation on how to run epiq can be found
+in the dedicated website, https://the-epiq-team.gitlab.io/epiq-site/.
+Any calculation performed using epiq relies on the following files produced by
+
+25
+
+
+Figure 8: Scalability of the epiq code: relative speedup t/t0 as a function of number
+of processes.
+Left panel: rotation to the Wannier space execution time.
+Right panel:
+interpolation back to the Fourier space.
+Calculations are represented by red squares,
+while blue lines represent perfect scaling.
+
+Calculation
+Nwan
+Nmodes
+Nwan
+k
+Nint
+q
+Nint
+k
+
+Rotation to smooth subspace
+4
+1
+2
+0
+0
+
+Transformation to real space
+1
+1
+4
+0
+0
+
+El.-ph. interpolation
+2
+1
+2
+1
+1
+
+Table 1: Power-law scaling with respect to calculation parameters of the leading operations
+in terms of computational cost.
+
+26
+
+
+the parent Quantum ESPRESSO and wannier90, namely electron-phonon
+matrix elements calculated within the Quantum ESPRESSO package with
+the option
+
+electron_phonon=‘Wannier’
+
+and the prefix.eig and prefix.chk files produced by the wannier90 code.
+The calculation of any quantity within epiq is characterized by a precise
+and simple workflow , which we briefly summarize here (see also Fig.9) :
+
+1. Produce prefix.chk and prefix.eig files using wannier90.
+2. Produce electron-phonon matrix elements using Quantum ESPRESSO.
+3. Execute a preliminary epiq run in order to transform the electron-
+phonon matrix elements in the MLWF basis, setting dump_gR=.true.
+
+4. Calculate the quantity of interest setting the opportune value for the
+‘calculation’ variable and setting read_dumped_gR=.true. in the
+‘&control’ namelist.
+
+In order to correctly fix the gauge, both the wannierization in Step 1.
+and the calculation of electron-phonon matrix elements in Step 2. must be
+performed employing the same wavefunctions. To this aim, both steps must
+be performed on top of the same non-self-consistent calculation.
+This is
+possible thanks to the Quantum ESPRESSO-epiq interface, which is acti-
+vated when calculating the electron-phonon in the ph.x code with the flag
+electron_phonon=‘Wannier’. Detailed instructions are given in the epiq
+website.
+All the input parameters of an epiq calculation must be specified in the
+input file. Input parameters are organized in three namelists: ‘&control’,
+‘&electrons’, ‘&phonons’. The ‘&control’ namelist contains all the gen-
+eral control parameters of the calculation. epiq gives the possibility to per-
+form different types of calculation that are specified by the following values
+of the ‘calculation’ parameter in the ‘&control’ namelist:
+
+‘ph_linewidth’
+Calculation of phonon linewidths at specific Brillouin zone wavevectors.
+
+‘phonon_frequency_grid’ and ‘phonon_frequency’
+First, ‘phonon_frequency_grid’ is specified to calculate dynamical ma-
+trices at T = ∞ on the symmetrized q-grid; the obtained dynamical matri-
+ces are then interpolated to the desired q-point ( using the post-processing
+
+27
+
+
+Figure 9: Schematic workflow of epiq.
+
+matdyn.x of the Quantum ESPRESSO release), and finally non-adiabatic or
+adiabatic phonon frequency at the desired q-point are produced performing
+another epiq calculation using calculation = ‘phonon_frequency’ (adi-
+abatic) or ‘phonon_frequency_na’ (non adiabatic), respectively, according
+to the formalism explained in Sec.3.1. The detailed procedure can be found
+in the epiq website.
+
+‘migdal_eliashberg’
+Perform the solution of the anisotropic Migdal-Eliashberg equations.
+
+‘el_relaxation’
+Compute the electron-phonon driven excited carrier relaxation time.
+
+‘resonant_raman’
+Calculate the resonant Raman spectrum.
+
+5.4. Usage of alternative dynamical matrices.
+In epiq it is implemented the possibility of using alternative dynamical
+matrices with respect to the ones employed in the calculation of the electron-
+phonon coupling matrix elements. This feature allows the user to evaluate
+the isotope effect or to include anharmonic effects in the dynamical matrices,
+for example employing the Hessian of the free energy calculated within the
+stochastic self-consistent harmonic approximation (SSCHA).[37] This is what
+has been done for example in Ref.[34].
+
+28
+
+
+5.5. Utilities and post-processing tools
+epiq also includes some post-processing tools to analyze the outcome
+of calculations, namely alpha2F.x, average_lambda.x, analyse_ME_gap.x,
+pade.x, plot_me_FS.x and isotropic_ME.x. The former two help the user
+to process the result of a phonon linewidth calculation and produce the
+Eliashberg function α2F(ω) and the electron-phonon coupling parameter λ,
+together with an estimation of the superconducting critical temperature in
+the Allen-Dynes formalism and other related data. analyse_ME_gap.x pro-
+cesses the output of an anisotropic Eliashberg calculation, while pade.x cal-
+culates the Eliashberg gap in real space using N-point Padé approximants[56].
+Finally, isotropic_ME.x solves the Migdal-Eliashberg equation in the isotropic
+gap approximation, taking the average Eliashberg function α2F(ω) as an in-
+put.
+
+6. Computational details
+
+First-principles calculations were preformed within density functional the-
+ory (DFT) as implemented in the Quantum ESPRESSO(QE) distribution
+[19, 18].
+We employ norm-conserving pseudopotentials generated within
+the Martin-Troullier (MgB2) and Hartwigsen, Goedecker and Hutter (GaAs)
+schemes[53, 24], setting the kinetic energy cutoff for the plane-wave expan-
+sion of the electronic wavefunctions to 35 Ry for MgB2 and 60 Ry for GaAs.
+The exchange-correlation energy is approximated within the generalized gra-
+dient approximation (GGA), in the Perdew, Burke and Ernzerhof (PBE)
+scheme[41]. Wannier interpolation of the MgB2 band structure is carried out
+using the same prescriptions indicated in Ref.[11]. The phonon dispersion and
+the electron-phonon matrix elements are calculated within density-functional
+perturbation theory[8].
+
+7. Conclusions
+
+In this paper we presented epiq, a new tool for the computation of ab-
+initio electron-phonon coupling related properties.
+epiq aims to simplify
+the calculation of many different properties of solids, making it accessible to
+the whole condensed matter and material science community by employing
+a straightforward workflow and easy-to-read input and output files. epiq
+is interfaced with the Quantum ESPRESSO plane-wave code and with the
+
+29
+
+
+wannier90 software. The workflow is very simple and can be used by sci-
+entists having any degree of experience in DFT calculations. Any detailed
+information regarding epiq installation and usage can be found in the dedi-
+cated website, https://the-epiq-team.gitlab.io/epiq-site/.
+
+8. Acknowledgments
+
+Giovanni Marini, Francesco Macheda and Matteo Calandra acknowledge
+support from the European Union’s Horizon 2020 research and innovation
+programme Graphene Flagship under grant agreement No 881603. Co-funded
+by the European Union (ERC, DELIGHT, 101052708). Guglielmo March-
+ese, Francesco Macheda and Francesco Mauri acknowledge the MORE-TEM
+ERC-SYN project, grant agreement No 951215.
+Views and opinions ex-
+pressed are however those of the author(s) only and do not necessarily reflect
+those of the European Union or the European Research Council. Neither
+the European Union nor the granting authority can be held responsible for
+them. We acknowledge the CINECA award under the ISCRA initiative, for
+the availability of high performance computing resources and support. We
+acknowledge PRACE for awarding us access to Joliot-Curie at GENCI@CEA,
+France (project file number 2021240020).
+
+30
+
+
+References
+
+[1] P. B. Allen and R. C. Dynes. Transition temperature of strong-coupled
+superconductors reanalyzed.
+Phys. Rev. B, 12:905–922, Aug 1975.
+doi: 10.1103/PhysRevB.12.905. URL https://link.aps.org/doi/10.
+1103/PhysRevB.12.905.
+
+[2] Philip B. Allen. Neutron spectroscopy of superconductors. Phys. Rev.
+B, 6:2577–2579, Oct 1972. doi: 10.1103/PhysRevB.6.2577. URL https:
+//link.aps.org/doi/10.1103/PhysRevB.6.2577.
+
+[3] Philip B. Allen and Božidar Mitrović. Theory of superconducting tc.
+In Henry Ehrenreich, Frederick Seitz, and David Turnbull, editors, The-
+ory of Superconducting Tc, volume 37 of Solid State Physics, pages 1–
+92. Academic Press, 1983. doi: https://doi.org/10.1016/S0081-1947(08)
+60665-7. URL https://www.sciencedirect.com/science/article/
+pii/S0081194708606657.
+
+[4] Philip B. Allen and Richard Silberglitt.
+Some effects of phonon dy-
+namics on electron lifetime, mass renormalization, and superconduct-
+ing transition temperature.
+Phys. Rev. B, 9:4733–4741, Jun 1974.
+doi: 10.1103/PhysRevB.9.4733. URL https://link.aps.org/doi/10.
+1103/PhysRevB.9.4733.
+
+[5] J. Bardeen, L. N. Cooper, and J. R. Schrieffer. Theory of superconduc-
+tivity. Phys. Rev., 108:1175–1204, Dec 1957. doi: 10.1103/PhysRev.108.
+1175. URL https://link.aps.org/doi/10.1103/PhysRev.108.1175.
+
+[6] Stefano Baroni and Raffaele Resta. Ab initio calculation of the macro-
+scopic dielectric constant in silicon. Physical Review B, 33(10):7017–
+7021, May 1986. doi: 10.1103/PhysRevB.33.7017. URL https://link.
+aps.org/doi/10.1103/PhysRevB.33.7017. Publisher: American Phys-
+ical Society.
+
+[7] Stefano Baroni, Paolo Giannozzi, and Andrea Testa. Green’s-function
+approach to linear response in solids. Phys. Rev. Lett., 58:1861–1864,
+May 1987. doi: 10.1103/PhysRevLett.58.1861. URL https://link.
+aps.org/doi/10.1103/PhysRevLett.58.1861.
+
+[8] Stefano Baroni, Stefano de Gironcoli, Andrea Dal Corso, and Paolo Gi-
+annozzi. Phonons and related crystal properties from density-functional
+
+31
+
+
+perturbation theory.
+Rev. Mod. Phys., 73:515–562, Jul 2001.
+doi:
+10.1103/RevModPhys.73.515.
+URL https://link.aps.org/doi/10.
+1103/RevModPhys.73.515.
+
+[9] Christian Brouder, Gianluca Panati, Matteo Calandra, Christophe
+Mourougane, and Nicola Marzari.
+Exponential localization of wan-
+nier functions in insulators.
+Phys. Rev. Lett., 98:046402, Jan 2007.
+doi: 10.1103/PhysRevLett.98.046402.
+URL https://link.aps.org/
+doi/10.1103/PhysRevLett.98.046402.
+
+[10] Matteo Calandra and Francesco Mauri. Electron-phonon coupling and
+phonon self-energy in mgb2:
+Interpretation of mgb2 raman spectra.
+Phys. Rev. B, 71:064501, Feb 2005. doi: 10.1103/PhysRevB.71.064501.
+URL https://link.aps.org/doi/10.1103/PhysRevB.71.064501.
+
+[11] Matteo Calandra, Gianni Profeta, and Francesco Mauri. Adiabatic and
+nonadiabatic phonon dispersion in a wannier function approach. Phys.
+Rev. B, 82:165111, Oct 2010. doi: 10.1103/PhysRevB.82.165111. URL
+https://link.aps.org/doi/10.1103/PhysRevB.82.165111.
+
+[12] Andrea Cepellotti and Nicola Marzari. Thermal transport in crystals
+as a kinetic theory of relaxons.
+Phys. Rev. X, 6:041013, Oct 2016.
+doi: 10.1103/PhysRevX.6.041013. URL https://link.aps.org/doi/
+10.1103/PhysRevX.6.041013.
+
+[13] Andrea Cepellotti, Jennifer Coulter, Anders Johansson, Natalya S Fe-
+dorova, and Boris Kozinsky. Phoebe: a high-performance framework for
+solving phonon and electron boltzmann transport equations. Journal
+of Physics: Materials, 5(3):035003, jul 2022. doi: 10.1088/2515-7639/
+ac86f6. URL https://doi.org/10.1088/2515-7639/ac86f6.
+
+[14] Jacques Des Cloizeaux.
+Energy bands and projection operators in a
+crystal: Analytic and asymptotic properties.
+Phys. Rev., 135:A685–
+A697, Aug 1964. doi: 10.1103/PhysRev.135.A685. URL https://link.
+aps.org/doi/10.1103/PhysRev.135.A685.
+
+[15] Chunxiao Cong, Ting Yu, Kentaro Sato, Jingzhi Shang, Riichiro Saito,
+Gene F. Dresselhaus, and Mildred S. Dresselhaus. Raman Characteriza-
+tion of ABA- and ABC-Stacked Trilayer Graphene. ACS Nano, 5(11):
+8760–8768, November 2011. ISSN 1936-0851. doi: 10.1021/nn203472f.
+
+32
+
+
+URL https://doi.org/10.1021/nn203472f.
+Publisher:
+American
+Chemical Society.
+
+[16] Stefano Curtarolo, Wahyu Setyawan, Gus L.W. Hart, Michal Jahnatek,
+Roman V. Chepulskii, Richard H. Taylor, Shidong Wang, Junkai Xue,
+Kesong Yang, Ohad Levy, Michael J. Mehl, Harold T. Stokes, De-
+nis O. Demchenko, and Dane Morgan.
+Aflow: An automatic frame-
+work for high-throughput materials discovery. Computational Materi-
+als Science, 58:218–226, 2012. ISSN 0927-0256. doi: https://doi.org/
+10.1016/j.commatsci.2012.02.005. URL https://www.sciencedirect.
+com/science/article/pii/S0927025612000717.
+
+[17] Tianqi Deng, Gang Wu, Michael B. Sullivan, Zicong Marvin Wong,
+Kedar Hippalgaonkar, Jian-Sheng Wang, and Shuo-Wang Yang. Epic
+star: a reliable and efficient approach for phonon- and impurity-limited
+charge transport calculations.
+npj Computational Materials, 6(1):46,
+May 2020.
+ISSN 2057-3960.
+doi: 10.1038/s41524-020-0316-7.
+URL
+https://doi.org/10.1038/s41524-020-0316-7.
+
+[18] P Giannozzi, O Andreussi, T Brumme, O Bunau, M Buongiorno
+Nardelli, M Calandra, R Car, C Cavazzoni, D Ceresoli, M Cococ-
+cioni, N Colonna, I Carnimeo, A Dal Corso, S de Gironcoli, P Delugas,
+R A DiStasio, A Ferretti, A Floris, G Fratesi, G Fugallo, R Gebauer,
+U Gerstmann, F Giustino, T Gorni, J Jia, M Kawamura, H-Y Ko,
+A Kokalj, E Küçükbenli, M Lazzeri, M Marsili, N Marzari, F Mauri,
+N L Nguyen, H-V Nguyen, A Otero de-la Roza, L Paulatto, S Poncé,
+D Rocca, R Sabatini, B Santra, M Schlipf, A P Seitsonen, A Smo-
+gunov, I Timrov, T Thonhauser, P Umari, N Vast, X Wu, and S Ba-
+roni.
+Advanced capabilities for materials modelling with quantum
+espresso.
+Journal of Physics: Condensed Matter, 29(46):465901, oct
+2017. doi: 10.1088/1361-648X/aa8f79. URL https://dx.doi.org/10.
+1088/1361-648X/aa8f79.
+
+[19] Paolo Giannozzi, Stefano Baroni, Nicola Bonini, Matteo Calandra,
+Roberto Car, Carlo Cavazzoni, Davide Ceresoli, Guido L Chiarotti, Mat-
+teo Cococcioni, Ismaila Dabo, Andrea Dal Corso, Stefano de Gironcoli,
+Stefano Fabris, Guido Fratesi, Ralph Gebauer, Uwe Gerstmann, Chris-
+tos Gougoussis, Anton Kokalj, Michele Lazzeri, Layla Martin-Samos,
+Nicola Marzari, Francesco Mauri, Riccardo Mazzarello, Stefano Paolini,
+
+33
+
+
+Alfredo Pasquarello, Lorenzo Paulatto, Carlo Sbraccia, Sandro Scan-
+dolo, Gabriele Sclauzero, Ari P Seitsonen, Alexander Smogunov, Paolo
+Umari, and Renata M Wentzcovitch. Quantum espresso: a modular
+and open-source software project for quantum simulations of materi-
+als. Journal of Physics: Condensed Matter, 21(39):395502, sep 2009.
+doi: 10.1088/0953-8984/21/39/395502. URL https://dx.doi.org/10.
+1088/0953-8984/21/39/395502.
+
+[20] Feliciano Giustino. Electron-phonon interactions from first principles.
+Rev. Mod. Phys., 89:015003, Feb 2017. doi: 10.1103/RevModPhys.89.
+015003. URL https://link.aps.org/doi/10.1103/RevModPhys.89.
+015003.
+
+[21] Feliciano Giustino, Marvin L. Cohen, and Steven G. Louie. Electron-
+phonon interaction using wannier functions. Phys. Rev. B, 76:165108,
+Oct 2007. doi: 10.1103/PhysRevB.76.165108. URL https://link.aps.
+org/doi/10.1103/PhysRevB.76.165108.
+
+[22] L P Gor’Kov. ON THE ENERGY SPECTRUM OF SUPERCONDUC-
+TORS. Journal of Experimental and Theoretical Physics, 7(3):505, 1958.
+
+[23] G. Grüner. The dynamics of charge-density waves. Rev. Mod. Phys., 60:
+1129–1181, Oct 1988. doi: 10.1103/RevModPhys.60.1129. URL https:
+//link.aps.org/doi/10.1103/RevModPhys.60.1129.
+
+[24] C. Hartwigsen, S. Goedecker, and J. Hutter. Relativistic separable dual-
+space gaussian pseudopotentials from h to rn. Phys. Rev. B, 58:3641–
+3662, Aug 1998. doi: 10.1103/PhysRevB.58.3641. URL https://link.
+aps.org/doi/10.1103/PhysRevB.58.3641.
+
+[25] Felix Herziger, Matteo Calandra, Paola Gava, Patrick May, Michele
+Lazzeri, Francesco Mauri, and Janina Maultzsch. Two-dimensional anal-
+ysis of the double-resonant 2d raman mode in bilayer graphene. Physical
+Review Letters, 113(18):187401, 2014. doi: 10.1103/PhysRevLett.113.
+187401.
+URL https://link.aps.org/doi/10.1103/PhysRevLett.
+113.187401. Publisher: American Physical Society.
+
+[26] Sebastiaan P. Huber, Spyros Zoupanos, Martin Uhrin, Leopold Talirz,
+Leonid Kahle, Rico Häuselmann, Dominik Gresch, Tiziano Müller, Ali-
+aksandr V. Yakutovich, Casper W. Andersen, Francisco F. Ramirez,
+
+34
+
+
+Carl S. Adorf, Fernando Gargiulo, Snehal Kumbhar, Elsa Passaro, Con-
+rad Johnston, Andrius Merkys, Andrea Cepellotti, Nicolas Mounet,
+Nicola Marzari, Boris Kozinsky, and Giovanni Pizzi. Aiida 1.0, a scal-
+able computational infrastructure for automated reproducible workflows
+and data provenance. Scientific Data, 7(1):300, Sep 2020. ISSN 2052-
+4463. doi: 10.1038/s41597-020-00638-4. URL https://doi.org/10.
+1038/s41597-020-00638-4.
+
+[27] C. Jacoboni, C. Canali, G. Ottaviani, and A. Alberigi Quaranta.
+A
+review of some charge transport properties of silicon. Solid-State Elec-
+tronics, 20(2):77–89, 1977. ISSN 0038-1101. doi: https://doi.org/10.
+1016/0038-1101(77)90054-5. URL https://www.sciencedirect.com/
+science/article/pii/0038110177900545.
+
+[28] Y Katznelson. An Introduction to Harmonic Analysis. Dover, New York,
+1976.
+
+[29] W. Kohn. Analytic properties of bloch waves and wannier functions.
+Phys. Rev., 115:809–821, Aug 1959.
+doi: 10.1103/PhysRev.115.809.
+URL https://link.aps.org/doi/10.1103/PhysRev.115.809.
+
+[30] Boris Kozinsky and David J. Singh.
+Thermoelectrics by com-
+putational
+design:
+Progress
+and
+opportunities.
+Annual
+Re-
+view of Materials Research, 51(1):565–590, 2021.
+doi:
+10.1146/
+annurev-matsci-100520-015716.
+URL https://doi.org/10.1146/
+annurev-matsci-100520-015716.
+
+[31] Chun Hung Lui, Zhiqiang Li, Zheyuan Chen, Paul V. Klimov, Louis E.
+Brus, and Tony F. Heinz.
+Imaging Stacking Order in Few-Layer
+Graphene. Nano Letters, 11(1):164–169, January 2011. ISSN 1530-6984.
+doi: 10.1021/nl1032827. URL https://doi.org/10.1021/nl1032827.
+Publisher: American Chemical Society.
+
+[32] E. R. Margine and F. Giustino. Anisotropic migdal-eliashberg theory
+using wannier functions.
+Phys. Rev. B, 87:024505, Jan 2013.
+doi:
+10.1103/PhysRevB.87.024505. URL https://link.aps.org/doi/10.
+1103/PhysRevB.87.024505.
+
+[33] Giovanni Marini and Matteo Calandra. Lattice dynamics of photoex-
+cited insulators from constrained density-functional perturbation the-
+ory. Phys. Rev. B, 104:144103, Oct 2021. doi: 10.1103/PhysRevB.104.
+
+35
+
+
+144103.
+URL https://link.aps.org/doi/10.1103/PhysRevB.104.
+144103.
+
+[34] Giovanni Marini and Matteo Calandra.
+Phonon mediated supercon-
+ductivity in field-effect doped molybdenum dichalcogenides. 2D Mate-
+rials, 10(1):015013, nov 2022. doi: 10.1088/2053-1583/aca25b. URL
+https://dx.doi.org/10.1088/2053-1583/aca25b.
+
+[35] R. M. Martin and L. M. Falicov.
+Resonant Raman Scattering.
+In
+Manuel Cardona, editor, Light Scattering in Solids, Topics in Ap-
+plied Physics, pages 79–145. Springer, Berlin, Heidelberg, 1975. ISBN
+978-3-540-37568-5.
+doi: 10.1007/978-3-540-37568-5_3.
+URL https:
+//doi.org/10.1007/978-3-540-37568-5_3.
+
+[36] Nicola Marzari and David Vanderbilt. Maximally localized generalized
+wannier functions for composite energy bands. Phys. Rev. B, 56:12847–
+12865, Nov 1997.
+doi: 10.1103/PhysRevB.56.12847.
+URL https://
+link.aps.org/doi/10.1103/PhysRevB.56.12847.
+
+[37] Lorenzo Monacelli, Raffaello Bianco, Marco Cherubini, Matteo Calan-
+dra, Ion Errea, and Francesco Mauri.
+The stochastic self-consistent
+harmonic approximation: calculating vibrational properties of materials
+with full quantum and anharmonic effects. Journal of Physics: Con-
+densed Matter, 33(36):363001, jul 2021. doi: 10.1088/1361-648x/ac066b.
+URL https://doi.org/10.1088/1361-648x/ac066b.
+
+[38] Arash A. Mostofi, Jonathan R. Yates, Young-Su Lee, Ivo Souza, David
+Vanderbilt, and Nicola Marzari.
+wannier90:
+A tool for obtaining
+maximally-localised wannier functions.
+Computer Physics Communi-
+cations, 178(9):685–699, 2008. ISSN 0010-4655. doi: https://doi.org/
+10.1016/j.cpc.2007.11.016.
+URL https://www.sciencedirect.com/
+science/article/pii/S0010465507004936.
+
+[39] Nicolas Mounet, Marco Gibertini, Philippe Schwaller, Davide Campi,
+Andrius Merkys, Antimo Marrazzo, Thibault Sohier, Ivano Eligio
+Castelli, Andrea Cepellotti, Giovanni Pizzi, and Nicola Marzari. Two-
+dimensional materials from high-throughput computational exfoliation
+of experimentally known compounds.
+Nature Nanotechnology, 13(3):
+246–252, Mar 2018. ISSN 1748-3395. doi: 10.1038/s41565-017-0035-5.
+URL https://doi.org/10.1038/s41565-017-0035-5.
+
+36
+
+
+[40] Yoichiro Nambu. Quasi-Particles and Gauge Invariance in the Theory
+of Superconductivity. Physical Review, 117(3):648–663, February 1960.
+doi: 10.1103/PhysRev.117.648. URL https://link.aps.org/doi/10.
+1103/PhysRev.117.648. Publisher: American Physical Society.
+
+[41] John P. Perdew, Kieron Burke, and Matthias Ernzerhof. Generalized
+gradient approximation made simple. Phys. Rev. Lett., 77:3865–3868,
+Oct 1996.
+doi: 10.1103/PhysRevLett.77.3865.
+URL https://link.
+aps.org/doi/10.1103/PhysRevLett.77.3865.
+
+[42] Chris J. Pickard,
+Ion Errea,
+and Mikhail I. Eremets.
+Super-
+conducting
+hydrides
+under
+pressure.
+Annual
+Review
+of
+Con-
+densed
+Matter
+Physics,
+11(1):57–76,
+2020.
+doi:
+10.1146/
+annurev-conmatphys-031218-013413.
+URL
+https://doi.org/10.
+1146/annurev-conmatphys-031218-013413.
+
+[43] S. Poncé, E.R. Margine, C. Verdi, and F. Giustino.
+Epw:
+Elec-
+tron–phonon coupling, transport and superconducting properties using
+maximally localized wannier functions. Computer Physics Communica-
+tions, 209:116–133, 2016. ISSN 0010-4655. doi: https://doi.org/10.1016/
+j.cpc.2016.07.028.
+URL https://www.sciencedirect.com/science/
+article/pii/S0010465516302260.
+
+[44] P.J Price.
+Two-dimensional electron transport in semiconductor
+layers. i. phonon scattering.
+Annals of Physics, 133(2):217–239,
+1981.
+ISSN 0003-4916.
+doi:
+https://doi.org/10.1016/0003-4916(81)
+90250-5. URL https://www.sciencedirect.com/science/article/
+pii/0003491681902505.
+
+[45] D. Romanin, Th. Sohier, D. Daghero, F. Mauri, R.S. Gonnelli, and
+M. Calandra. Electric field exfoliation and high-tc superconductivity
+in field-effect hole-doped hydrogenated diamond (111). Applied Surface
+Science, 496:143709, 2019. ISSN 0169-4332. doi: https://doi.org/10.
+1016/j.apsusc.2019.143709.
+URL https://www.sciencedirect.com/
+science/article/pii/S0169433219325061.
+
+[46] S. Y. Savrasov and D. Y. Savrasov. Electron-phonon interactions and
+related physical properties of metals from linear-response theory. Phys.
+Rev. B, 54:16487–16501, Dec 1996. doi: 10.1103/PhysRevB.54.16487.
+URL https://link.aps.org/doi/10.1103/PhysRevB.54.16487.
+
+37
+
+
+[47] Xiao-Lei Shi, Jin Zou, and Zhi-Gang Chen. Advanced thermoelectric
+design: From materials and structures to devices. Chemical Reviews, 120
+(15):7399–7515, 2020. doi: 10.1021/acs.chemrev.0c00026. URL https:
+//doi.org/10.1021/acs.chemrev.0c00026. PMID: 32614171.
+
+[48] J. Sjakste, N. Vast, M. Calandra, and F. Mauri. Wannier interpola-
+tion of the electron-phonon matrix elements in polar semiconductors:
+Polar-optical coupling in gaas. Phys. Rev. B, 92:054307, Aug 2015. doi:
+10.1103/PhysRevB.92.054307. URL https://link.aps.org/doi/10.
+1103/PhysRevB.92.054307.
+
+[49] Jelena Sjakste, Nathalie Vast, and Valeriy Tyuterev. Ab initio method
+for calculating electron-phonon scattering times in semiconductors: Ap-
+plication to gaas and gap.
+Phys. Rev. Lett., 99:236405, Dec 2007.
+doi: 10.1103/PhysRevLett.99.236405.
+URL https://link.aps.org/
+doi/10.1103/PhysRevLett.99.236405.
+
+[50] Ivo Souza, Nicola Marzari, and David Vanderbilt. Maximally localized
+wannier functions for entangled energy bands. Phys. Rev. B, 65:035109,
+Dec 2001.
+doi: 10.1103/PhysRevB.65.035109.
+URL https://link.
+aps.org/doi/10.1103/PhysRevB.65.035109.
+
+[51] G. Strinati. Multipole wave functions for photoelectrons in crystals. iii.
+the role of singular points in the band structure and the tails of the
+wannier functions.
+Phys. Rev. B, 18:4104–4119, Oct 1978.
+doi: 10.
+1103/PhysRevB.18.4104. URL https://link.aps.org/doi/10.1103/
+PhysRevB.18.4104.
+
+[52] Abderrezak
+Torche,
+Francesco
+Mauri,
+Jean-Christophe
+Charlier,
+and
+Matteo
+Calandra.
+First-principles
+determination
+of
+the
+Raman
+fingerprint
+of
+rhombohedral
+graphite.
+Physical
+Re-
+view
+Materials,
+1(4):041001,
+September
+2017.
+doi:
+10.1103/
+PhysRevMaterials.1.041001.
+URL https://link.aps.org/doi/10.
+1103/PhysRevMaterials.1.041001. Publisher: American Physical So-
+ciety.
+
+[53] N. Troullier and José Luís Martins. Efficient pseudopotentials for plane-
+wave calculations.
+Phys. Rev. B, 43:1993–2006, Jan 1991.
+doi: 10.
+1103/PhysRevB.43.1993. URL https://link.aps.org/doi/10.1103/
+PhysRevB.43.1993.
+
+38
+
+
+[54] Tommaso Venanzi, Lorenzo Graziotto, Francesco Macheda, Simone Sot-
+giu, Taoufiq Ouaj, Elena Stellino, Claudia Fasolato, Paolo Postorino,
+Vaidotas Mišeikis, Marvin Metzelaars, Paul Kögerler, Bernd Beschoten,
+Camilla Coletti, Stefano Roddaro, Matteo Calandra, Michele Ortolani,
+Christoph Stampfer, Francesco Mauri, and Leonetta Baldassarre. Prob-
+ing enhanced electron-phonon coupling in graphene by infrared reso-
+nance raman spectroscopy. Phys. Rev. Lett., 130:256901, Jun 2023. doi:
+10.1103/PhysRevLett.130.256901. URL https://link.aps.org/doi/
+10.1103/PhysRevLett.130.256901.
+
+[55] Pedro Venezuela, Michele Lazzeri, and Francesco Mauri.
+Theory of
+double-resonant Raman spectra in graphene: Intensity and line shape
+of defect-induced and two-phonon bands.
+Physical Review B, 84(3):
+035433, July 2011. doi: 10.1103/PhysRevB.84.035433. URL https://
+link.aps.org/doi/10.1103/PhysRevB.84.035433. Publisher: Ameri-
+can Physical Society.
+
+[56] H. J. Vidberg and J. W. Serene.
+Solving the eliashberg equations
+by means ofN-point padé approximants. Journal of Low Temperature
+Physics, 29(3-4):179–192, November 1977.
+doi: 10.1007/bf00655090.
+URL https://doi.org/10.1007/bf00655090.
+
+[57] P. Vogl. Microscopic theory of electron-phonon interaction in insula-
+tors or semiconductors. Phys. Rev. B, 13:694–704, Jan 1976. doi: 10.
+1103/PhysRevB.13.694.
+URL https://link.aps.org/doi/10.1103/
+PhysRevB.13.694.
+
+[58] Jonathan R. Yates, Xinjie Wang, David Vanderbilt, and Ivo Souza.
+Spectral and fermi surface properties from wannier interpolation. Phys.
+Rev. B, 75:195121, May 2007. doi: 10.1103/PhysRevB.75.195121. URL
+https://link.aps.org/doi/10.1103/PhysRevB.75.195121.
+
+39
+
+

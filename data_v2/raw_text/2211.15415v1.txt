@@ -1,0 +1,2086 @@
+Machine Learning for Screening Large Organic Molecules
+
+Christopher Gaul & Santiago Cuesta-Lopez
+
+November 23, 2022
+
+Organic semiconductors are promising materials for cheap, scalable and sustainable electronics, light-emitting
+diodes and photovoltaics.
+For organic photovoltaic cells, it is a challenge to find compounds with suitable
+properties in the vast chemical compound space. For example, the ionization energy should fit to the optical
+spectrum of sun light, and the energy levels must allow efficient charge transport. Here, a machine-learning model
+is developed for rapidly and accurately estimating the HOMO and LUMO energies of a given molecular structure.
+It is build upon the SchNet model (Sch¨utt et al. (2018)) and augmented with a “Set2Set” readout module (Vinyals
+et al. (2016)). The Set2Set module has more expressive power than sum and average aggregation and is more
+suitable for the complex quantities under consideration. Most previous models have been trained and evaluated
+on rather small molecules. Therefore, the second contribution is extending the scope of machine-learning methods
+by adding also larger molecules from other sources and establishing a consistent train/validation/test split. As
+a third contribution, we make a multitask ansatz to resolve the problem of different sources coming at different
+levels of theory. All three contributions in conjunction bring the accuracy of the model close to chemical accuracy.
+
+1
+Introduction, Motivation, State of the Art
+
+Organic semiconductors, and in particular organic photovoltaic (OPV) cells, have attracted significant, attention
+in the last two decades [1, 2, 3]. Organic materials for OPV promise to be a cheaper and more scalable approach
+than silicon.
+
+1.1
+Organic Photovoltaics
+
+Brief overview over organic photovoltaics. The standard setup for organic photovoltaic cells is the bulk hetero-
+junction, i.e., a bicontinuous network of the donor and acceptor materials, as introduced by Yu et al. in 1995, with
+a semiconducting polymer as donor and C60 (or a derivative) as acceptor [4]. After photo excitation, an excited
+electron can move to the neighboring molecule if there is an unoccupied orbital available at a slightly lower energy.
+The small energy difference is needed to overcome the binding energy of the excited electron and the hole it leaves
+behind. This charge separation is the principle of OPV. For high efficiency, it is crucial that the energies of the
+molecular orbitals match perfectly.
+
+More elaborated OPV cells based on high performance polymer donors and fullerene-based acceptors have reached
+power conversion efficiencies (PCEs) up to 11.7% [5]. More recently, the focus has shifted to non-fullerene acceptors
+(NFAs) [6, 2], which have reached PCEs over 19% PCE already [7, 8].
+
+Materials discovery for OPV. The power-conversion rates of OPVs are still lower than those of their silicon
+counterparts, but continuous progress, in particular by discovering better organic materials, has been made in
+recent years. In the search for new and better materials, a series of requirements has to be met. For example, the
+absorption spectrum should match with the solar spectrum (ELUMO − EHOMO ≈ 2 eV), accompanied with a high
+extinction coefficient. The energy levels should be suitably aligned for the intended electrodes and other interface
+materials (for example at the p-n junction). The device structure should be stable under various environments,
+such as humidity, heat, light, and oxygen, and in particular with respect to diffusion (i.e., the molecules should
+not be too small). Finally, the materials should be environmental-friendly and non-toxic, and simple fabrication
+processes, for example, vapor deposition (molecules not too large), should be possible. The dependence on scarce
+or expensive raw materials is to be avoided, as far as possible. Many of these required properties are accessible by
+ab-initio calculations, i.e., the candidate materials can be simulated before starting experiments in the lab.
+
+1
+
+arXiv:2211.15415v1  [cond-mat.mtrl-sci]  23 Nov 2022
+
+
+pool
+of
+molecules
+
+ML filter
+- estimate
+properties
+
+“Good”
+Candidates
+
+accept
+
+discard
+
+Genetic
+Algorithm
+crossover
+& mutation
+
+Ab Initio
+- DFT: simulate
+properties
+
+Laboratory
+- invest. structure
+- measure props.
+- . . .
+
+Enhanced
+Products
+
+accept
+accept
+
+Materials
+Database
+
+use for
+training, validation, testing
+
+Figure 1: A machine learning (ML) algorithm that estimates molecular properties at very low cost, embedded in
+the big picture of a materials discovery scheme.
+
+Machine learning in materials discovery for OPV. Chemical compound space is huge, therefore it is prohibitively
+expensive to determine the desired properties of each compound with ab-initio methods. This is where machine-
+learning (ML) steps in. Machine learning is a data-driven approach that promises to speed this up, for example
+by substituting expensive DFT calculations by statistical models that estimate chemical properties at a fraction
+of the numerical cost. Figure 1 shows a scheme where a machine-learning algorithm is used as a filter, and only
+those candidates that pass the ML filter are processed in the subsequent steps (ab-initio calculations and, when
+applicable, synthetization and characterization in the laboratory).
+
+1.2
+Machine Learning for Quantum Chemistry
+
+Bridging the gap between molecular properties and the performance of a OPV device. A number of efforts has been
+made to relate the performance of a OPV device to the elemental properties of the materials. The Scharber model
+[9] relates the power-conversion efficiency to the donor band gap (under some assumptions on the acceptor and
+electrode materials). Padula et al. [10, 11] tried to go beyond that with a machine learning model taking both
+electronic and structural features as input.
+
+Goal and context of present work. In the present work, we take an intermediate step and develop a machine-learning
+model to reliably estimate the HOMO and LUMO energies of a given molecular structure.
+
+The wider context in a materials-discovery scheme is represented in Fig. 1.
+The task of the ML filter is to
+provide estimates of the molecular properties (currently the HOMO and LUMO energies) in order to identify
+the “good” candidates from a pool of molecule. Beyond the scope of this article, the good candidates would be
+further investigated, first by means of ab-initio (usually DFT) calculations, where again, some candidates will be
+discarded and others pass to the next stage, experiments in the lab, eventually leading to a better product. Along
+the way, the knowledge obtained from negative results should not be thrown away, but rather stored in a database
+in order to be used as training data for future development of the ML algorithm. Another aspect is applying a
+genetic algorithm and generate new candidate molecules by means of crossover and mutation of good candidates
+and feeding them back into the pool of molecules.
+
+Short review of algorithms for the prediction of molecular properties.
+There is a long history of advances in
+applying ML for predicting chemical properties. Early approaches used standard ML methods on top if fixed-
+length molecular fingerprints [12]. But molecular fingerprints are hand-crafted and not invertible.
+
+Duvenaud at al. [13], as well as Kearnes et al. [14] integrated the fingerprint feature extraction into the deep neural
+network, which resulted in graph convolutional networks that operate on vertices (atoms) and edges (bonds) of a
+
+2
+
+
+Table 1: Summary of dataset sizes and properties.
+
+Level of theory
+
+Dataset
+Nitems
+NInChIs
+N median
+atoms
+N max
+atoms
+geometry
+properties
+
+QM9 [19]
+133879
+129434
+18
+29
+B3LYP/6-31G(2df,p)
+B3LYP/6-31G(2df,p)
+
+Alchemy [20]
+202579
+201542
+22
+38
+B3LYP/6-31G(2df,p)
+B3LYP/6-31G(2df,p)
+
+OE62 [21]
+61489
+61489
+39
+174
+PBE+vdWa/ Tier2(tight)b
+PBE / Tier2(tight)
+PBE0c/ Tier2(tight)
+
+31k
+31k
+38
+116
+PBE+vdW / Tier2(tight)
+PBE0 (water)d/ Tier2(tight)
+
+5k
+5k
+38
+100
+PBE+vdW / Tier2(tight)
+PBE0 / def2-TZVP
+PBE0 / def2-QZVP
+G0W0@PBE0 / def2-QZVP
+G0W0@PBE0 / def2-QZVP
+
+HOPV [22]
+4855
+350
+69
+142
+BP86/def2-SVP
+BP86/def2-SVP
+B3LYP/def2-SVP
+PBE0/def2-SVP
+M06-2X/def2-SVP
+
+Kuzmich2017 [23]
+80
+79e
+123
+270
+6-31G*/B3LYP
+B3LYP/6-31G*
+
+a PBE [24] level of DFT with TS-vdW corrections [25].
+b The “Tier 2 basis” set in “tight setting” is the numeric atom-centered orbitals as implemented in the FHI-
+aims package [26].
+
+c The hyprid PBE0 exchange correlation functional of Refs. [27, 28].
+d Multipole Expansion (MPE) implicit solvation method for water [29].
+e Only the molecules with the identifiers FPDI-T and T2 have the same InChI. They differ only by single-bond
+rotations and have very similar properties.
+Items marked in bold are the ones considered in this work.
+
+molecular graph. This was developed further by Sch¨utt et al. [15], who added continuous-filter convolutions, and
+Chen et al. who developed MEGNet [16].
+
+Refs. [17, 18] are benchmarks of state-of-the art models on QM9 data and have shown that accuracies better than
+the so-called chemical accuracy (1 kcal/mol = 0.043 eV) can be reached with models like enn-s2s, SchNet, SchNetE
+on a dataset of small molecules (for details on QM9, see the following section 2.1).
+
+For the real-word application of materials discovery for organic photovoltaics, one has to go beyond the scope of
+the QM9 dataset. The contribution of this Article is developing a relevant data corpus (Section 2) and a suitable
+architecture for predicting the HOMO and LUMO energies of large organic molecules (Section 3), and finally the
+empiric validation (Section 4).
+
+2
+Data Corpus
+
+2.1
+Data Sources
+
+Several datasets containing significant numbers of molecular structures and properties are already publicly available
+[19, 20, 21, 22, 23]. These sets consists of pairs (x, y), where x is the point cloud of the atoms in space, i.e., a set
+of quadruples representing the coordinates and the atomic charge of each atom, and y is a set of scalar properties.
+The geometries and properties are the outcome of DFT calculations at a given level of theory. The properties y
+include, in particular, the energies of the molecular frontier orbitals HOMO and LUMO, which are proxies for the
+ionization energy and the electron affinity of the respective molecule.
+
+• The QM9 dataset [19] contains (presumably) all molecules of up to 9 “heavy” atoms (C, N, O, F) plus hydrogens,
+which are 130k structures. The data was obtained at the B3LYP/6-31G(2df,p) level of theory. This dataset is
+
+3
+
+
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO [B3LYP] (eV)
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO [PBE0] (eV)
+
+Figure 2: Energy of the HOMO obtained by DFT with the PBE0 exchange-correlation functional vs. the B3LYP
+functional for the molecules of the OE62 dataset. DFT results at different levels of theory are strongly correlated,
+but may have significant systematic shifts.
+
+Figure 3: The C6H3NO2 molecule (InChI=1S/C6H3NO2/c1-5(8)2-3-6(9)4-7/h1H3), which occurs both in QM9
+and Alchemy, is assigned to the training set in both cases.
+
+commonly used in many theory papers [15, 16, 17, 18].
+
+• In 2019, Chen et al. released a dataset of 200k molecules of up to 12 heavy atoms (C, N, O, F, S and Cl),
+within the scope of the “Alchemy” contest [20]. The level of theory and the set of properties are the same as
+QM9, but the dataset is extended to slightly larger molecules and larger variety of chemical elements.
+
+• Stuke et al. released the “OE62” dataset containing 62k structures, including larger ones [21]. The initial
+structures were extracted from organic crystals in the Cambridge Structural Database (CSD) and the molecular
+geometry and properties were determined via DFT. The chemical composition is much wider than those of the
+other sources, ranging from hydrogen to iodine (H, Li, B, C, N, O, F, Si, P, S, Cl, As, Se, Br, Re, I).
+
+• The HOPV dataset contains 350 different molecules (5k conformers), which are large and relevant for organic
+photovoltaics [22]. The HOPV set contains the elements H, C, N, O, F, Si, S, Se.
+
+• Kuzmich et al. published a set of 80 structures that are relevant for organic photovoltaics [23]. Two molecules
+were discarded because of ambiguous labeling. Since this set is small, we will use it for testing only. The variety
+of chemical elements in the Kuzmich set is the same as HOPV plus B and Cl, which are only in OE62.
+
+Table 1 summarizes the properties of the different data sources. In particular, we will focus on the subset marked
+in bold face and group them into (i) “B3LYP” exchange-correlation functional with a reasonably large basis set
+(QM9, Alchemy, HOPV) and (ii) “PBE0” exchange-correlation functional with a reasonably large basis set (OE62,
+HOPV). Ideally, a sufficiently “good” level of theory will produce data close to the real values. But in practice,
+there may be systematic shifts between data obtained from different levels of theory (Figure 2). We will address
+this problem with a model that makes separate predictions for B3LYP and PBE0, see Sec. 3.1 below.
+
+2.2
+Train/Validation/Test Split
+
+In machine learning, the available data is commonly split into three parts, (i) the training data for fitting the free
+parameters of the model, (ii) the validation data used to make decisions, e.g., when to stop the training process,
+and (iii) the test set to finally evaluate the accuracy of the model. For a fair evaluation, it is important that the
+three subsets are disjoint, in particular, the test shall represent the ability of the model to generalize to data that
+was not “seen” in the training.
+
+4
+
+
+Table 2: Intersections of datasets in terms of truncated InChIs (sum formula and non-hydrogen connectivity). The
+numbers on the diagonal are the counts of distinct truncated InChIs in each data source.
+
+QM9
+Alchemy
+OE62
+HOPV
+
+QM9
+114707
+18575
+340
+0
+Alchemy
+18575
+174894
+82
+0
+OE62
+340
+82
+61398
+3
+HOPV
+0
+0
+3
+347
+
+Table 3: Dataset sizes
+
+Total
+Train
+Valid.
+Test
+
+QM9
+133879
+98192
+12031
+23656
+Alchemy
+202579
+149644
+17906
+35029
+OE62
+61489
+44895
+5531
+11063
+HOPV
+4855
+3569
+412
+874
+Kuzmich2017
+78
+/
+/
+78
+
+Since the same structures may occur in several data sources, care has to be taken that the train/validation/test
+split is consistent across all sources. For example, the molecule C6H3NO2 with the molecular graph as shown in
+Figure 3 occurs both in QM9 and in Alchemy, like some 18 000 other molecules.
+
+The international chemical identifier (InChI), which is a unique identifier of a molecule [30] with a layered structure
+from coarse to fine information. This opens a convenient way of grouping similar structures together, namely
+structures that coincide in the first InChI layers. For example, if only the first two sublayers of standard InChI
+codes are used, the chemical formula and the backbone structure are the same, but the locations of hydrogens,
+charge information and the steroechemical information, as well as isotopic information may differ.
+
+The split used in work is constructed according to the following rules:
+
+1. Perform the split in terms of InChIs truncated after the second layer (molecules that differ only in later layers
+will be assigned to the same part of the split by construction).
+
+2. Assign the test set of the Alchemy contest to test.
+
+3. Assign the original Alchemy validation set to validation, except for those structures whose truncated InChIs
+are already in the test set (2% of the truncated InChIs), which go to test.
+
+4. Assign the rest of the data such that 18% and 9% of the truncated InChIs are assigned to test and validation,
+respectively. The rest is assigned to train.
+
+5. Subsequently assign the truncated InChIs of QM9, OE62, and HOPV in the same manner: Truncated InChIs
+that have occurred previously are assigned as before; The rest is filled up such that test and validation fraction
+are 18% and 9%, respectively.
+
+Table 2 collects the sizes of the different data sets and their intersections in terms of truncated InChIs. Finally,
+Table 3 collects the sizes of the train, validation and test parts that result from the procedure described above.
+
+3
+Model Architecture
+
+The machine-learning model does not question the training data; it just learns to imitate the results. As mentioned
+above (Figure 2) that there may be systematic offsets between data obtained at the one or the other level of theory.
+Our approach to deal with these systematic shifts between different data sources is that the ML model makes
+separate predictions for the B3LYP values and the PBE0 values of the frontier orbital energies.
+
+5
+
+
+3.1
+Multitask Approach
+
+The idea of multitask learning [31] is to train multiple target values in the same model. The model has a common
+part and then splits into different branches, one for each task. Here, the tasks are the B3LYP estimates and the
+PBE0 estimates. Figure 4 depicts two example architectures with a single input and multiple outputs (more details
+given below in sections 3.2 and 3.3).
+
+A given item from the training set may or may not have target values for all tasks. For those tasks where targets
+are available, errors are computed in the loss function and backpropagated through the network. Notably all tasks
+contribute to the training of the common part of network and help to learn a meaningful representation of the
+input. Since the tasks are correlated, it is expected that they benefit from each other.
+
+Molecular Structure
+
+Graph Processing
+(SchNet)
+
+MLP
+↓
+Aggregation
+
+Prediction 1
+
+MLP
+↓
+Aggregation
+
+Prediction 2
+
+. . .
+
+MLP
+↓
+Aggregation
+
+Prediction N
+. . .
+
+(a) Architecture used for Aggregation = Sum, Avg
+
+Molecular Structure
+
+Graph Processing
+(SchNet)
+
+Aggregation (Set2Set)
+↓
+MLP
+
+Prediction 1
+Prediction 2
+Prediction N
+. . .
+
+(b) Architecture used Aggregation = Set2Set
+
+Figure 4: Multitask network architectures. The multilayer perceptrons (MLP) are small neural networks.
+
+3.2
+Molecular-Graph Processing
+
+The input to the model are point clouds of atoms, which are readily interpreted as graphs, where the atoms are the
+vertices and the pairwise distances are the edges. For the backbone of our model, we use the SchNet architecture
+by Sch¨utt et al., which was designed to model atomistic systems and makes use of continuous-filter convolutional
+layers, i.e., learned interactions that respect the symmetries of the underlying physics [15]. In a nutshell, SchNet
+maps the atomic charges to a learnable, n-dimensional (here: n = 128) embedding, which is then processed by
+several (here: 6) learned interaction modules, each of them incorporating a continuous filter generator.
+
+The filter generator.
+For atoms i, j, the (continuous) distance r = ∥rj − ri∥ is Gaussian expanded, ek =
+exp
+�
+−γ(r − µk)2�
+, for equidistant µk and k = 0 . . . 24.
+This expansion passes through two dense layers with
+shifted-softplus nonlinearities, yielding W l
+i,j ∈ Rn for the l-th filter generator.
+
+The interaction module. The atom features are first transformed atom-wisely (matrix multiplication plus adding a
+bias term). Then, the continuous-filter operation lets the atoms interact with the other atoms, weighted with the
+filter, �natoms
+j=0
+xl
+j ◦ W l
+i,j, where “◦” represents the element-wise multiplication. That is, the interaction module is
+factorized: the interactions are channel-wise, while channels are mixed in the atom-wise operations. Then, there
+are three more layers inside the interaction block, atom-wise, soft-plus nonlinearity, and another atom-wise layer.
+Finally, there is a skip connection, i.e., the sum of the outcome of the described interaction chain and its input is
+returned.
+
+3.3
+Aggregation and Readout
+
+At some point, the representation on a molecular graph of arbitrary size (feature vectors per atom) has to be
+reduced to the set of output estimates, which are per molecule.
+
+The simplest way of aggregating would be to take the sum or the average. This is even the natural choice in
+
+6
+
+
+some cases. For example, the energy is an extensive quantity, and the energy of a molecule is the sum of the
+contributions from all atoms in their local environment. In fact, this is how the energy is constructed as the sum
+of local contributions in Ref. [15].
+
+Sum and Average Aggregation. These are the standard aggregation modes in the SchNet paper [15]. The (high-
+dimensional) atomic representation is reduced to the desired output dimension (one for a single regression target)
+by a small neural network (typically two affine layers with a nonlinearity in-between). Then, the contributions
+from the atomic environments are summed up or averaged, which gives the final result, see Figure 4(a).
+
+Set2Set Aggregation. The scaling of the present quantities of interest, the HOMO and LUMO energies, with the
+system size is not clear a priori. Both are related to the level spacing and tend to decrease slowly with the system
+size, but neither sum nor average is the obvious choice.
+
+Therefore, we resort to the Set2Set module that was developed by Vinyals et al. [32] to learn a fixed-length
+representation for input sets of arbitrary size. It is based on the repeated application of a long short-term memory
+(LSTM) module:
+
+• The initial LSTM input and hidden (cell) state are zeros.
+
+• Project the atom features x (one per atom) on the LSTM output q (one per molecule), apply softmax, weighted
+average r of the atom features x.
+
+• Then, feed (q, r) into the LSTM again.
+
+• After N repetitions (here, N = 3), return the vector (q, r), one for each molecule.
+
+Thus, the Set2Set module learns to generate a weighted average of the atom features. It has more expressive power
+than sum or average and, at the same time, respects the invariance with respect to the order of the input features.
+
+The Set2Set aggregation works on the atomic embedding and doubles its dimensions. Afterwards, a small neural
+network (here: 2 affine layers with a nonlinearity in-between) reduces the dimensions to the output dimension.
+Figure 4(b) represents the resulting network architecture.
+
+4
+Experiments and Results
+
+4.1
+Impact of Graph Aggregation
+
+To start with, we train a SchNet model on the smallest subset of the training data (QM9 only) with different
+aggregation modes and output modules (training details and parameters are listed in Sec. A.1):
+
+Sum. For each of the targets (HOMO, LUMO, gap), atomic contributions are obtained with a 2-layer neural
+network and summed up. Results are shown in column (a) of Fig. 5. The model achieves good accuracy on test
+data from the same distribution as the training (QM9), but is completely off for out-of-distribution data, like the
+large molecules from HOPV and Kuzmich (2017).
+
+Average. Results for average aggregation (with otherwise the same parameters) are given in panel (b) of Fig. 5.
+Average aggregation is not as far off as sum aggregation.
+
+Set2Set. The set2set output module aggregates in a flexible and learned manner, the dimension is reduced after
+aggregation. This yields even better results (panel (c) of Fig. 5) than average aggregation. Of course systematic
+deviations of the order of 1 eV are still not acceptable, but Set2Set is the best starting point for the next stage,
+extending the training set.
+
+4.2
+Impact of the Training Data
+
+We successively extend the training set by adding successively sets of larger molecules (QM9 → Alchemy → OE62
+→ HOPV), Fig. 6 (a) – (d). This reduces the significantly regression error on the sets of large molecules (HOPV
+and Kuzmich2017).
+
+From panels (e) to (d), we go in the opposite direction. Whereas (e) is trained without the small molecules, the
+
+7
+
+
+Sum
+Average
+Set2Set
+
+HOMO
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v08_sum_f
+
+qm9 (MAE=0.044eV)
+alchemy (MAE=0.427eV)
+hopv (MAE=17.112eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v08_avg
+
+qm9 (MAE=0.045eV)
+alchemy (MAE=0.194eV)
+hopv (MAE=0.835eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+qm9 (MAE=0.043eV)
+alchemy (MAE=0.193eV)
+hopv (MAE=0.452eV)
+
+LUMO
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+200
+
+150
+
+100
+
+50
+
+0
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v08_sum_f
+
+qm9 (MAE=0.039eV)
+alchemy (MAE=0.231eV)
+hopv (MAE=5.185eV)
+Kuzmich2017 (MAE=38.599eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v08_avg
+
+qm9 (MAE=0.041eV)
+alchemy (MAE=0.231eV)
+hopv (MAE=1.123eV)
+Kuzmich2017 (MAE=1.620eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+qm9 (MAE=0.038eV)
+alchemy (MAE=0.232eV)
+hopv (MAE=1.063eV)
+Kuzmich2017 (MAE=1.402eV)
+
+(a)
+(b)
+(c)
+
+Figure 5: Regression accuracy of SchNet models with different output modules, trained only on the QM9 part of
+the training data. Shown are the target-estimate pairs of 25 molecules randomly sampled from each test set. The
+mean average error (MAE) measured on the entire test set is given in the legend.
+
+errors on the QM9 and Alchemy test sets are large. Adding the datasets of small molecules (d), Improves this
+without harming the accuracy on the large molecules (only HOPV LUMO is a bit worse in (d); HOPV HOMO,
+OE62, and Kuzmich LUMO are better).
+
+The accuracy of the full model (Set2Set output module for both tasks, full training set, see Fig. 6 (d)) has shown
+errors of the magnitude 0.05 eV for HOMO and LUMO for small molecules (QM9, Alchemy) and 0.1 eV for large
+molecules and molecules with large chemical variety (OE62, HOPV, Kuzmich2017). We stress that this is already
+close to the so-called “chemical accuracy” (1 kcal/mol = 0.043eV) and should be good for practical applications.
+
+4.3
+Ablation Study
+
+Three efforts have lead to the accuracy achieved in the full model (Fig. 6 (d)): the concept of multitask training,
+the choice of the output module and the extended training set. Previously, in Sec. 4.2, we have analyzed the impact
+of the training set, given the design decisions “multi-task training” and “set2set aggregation”. In this section, we
+verify that these design decisions were actually important to achieve the accuracy reported above.
+
+4.3.1
+Multi-task learning
+
+In Table 4, the column “Main Experiment” is the multitask model, i.e., B3LYP and PBE0 tasks trained a set2set
+output module, on top of the representation learned by a common SchNet graph-processing network, as represented
+in Figure 4(b) (with N = 2 × 3 predictions because 3 outputs (HOMO, LUMO and gap) are trained for two tasks,
+B3LYP and PBE0). In the other columns, B3LYP task and PBE0 task are trained separately (Figure 4(b) with
+N = 3 predictions).
+
+For most quantities, the multi-task model achieves better accuracy. The only exception are the HOPV-PBE0
+errors, which are lower in the model trained with PBE0. But on the other hand, those quantities that are hard in
+the single-task setting (error measure larger than 0.1 eV, marked in red in the columns “B3LYP only” and “PBE0
+
+8
+
+
+Main Experiment
+�Q
+�
+�Q A
+�
+�Q A
+O
+
+�
+�Q A
+H
+O H
+
+�
+�
+H
+O H
+
+�
+
+HOMO (B3LYP)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+qm9 (MAE=0.043eV)
+alchemy (MAE=0.193eV)
+hopv (MAE=0.452eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v06
+
+qm9 (MAE=0.043eV)
+alchemy (MAE=0.049eV)
+hopv (MAE=0.323eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v07
+
+qm9 (MAE=0.042eV)
+alchemy (MAE=0.047eV)
+hopv (MAE=0.124eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v01
+
+qm9 (MAE=0.043eV)
+alchemy (MAE=0.047eV)
+hopv (MAE=0.057eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+
+HOMO-B3LYP target (eV)
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v05
+
+qm9 (MAE=0.653eV)
+alchemy (MAE=0.518eV)
+hopv (MAE=0.061eV)
+
+HOMO (PBE0)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+
+HOMO-PBE0 target (eV)
+
+8.0
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+oe62 (MAE=0.59eV)
+hopv (MAE=0.32eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+
+HOMO-PBE0 target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+4.5
+
+HOMO-B3LYP estimate (eV)
+
+multitask_model_v06
+
+oe62 (MAE=0.59eV)
+hopv (MAE=0.28eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+
+HOMO-PBE0 target (eV)
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO-PBE0 estimate (eV)
+
+multitask_model_v07
+
+oe62 (MAE=0.094eV)
+hopv (MAE=0.144eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+
+HOMO-PBE0 target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO-PBE0 estimate (eV)
+
+multitask_model_v01
+
+oe62 (MAE=0.092eV)
+hopv (MAE=0.056eV)
+
+7.5
+7.0
+6.5
+6.0
+5.5
+5.0
+
+HOMO-PBE0 target (eV)
+
+7.5
+
+7.0
+
+6.5
+
+6.0
+
+5.5
+
+5.0
+
+HOMO-PBE0 estimate (eV)
+
+multitask_model_v05
+
+oe62 (MAE=0.100eV)
+hopv (MAE=0.059eV)
+
+LUMO (B3LYP)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+qm9 (MAE=0.038eV)
+alchemy (MAE=0.232eV)
+hopv (MAE=1.063eV)
+Kuzmich2017 (MAE=1.402eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v06
+
+qm9 (MAE=0.041eV)
+alchemy (MAE=0.047eV)
+hopv (MAE=0.757eV)
+Kuzmich2017 (MAE=1.285eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v07
+
+qm9 (MAE=0.039eV)
+alchemy (MAE=0.048eV)
+hopv (MAE=0.394eV)
+Kuzmich2017 (MAE=0.382eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+4
+
+3
+
+2
+
+1
+
+0
+
+1
+
+2
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v01
+
+qm9 (MAE=0.042eV)
+alchemy (MAE=0.048eV)
+hopv (MAE=0.066eV)
+Kuzmich2017 (MAE=0.119eV)
+
+4
+3
+2
+1
+0
+1
+2
+
+LUMO-B3LYP target (eV)
+
+4
+
+3
+
+2
+
+1
+
+0
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v05
+
+qm9 (MAE=1.884eV)
+alchemy (MAE=1.605eV)
+hopv (MAE=0.055eV)
+Kuzmich2017 (MAE=0.225eV)
+
+LUMO (PBE0)
+
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+
+LUMO-PBE0 target (eV)
+
+3.0
+
+2.5
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+0.0
+
+0.5
+
+1.0
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v08
+
+oe62 (MAE=0.76eV)
+hopv (MAE=1.13eV)
+
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+
+LUMO-PBE0 target (eV)
+
+3.5
+
+3.0
+
+2.5
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+0.0
+
+LUMO-B3LYP estimate (eV)
+
+multitask_model_v06
+
+oe62 (MAE=0.60eV)
+hopv (MAE=0.66eV)
+
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+
+LUMO-PBE0 target (eV)
+
+4.0
+
+3.5
+
+3.0
+
+2.5
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+LUMO-PBE0 estimate (eV)
+
+multitask_model_v07
+
+oe62 (MAE=0.094eV)
+hopv (MAE=0.117eV)
+
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+
+LUMO-PBE0 target (eV)
+
+4.0
+
+3.5
+
+3.0
+
+2.5
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+LUMO-PBE0 estimate (eV)
+
+multitask_model_v01
+
+oe62 (MAE=0.094eV)
+hopv (MAE=0.069eV)
+
+4.0
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+
+LUMO-PBE0 target (eV)
+
+4.0
+
+3.5
+
+3.0
+
+2.5
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+0.0
+
+LUMO-PBE0 estimate (eV)
+
+multitask_model_v05
+
+oe62 (MAE=0.100eV)
+hopv (MAE=0.055eV)
+
+(a)
+(b)
+(c)
+(d)
+(e)
+
+Figure 6: Regression accuracy of SchNet models with Set2Set output modules trained on different subsets of the
+training data, as indicated above (Q = QM9, A = Alchemy, O = OE62, H = HOPV). Note that the panels for the
+PBE0 values in columns (a) and (b) compare B3LYP estimates to PBE0 target values (gray background) because,
+without PBE0 targets in the training data, the model cannot make separate PBE0 estimates.
+
+only”), the errors reduce significantly when the tasks are trained together (column “Main Experiment”).
+We
+conclude that the concept of multitask-training is indeed important for the accuracy and reliability of the model.
+
+4.3.2
+Aggregation modules
+
+We have shown above (Sec. 4.1) that the Set2Set output module is best if the training represents only a small part
+of the test distribution (QM9 only). Here we repeat this investigation with the full training set. Table 5 collects
+the results. The columns labeled “Main Experiment” is the model SchNet(6) + Set2Set output module.
+
+Average aggregation. The model with the average output modules is competitive on small molecules (QM9 and
+Alchemy), which are well represented in the training set. It also performs slightly better on the HOMO(PBE0)
+task on the HOPV test. However, it performs much worse on those four tests and quantities that are already
+difficult for the baseline model Set2Set (error measure above 0.1 eV, marked in red in the table). Altogether, the
+average output modules has 12 error measures above 0.1 eV.
+
+Sum aggregation. When moving on from average to sum, the picture is similar: Sum performs worse than average
+
+9
+
+
+Table 4: Comparing the multi-task model “Main Experiment” and the single-task models (B3LYP only and PBE0
+only) on the basis of the error measures mean error (ME), mean absolute error (MAE), root-mean-square error
+(RMSE), all measured in eV. Bold: best MAE or RMSE value in a given row. Red: error measures above 0.1 eV.
+
+Main Experiment
+B3LYP only
+PBE0 only
+Quantity
+Test
+ME
+MAE
+RMSE
+ME
+MAE
+RMSE
+ME
+MAE
+RMSE
+
+HOMO
+(B3LYP)
+
+QM9
+0.006
+0.043
+0.063
+0.008
+0.046
+0.068
+Alchemy
+0.001
+0.047
+0.077
+−0.002
+0.052
+0.082
+HOPV
+0.004
+0.057
+0.090
+−0.008
+0.084
+0.127
+
+LUMO
+(B3LYP)
+
+QM9
+0.003
+0.042
+0.062
+0.002
+0.042
+0.063
+Alchemy
+0.003
+0.048
+0.086
+−0.001
+0.050
+0.090
+HOPV
+−0.047
+0.066
+0.088
+−0.046
+0.115
+0.181
+
+Kuzmich2017
+0.010
+0.119
+0.162
+0.479
+0.518
+0.661
+
+HOMO
+(PBE0)
+OE62
+0.001
+0.092
+0.135
+0.001
+0.101
+0.148
+
+HOPV
+−0.001
+0.056
+0.081
+−0.010
+0.056
+0.072
+
+LUMO
+(PBE0)
+OE62
+0.009
+0.094
+0.142
+0.012
+0.097
+0.146
+
+HOPV
+−0.047
+0.069
+0.095
+−0.014
+0.058
+0.083
+
+Table 5: Measures of the regression error (in eV) for different output modules. Bold: best MAE or RMSE value
+in a given row. Red: error measures above 0.1 eV. The “Main Experiment” is SchNet(6) + Set2Set trained on the
+full training set.
+
+Main Experiment
+SchNet(6) + Average
+SchNet(6) + Sum
+Quantity
+Test
+ME
+MAE
+RMSE
+ME
+MAE
+RMSE
+ME
+MAE
+RMSE
+
+HOMO
+(B3LYP)
+
+QM9
+0.006
+0.043
+0.063
+0.004
+0.043
+0.064
+0.008
+0.049
+0.079
+Alchemy
+0.001
+0.047
+0.077
+0.000
+0.048
+0.076
+0.004
+0.055
+0.085
+HOPV
+0.004
+0.057
+0.090
+0.006
+0.071
+0.108
+−0.070
+0.222
+0.368
+
+LUMO
+(B3LYP)
+
+QM9
+0.003
+0.042
+0.062
+0.001
+0.041
+0.059
+0.010
+0.046
+0.068
+Alchemy
+0.003
+0.048
+0.086
+−0.001
+0.048
+0.087
+0.010
+0.052
+0.088
+HOPV
+−0.047
+0.066
+0.088
+−0.069
+0.145
+0.262
+−0.087
+0.167
+0.325
+
+Kuzmich2017
+0.010
+0.119
+0.162
+0.107
+0.199
+0.240
+−1.572
+1.697
+2.363
+
+HOMO
+(PBE0)
+OE62
+0.001
+0.092
+0.135
+0.006
+0.109
+0.155
+−0.011
+0.152
+0.253
+
+HOPV
+−0.001
+0.056
+0.081
+0.006
+0.051
+0.073
+−0.063
+0.185
+0.274
+
+LUMO
+(PBE0)
+OE62
+0.009
+0.094
+0.142
+0.009
+0.109
+0.158
+0.005
+0.117
+0.169
+
+HOPV
+−0.047
+0.069
+0.095
+−0.050
+0.143
+0.258
+−0.102
+0.154
+0.318
+
+and set2set on those tests and quantities that are already difficult for average and set2set. In total, the sum
+output module yields 16 error measures (out of 33) that are above 0.1 eV. The estimates of the LUMO values for
+the Kuzmich (2017) data are systematically shifted: The mean of the ground-truth LUMO values is −3.30 eV, but
+the mean estimated LUMO is −4.86 eV, manifesting unphysical scaling of the estimate with the system size.
+
+In conclusion, out of the three output modules considered, the Set2Set output module remains the most reliable
+one, especially on challenging data.
+
+5
+Conclusions
+
+Achievements. We have achieved a model to predict the energies of frontier orbitals HOMO and LUMO. It is
+reliable for large molecules, which are relevant for organic electronics and photovoltaics.
+
+Enhanced SchNet model. In practice, it is not enough for a model to be good on a particular subspace of chemical
+compound space, like, for example, the small molecules of the QM9 dataset. Rather, the reliability of a model is
+determined by the difficult test data (here: OE62, HOPV and Kuzmich). There is no point in reducing the test
+errors on QM9 below chemical accuracy on QM9-like data if the errors on large molecules are much larger.
+
+10
+
+
+We have achieved such a model with reasonable errors on the large molecules (i) by incorporating the Set2Set
+output module for improved generalization, (ii) by extending the training set with data from four different sources,
+and (iii) by introducing a multitask ansatz to handle the domain shifts due to different levels of theory in different
+sources.
+
+Outlook and Future Work. The method is not restricted organic photovoltaics and is in general transferable to
+any problem in materials discovery where material properties are available as training data, think for example of
+organic light-emitting diodes, organic circuits, materials for batteries or supercapacitors.
+
+Our model can be used in future explorations of the chemical compound space in the search for better materials
+for organic photovoltaics. As indicated in Fig. 1, we have interdisciplinary approaches in mind that incorporate
+machine learning for fast prediction, but also algorithms that generate new candidates, as well as ab-initio methods
+and experiments for further verification and technical exploitation.
+
+Approaches for molecular geometry generation range from genetic algorithms [33, 34] over fragment-based ap-
+proaches [35] to autoencoder-based methods [36, 37, 38] and generative neural networks [39, 40]. One challenge for
+using the current model for such applications is that it is trained with the exact molecular geometries as obtained
+from DFT geometry optimizations. If the model is to be applied to structures that come from generating algorithm,
+the geometries will not be exact and may result in unexpected predictions by the model. Thus, the sensitivity
+of the model accuracy with respect to noise in the input coordinates needs be investigated. The problem can
+probably be alleviated by training the model with random noise added to the input geometries. Note, however,
+that this would change the regression task from “What are the properties of this molecular geometry?” to the
+question “Imagine this geometry relaxes to its near-by ground state, what would be its properties?”
+
+Acknowledgements
+
+This work is supported by the European Union’s Horizon 2020 research and innovation program under the Marie
+Sklodowska-Curie grant agreement No 883256.
+
+A
+Experimental Section
+
+This section contains technical details that should facilitate the reproduction of the results presented in this Article.
+
+A.1
+Training Details
+
+The common SchNet network is configured with 6 interaction units, learning a 128-dimensional representation of
+the atomic environments. The MLPs before/after the aggregation have 2 layers with the size of the hidden-layer
+being 64 for the Sum and Average architectures (Fig. 4(a)) and 32 for the Set2Set architecture (Fig. 4(b)).
+
+The Adam optimizer is with learning-rate decay from 10−4 to 5·10−7 (ReduceLROnPlateauHook with decay factor
+0.5 and patience parameter = 25, i.e., the learning rate is reduced if the training error has not reduced in the last
+25 epochs). After each pass through the training data (epoch), the regression error is computed on the validation
+set. The model with the lowest validation error is kept (early-stopping criterion based on the validation error).
+Typically, the best validation accuracy is achieved close to the first or second learning-rate decay. Training takes
+approximately 350 epochs (about 5 days on a nvidia Quadro GP100 GPU).
+
+A.2
+Code and Data
+
+The code to reproduce this work is available at github.com/chgaul/maltose, DOI: 10.5281/zenodo.7328587, includ-
+ing the trained models and scripts to download the primary data from their respective sources. The maltose code
+contains
+
+1. the maltose library, which provides the extensions to the SchNet code described in this article,
+
+2. a collection of scripts to execute and analyze the experiments of this article.
+
+11
+
+
+A.2.1
+The Maltose Library
+
+The library is installed as a python module and provides the set2set output module and multitask functionality.
+It builds upon the schnetpack package [41] (at least v1.0.1), which again makes use of the “Atomic Simulation
+Environment (ASE)” [42] and pytorch-1.8.0. The implementation of the Set2Set output module depends on the
+packages pytorch geometric and pytorch scatter.
+
+A.2.2
+Running experiments
+
+Data preparation. The scripts for for data download and prepare the datasets (i.e., to convert to ase format)
+are located at scripts/primary data/ in the maltose repository, as well as the script that creates the unified
+train/test/validation split. These scripts depend on the xyz2mol code from https://github.com/jensengroup/
+xyz2mol, which implements the algorithm from Ref. [43], and on the chemical toolkit RDKit [44]
+
+Configuration and execution of experiments. The experiment configurations are provided in scripts/configs/.
+There are scripts to run the training, to evaluate the errors, and to create the plots included in this article.
+
+References
+
+[1]
+B. L¨ussem, M. Riede, and K. Leo. “Doping of organic semiconductors”. physica status solidi (a) 210 (2013),
+pp. 9–43. issn: 1862-6319. doi: 10.1002/pssa.201228310.
+
+[2]
+Y. Firdaus et al. “Key Parameters Requirements for Non-Fullerene-Based Organic Solar Cells with Power
+Conversion Efficiency >20%”. Advanced Science 6 (2019), p. 1802028. doi: 10.1002/advs.201802028.
+
+[3]
+G. Han and Y. Yi. “Molecular Insight into Efficient Charge Generation in Low-Driving-Force Nonfullerene
+Organic Solar Cells”. Accounts of Chemical Research 55 (2022), pp. 869–877. doi: 10.1021/acs.accounts.
+1c00742. PMID: 35230078.
+
+[4]
+G. Yu et al. “Polymer Photovoltaic Cells: Enhanced Efficiencies via a Network of Internal Donor-Acceptor
+Heterojunctions”. Science 270 (1995), pp. 1789–1791. doi: 10.1126/science.270.5243.1789.
+
+[5]
+J. Zhao et al. “Efficient organic solar cells processed from hydrocarbon solvents”. Nature Energy 1 (2016),
+p. 15027. doi: 10.1038/nenergy.2015.27.
+
+[6]
+A. Wadsworth et al. “Critical review of the molecular design progress in non-fullerene electron acceptors
+towards commercially viable organic solar cells”. Chem. Soc. Rev. 48 (6 2019), pp. 1596–1625. doi: 10.
+1039/C7CS00892A.
+
+[7]
+K. Chong et al. “Realizing 19.05% Efficiency Polymer Solar Cells by Progressively Improving Charge Ex-
+traction and Suppressing Charge Recombination”. Advanced Materials 34 (2022), p. 2109516. doi: https:
+//doi.org/10.1002/adma.202109516.
+
+[8]
+W. Gao et al. “Achieving 19% Power Conversion Efficiency in Planar-Mixed Heterojunction Organic Solar
+Cells Using a Pseudosymmetric Electron Acceptor”. Advanced Materials 34 (2022), p. 2202089. doi: https:
+//doi.org/10.1002/adma.202202089.
+
+[9]
+M. C. Scharber et al. “Design Rules for Donors in Bulk-Heterojunction Solar Cells—Towards 10% Energy-
+Conversion Efficiency”. Advanced Materials 18 (2006), pp. 789–794. doi: 10.1002/adma.200501717.
+
+[10]
+D. Padula, J. D. Simpson, and A. Troisi. “Combining electronic and structural features in machine learning
+models to predict organic solar cells properties”. Materials Horizons 6 (2019), pp. 343–349. doi: 10.1039/
+C8MH01135D.
+
+[11]
+D. Padula and A. Troisi. “Concurrent optimization of organic donor–acceptor pairs through machine learn-
+ing”. Advanced Energy Materials 9 (2019), p. 1902463. doi: 10.1002/aenm.201902463.
+
+[12]
+D. Rogers and M. Hahn. “Extended-Connectivity Fingerprints”. Journal of Chemical Information and Mod-
+eling 50 (2010), pp. 1549–9596. doi: 10.1021/ci100050t.
+
+12
+
+
+[13]
+D. K. Duvenaud et al. “Convolutional Networks on Graphs for Learning Molecular Fingerprints”. In: Ad-
+vances in Neural Information Processing Systems. Ed. by C. Cortes et al. Vol. 28. Curran Associates,
+Inc., 2015. url: https://papers.nips.cc/paper/2015/hash/f9be311e65d81a9ad8150a60844bb94c-
+Abstract.html.
+
+[14]
+S. Kearnes et al. “Molecular graph convolutions: moving beyond fingerprints”. Journal of Computer-Aided
+Molecular Design 30 (2016), pp. 1573–4951. doi: 10.1007/s10822-016-9938-8.
+
+[15]
+K. T. Sch¨utt et al. “SchNet – A deep learning architecture for molecules and materials”. The Journal of
+Chemical Physics 148 (2018), p. 241722. doi: 10.1063/1.5019779.
+
+[16]
+C. Chen et al. “Graph Networks as a Universal Machine Learning Framework for Molecules and Crystals”.
+Chemistry of Materials 31 (2019), pp. 3564–3572. doi: 10.1021/acs.chemmater.9b01294.
+
+[17]
+F. A. Faber et al. “Prediction Errors of Molecular Machine Learning Models Lower than Hybrid DFT Error”.
+J. Chem. Theory Comput. (2017), pp. 5255–5264. doi: 10.1021/acs.jctc.7b00577.
+
+[18]
+J. Gilmer et al. “Message Passing Neural Networks”. In: Machine Learning Meets Quantum Physics. Ed. by
+K. T. Sch¨utt et al. Springer, 2020.
+
+[19]
+R. Ramakrishnan et al. “Quantum chemistry structures and properties of 134 kilo molecules”. Scientific
+Data 1 (2014), p. 140022. doi: 10.1038/sdata.2014.22.
+
+[20]
+G. Chen et al. “Alchemy: A Quantum Chemistry Dataset for Benchmarking AI Models”. arXiv abs/1906.09427
+(2019). url: http://arxiv.org/abs/1906.09427.
+
+[21]
+A. Stuke et al. “Atomic structures and orbital energies of 61,489 crystal-forming organic molecules”. Scientific
+Data 7 (2020), p. 58. issn: 2052-4463. url: https://doi.org/10.1038/s41597-020-0385-y.
+
+[22]
+S. A. Lopez et al. “The Harvard organic photovoltaic dataset”. Scientific Data 3 (2016), pp. 1–7. doi:
+10.1038/sdata.2016.86.
+
+[23]
+A. Kuzmich et al. “Trends in the electronic and geometric structure of non-fullerene based acceptors for
+organic solar cells”. Energy Environ. Sci. 10 (2 2017), pp. 395–401. doi: 10.1039/C6EE03654F.
+
+[24]
+J. P. Perdew, K. Burke, and M. Ernzerhof. “Generalized Gradient Approximation Made Simple”. Phys. Rev.
+Lett. 77 (18 1996), pp. 3865–3868. doi: 10.1103/PhysRevLett.77.3865.
+
+[25]
+A. Tkatchenko and M. Scheffler. “Accurate Molecular Van Der Waals Interactions from Ground-State Elec-
+tron Density and Free-Atom Reference Data”. Phys. Rev. Lett. 102 (7 2009), p. 073005. doi: 10.1103/
+PhysRevLett.102.073005.
+
+[26]
+V. Blum et al. “Ab initio molecular simulations with numeric atom-centered orbitals”. Computer Physics
+Communications 180 (2009), pp. 2175–2196. issn: 0010-4655. doi: https://doi.org/10.1016/j.cpc.
+2009.06.022.
+
+[27]
+C. Adamo and V. Barone. “Toward reliable density functional methods without adjustable parameters: The
+PBE0 model”. The Journal of Chemical Physics 110 (1999), pp. 6158–6170. doi: 10.1063/1.478522.
+
+[28]
+J. P. Perdew, M. Ernzerhof, and K. Burke. “Rationale for mixing exact exchange with density functional
+approximations”. The Journal of Chemical Physics 105 (1996), pp. 9982–9985. doi: 10.1063/1.472933.
+
+[29]
+M. Sinstein et al. “Efficient Implicit Solvation Method for Full Potential DFT”. Journal of Chemical Theory
+and Computation 13 (2017), pp. 5582–5603. doi: 10.1021/acs.jctc.7b00297. PMID: 28910530.
+
+[30]
+S. R. Heller et al. “InChI, the IUPAC International Chemical Identifier”. Journal of Cheminformatics 7
+(2015), p. 23. issn: 1758-2946. url: https://doi.org/10.1186/s13321-015-0068-4.
+
+[31]
+R. Caruana. “Multitask Learning”. Machine Learning 28 (1997), pp. 41–75. doi: 10.1023/A:1007379606734.
+
+[32]
+O. Vinyals, S. Bengio, and M. Kudlur. Order Matters: Sequence to sequence for sets. ICLR. 2015. arXiv:
+1511.06391 [stat.ML].
+
+[33]
+S. Arapan, P. Nieves, and S. Cuesta-L´opez. “A high-throughput exploration of magnetic materials by using
+structure predicting methods”. Journal of Applied Physics 123 (2018), p. 083904. doi: 10.1063/1.5004979.
+
+[34]
+E. S. Henault, M. H. Rasmussen, and J. H. Jensen. “Chemical space exploration: how genetic algorithms
+find the needle in the haystack”. PeerJ Physical Chemistry 2 (2020), e11. doi: 10.7717/peerj-pchem.11.
+
+13
+
+
+[35]
+D. Flam-Shepherd, A. Zhigalin, and A. Aspuru-Guzik. “Scalable Fragment-Based 3D Molecular Design with
+Reinforcement Learning”. arXiv abs/2202.00658 (2022). eprint: 2202.00658.
+
+[36]
+M. J. Kusner, B. Paige, and J. M. Hern´andez-Lobato. “Grammar Variational Autoencoder”. In: Proceedings
+of the 34th International Conference on Machine Learning. Ed. by D. Precup and Y. W. Teh. Vol. 70.
+Proceedings of Machine Learning Research. PMLR, 2017, pp. 1945–1954. url: http://proceedings.mlr.
+press/v70/kusner17a.html.
+
+[37]
+M. Simonovsky and N. Komodakis. “GraphVAE: Towards Generation of Small Graphs Using Variational
+Autoencoders”. In: Artificial Neural Networks and Machine Learning – ICANN 2018. Ed. by V. K˚urkov´a et
+al. Cham: Springer International Publishing, 2018, pp. 412–422. isbn: 978-3-030-01418-6. doi: 10.1007/978-
+3-030-01418-6_41.
+
+[38]
+D. Flam-Shepherd, T. C. Wu, and A. Aspuru-Guzik. “MPGVAE: Improved Generation of Small Organic
+Molecules using Message Passing Neural Nets”. Machine Learning: Science and Technology (2021). doi:
+10.1088/2632-2153/abf5b7.
+
+[39]
+N. Gebauer, M. Gastegger, and K. Sch¨utt. “Symmetry-adapted generation of 3d point sets for the targeted
+discovery of molecules”. In: Advances in Neural Information Processing Systems. Ed. by H. Wallach et al.
+Vol. 32. Curran Associates, Inc., 2019. url: https://proceedings.neurips.cc/paper/2019/hash/
+a4d8e2a7e0d0c102339f97716d2fdfb6-Abstract.html.
+
+[40]
+N. W. A. Gebauer et al. “Inverse design of 3d molecular structures with conditional generative neural
+networks”. Nature Communications 13 (2021), p. 973. doi: 10.1038/s41467-022-28526-y.
+
+[41]
+K. T. Sch¨utt et al. “SchNetPack: A Deep Learning Toolbox For Atomistic Systems”. Journal of Chemical
+Theory and Computation 15 (2019), pp. 448–455. doi: 10.1021/acs.jctc.8b00908.
+
+[42]
+A. H. Larsen et al. “The atomic simulation environment—a Python library for working with atoms”. Journal
+of Physics: Condensed Matter 29 (2017), p. 273002. doi: 10.1088/1361-648x/aa680e.
+
+[43]
+Y. Kim and W. Y. Kim. “Universal Structure Conversion Method for Organic Molecules: From Atomic
+Connectivity to Three-Dimensional Geometry”. Bulletin of the Korean Chemical Society 36 (2015), pp. 1769–
+1777. doi: 10.1002/bkcs.10334.
+
+[44]
+G. Landrum et al. RDKit: Open-source cheminformatics. 2021 09 2 release. Version Release 2021 09 2. 2021.
+doi: 10.5281/zenodo.5589557.
+
+14
+
+

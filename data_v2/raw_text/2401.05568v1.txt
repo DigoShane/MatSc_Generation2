@@ -1,0 +1,1146 @@
+Phase discovery with active learning:
+
+Application to structural phase transitions in equiatomic NiTi
+
+Jonathan Vandermause,1, 2 Anders Johansson,2 Yucong
+
+Miao,2 Joost J. Vlassak,2 and Boris Kozinsky2, 3, ∗
+
+1Department of Physics, Harvard University,
+
+Cambridge, Massachusetts 02138, USA
+
+2John A. Paulson School of Engineering and Applied Sciences,
+
+Harvard University, Cambridge, MA 02138, USA
+
+3Robert Bosch LLC, Research and Technology Center, Cambridge, MA 02139, USA
+
+(Dated: January 12, 2024)
+
+Abstract
+
+Nickel titanium (NiTi) is a protypical shape-memory alloy used in a range of biomedical and
+
+engineering devices, but direct molecular dynamics simulations of the martensitic B19′ → B2
+
+phase transition driving its shape-memory behavior are rare and have relied on classical force
+
+fields with limited accuracy. Here, we train four machine-learned force fields for equiatomic NiTi
+
+based on the LDA, PBE, PBEsol, and SCAN DFT functionals. The models are trained on the
+
+fly during NPT molecular dynamics, with DFT calculations and model updates performed auto-
+
+matically whenever the uncertainty of a local energy prediction exceeds a chosen threshold. The
+
+models achieve accuracies of 1-2 meV/atom during training and are shown to closely track DFT
+
+predictions of B2 and B19′ elastic constants and phonon frequencies. Surprisingly, in large-scale
+
+molecular dynamics simulations, only the SCAN model predicts a reversible B19′ ↔ B2 phase
+
+transition, with the LDA, PBE, and PBEsol models predicting a reversible transition to a previ-
+
+ously uncharacterized low-volume phase, which we hypothesize to be a new stable high-pressure
+
+phase. We examine the structure of the new phase and estimate its stability on the temperature-
+
+pressure phase diagram. This work establishes an automated active learning protocol for studying
+
+displacive transformations, reveals important differences between DFT functionals that can only
+
+be detected in large-scale simulations, provides an accurate force field for NiTi, and identifies a
+
+new phase.
+
+∗ bkoz@seas.harvard.edu
+
+1
+
+arXiv:2401.05568v1  [cond-mat.mtrl-sci]  10 Jan 2024
+
+
+I.
+INTRODUCTION
+
+The bimetallic alloy nickel titanium (NiTi) exhibits a range of fascinating behaviors,
+
+including superelasticity and the shape-memory effect. Because of its unique properties,
+
+NiTi is used in a range of biomedical, aerospace, and robotics applications [1]. Its shape-
+
+memory behavior is driven by a structural phase transition between a high-temperature
+
+B2 austenite phase and a low-temperature B19′ martensite phase at ∼ 340 K [2]. Direct
+
+molecular dynamics simulations of the martensitic phase transition in NiTi could shed light
+
+on the microscopic mechanisms of the shape-memory effect and even guide the rational
+
+design of shape-memory alloys with tunable properties, but an accurate atomistic description
+
+of the stable phases of equiatomic NiTi has posed a number of theoretical challenges over
+
+the last two decades. The principal computational tool available for studying the microsopic
+
+properties of NiTi, density functional theory (DFT), has revealed a complex picture of its
+
+potential energy surface, with several distinct phases lying close in energy to the convex hull
+
+of the phase diagram [3–8]. For example, DFT predicts the minimum-energy phase at zero
+
+Kelvin to be the orthorombic B33 phase (space group Cmcm) rather than the B19′ phase
+
+(space group P21/m) reported in experiments, with the energy gap between the two as small
+
+as 8 meV/atom [4]. A recent ab initio molecular dynamics study demonstrated that B19′
+
+has lower free energy than B33 above 50 K, providing evidence that B19′ is stabilized by
+
+entropic effects [8]. However, there has to date been no direct ab initio simulation of the
+
+martensitic phase transition, due to the extreme computational cost that a sufficiently large
+
+simulation would require.
+
+A more computationally feasible approach to simulating the martensitic phase transition
+
+is to use an empirical interatomic potential or force field to drive the simulation, as the
+
+cost of energy and force prediction with a classical force field scales only linearly with the
+
+size of the system. However, parameterizing an accurate classical force field that captures
+
+the rich and subtle potential energy surface of NiTi is a formidable challenge. A number
+
+of classical force fields for NiTi have been developed over the years [9–17], with the 2NN
+
+MEAM model of [15] specifically targeting the martensitic phase transition. These classical
+
+models rely on strict functional forms, with a fairly small number of parameters fit to a
+
+manually constructed DFT database or a small set of experimentally measured properties.
+
+In the last decade, machine learning (ML) based approaches have dramatically increased
+
+2
+
+
+the flexibility of classical force fields, opening up the possibility of linear-scaling models that
+
+achieve very high accuracy relative to their ab initio reference data [18–22]. A highly ac-
+
+curate ML force field for NiTi would help address the fundamental challenge of simulating
+
+the martensitic phase transition at ab initio accuracy, offering both quantum accuracy and
+
+efficiency of a classical force field. While many early ML force fields were restricted to rela-
+
+tively simple single-element systems [23–25], recently a neural network based force field was
+
+developed for NiTi based on the PBE DFT functional [26]. However, a reversible martensitic
+
+phase transition was reported with this force field only in a very small 6x4x4 supercell, with
+
+manually selected phases included in the training set and stress labels excluded.
+
+Here, we train four highly accurate ML force fields for equiatomic NiTi based on the LDA,
+
+PBE, PBEsol, and SCAN DFT functionals. We use our recently developed active learning
+
+methodology [27–29] to autonomously train the models “on the fly” during molecular dy-
+
+namics. Structural phase transitions are directly observed during training, with all models
+
+predicting the B19′ → B2 transition on heating at zero pressure. On cooling, however, the
+
+LDA, PBE, and PBEsol models predict transitions from B2 to a previously uncharacterized
+
+phase, which we call M2. Only the SCAN model predicts the martensitic B2 → B19′ phase
+
+transition. The results are confirmed in much larger cooling/heating simulations of 12, 168
+
+atoms, which show reversible B2 → M2 predicted by the LDA, PBE, and PBEsol models
+
+and a reversible B2 → B19′ predicted by the SCAN model. We hypothesize that the new
+
+M2 phase is stable at high pressure.
+
+II.
+RESULTS
+
+A.
+On-the-fly training of NiTi force fields
+
+Fig. 1 illustrates our autonomous active learning approach to training NiTi force fields
+
+during molecular dynamics simulations. We train many-body sparse Gaussian process (SGP)
+
+models on four DFT functionals: LDA, PBE, PBEsol, and SCAN (see Sec. A, Methods
+
+for details). To sample different phases of NiTi in an unbiased fashion, we perform two
+
+independent 50-ps on-the-fly training simulations of 144-atom NiTi structures in the NPT
+
+ensemble at zero pressure, i.e. with cell lengths and angles allowed to freely change. The
+
+first is a cooling simulation that begins in the B2 austenite phase at 1000 K and terminates
+
+3
+
+
+b
+
+c
+
+e
+
+f
+
+PBE on-the-fly training
+a
+SCAN on-the-fly training
+d
+
+Uncert.
+
+0
+
+1
+
+heating
+cooling
+
+250 K
+1500 K
+1000 K
+50 K
+250 K
+1500 K
+1000 K
+50 K
+
+FIG. 1. On-the-fly training of NiTi force fields. (a, d) Snapshots from PBE and SCAN training
+
+simulations. Atoms are colored by uncertainty in the local energy prediction. (b, e) Potential
+
+energy predictions during the cooling and heating simulations. DFT potential energies are shown
+
+in black, with vertical lines indicating changes in temperature.
+(c, f) Atomic volumes during
+
+training. For clarity, a moving average is plotted in dark red and blue.
+
+at 50 K (blue lines, Fig. 1(b-f)); the second is a heating simulation that begins in the B19′
+
+martensite phase at low temperature and terminates at 1500 K (red lines, Fig. 1(b-f)).
+
+In both the cooling and heating simulations, temperature shocks are introduced every 5
+
+ps during the first half of the simulation (vertical lines, Fig. 1(b-f)) to induce structural
+
+phase transitions during training. Example snapshots from the beginning and end of both
+
+simulations are shown in Fig. 1(a, d) for the PBE and SCAN models, illustrating the changes
+
+in cell shape and size observed during the simulations.
+
+Our training protocol is based on our previously introduced active learning method [27,
+
+29], with individual MD steps driven by a Bayesian SGP model that is automatically updated
+
+4
+
+
+when high-uncertainty local environments are encountered in the simulation (see Sec. B,
+
+Methods for details). In each training simulation, the model starts from scratch, with no
+
+data initially stored in the training set. DFT calculations (shown in black in Fig. 1(b,e)) are
+
+performed whenever the uncertainty of a local energy prediction exceeds a fixed prediction
+
+threshold. When a DFT calculation is performed, the training set of the model is updated
+
+with the potential energy, atomic forces and virial stress tensor obtained from the calculation,
+
+and subsequent MD steps are taken with the refined model. In general, the models display
+
+excellent agreement with DFT during training, with typical errors around 1 meV/atom for
+
+energies, 50 meV/˚A for forces, and 0.1 GPa for stresses in all training simulations (see Figs.
+
+S5-S8).
+
+Structural phase transitions are observed in all zero pressure training simulations, with
+
+heating simulations displaying the expected B19′ → B2 transition. This is most clearly seen
+
+in plots of the cell lengths and angles as a function of time (Figs. S1-S4), with sharp changes
+
+in the cell observed between t = 15 and t = 20 ps as the system is heated above 1000 K.
+
+Surprisingly, in the cooling simulations, the expected B2 → B19′ was observed with the
+
+SCAN model only, as indicated by the sharp increase in atomic volume (blue line, Fig. 1(f))
+
+and the formation of a monoclinic distortion in the unit cell (Fig. S2) observed at t ≈ 18 ps.
+
+Structural phase transitions are also observed with the PBE, LDA, and PBEsol models
+
+during cooling, but to lower-volume structures that are inconsistent with the expected B19′
+
+martensite phase.
+
+Visualizations of the structures obtained in each of the four cooling simulations are pre-
+
+sented in Fig. S9. The structures are drawn from the final picosecond of the simulations, and
+
+subsequently relaxed with the final trained models to eliminate residual forces and stresses.
+
+The relaxed SCAN structure has space group P21/m and exhibits a monoclinic distortion
+
+and elongated ⃗c lattice vector, consistent with B19′ martensite (Fig. S9(b)). The PBE,
+
+LDA, and PBEsol relaxed structures, on the other hand, have a rhombic prism unit cell
+
+and exhibit the orthorombic space group Cmcm. Curiously, this is the same space group as
+
+the ground state B33 phase of NiTi first characterized in [4], but the 144-atom orthorombic
+
+structures we observe are not consistent with B33 as they cannot be reduced to a simple
+
+4-atom primitive cell and have significantly smaller atomic volume. To our best knowledge,
+
+this low-volume phase has not been characterized before, but is the stable phase predicted
+
+by our LDA, PBE, and PBEsol models upon cooling of B2 NiTi below the transition tem-
+
+5
+
+
+MEAM
+
+PBE
+
+Exp.
+
+SCAN
+
+PBEsol
+
+LDA
+
+B2
+B19’
+
+FIG. 2. Cohesive energy versus volume of B2 and B19′ NiTi predicted by the four models trained
+
+in this work (LDA, black; PBEsol, green; PBE, blue; and SCAN, magenta) and by the MEAM
+
+model of Ref. [15] (red). DFT cohesive energies are shown as dots for B2 and triangles for B19′.
+
+Experimental estimates of the cohesive energy and atomic volume of B2 NiTi derived from Refs.
+
+[30–32] are shown as a gold star.
+
+perature.
+
+B.
+Model validation
+
+We validate our models by computing a range of challenging properties and comparing
+
+against DFT and a recent 2NN-MEAM NiTi force field [15]. We first consider predictions of
+
+cohesive energies as a function of atomic volume for the B2 and B19′ phases (Fig. 2). The
+
+plotted volumes range between 86% and 114% of the equilibrium volumes and are obtained
+
+by applying isotropic strains to the fully relaxed B2 and B19′ structures predicted by each
+
+model. This allows us to examine model performance over a wide range of pressures between
+
+6
+
+
+approximately −20 and 40 GPa that were not encountered in the zero-pressure training
+
+simulations. DFT cohesive energies are plotted for a subset of these strained structures and
+
+show excellent agreement with our models over the entire range of volumes. For reference,
+
+we include experimental estimates of the cohesive energy and atomic volume of B2 NiTi
+
+derived from Refs. [30–32] (gold star, Fig. 2). The four DFT functionals overestimate the
+
+cohesive energy of B2 and underestimate the atomic volume, with LDA showing the most
+
+severe disagreement with experiment.
+The MEAM force field is in the best agreement
+
+with experiment of the five force field models, in part because the experimentally measured
+
+cohesive energies of pure Ni and Ti were directly incorporated into the fit.
+
+We next consider the elastic constants of B2 and B19′ NiTi. Predictions of the bulk
+
+modulus and three independent elastic constants of the B2 phase are plotted in Fig. S10,
+
+with generally good agreement between DFT and the machine-learned force fields, despite
+
+the absence of any relaxed or low-temperature B2 structures in the training set of the models.
+
+The MEAM model is in better agreement with experiment than DFT for the C11 and C12
+
+constants, but overestimates C44 by more than 130%.
+
+Predicting the thirteen independent elastic constants of the monoclinic B19′ phase repre-
+
+sents an even more stringent test of the machine-learned force fields, and to our knowledge
+
+these constants have not been reported with any NiTi force field in the literature. The pre-
+
+dictions of our PBE-trained model are plotted in Fig. 3 and compared against PBE DFT,
+
+displaying excellent agreement to within ∼ 10 GPa for all thirteen elastic constants. Simi-
+
+lar agreement is observed with the SCAN, LDA, and PBEsol models (Figs. S11-S13). Our
+
+models achieve higher accuracy on the B19′ elastic constants than on the B2 constants,
+
+likely because many low-temperature B19′ structures were sampled during the on-the-fly
+
+heating simulations. We also include in Fig. 3 predictions made with the MEAM model of
+
+Ref. [15], which was also trained on PBE reference data. While the MEAM model gives
+
+accurate predictions of four of the thirteen B19′ elastic constants (C12, C44, C55, and C45),
+
+it disagrees severely with DFT on the remaining nine, with errors of more than 100 GPa for
+
+C11, C33, C66, and C16.
+
+As an additional validation of the PBE-trained force field, we plot the vibrational phonon
+
+frequencies of the B2 and B19′ phases of NiTi in Fig. 4. Correct description of the B2 phonon
+
+frequencies is an interesting test of model transferability, as the model was trained on finite-
+
+temperature B2 structures above 300 K while the phonon frequencies are derived from forces
+
+7
+
+
+ML
+DFT
+MEAM
+
+FIG. 3. Elastic constants of B19′ NiTi predicted with the PBE-trained model (dark blue), with
+
+PBE DFT (light blue), and with the MEAM model of Ref. [15].
+
+on structures only slightly perturbed from fully relaxed B2. We see good agreement between
+
+the ML-predicted phonons and PBE DFT (blue and black lines, Fig. 4(a)), with negative
+
+phonon frequencies near the M point in the Brillouin zone correctly reproduced. The MEAM
+
+model of Ref. [15] predicts qualitatively accurate phonon frequencies relative to PBE DFT,
+
+but is less accurate than the PBE-trained ML model. We plot the phonon frequencies of
+
+B19′ martensite in Fig. 4b, and observe excellent agreement between the PBE-trained ML
+
+model and DFT throughout the Brillouin zone. The MEAM B19′ phonon spectrum is in
+
+severe disagreement with PBE DFT, with frequencies overestimated by more than 100% for
+
+the highest-frequency optical branch (see Fig. S14).
+
+C.
+Large-scale MD
+
+Finally, we perform large-scale molecular dynamics simulations with the ML models to
+
+probe the structural phase transition in equiatomic NiTi supercells of 12, 168 atoms (see Fig.
+
+8
+
+
+b
+
+a
+
+MEAM
+ML
+DFT
+
+B
+Γ
+A
+Γ
+E
+Z
+Y
+
+Γ
+X
+M
+Γ
+R
+M
+
+Γ
+
+FIG. 4. B2 and B19′ phonon frequencies predicted with the PBE-trained model (blue), with PBE
+
+DFT (dotted), and with the MEAM model of Ref. [15].
+
+5(a)). We first check the stability of B19′ martensite by performing heating simulations of
+
+pristine B19′ NiTi from 100 to 1500 K with a heating rate of 1 K/ps (light colors, Figs. 5
+
+and S15). All models predict that B19′ remains stable until transforming to B2, indicated
+
+by sharp drops in the atomic volume. The B19′ → B2 phase transition is observed at 750 K
+
+for the LDA-trained model, 930 K for SCAN, 780 K for PBE, and 750 K for PBEsol.
+
+Next, we perform cooling/heating simulations with each model to examine whether the
+
+B19′ → B2 phase transition is reversible (dark colors, Fig. 5(b)). For each of the four
+
+models, the simulation begins in a pristine B2 supercell and is equilibrated for 10 ps at
+
+1000 K. The system is then gradually cooled to 100 K and heated to 1500 K at a rate of
+
+1 K/ps. All models predict reversible structural phase transitions between ∼ 200 and 700 K.
+
+Consistent with the training simulations, the LDA, SCAN, and PBEsol models predict a
+
+9
+
+
+transition to the M2 phase, indicated by sharp drops in the atomic volume. Only the SCAN
+
+model predicts a reversible transition to B19′ martensite, with the B2 → B19′ transition
+
+observed at 400 K and the B19′ → B2 transition observed at 680 K.
+
+We investigate the possibility that M2 is stabilized at elevated pressures by perform-
+
+ing cooling/heating and compression/decompression simulations at a range of pressures and
+
+temperatures with the SCAN-trained force field. The results of these simulations are sum-
+
+marized in the phase diagram shown in Fig. 6, with a clear transition to a low-volume M2
+
+phase observed between 12 and 16 GPa (see Figs. S16 and S17 for representative plots of
+
+the system volume during these pressure and temperature sweeps). Computed XRD spec-
+
+tra establish that the observed low-volume phase is distinct from B19′ martensite (Fig.
+
+S18), but the spectra of this phase differ across the three force fields, indicating that the
+
+functionals agree in predicting a low volume phase but produce different atomic packing.
+
+Furthermore, symmetry analysis of frames extracted from molecular dynamics simulations
+
+of the M2 phase failed to reveal a space group larger than P1 or P−1, suggesting M2 is a
+
+low-symmetry, possibly incommensurate, phase with properties that are highly sensitive to
+
+the DFT functional.
+
+III.
+DISCUSSION
+
+We have developed four force fields for equiatomic NiTi based on the LDA, PBE, PBEsol,
+
+and SCAN DFT functionals. The models were trained autonomously during molecular dy-
+
+namics, without any constraints applied to the unit cell as the 144-atom model systems were
+
+heated and cooled. During these training simulations, the models are in remarkable agree-
+
+ment with the DFT reference to within about 1 meV/atom on potential energy predictions,
+
+allowing us to generate MD trajectories at ab initio accuracy at a fraction of the cost of ab
+
+initio molecular dynamics. Nearly all previous computational studies of equiatomic NiTi
+
+have relied on a single DFT functional, most often PBE, and explored either the zero-Kelvin
+
+potential energy surface or the finite-temperature free energies of specific phases. Our train-
+
+ing simulations eliminate these restrictions, allowing us to directly observe which phases
+
+form as the system is cooled or heated past the phase-transition temperature.
+
+Surprisingly, on cooling of the B2 austenite phase, our LDA, PBE, and PBEsol models
+
+predict a transition to a lower-volume phase that does not match any known phases of
+
+10
+
+
+equiatomic NiTi. We have labelled this phase M2. Only our SCAN model predicts the
+
+B2 → B′
+19 expected from experiments. Similar behavior is observed in much larger cooling
+
+and heating 12, 168-atom simulations of the phase transition, with the LDA, PBE, and
+
+PBEsol models predicting a sharp decrease in atomic volume on cooling, consistent with the
+
+zero-Kelvin volume of the M2 phase.
+
+We have validated the models on a range of challenging properties, and shown excellent
+
+agreement with DFT in predictions of the elastic constants and phonon frequencies of B2 and
+
+B19′ NiTi, showing dramatic improvement over a previous MEAM force field. The accuracy
+
+of our models suggests that the departure from experiment observed at low temperature is
+
+not due to inaccuracies of the force field models in reproducing the DFT reference, but rather
+
+due to inaccuracies in DFT itself, at least with the LDA, PBE, and PBEsol functionals.
+
+This has the surprising implication that the most common DFT functionals used in the past
+
+to study NiTi, most often PBE, are in qualitative disagreement with experiment at zero
+
+pressure, predicting the more densely packed M2 phase rather than B19′ martensite. This,
+
+however, eluded detection because large-scale DFT-accurate simulations were not possible
+
+before the possibility to develop machine learning force fields.
+
+It is possible that the M2 phase predicted by our LDA, PBE, and PBEsol models is
+
+stabilized at higher pressure. The phase diagram of equiatomic NiTi has not been exten-
+
+sively explored in experiments.
+A recent DFT study has proposed candidate phases of
+
+NiTi at high pressures [33], but the analysis was based on zero-temperature enthalpies and
+
+therefore excluded entropic effects. Because M2 is more densely packed than B19′, it may
+
+become favored as pressure increases. We intend to analyze both the enthalpies and finite-
+
+temperature stability of the M2 phase at elevated pressures, to investigate whether M2 may
+
+form in experiments in the high-pressure limit.
+
+IV.
+METHODS
+
+A.
+Sparse Gaussian process models
+
+The models discussed in this work are sparse Gaussian processes trained with the
+
+FLARE++ code, as discussed in greater detail in Ref. [29].
+Here, we briefly summa-
+
+rize the key features of the SGP model and report our choice of hyperparameters. The SGP
+
+11
+
+
+predicts the local energy ε of a local environment ρi centered at atom i by summing over a
+
+set of representative local environments S,
+
+ε(ρi) =
+�
+
+s∈S
+k(di, ds)αs,
+(1)
+
+where k is a kernel function quantifying the similarity of two inputs, di and ds are descriptors
+
+of the local environments ρi and ρs, and α is a vector of training coefficients. Atomic forces
+
+and virial stresses are computed from gradients of local energy predictions with respect to
+
+the atomic positions and cell vectors. In this work, we use a normalized dot product kernel
+
+with integer power ξ = 2,
+
+k(d1, d2) = σ2
+�d1 · d2
+
+d1d2
+
+�ξ
+.
+(2)
+
+The signal variance σ2 is a continuous hyperparameter that is optimized together with the
+
+energy, force and stress noise parameters σE, σF and σS by maximizing the log marginal
+
+likelihood of the SGP. For the descriptor vectors di, we use the B2 term of the many-body
+
+Atomic Cluster Expansion [34] with Nrad = 8 Chebyshev radial basis functions, ℓmax = 3 in
+
+the spherical harmonics expansion, and a quadratic cutoff with radius rcut = 5 ˚A.
+
+Uncertainties in the local energy ε(ρi) are computed as the square root of a normalized
+
+predictive variance Vϵ, defined as
+
+Vε = 1 − 1
+
+σ2kεSK−1
+SSk⊺
+εS,
+(3)
+
+where kεS is the vector of kernels between ρi and the environments ρs in the sparse set, and
+
+KSS is the matrix of kernels between pairs of sparse environments.
+
+Final models for each DFT functional are constructed by pooling together the structures
+
+collected during the heating and cooling training simulations and training a single SGP on all
+
+structures. The optimized hyperparameters σ, σE, σF, and σS from the heating simulations
+
+are used in the final trained models.
+The final models are trained on cohesive energies
+
+rather than potential energies by correcting raw potential energy labels with isolated-atom
+
+energies of Ni and Ti. To accelerate predictions, the final models are mapped onto equivalent
+
+parametric models that are quadratic in the descriptor di and that have a prediction cost
+
+that is independent of the size of the sparse set [29].
+
+12
+
+
+Time t (ps)
+Cooling T (K)
+Heating T (K)
+
+0
+1000
+250
+
+5
+750
+500
+
+10
+500
+750
+
+15
+250
+1000
+
+20
+100
+1250
+
+25
+50
+1500
+
+TABLE I. Temperature schedule for the 50-ps on-the-fly training simulations.
+
+B.
+On-the-fly training
+
+Training simulations are performed in the NPT ensemble using the Atomic Simulation
+
+Environment (ASE) [35].
+We use a timestep of 5 fs and characteristic thermostat and
+
+barostat timescales of 25 and 75 fs, respectively.
+Each training simulation is initialized
+
+with a 144-atom supercell of B2 or B19′ NiTi with the experimentally measured lattice
+
+parameters from Refs. [36, 37]. Atomic positions of these initial structures are randomly
+
+jittered by up to 0.1 ˚A to give nonzero forces on the first frame. The temperature schedule
+
+for the training simulations is reported in Table I.
+
+During the training simulations, hyperparameter optimization of σ, σE, σF, and σS is
+
+performed with the L-BFGS-B algorithm implemented in SciPy [38] with the energy noise
+
+σE constrained to be greater than 1 meV/atom. Hyperparameter optimization is performed
+
+after each of the first Nhyp = 10 updates to the training set, after which the hyperparameters
+
+are held fixed. The sparse set of the SGP is initialized with 7 arbitrarily chosen environments
+
+from the first frame. DFT is called whenever the predictive uncertainty on a local energy
+
+prediction exceeds 1%. After the DFT calculation is performed, the potential energy, atomic
+
+forces, and six independent components of the virial stress tensor are added to the training
+
+set of the SGP, and local environments with predictive uncertainty greater than 0.5% are
+
+added to the sparse set. After each update to the model, a minimum of 10 MD steps are
+
+taken with the SGP before the next DFT calculation is performed.
+
+13
+
+
+C.
+DFT details
+
+DFT calculations are performed with plane-wave basis sets and the projector augmented-
+
+wave (PAW) method implemented in the Vienna Ab Initio Simulation Package (VASP) [39].
+
+We use a plane-wave kinetic energy cutoff of 336.9 eV and a k-point mesh of ∼ 4000 k points
+
+per reciprocal atom. The Methfessel-Paxton smearing method is used with a broadening
+
+value of 0.2 eV. The 3d94s1 and 3d34s1 electrons are included in the valence for Ni and Ti,
+
+respectively. For elastic constant and phonon frequency calculations, an electronic energy
+
+convergence criteria of 10−7 eV is used. Phonon frequencies are calculated using the frozen
+
+phonon method as implemented in Phonopy [40].
+For on-the-fly DFT calculations, the
+
+default convergence criteria of 10−4 eV is used. Except for isolated-atom calculations for Ni
+
+and Ti, the calculations are not spin polarized. For the isolated-atom calculations, a vacuum
+
+size of 8 ˚A was used.
+
+D.
+MD details
+
+Large-scale MD simulations are performed with LAMMPS using a custom pair style
+
+available in the FLARE++ repository. Simulations are performed in the NPT ensemble at
+
+zero pressure. We use a timestep of 2 fs, a temperature damping parameter of 0.2 ps, and a
+
+stress damping parameter of 2 ps in all simulations. Atomic volumes reported in Fig. 5 are
+
+averaged over 500 consecutive MD steps.
+
+V.
+ACKNOWLEDGMENTS
+
+This work was supported by the National Science Foundation under Award No. DMR-
+
+1808162 and the Harvard University Materials Research Science and Engineering Center
+
+Grant No. DMR-2011754.
+
+14
+
+
+a
+
+b
+
+PBE
+
+SCAN
+
+LDA
+
+B2 (12,168 atoms)
+B19’ (12,168 atoms)
+
+1 nm
+
+FIG. 5. Large-scale MD simulations of phase transitions in equiatomic NiTi at zero pressure. (a)
+
+Snapshots of B2 NiTi from the SCAN cooling/heating simulation (left) and of B19′ NiTi from the
+
+SCAN heating simulation (right). (b) Cooling/heating simulation of B2 NiTi (dark) and heating
+
+simulation of B19′ NiTi (light colors). Zero-Kelvin volumes of B19′ (triangle) and M2 (square)
+
+are shown for reference. To avoid overlap in the plot, the PBEsol simulations are reported in Fig.
+
+S15.
+
+15
+
+
+0
+5
+10
+15
+20
+
+P [GPa]
+
+200
+
+400
+
+600
+
+800
+
+T [K]
+
+B2
+
+B19′
+M2
+
+FIG. 6. Phase diagram predicted by the SCAN-trained force field. Vertical gray lines indicate
+
+hysteresis windows of fixed-pressure temperature sweeps performed between 0 and 20 GPa, while
+
+horizontal lines indicate approximate phase-transition pressures derived from fixed-temperature
+
+pressure sweeps performed between 100 and 600 K (see Figs. S16-17 for example simulations).
+
+Estimated phase boundaries, shown in black, are derived from linear fits to the centers of the
+
+transition windows.
+
+16
+
+
+[1] Jaronie Mohd Jani, Martin Leary, Aleksandar Subic, and Mark A Gibson, “A review of shape
+
+memory alloy research, applications and opportunities,” Materials & Design (1980-2015) 56,
+
+1078–1113 (2014).
+
+[2] J Frenzel, Easo P George, A Dlouhy, Ch Somsen, MF-X Wagner, and G Eggeler, “Influence
+
+of Ni on martensitic phase transformations in NiTi shape memory alloys,” Acta Materialia
+
+58, 3444–3458 (2010).
+
+[3] Xiangyang Huang, Claudia Bungaro, Vitaliy Godlevsky, and Karin M Rabe, “Lattice insta-
+
+bilities of cubic NiTi from first principles,” Physical Review B 65, 014108 (2001).
+
+[4] Xiangyang Huang, Graeme J Ackland, and Karin M Rabe, “Crystal structures and shape-
+
+memory behaviour of NiTi,” Nature materials 2, 307–311 (2003).
+
+[5] David Holec, Martin Fri´ak, Anton´ın Dlouh`y,
+and J¨org Neugebauer, “Ab initio study of
+
+pressure stabilized NiTi allotropes: Pressure-induced transformations and hysteresis loops,”
+
+Physical Review B 84, 224119 (2011).
+
+[6] Jifeng Wang and Huseyin Sehitoglu, “Resolving quandaries surrounding NiTi,” Applied
+
+Physics Letters 101, 081907 (2012).
+
+[7] Anubhav Jain, Shyue Ping Ong, Geoffroy Hautier, Wei Chen, William Davidson Richards,
+
+Stephen Dacek, Shreyas Cholia, Dan Gunter, David Skinner, Gerbrand Ceder, et al., “Com-
+
+mentary: The materials project: A materials genome approach to accelerating materials in-
+
+novation,” APL materials 1, 011002 (2013).
+
+[8] Justin B Haskins, Alexander E Thompson, and John W Lawson, “Ab initio simulations of
+
+phase stability and martensitic transitions in NiTi,” Physical Review B 94, 214110 (2016).
+
+[9] D Farkas, D Roqueta, A Vilette, and K Ternes, “Atomistic simulations in ternary Ni-Ti-al
+
+alloys,” Modelling and Simulation in Materials Science and Engineering 4, 359 (1996).
+
+[10] WS Lai and BX Liu, “Lattice stability of some Ni-Ti alloy phases versus their chemical
+
+composition and disordering,” Journal of Physics: Condensed Matter 12, L53 (2000).
+
+[11] H Ishida and Y Hiwatari, “Md simulation of martensitic transformations in TiNi alloys with
+
+meam,” Molecular Simulation 33, 459–461 (2007).
+
+[12] Daniel Mutter and Peter Nielaba, “Simulation of structural phase transitions in NiTi,” Phys-
+
+ical Review B 82, 224201 (2010).
+
+17
+
+
+[13] Ken-ichi Saitoh, Keisuke Kubota, and Tomohiro Sato, “Atomic-level structural change in Ni-
+
+Ti alloys under martensite and amorphous transformations,” Technische Mechanik-European
+
+Journal of Engineering Mechanics 30, 269–279 (2010).
+
+[14] Yuan Zhong, Ken Gall, and Ting Zhu, “Atomistic study of nanotwins in NiTi shape memory
+
+alloys,” Journal of Applied Physics 110, 033532 (2011).
+
+[15] Won-Seok Ko, Blazej Grabowski, and J¨org Neugebauer, “Development and application of a
+
+Ni-Ti interatomic potential with high predictive accuracy of the martensitic phase transition,”
+
+Physical Review B 92, 134107 (2015).
+
+[16] Young-Kwang Kim, Hong-Kyu Kim, Woo-Sang Jung, and Byeong-Joo Lee, “Development and
+
+application of Ni-Ti and Ni-al-Ti 2nn-meam interatomic potentials for Ni-base superalloys,”
+
+Computational Materials Science 139, 225–233 (2017).
+
+[17] Sepideh Kavousi, Brian R Novak, Michael I Baskes, Mohsen Asle Zaeem, and Dorel Moldovan,
+
+“Modified embedded-atom method potential for high-temperature crystal-melt properties of
+
+Ti–Ni alloys and its application to phase field simulation of solidification,” Modelling and
+
+Simulation in Materials Science and Engineering 28, 015006 (2019).
+
+[18] J¨org Behler and Michele Parrinello, “Generalized neural-network representation of high-
+
+dimensional potential-energy surfaces,” Physical review letters 98, 146401 (2007).
+
+[19] Chris M Handley, Glenn I Hawe, Douglas B Kell, and Paul LA Popelier, “Optimal construc-
+
+tion of a fast and accurate polarisable water potential based on multipole moments trained
+
+by machine learning,” Physical Chemistry Chemical Physics 11, 6365–6376 (2009).
+
+[20] Albert P Bart´ok, Mike C Payne, Risi Kondor, and G´abor Cs´anyi, “Gaussian approximation
+
+potentials: The accuracy of quantum mechanics, without the electrons,” Physical review
+
+letters 104, 136403 (2010).
+
+[21] Aidan P Thompson, Laura P Swiler, Christian R Trott, Stephen M Foiles,
+and Garritt J
+
+Tucker, “Spectral neighbor analysis method for automated generation of quantum-accurate
+
+interatomic potentials,” Journal of Computational Physics 285, 316–330 (2015).
+
+[22] Mitchell A Wood and Aidan P Thompson, “Extending the accuracy of the snap interatomic
+
+potential form,” The Journal of chemical physics 148, 241721 (2018).
+
+[23] Wojciech J Szlachta, Albert P Bart´ok, and G´abor Cs´anyi, “Accuracy and transferability of
+
+gaussian approximation potential models for tungsten,” Physical Review B 90, 104108 (2014).
+
+18
+
+
+[24] Albert P Bart´ok, James Kermode, Noam Bernstein, and G´abor Cs´anyi, “Machine learning a
+
+general-purpose interatomic potential for silicon,” Physical Review X 8, 041048 (2018).
+
+[25] Volker L Deringer, Miguel A Caro, and G´abor Cs´anyi, “A general-purpose machine-learning
+
+force field for bulk and nanostructured phosphorus,” Nature communications 11, 1–11 (2020).
+
+[26] Hao Tang, Yin Zhang, Qing-Jie Li, Haowei Xu, Yuchi Wang, Yunzhi Wang, and Ju Li, “High
+
+accuracy neural network interatomic potential for NiTi shape memory alloy,” Acta Materialia
+
+238, 118217 (2022).
+
+[27] Jonathan Vandermause, Steven B Torrisi, Simon Batzner, Yu Xie, Lixin Sun, Alexie M Kol-
+
+pak, and Boris Kozinsky, “On-the-fly active learning of interpretable bayesian force fields for
+
+atomistic rare events,” npj Computational Materials 6, 1–11 (2020).
+
+[28] Yu Xie, Jonathan Vandermause, Lixin Sun, Andrea Cepellotti, and Boris Kozinsky, “Bayesian
+
+force fields from active learning for simulation of inter-dimensional transformation of stanene,”
+
+npj Computational Materials 7, 1–10 (2021).
+
+[29] Jonathan Vandermause, Yu Xie, Jin Soo Lim, Cameron J Owen, and Boris Kozinsky, “Active
+
+learning of reactive bayesian force fields: Application to heterogeneous hydrogen-platinum
+
+catalysis dynamics,” arXiv preprint arXiv:2106.01949 (2021).
+
+[30] O Kubaschewski, H Villa,
+and WA Dench, “The reaction of titanium tetrachloride with
+
+hydrogen in contact with various refractories,” Transactions of the Faraday Society 52, 214–
+
+222 (1956).
+
+[31] Charles Kittel, Paul McEuen, and Paul McEuen, Introduction to solid state physics, Vol. 8
+
+(Wiley New York, 1996).
+
+[32] SD Prokoshkin, AV Korotitskiy, Vladimir Brailovski, S Turenne, I Yu Khmelevskaya,
+and
+
+IB Trubitsyna, “On the lattice parameters of phases in binary Ti–Ni shape memory alloys,”
+
+Acta Materialia 52, 4479–4492 (2004).
+
+[33] Guangtao Liu, Hanyu Liu, Xiaolei Feng, and Simon AT Redfern, “High-pressure phase tran-
+
+sitions of nitinol NiTi to a semiconductor with an unusual topological structure,” Physical
+
+Review B 97, 140104 (2018).
+
+[34] Ralf Drautz, “Atomic cluster expansion for accurate and transferable interatomic potentials,”
+
+Physical Review B 99, 014104 (2019).
+
+[35] Ask Hjorth Larsen, Jens Jørgen Mortensen, Jakob Blomqvist, Ivano E Castelli, Rune Chris-
+
+tensen, Marcin Du�lak, Jesper Friis, Michael N Groves, Bjørk Hammer, Cory Hargus, et al.,
+
+19
+
+
+“The atomic simulation environment — a Python library for working with atoms,” Journal
+
+of Physics: Condensed Matter 29, 273002 (2017).
+
+[36] E Goo and R Sinclair, “The b2 to r transformation in Ti50Ni47fe3 and Ti49. 5Ni50. 5 alloys,”
+
+Acta Metallurgica 33, 1717–1723 (1985).
+
+[37] Yasuhiro Kudoh, Masayasu Tokonami, S Miyazaki, and Kazuhiro Otsuka, “Crystal structure
+
+of the martensite in Ti-49.2 at.% Ni alloy analyzed by the single crystal x-ray diffraction
+
+method,” Acta Metallurgica 33, 2049–2056 (1985).
+
+[38] Pauli Virtanen et al., “SciPy 1.0:
+Fundamental Algorithms for Scientific Computing in
+
+Python,” Nature Methods 17, 261–272 (2020).
+
+[39] G. Kresse, “Ab-initio molecular-dynamics for liquid-metals,” J. Non-Cryst. Solids 193, 222–
+
+229 (1995).
+
+[40] Atsushi Togo and Isao Tanaka, “First principles phonon calculations in materials science,”
+
+Scripta Materialia 108, 1–5 (2015).
+
+20
+
+

@@ -14,3 +14,7 @@ print(output.tokens)
 #o/p was -> ['ĠYBa', '2', 'Cu', '3', 'O', '7', 'Ġexhibits', 'Ġsuperconductivity', 'Ġat', 'ĠTc', 'ĠâīĪ', 'Ġ92', 'K', '.']
 #Ġ -> special byte-level marker for word start
 
+print(tokenizer.encode("superconductivity").tokens)
+print(tokenizer.encode("Δ(T)").tokens)
+print(tokenizer.encode("ν_x(y)").tokens)
+

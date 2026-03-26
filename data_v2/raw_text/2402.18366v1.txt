@@ -1,0 +1,1211 @@
+ESTIMATION OF RAILWAY VEHICLE RESPONSE FOR TRACK
+
+GEOMETRY EVALUATION USING BRANCH FOURIER NEURAL
+
+OPERATOR
+
+Qingjing Wang
+qjwang@my.swjtu.edu.cn
+Wenhao Ding
+whding@my.swjtu.edu.cn
+Qing He
+qhe@swjtu.edu.cn
+Ping Wang
+wping@home.swjtu.edu.cn
+
+ABSTRACT
+
+In railway transportation, the evaluation of track geometry is an indispensable requirement to ensure
+the safety and comfort of railway vehicles. A promising approach is to directly use vehicle dynamic
+responses to assess the impact of track geometry defects. However, the computational cost of
+obtaining the dynamic response of the vehicle body using dynamics simulation methods is large.
+Thus, it is important to obtain the dynamic response of the vehicle–track coupled system efficiently
+and accurately. In this work, a branch Fourier neural operator (BFNO) model is proposed to obtain the
+dynamic response of the vehicle–track coupled system. The model takes into account the nonlinear
+relationship of the vehicle-track coupled system and realizes the fast and accurate estimation of the
+system dynamic response. The relative L2 loss (rLSE) of BFNO model is 2.04%, which is reduced
+by 64%, compared with the traditional neural network (CNN-GRU). In the frequency domain, BFNO
+model achieves the effective estimation of the dynamic response of the system within the primary
+frequency range. Compared with the existing methods, our proposed model can make predictions at
+unseen time steps, enabling predictions from low to high time resolutions. Meanwhile, our proposed
+model is superior to commercial software in terms of efficiency. In the evaluation of track geometry,
+users can use pre-trained BFNO to obtain the dynamic response with almost no computational cost.
+
+Keywords Vehicle–track coupled dynamics · Fourier neural operator · Ordinary differential equations · Bayesian
+optimization
+
+1
+Introduction
+
+The evaluation of track geometry is an indispensable requirement to ensure the safety and comfort of railway vehicles.
+Currently, the amplitude of measured track geometry parameters is used to detect and categorize track geometry defects.
+Although experience generally confirms the safety of this approach, the correlation between defect amplitude and
+vehicle response is relatively low. The performance of the bogies has a significant impact on the safety and reliability
+of high-speed trains [1]. A promising approach is to directly use vehicle dynamic responses to assess the impact of
+track geometry defects [2]. It is impractical to systematically measure all responses of the vehicle system,leading to
+the natural consideration of obtaining system responses through dynamic simulation methods. Although dynamic
+simulations have been widely applied in the railway industry, the limited application scope, incomplete functionality,
+and low computational efficiency of software solvers often necessitate the combined use of multiple software tools
+to complete simulation analysis [3]. For instance, in Ref. [4], three commercial software (MATLAB, SIMPACK and
+ANSYS) were used in wheel polygonal wear simulation, which not only requires a high level of expertise of engineers
+
+arXiv:2402.18366v1  [physics.app-ph]  28 Feb 2024
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+but also results in high computational costs. Thus, it is important to obtain the dynamic response of the vehicle–track
+coupled system efficiently and accurately.
+
+With the rise of big data mining techniques and artificial intelligence, some areas related to economy and personal
+safety, such as stock price forecasts [5, 6], slope and flood disaster prediction [7, 8, 9], and structural optimisation [10],
+have developed rapidly. A number of machine learning approaches have also been proposed to provide faster numerical
+alternatives. Existing machine learning based methods can be broadly categorized into the following two categories:
+(1) Data-driven finite-dimensional operators for learning Euclidean space mappings from numerical simulation data
+[11, 12, 13], and (2) Physics-informed machine learning, which integrates data and physical models and implements
+them via neural networks or other kernel-based regression networks [14, 15]. The first approach, commonly used
+network architectures such as multilayer perceptron (MLP) [16], convolutional neural networks (CNN) [17], recurrent
+neural networks (RNN) [18], etc. Some data-driven models have also been used to obtain vehicle system responses.
+Kraft et al [2] used a black-box model based on RNN neural networks to predict acceleration using track irregularity.
+Ye et al. [19] proposed the MBSNet model, which uses short-term simulation results from a vehicle–track vertical
+coupled dynamics model to predict long-term system dynamic responses. However, data-driven models are prone to
+overfitting and therefore require large data sets. In addition, the results produced by these models are related to the
+specific grids of inputs and outputs used in the numerical simulation dataset [20]. A representative example reflecting
+the second approach is physics-informed neural networks (PINNs), which use neural finite difference methods. The
+training process is often sensitive to selection of hyperparameters, retraining and fine-tuning of the PINN are required
+when the system parameters change.
+
+To address the above limitations, the concept of neural operators has been proposed. Neural operators directly learn
+infinite-dimensional mappings from any function parameter dependencies to solutions, with a key design choice being
+the selection of operator layers. Commonly used operator layers include Graph Neural Operator (GNO) [21], Low-rank
+Neural Operator (LNO) [22], Multipole Graph Neural Operator (MGNO) [23], and Fourier Neural Operator (FNO)
+[24]. FNO utilizes the calculus properties of the Fast Fourier Transform for convolution operations, which provides
+the best performance compared to other operator layers [22]. The FNO-based has shown excellent performance in
+multibody dynamics problems with great generalization ability [25, 26]. At the same time, the proposed DeepONet [27]
+shares the same concept with the neural operator. The DeepONet processes data on two parallel networks (branch and
+stem networks), dealing with input and output functions, respectively. Then the mapping operators for parameterized
+partial differential equations can be learned by combing the outputs of the two networks. This model has derived a
+few applied research directions as well, including the inference of the electroconvection Multiphysics fields [28] and
+reliability analysis of dynamic systems [29].
+
+In this paper, we extend the FNO-based architecture to vehicle–track spatially coupled dynamics systems, enabling
+the rapid acquisition of responses from the vehicle system. Considering the different frequency ranges of the car body
+and bogie frames, we propose the BFNO structure. Compared with CNN [17], CNN-GRU and original FNO model
+architectures, our proposed model has better estimation performance.
+
+This study provides the following contributions:
+
+(1) A vehicle–track spatially coupled dynamic model was built that considers the dynamic coupling between the
+wheel and rail.
+
+(2) For the first time, we propose a branch Fourier neural operator (BFNO) architecture that separates the car body
+from bogie, enabling the independent learning of their respective mapping relationships within the system.
+
+(3) Our proposed model is able to achieve good estimation in both time and frequency domains, and model
+achieves predictions from low to high time resolutions.
+
+The remainder of this paper is organized as follows. Section 2 introduces the vehicle–track spatially coupled
+dynamics model. Section 3 presents an overview of the proposed methodology, including FNO theory, the architecture
+of the BFNO model, equation weight normalization technique, and loss function design. Section 4 presents the
+
+2
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+generation of data, the selection of hyperparameters in neural networks and shows the comparison of estimation results
+between different models. Finally, conclusions and discussions are given in Section 5.
+
+2
+Vehicle–track spatially coupled dynamics model
+
+The vehicle–track spatially coupled dynamics model introduced in this study was proposed by Zhai [30]. The schematic
+diagram is shown in Figure 1. The vehicle was set as a multi-rigid body assembly, including one car body, two bogie
+frames, and four wheelsets. The car body, bogie frames, and wheelsets were modelled as rigid bodies. Each rigid body
+was assigned five degrees of freedom (DOFs) including the lateral displacement Y, vertical displacement Z, roll angle ϕ,
+yaw angle ψ, and pitch angle β. The longitudinal motion was known and characterised by a constant speed V . Thus, the
+total number of DOFs of the vehicle model was 35. The double-layer flexible track model is composed of two parallel
+steel rails, installed on sleepers through elastic fasteners. The first layer of the track is composed of rails, discretely
+supported on fasteners in the form of finite-length simply supported Euler beams. Both vertical and lateral bending
+and torsional deformation of the rails are taken into account. Each sleeper in the second layer of the track is treated
+as a rigid body with three degrees of freedom: lateral displacement, vertical displacement and roll. The connection
+between the rails and the sleepers (fasteners) and between the sleepers and the subgrade are represented by a set of
+linear spring-damping elements in the lateral and vertical directions. The vehicle and track subsystems were connected
+through wheel–rail interaction forces. To spatially couple the vehicle and track subsystems at the wheel–rail interface,
+we used the wheel–rail coupling model developed by Chen and Zhai [31], which considers the motions of the rail in the
+vertical, lateral, and torsional directions, as shown in Figure 2. The wheel–rail interaction forces mainly include the
+wheel–rail normal contact and tangential forces. They were calculated using nonlinear Hertzian elastic contact and a
+combination of Kalker’s linear creep theory and the Shen-Hedrick-Elkins nonlinear model. For brevity, the detailed
+wheel–rail calculation method presented in [32, 33] is not presented here.
+
+Vehicle–track spatially coupled dynamics is a typical multibody dynamics (MBD) problem. The vibration equation
+for the vehicle and track subsystems is expressed as Equation (1).
+
+M ¨X(t) + C ˙X(t) + KX(t) = P(t)
+(1)
+
+where M, C, and K are the generalized mass, damping, and stiffness matrices, respectively; X, ˙X, and ¨X are the vectors
+of displacement, velocity, and acceleration, respectively; P is the vector of the applied loads of the system; t represents
+time.
+
+Figure 1: Vehicle–track spatially coupled dynamics model.
+
+3
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Figure 2: Wheel–rail coupled model.
+
+Inspired by the Newmark-β implicit method, the Zhai method was used to obtain approximate solutions to the
+equations, as shown in Equation (2):
+� Xn+1 = Xn + ˙Xn∆t +
+� 1
+
+2 + ψ
+� ¨Xn∆t2 − ψ ¨Xn−1∆t2
+˙Xn+1 = ˙Xn + (1 + φ) ¨Xn∆t − φ ¨Xn−1∆t
+(2)
+
+where t is the time step, and ψ, φ are free parameters that control the stability and numerical dissipation of the algorithm.
+The best calculation accuracy and numerical stability were achieved when the values of both parameters were 1/2.
+Subscripts n-1, n, and n+1 represent the previous, current, and subsequent integration step, respectively.
+
+Equation (1) is a set of second-order ODEs. The vibration equations of the vehicle subsystem, including the car
+body, bogie frames, and wheelsets are coupled ordinary differential equations; however, the vibration equations of the
+track subsystem are partial differential equations (PDEs). To solve Equation (1), they must be converted into ODEs.
+
+In engineering, the mode superposition method (MSUP) [34] is often used to convert PDEs into ODEs. The MSUP
+is a classic and powerful technique that approximates the dynamic response of a structure by superposition of its small
+number of eigenmodes, as shown in Equation (3).
+
+u =
+
+n
+�
+
+i=1
+ϕiqi
+(3)
+
+where u is the solution field (displacement); ϕi is the i-th order mode shape function; qi is the coordinate value of the
+i-th mode of u; n is the number of modes used.
+
+In this study, the rails were modelled as Euler beams, their vibration equations were fourth-order PDEs. The
+vertical vibration differential equation (Equation (4)) of the rail is taken as an example to show the process of PDE
+conversion to ODEs. The analytical can be obtained by analytical derivation of simple mechanical structures. The
+analytical mode-shape functions for the rails are described in Equation (5). The solution of Equation (4) can be
+expressed using Equation (6).
+
+EIY
+∂Zr(x, t)
+
+∂x4
++ mr
+∂2Zr(x, t)
+
+∂t2
+= −
+
+N
+�
+
+i=1
+FV i(t)δ (x − xi) +
+
+4
+�
+
+j=1
+Pjδ (x − xwj)
+(4)
+
+Zk(x) =
+�
+
+2
+
+mrl sin kπx
+
+l
+(5)
+
+Zr(x, t) =
+
+NV
+�
+
+k=1
+Zk(x)qV K(t)
+(6)
+
+4
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+where EIY is the rail bending stiffness to the y-axle; Zr(x, t) is the vertical displacement o f the rail; FV i is the vertical
+dynamic forces at the i-th rail-supporting point; δ(x)is the Dirac delta function; xwjis the coordinate of the j-th wheel,
+and N is the number of sleepers under the rail; NV is the highest order of the vertical mode shape of the rail.
+
+For the intercepted modal order NV, it is necessary to reach the frequency and then more than twice the
+effective frequency of the analyzed rail. Substituting Equation (6) into Equation (4), multiplying both sides by
+Zh(x) (h = 1, 2, · · · , NV ), integrating over [0, l], and using the orthogonality between the different modes, we obtain
+
+¨qVk(t) + EIY
+
+mr
+
+�kπ
+
+l
+
+�4
+qVk(t) = −
+
+N
+�
+
+i=1
+FViZk (xsi) +
+
+4
+�
+
+j=1
+PjZk (xwj) (k = 1 − NV)
+(7)
+
+Equation (4) was transformed from fourth-order PDEs into second-order ODEs, each of which describes the
+motion of one mode of the continuum. Thus far, all equations in the vehicle–track coupled system are ODEs, collectively
+represented as Equation (1).
+
+3
+Methodology
+
+The PDEs of rail vibration were transformed into ODEs. These ODEs, together with those describing the motion of the
+vehicle system, form a system of coupled differential equations, described as
+
+M(p, f, u, t) = 0, ∈ D
+(8)
+
+where p and f denote the physical parameters and system excitation parameters with np and nf respectively; u represents
+the solutions for all quantities in M, and D is the bounded time domain.
+
+Our goal is to learn a mapping between two infinite-dimensional spaces from a finite set of input parameters
+and output parameters by constructing a neural network to approximate the solution operator of Equation (8). Let
+a = (p, f) ∈ A ⊂ Rnp+nf be the variable parameter set for the vehicle–track system, and u ∈ U be the solution
+set with ndof elements. We aim to build an approximation Gθ : A × θ → U of the solution operator for the coupled
+differential equation group M. We demonstrate in this section that the proposed BFNO architecture learns Gθ. Figure 4
+provides a schematic of the BFNO architecture.
+
+3.1
+Fourier neural operator
+
+The FNO proposed by Li et al. [24] was formulated as a generalization of standard deep neural networks to operator
+settings. A neural operator learns a mapping between two infinite dimensional spaces from a finite collection of
+observed input-output pairs.
+
+Definition 1 (Neural operator Gθ) Define the neural operator
+
+Gθ := Q ◦ σ (WL + KL) ◦ · · · ◦ σ (W1 + K1) ◦ P
+(9)
+
+where P and Q are pointwise neural networks that lift the input a ∈ A to a higher-dimension channel space and output
+u ∈ U by projecting it back to the target dimension.
+
+The model stack has L layers and the iterative update from layer to layer (vj �→ vj+1) in the model is implemented
+by σ (Wj + Kj) ; Wj are pointwise linear operators (matrices); Kj are integral kernel operators, and σ are fixed
+activation functions.
+
+Definition 2 (K) Define the Fourier convolution operator
+
+(Kvl) = F−1 (R · TK (Fvl)
+(10)
+
+5
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+where F and F−1 denote the Fourier transform and its inverse transform, respectively; R is the Fourier transform of a
+periodic function, and TK is a fixed truncation that restricts the input to the lowest K Fourier modes.
+
+Figure 3: Top: Fourier convolution operator in FNO. Apply a Fourier transform F and truncate the complete set of
+input frequencies to the K lowest frequencies using a fixed truncation TK. Apply a learnable linear transform R and
+apply the inverse Fourier transform F−1. Bottom: truncation of frequency modes. The solid areas indicate how much
+information in the spectrum is explained by the current mode K.
+
+3.2
+BFNO architecture
+
+The FNO consists of a frequency-truncation TK in each layer that only allows the lowest K Fourier modes to
+propagate the input information, as shown in Figure 3. Although the frequency truncation TK ensures the discretization-
+invariance of the FNO, it is still challenging to select an appropriate number of effective modes K because it is
+task-dependent and requires careful hyperparameter tuning. Setting K too small results in too few frequency modes,
+with insufficient information for learning the solution operator, leading to underfitting. A large K with too many
+effective frequency modes may encourage the FNO to insert noise into the high-frequency components. This results in
+overfitting and is computationally expensive [35].
+
+Figure 4: Network architecture of BFNO.
+
+For the vehicle–track system, the frequency domain ranges corresponding to the car body, bogie frames, wheelsets,
+and rails are different. Setting the same K value may cause underfitting or overfitting. To address these concerns, we
+propose a BFNO architecture with two Fourier branches (Figure 4). The BFNO architecture contains the following
+three steps:
+
+1. Lift the input a ∈ A to a higher-dimension channel space through a fully connected neural network transforma-
+tion P.
+
+6
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+2. Apply iterative Fourier layers: v1 �→ . . . �→ vL where vj for j = 1, . . . , L , and project vj back to the original
+space using a fully connected neural network transformation Q. Specially, a low-pass filtering layer is added to the car
+body branch.
+
+3. Connecting the output structures of the car body branch and the bogie branch as the model output u ∈ U.
+
+Fundamentally, the BFNO is used to extract the feature relationship between the input and output data in the
+frequency domain, a fully connected layer is used to combine the features and output approximate solutions. The neural
+operators only output solutions to Equation (8), and their derivatives were computed using a differentiation operation.
+
+3.3
+Equation weight normalization technique
+
+The differential equation group M in a vehicle–track coupled system consists of multiple coupled ODEs. Considering
+the units and numerical differences in the different degrees of freedom, there are significant variations in the magnitude
+of the data corresponding to each equation. Use of normalization techniques reduces scale differences in the input
+data, improving the training effectiveness and performance of the neural networks. We propose an equation weight
+normalization technique that effectively leverages prior physical knowledge [26]. The equation weight normalization
+technique assigns a corresponding weight factor λ to each ODE in each dataset, ensuring that the gradient magnitudes
+across different ODEs are similar during the learning process and improving overall performance. The complete EN
+algorithm is presented as Algorithm 1.
+
+Algorithm 1 Compute weight λij for jth the ODE in ith the dataset
+
+for i = 1 → N do
+Extract data set {ai, ui}
+for j = 1 → ndof do
+u = ui(:, j)
+p0 ⇐ ε(r ∗ σ(u), u), p1 ⇐ ε(r ∗ σ( ˙u), ˙u), p2 ⇐ ε(r ∗ σ(¨u), ¨u)
+s0(:, j) ⇐ u + p0, s1(:, j) ⇐ ∂u
+
+∂t + p1, s2(:, j) ⇐ ∂2u
+
+∂t2 + p2
+end for
+L = maxT |M (ai, s0, s1, s2)|
+for j = 1 → ndof do
+λij =
+r
+
+L(j)
+end for
+
+where σ(x) represents the standard deviation of x, and σ(a, b) generates a random sequence following a uniform
+distribution on the interval (−a, a) with the same dimensions as b. MaxT |M|computes the extremum of each ODE in
+in the time domain. r is the sensitivity factor, indicating an acceptable level of signal error. In this study, we set r as 2%
+as a greater penalty.
+
+3.4
+Loss function design
+
+In general, the model performs optimally when the same loss criterion is used for both training and testing. The choice
+of the loss function plays a crucial role. In this work, we use the relative L2 loss (rLSE) to measure the performance
+in our model. The L2 loss and its square, the mean squared loss (MSE), are common choices for testing criteria in deep
+learning. We observe that training the model using relative loss has beneficial effects in terms of normalization and
+regularization, preventing overfitting. The L2 loss is applied to both the original output (y(t)), the first derivative of the
+output (∂y/∂t), and the second derivative of the output (∂2y/∂t2), is written as:
+
+L(y, ˆy) = w1
+∥y − ˆy∥2
+
+∥y∥2
++ w2
+∥∂y/∂t − ∂ˆy/∂t∥2
+
+∥∂y/∂t∥2
++ w3
+
+��∂2y/∂t2 − ∂2ˆy/∂t2��
+2
+
+∥∂2y/∂t2∥2
+(11)
+
+7
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+where ˆy is the predicted output, ∂ˆy/∂t is the first derivative of the predicted output, ∂2ˆy/∂t2 is the second derivative
+of the predicted output, and w1, w2, w3 are the weights of each error. Use of derivative loss was motivated by the
+engineering community’s primary interest in derivatives rather than solutions. For example, sound in nature is typically
+associated with vibration speed (first derivative), whereas human comfort is linked to acceleration (second derivative).
+
+4
+Results
+
+This section compares 4 types of model architectures: CNN, CNN-GRU, FNO and BFNO. All models are trained on
+the proposed loss function. Detailed parameters for each model are summarized in Appendix B to Appendix E.
+
+4.1
+Data preparation
+
+The input and output parameters for the training, validation, and test data set were generated using the Zhai method,
+described in Section 2. We set the three types of input parameters in each numerical simulation case to be variable:
+running speed, physical parameters of system and system excitations. As shown in Figure 5, the running speed
+is considered to vary from 250 to 350 km/h. Physical parameters including mass(M), mass moment of inertia(I),
+stiffness(K) and damping(C).The complete range of physical parameters is shown in Appendix A. The output parameters
+included the dynamic responses for the vehicle–track system.
+
+In this study, only track irregularities were included in the system excitations. The track irregularities present on
+an actual line are superimposed by random irregularities of different wavelengths, phases, and assignments, and are
+complex stochastic processes related to line mileage. The power spectral density (PSD) is the most commonly used
+statistical function for representing random track irregularities. It is usually considered as a stationary stochastic process;
+the statistical characteristics of random track irregularities can only be obtained from field measurements. In engineering,
+PSD charts are often used to describe the relationship between spectral densities and corresponding frequencies. We
+used the classical spectral method [30] to generate spatial domain simulation samples of track irregularities (Figure 6)
+and used the Chinese high-speed ballastless track spectrum as a PSD function. The sampling frequency was set as 1000
+Hz and the wavelength ranged from 1–100 m. As input parameters, the superimposed irregularities were used as track
+irregularities, and were composed of vertical and lateral irregularities. In total, 10,000 sets of training data, 1,000 sets of
+validation data, and 1,000 sets of test data were generated using a multibody dynamics simulation (MBS) based on the
+Zhai method.
+
+Figure 5: Example of mapping between (a) input variable parameters to (b) output dynamic responses. (a) running
+speed, physical parameters of system and track irregularities. (b) vertical vibration of car body.
+
+8
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Figure 6: Simulation samples of track irregularities: (a) left rail (lateral); (b) right rail (lateral); (c) left rail (vertical); (d)
+right rail (vertical); (e) PSDs.
+
+4.2
+Hyperparameter selection
+
+Selection of hyperparameters is crucial in neural networks, the main hyperparameter tuning methods include manual
+tuning, grid search, random search, and Bayesian optimization. Bayesian optimization uses the performance of
+previously searched parameters to infer the next step, improving the search efficiency [36]. To obtain the best
+performance of the BFNO model, we used Bayesian hyperparameter optimization to search for the minimum value,
+with the objective function as the minimum loss of the validation set. Some parameters in the neural network model
+are nested in the activation function they select. These parameters have default values that have little effect on model
+optimization; thus, they are generally not considered in Bayesian optimization. The main difference between the car
+body branch and the bogie branch in the BFNO architecture is the Fourier modes K. Therefore, during the process of
+Bayesian optimization, the hyperparameters of the Fourier layer and the fully connected layer are set to the same values.
+
+Figure 7: Hyperparameter analysis for proposed model.
+
+9
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Table 1: Hyperparameter optimization and settings.
+
+Type
+Hyperparameter
+Range of selection
+Optimal value
+
+Automatic
+
+Number of Fourier layers
+[3,6]
+4
+Width of each Fourier convolution layer
+[50,200]
+127
+Number of fully connected layers
+[3,6]
+3
+Width of fully connected layers
+[50,200]
+131
+
+Manual
+
+Fourier modes used in car body branch
+/
+100
+Fourier modes used in bogie branch
+/
+500
+Batch size
+/
+32
+Learning rate
+/
+0.001
+
+Figure 7 presents the hyperparameter analysis results for model. As can be seen from the figure, the model has
+limited sensitivity to hyperparameters. Additionally, it can be seen that increasing the number of Fourier layers has the
+most significant positive impact on accuracy improvement. In the process of hyperparameter analysis, there are 13
+initial points, and the model is optimized 10 times considering the computational costs. Table 1 displays the optimized
+results of several critical hyperparameters whose broad ranges were determined from the results of manual tuning tests
+and other manually set hyperparameters.
+
+As shown in Table 1, three Fourier layers and four fully connected layers were designed, the widths of each layer
+were set as 127 and 131, respectively. The Fourier mode used in car body branch was based on the frequency range of
+the car body response and was set as 100. The Fourier mode used in bogie branch was set according to the sampling
+frequency and was set as 500. Other parameters and techniques used in model included: (1) We found that model’s
+performance showed minimal sensitivity to the batch size. Therefore, the batch size was set to 32, the maximum value
+allowed by the GPU occupancy limit.; (2) Adam optimizer to update the local learning rate during the training process
+and enhance the robustness of the network; (3) the initial learning rate was set as 1e-3, the default value in the Adam
+optimizer, and was reduced to 75% every 30 steps; (4) The ELU activation function (used in fully connected layers) has
+advantages with negative inputs and promotes training stability.
+
+4.3
+Performance analysis
+
+Figure 8: The loss curves of the training set and the validation set.
+
+The evaluation metrics we use were rLSE (defined in Subsection 3.3) and Pearson correlation coefficient (PCC),
+its formula is shown in Equation (12).
+
+PCC =
+�M
+i=1
+�
+ˆyi − ˆy
+�
+(yi − ¯y)
+��M
+i=1
+�
+ˆyi − ˆy
+2 ∗
+��M
+i=1 (yi − ¯y)2
+,
+
+�
+
+y = 1
+
+M
+
+M
+�
+
+i=1
+yk, ˆy = 1
+
+M
+
+M
+�
+
+i=1
+ˆyk
+
+�
+
+(12)
+
+10
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+where yi and ˆyi are the i-th actual and predicted data points, respectively, and ¯y and ˆy are the expectations for the actual
+and predicted data points, respectively. The range of the PCC is from -1 to 1, a higher numerical value indicates a
+stronger positive correlation and better performance.
+
+Figure 9: Analysis of model performance: (a) Test error using CNN, CNN-GRU, FNO, and BFNO; (b) Average training
+and test error of FNO and BFNO.
+
+Figure 10: Comparison of the vertical response between ground truth and model estimation results.
+
+The training and the validation loss curves of the BFNO model are shown in Figure 8. It can be seen that the loss
+curve remains stable when the epoch reaches 300 times. Figure 9(a) demonstrates that the best performance for both
+the training and testing data set is achieved with the BFNO model. In contrast, the CNN model failed to capture the
+nonlinear features of the lateral vehicle dynamics, resulting in the poorest performance of the CNN model. Compared
+with CNN-GRU model, both the original FNO and BFNO consist of frequency-truncation TK in each layer that only
+allows the lowest K Fourier modes to propagate the input information. Selecting an appropriate number of effective
+modes K can filter out high frequency information from the input parameters. We can observe from Figure 9(b) that the
+training errors of both structures were similar, but BFNO exhibited a larger generalization error (the difference between
+
+11
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+the test error and training error). The results of vertical dynamic response estimation using the BFNO method and
+MBS method are shown in Figure 10. The displacement, velocity, and acceleration results obtained using the BFNO
+model had good accuracy. In the model training, only ground truth of displacement was provided, while velocity and
+acceleration were computed using numerical differentiation methods. In contrast to other studies that only provide
+ground truth of acceleration for the dynamic system, our approach in this paper in this paper more closely to physical
+principles. However, in the field of railway engineering, researchers pay more attention to acceleration information.
+Therefore, in the subsequent comparison of model performance, we only present the results related to acceleration.
+
+In order to considering the average performance across the entire training and testing sets, the estimation results of
+BFNO and MBS methods are shown in Figure 11. The BFNO has good performance in all of these parts, which can be
+quantified by low rLSE loss and high PCC value (Table 2). Figure 12 shows the frequency spectrum curve inferred
+from the model prediction results. It can be seen that the estimated value and the ground truth are still very consistent
+within the primary frequency range.
+
+Figure 11: The prediction results in the time domain. (a), (b) lateral and vertical acceleration of car body; (c), (d) lateral
+and vertical acceleration of bogie.
+
+Table 2: Summary of Evaluation metric.
+
+Part
+Acceleration
+rLSE(%)
+PCC
+
+Car body
+Lateral acceleration
+4.16
+0.9717
+Vertical acceleration
+1.62
+0.9836
+
+Bogie
+Lateral acceleration
+5.17
+0.9220
+Vertical acceleration
+1.54
+0.9864
+
+For the vehicle-track coupled dynamics problem addressed in this paper, the model is trained only once, and
+solving new cases with parameter variations no longer requires additional training. The trained machine learning models
+can be directly used for solving without further training. Selecting a 3-second segment of data for comparison, the MBS
+model computed in MATLAB required approximately 20 min; UM® and SIMPACK® required 214.73 s and 209.21 s,
+respectively. In contrast, the BFNO model running in in the Pytorch framework required only 3.69 s (on a device with
+an Intel Core i9-12900K processor and an Nvidia GeForce RTX 3060 Super graphic processing unit). Using the BFNO
+model is that its computing speed is significantly improved.
+
+12
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Figure 12: The prediction results of frequency spectrum using the BFNO model.
+
+Figure 13: Comparison of the lateral car body acceleration of BFNO and CNN-GRU in dataset A, B. (a) performance
+of dataset A, (b) performance of dataset B.
+
+4.4
+Prediction at unseen time steps
+
+FNO-based architectures are infinite-dimensional operators that can provide grid-invariant predictions. To demonstrate
+the performance of this technique, we test the CNN-GRU, BFNO at a temporal resolution not used during training,
+specifically, data at 0.003s time step for the training set and 0.001s time step for the test set. Table 3 summarizes the
+
+13
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+evaluation metric of the new dataset (dataset A) compared to the 0.001s time step dataset for both training and testing
+(dataset B). In order to show the results clearly, we only compared the lateral car body acceleration under two datasets
+in Figure 13.
+
+It can be observed from Figure 13(a) that the CNN-GRU model exhibits poor estimation performance in dataset A,
+while the estimated values of the FNO model are almost the same as the ground truth. However, in some peaks and
+valleys, the estimated value of the FNO model is relatively larger than the ground truth. Compared to the dataset B,
+although the performance of the BFNO model decreases slightly with the change in the time-steps, the BFNO model
+still provides relatively good estimation at the unseen time without additional training. The model achieves predictions
+from low to high time resolutions. For larger multibody dynamic systems, the training set uses low time resolution data
+to reduce data generation time and memory usage. The test set uses high time resolution data to enhance the improve
+the prediction accuracy of the model, thereby meeting the requirements of both data utilization and precision.
+
+Table 3: Performance comparison of CNN-GRU, BFNO models in dataset A, B.
+
+Model
+Evaluation metric
+Dataset A
+Dataset B
+
+CNN-GRU
+rLSE
+34.92
+5.68
+PCC
+0.4704
+0.9183
+
+BFNO
+rLSE
+4.52
+2.04
+PCC
+0.9351
+0.9659
+
+5
+Conclusions
+
+In the evaluation of track geometry, considering the vehicle response to track defects requires fast and reliable vehicle-
+track coupled dynamic simulations based on a large amount of track data. The use of dynamic simulations is well
+established, but it is computationally expensive. In this paper, the BFNO model was proposed, which provides a more
+convenient and economical method for estimating vehicle responses and has the potential to be applied to in-service
+trains. The findings of this study are as follows.
+
+(1) The proposed BFNO model separates the car body from the bogie and extracts the feature relationship between
+input and output data in frequency domain. The model demonstrates good estimation performance in both the time and
+frequency domains. Under the optimal hyperparameter combination, the rLSE of BFNO model is 2.04%, which is
+reduced by 64%, compared with the CNN-GRU model.
+
+(2) The proposed BFNO model is superior to commercial software in terms of efficiency. In the evaluation of track
+geometry, users can use pre-trained BFNO to obtain the dynamic response with almost no computational cost. Besides,
+the improvement in the computational efficiency can support many railway engineering tasks that require repetitive
+forward numerical simulations.
+
+(3) Compared with the CNN-GRU model, the BFNO model can make predictions at unseen time steps. The
+BFNO model is trained on data with a time step of 0.003s and tested on data with a time step of 0.001s, achieving good
+generalization performance.
+
+However, our proposed model still faces some challenges, such as the prediction performance of the lateral
+response is slightly inferior to that of the vertical response, the prediction accuracy cannot be guaranteed for physical
+parameters outside the range of this paper. In the future, we will explore methods to further improve the prediction
+accuracy of our proposed model and training strategies for model in the case of sparse data. Furthermore, establishing a
+vehicle-track coupled model under the combined effects of random and disease irregularity, and extend the application
+of the proposed model in this paper to the analysis and assessment of dynamic responses under defective conditions.
+
+14
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Declarations
+
+The authors declare that they have no known competing financial interests or personal relationships that could have
+appeared to influence the work reported in this paper.
+
+Funding
+
+This study was funded by Key R&D projects of the Ministry of Science and Technology NO. 2022YFB2602905,
+Sichuan Nature and Science Foundation Innovation Research Group Project NO. 2023NSFSC1975, and the Fundamental
+Research Funds for the Central Universities NO. A0920502052301-369.
+
+Appendix A
+The range of physical parameters
+
+Table 4: The range of physical parameters.
+
+Notation
+Parameter
+Range
+
+Mc
+Car body mass (kg)
+[23040, 48000]
+Mt
+Bogie mass (kg)
+[2080, 3840]
+Mw
+Wheelset mass (kg)
+[1120, 2400]
+Icx
+Car body roll moment of inertia(kg · m2)
+[60048, 153965]
+Icy
+Car body pitch moment of inertia(kg · m2)
+[1128960, 2732400]
+Icz
+Car body yaw moment of inertia (kg · m2)
+[1065370, 2732400]
+Itx
+Frame roll moment of inertia(kg · m2)
+[1684, 3110]
+Ity
+Frame pitch moment of inertia(kg · m2)
+[1140, 3840]
+Itz
+Frame yaw moment of inertia(kg · m2)
+[2080, 3840]
+Iwx
+Wheelset roll moment of inertia(kg · m2)
+[576, 1098]
+Iwy
+Wheelset pitch moment of inertia(kg · m2)
+[67.2, 168]
+Iwz
+Wheelset yaw moment of inertia(kg · m2)
+[592, 1176]
+Kpx
+Longitudinal stiffness of primary suspension per axle side (MN/m)
+[8, 17.64]
+Kpy
+Lateral stiffness of primary suspension per axle side (MN/m)
+[4, 8.97]
+Kpz
+Vertical stiffness of primary suspension per axle side (MN/m)
+[0.44, 2.1264]
+Ksx
+Longitudinal stiffness of secondary suspension per bogie side (MN/m)
+[0.12, 0.2269]
+Ksy
+Lateral stiffness of secondary suspension per bogie side (MN/m)
+[0.12, 0.2269]
+Ksz
+Vertical stiffness of secondary suspension per bogie side (MN/m)
+[0.092, 1.1889]
+Cpz
+Vertical damping of secondary suspension per truck side(kN · s/m)
+[4.8, 70.56]
+Csy
+Lateral damping of secondary suspension per bogie side(kN · s/m)
+[7.84, 72]
+Csz
+Vertical damping of secondary suspension per bogie side(kN · s/m)
+[7, 144]
+
+Appendix B
+CNN model architecture
+
+The shape of the input is (10000,3000,40) and the three positions correspond to the number of samples, the length of
+time and the dimension of the input in Figure 4. The shape of the remaining layers has the same meaning as above.
+Lifting denotes the linear transformation to lift the input to the high dimensional space, and the projection back to
+original space. Conv1d denotes a 1D convolutional layer, BN denotes a batch normalization layer, Elu denotes a
+rectified linear layer.
+
+15
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Table 5: CNN model architecture.
+
+Part
+Layer
+Output Shape
+
+Input
+-
+(10000,3000,40)
+Lifting
+Linear
+(10000,3000,120)
+Permute
+Permute
+(10000,120,3000)
+Conv 1
+Conv1d/BN/Elu
+(10000,120,3000)
+Conv 2
+Conv1d/BN/Elu
+(10000,120,3000)
+Conv 3
+Conv1d/BN/Elu
+(10000,120,3000)
+Conv 4
+Conv1d/BN/Elu
+(10000,120,3000)
+Permute
+Permute
+(10000,3000,120)
+Projection 1
+Linear/Elu
+(10000,3000,100)
+Projection 2
+Linear/Elu
+(10000,3000,100)
+Projection 3
+Linear
+(10000,3000,15)
+
+Appendix C
+CNN-GRU model architecture
+
+Lifting denotes the linear transformation to lift the input to the high dimensional space, and the projection back to
+original space. Conv1d denotes a 1D convolutional layer, BN denotes a batch normalization layer, GRU denotes a gated
+recurrent unit layer, Elu denotes a rectified linear layer.
+
+Table 6: CNN-GRU model architecture.
+
+Part
+Layer
+Output Shape
+
+Input
+-
+(10000,3000,40)
+Lifting
+Linear
+(10000,3000,120)
+Permute
+Permute
+(10000,120,3000)
+Conv 1
+Conv1d/BN/Elu
+(10000,120,3000)
+Conv 2
+Conv1d/BN/Elu
+(10000,120,3000)
+Permute
+Permute
+(10000,3000,120)
+GRU 1
+GRU/BN/Elu
+(10000,3000,100)
+GRU 2
+GRU/BN/Elu
+(10000,3000,100)
+Projection 1
+Linear/Elu
+(10000,3000,100)
+Projection 2
+Linear
+(10000,3000,15)
+
+Appendix D
+FNO model architecture
+
+Lifting denotes the linear transformation to lift the input to the high dimensional space, and the projection back to
+original space. Fourier 1d denotes the 1D Fourier operator, Add operation adds the outputs together.
+
+16
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+Table 7: FNO model architecture.
+
+Part
+Layer
+Output Shape
+
+Input
+-
+(10000,3000,40)
+Lifting
+Linear
+(10000,3000,120)
+Permute
+Permute
+(10000,120,3000)
+Fourier 1
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+Fourier 2
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+Fourier 3
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+Fourier 4
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+Permute
+Permute
+(10000,3000,120)
+Projection 1
+Linear/Elu
+(10000,3000,100)
+Projection 2
+Linear/Elu
+(10000,3000,100)
+Projection 3
+Linear
+(10000,3000,15)
+
+Appendix E
+BFNO model architecture
+
+The BFNO architecture is divided into the car body branch and the bogie branch, and the final output is combined
+through an Add layer.
+
+Table 8: BFNO model architecture.
+
+Part
+Layer
+Car body Branch Output Shape
+Bogie Branch Output Shape
+
+Input
+-
+(10000,3000,40)
+(10000,3000,40)
+Lifting
+Linear
+(10000,3000,120)
+(10000,3000,120)
+Permute
+Permute
+(10000,120,3000)
+(10000,120,3000)
+Fourier 1
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+(10000,120,3000)
+Fourier 2
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+(10000,120,3000)
+Fourier 3
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+(10000,120,3000)
+Fourier 4
+Fourier1d/Conv1d/Add/Elu
+(10000,120,3000)
+(10000,120,3000)
+Permute
+Permute
+(10000,3000,120)
+(10000,3000,120)
+Projection 1
+Linear/Elu
+(10000,3000,100)
+(10000,3000,100)
+Projection 2
+Linear/Elu
+(10000,3000,100)
+(10000,3000,100)
+Projection 3
+Linear
+(10000,3000,5)
+(10000,3000,10)
+Add
+Add
+(10000,3000,15)
+
+References
+
+[1] Hexuan Hu, Bo Tang, Xuejiao Gong, Wei Wei, and Huihui Wang. Intelligent fault diagnosis of the high-speed
+train with big data based on deep neural networks. IEEE Transactions on Industrial Informatics, 13(4):2106–2116,
+2017.
+
+[2] Sönke Kraft, Julien Causse, and Aurélie Martinez. Black-box modelling of nonlinear railway vehicle dynamics
+for track geometry assessment using neural networks. Vehicle System Dynamics, 2018.
+
+[3] Yunguang Ye, Yu Sun, Shiping Dongfang, Dachuan Shi, and Markus Hecht. Optimizing wheel profiles and
+suspensions for railway vehicles operating on specific lines to reduce wheel wear: a case study. Multibody System
+Dynamics, 51:91–122, 2021.
+
+[4] Wubin Cai, Maoru Chi, Xingwen Wu, Fei Li, Zefeng Wen, Shulin Liang, and Xuesong Jin. Experimental and
+numerical analysis of the polygonal wear of high-speed trains. Wear, 440–441:203079, 2019.
+
+17
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+[5] Chenglin Xiao, Weili Xia, and Jijiao Jiang. Stock price forecast based on combined model of ari-ma-ls-svm.
+Neural Computing and Applications, 32:5379–5388, 2020.
+
+[6] Firuz Kamalov, Linda Smail, and Ikhlaas Gurrib. Stock price forecast with deep learning. In 2020 International
+Conference on Decision Aid Sciences and Application (DASA), pages 1098–1102. IEEE, 2020.
+
+[7] Che-I Wu, Hsu-Yang Kung, Chi-Hua Chen, and Li-Chia Kuo. An intelligent slope disaster prediction and
+monitoring system based on wsn and anp. Expert Systems with Applications, 41(10):4554–4562, 2014.
+
+[8] Swapnil Bande and Virendra V Shete. Smart flood disaster prediction system using iot & neural networks. In 2017
+International Conference On Smart Technologies For Smart Nation (SmartTechCon), pages 189–194. Ieee, 2017.
+
+[9] Ho Jun Keum, Kun Yeun Han, and Hyun Il Kim. Real-time flood disaster prediction system by applying machine
+learning technique. KSCE Journal of Civil Engineering, 24(9):2835–2848, 2020.
+
+[10] Shaopeng Li, Reda Snaiki, and Teng Wu. A knowledge-enhanced deep reinforcement learning-based shape
+optimizer for aerodynamic mitigation of wind-sensitive structures. Computer-Aided Civil and Infrastructure
+Engineering, 36(6):733–746, 2021.
+
+[11] Chenzhong Li, Qing He, and Ping Wang. Estimation of railway track longitudinal irregularity using vehicle
+response with information compression and bayesian deep learning. Computer-Aided Civil and Infrastructure
+Engineering, 37(10):1260–1276, 2022.
+
+[12] Xiaoli Hao, Jian Yang, Fei Yang, Xianfu Sun, Yali Hou, and Jian Wang. Track geometry estimation from vehicle–
+body acceleration for high-speed railway using deep learning technique. Vehicle system dynamics, 61(1):239–259,
+2023.
+
+[13] Chenzhong Li, Huakun Sun, Wangyijia Li, Yifeng Wang, Zhuang Wan, Weijun Wu, Ping Wang, and Qing He.
+A multitask learning method for rail corrugation detection using in-vehicle responses and noise data. IEEE
+Transactions on Intelligent Transportation Systems, 2023.
+
+[14] Maziar Raissi, Paris Perdikaris, and George E Karniadakis. Physics-informed neural networks: A deep learning
+framework for solving forward and inverse problems involving nonlinear partial differential equations. Journal of
+Computational physics, 378:686–707, 2019.
+
+[15] George Em Karniadakis, Ioannis G Kevrekidis, Lu Lu, Paris Perdikaris, Sifan Wang, and Liu Yang. Physics-
+informed machine learning. Nature Reviews Physics, 3(6):422–440, 2021.
+
+[16] Ilya O Tolstikhin, Neil Houlsby, Alexander Kolesnikov, Lucas Beyer, Xiaohua Zhai, Thomas Unterthiner, Jessica
+Yung, Andreas Steiner, Daniel Keysers, Jakob Uszkoreit, et al. Mlp-mixer: An all-mlp architecture for vision.
+Advances in neural information processing systems, 34:24261–24272, 2021.
+
+[17] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton. Imagenet classification with deep convolutional neural
+networks. Advances in neural information processing systems, 25, 2012.
+
+[18] Larry R Medsker and LC Jain. Recurrent neural networks. Design and Applications, 5(64-67):2, 2001.
+
+[19] Yunguang Ye, Ping Huang, Yu Sun, and Dachuan Shi. Mbsnet: A deep learning model for multibody dynamics
+simulation and its application to a vehicle-track system. Mechanical Systems and Signal Processing, 157:107716,
+2021.
+
+[20] Gege Wen, Zongyi Li, Kamyar Azizzadenesheli, Anima Anandkumar, and Sally M Benson. U-fno—an enhanced
+fourier neural operator-based deep-learning model for multiphase flow. Advances in Water Resources, 163:104180,
+2022.
+
+[21] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, Andrew Stuart, and
+Anima Anandkumar. Neural operator: Graph kernel network for partial differential equations. arXiv preprint
+arXiv:2003.03485, 2020.
+
+[22] Nikola Kovachki, Zongyi Li, Burigede Liu, Kamyar Azizzadenesheli, Kaushik Bhattacharya, Andrew Stuart, and
+Anima Anandkumar. Neural operator: Learning maps between function spaces with applications to pdes. Journal
+of Machine Learning Research, 24(89):1–97, 2023.
+
+18
+
+
+Estimation of railway vehicle response for track geometry evaluation using branch Fourier neural operator
+
+[23] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Andrew Stuart, Kaushik Bhattacharya, and
+Anima Anandkumar. Multipole graph neural operator for parametric partial differential equations. Advances in
+Neural Information Processing Systems, 33:6755–6766, 2020.
+
+[24] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, Andrew Stuart,
+and Anima Anandkumar. Fourier neural operator for parametric partial differential equations. arXiv preprint
+arXiv:2010.08895, 2020.
+
+[25] Wenhao Ding, Qing He, Hanghang Tong, and Ping Wang. Pino-mbd: Physics-informed neural operator for solving
+coupled odes in multi-body dynamics. arXiv preprint arXiv:2205.12262, 2022.
+
+[26] Wenhao Ding, Qing He, Hanghang Tong, Qingjing Wang, and Ping Wang. Solving coupled differential equation
+groups using pino-cde. Mechanical Systems and Signal Processing, 208:111014, 2024.
+
+[27] Lu Lu, Pengzhan Jin, Guofei Pang, Zhongqiang Zhang, and George Em Karniadakis. Learning nonlinear
+operators via deeponet based on the universal approximation theorem of operators. Nature machine intelligence,
+3(3):218–229, 2021.
+
+[28] Shengze Cai, Zhicheng Wang, Lu Lu, Tamer A Zaki, and George Em Karniadakis. Deepm&mnet: Inferring
+the electroconvection multiphysics fields based on operator approximation by neural networks. Journal of
+Computational Physics, 436:110296, 2021.
+
+[29] Shailesh Garg, Harshit Gupta, and Souvik Chakraborty. Assessment of deeponet for reliability analysis of
+stochastic nonlinear dynamical systems. arXiv preprint arXiv:2201.13145, 2022.
+
+[30] Wanming Zhai and Wanming Zhai. Vehicle–track coupled dynamics models. Springer, 2020.
+
+[31] G Chen and WM Zhai. A new wheel/rail spatially dynamic coupling model and its verification. Vehicle System
+Dynamics, 41(4):301–322, 2004.
+
+[32] Xianmai Chen, Xiangyun Deng, and Lei Xu. A three-dimensional dynamic model for railway vehicle–track
+interactions. Journal of Computational and Nonlinear Dynamics, 13(7):071006, 2018.
+
+[33] Lei Xu and Wanming Zhai. A novel model for determining the amplitude-wavelength limits of track irregularities
+accompanied by a reliability assessment in railway vehicle-track dynamics. Mechanical Systems and Signal
+Processing, 86:260–277, 2017.
+
+[34] Nicholas F Morris. The use of modal superposition in nonlinear dynamics. Computers & Structures, 7(1):65–72,
+1977.
+
+[35] Jiawei Zhao, Robert Joseph George, Yifei Zhang, Zongyi Li, and Anima Anandkumar. Incremental fourier neural
+operator. arXiv preprint arXiv:2211.15188, 2022.
+
+[36] Maher Ibrahim Sameen, Biswajeet Pradhan, and Saro Lee. Self-learning random forests model for mapping
+groundwater yield in data-scarce areas. Natural Resources Research, 28:757–775, 2019.
+
+19
+
+
